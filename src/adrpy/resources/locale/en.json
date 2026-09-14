@@ -1,0 +1,6 @@
+{
+  "help.description": "Lists available commands, or describes one command.",
+  "help.arguments.command.description": "Name of the command to describe.",
+  "help.unknown_command": "No such command: {name}",
+  "cli.unknown_verb": "Unknown command: {verb}"
+}
