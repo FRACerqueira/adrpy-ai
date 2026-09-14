@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adrpy-ai"
+version = "0.1.0"
+description = "ADR management CLI designed for AI-agent-driven use: no wizard, JSON-only output."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+adrpy = "adrpy.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adrpy"]
