@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from adrpy.cli import init, migrate, new
 from adrpy.core.config import parse_repo_config
@@ -34,17 +35,17 @@ def _write_legacy_file(tmp_path, filename, content):
     return adr_dir / filename
 
 
-def test_migrate_reveals_partial_success_when_a_later_file_fails(tmp_path, monkeypatch):
-    """Mechanism-correctness audit round 2, residual finding: a real
-    OSError partway through the migration loop (file 2 of 2) used to
-    propagate as __main__'s generic io-error, with no trace that the
-    first file had already been migrated successfully before it.
-    Converted to a structured CommandError carrying that partial success
-    as `data`, the same shape already used for reject's own partial-
-    success case."""
+def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, monkeypatch):
+    """Design decision (2026-09-15), superseding the earlier fail-fast fix:
+    migrate is best-effort per file -- one file's OSError must not block
+    the rest, and the failure response must carry a deterministic
+    per-file result array (every candidate, migrated or failed) instead
+    of forcing the caller to infer what was never attempted from a
+    migrated/failed_file pair that only covers the files seen so far."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     _write_legacy_file(tmp_path, "0002Second.md", "# Second\n")
+    _write_legacy_file(tmp_path, "0003Third.md", "# Third\n")
 
     from adrpy.cli import migrate as migrate_module
 
@@ -63,8 +64,20 @@ def test_migrate_reveals_partial_success_when_a_later_file_fails(tmp_path, monke
         migrate.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "migration-write-failed"
-    assert excinfo.value.data["migrated"] == processed[:1]
-    assert excinfo.value.data["failed_file"] == processed[1]
+    # All 3 candidates were attempted, not just the ones up to the failure.
+    assert len(processed) == 3
+
+    results = excinfo.value.data["results"]
+    statuses = {r["file"]: r["status"] for r in results}
+    assert statuses[processed[0]] == "migrated"
+    assert statuses[processed[1]] == "failed"
+    assert statuses[processed[2]] == "migrated"
+    assert results[1]["error"]  # the failed entry carries the real OSError text
+
+    # The files that succeeded really were migrated on disk, despite the
+    # sibling failure and the overall command reporting success=False.
+    assert "<!-- Migrated -->" in Path(processed[0]).read_text(encoding="utf-8")
+    assert "<!-- Migrated -->" in Path(processed[2]).read_text(encoding="utf-8")
 
 
 def test_migrate_happy_path_preserves_original_content(tmp_path):

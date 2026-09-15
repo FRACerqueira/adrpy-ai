@@ -37,7 +37,10 @@ def describe():
         "description": (
             "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
             "Requires the repository's migrationpattern to already be set (see the `config` command); "
-            "fails with migration-pattern-not-configured otherwise -- true for any freshly-init'd repository."
+            "fails with migration-pattern-not-configured otherwise -- true for any freshly-init'd repository. "
+            "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
+            "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
+            "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter)."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -103,40 +106,49 @@ def run(args):
         if not candidates:
             raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
 
-        migrated = []
+        # Design decision (2026-09-15): best-effort, not fail-fast -- one
+        # file's OSError (permission denied, full disk) must not block the
+        # rest from migrating, and the eventual failure response must
+        # carry a deterministic per-candidate result (every file, migrated
+        # or failed) rather than forcing the caller to infer what was
+        # never attempted. Deliberate hardening beyond the original: the
+        # real MigrateCommandHandler.cs's own per-file loop
+        # (MigrateRepositoryAsync) has no try/catch either -- an exception
+        # there propagates and loses even the partial `result` list it had
+        # already built, so this isn't a fidelity requirement to preserve.
+        results = []
         for parsed, candidate_path in candidates:
-            # Raw bytes, not text: the original content's own line endings
-            # (and anything else about its bytes) must pass through completely
-            # untouched -- only the header text is new. The one exception,
-            # confirmed live (fidelity audit F7): the real tool discards a
-            # leading UTF-8 BOM when reading, so it never appears in the
-            # migrated result -- pass it through here and it lands stranded
-            # in the middle of the file, after the new header.
             try:
+                # Raw bytes, not text: the original content's own line
+                # endings (and anything else about its bytes) must pass
+                # through completely untouched -- only the header text is
+                # new. The one exception, confirmed live (fidelity audit
+                # F7): the real tool discards a leading UTF-8 BOM when
+                # reading, so it never appears in the migrated result --
+                # pass it through here and it lands stranded in the middle
+                # of the file, after the new header.
                 raw_bytes = candidate_path.read_bytes()
                 if raw_bytes.startswith(b"\xef\xbb\xbf"):
                     raw_bytes = raw_bytes[3:]
                 record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
                 header_text = build_header(config, record, migrated=True)
                 attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
+                results.append({"file": str(candidate_path), "status": "migrated", "error": None})
             except OSError as error:
-                # Mechanism-correctness audit round 2 (findings #3/#4),
-                # residual: unlike every other raise in this command, a
-                # real I/O failure here (permission denied, full disk) has
-                # no CommandError translation of its own -- it would
-                # otherwise propagate as __main__'s generic io-error, with
-                # no record of the files already migrated successfully
-                # before it. `data` carries that partial success, same
-                # shape as reject's own superseded-predecessor-not-found.
-                raise CommandError(
-                    "migration-write-failed",
-                    f"{candidate_path}: {error}",
-                    data={"migrated": list(migrated), "failed_file": str(candidate_path)},
-                    warnings=warnings,
-                ) from error
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
-            migrated.append(str(candidate_path))
+                results.append({"file": str(candidate_path), "status": "failed", "error": str(error)})
+
+        failed = [entry for entry in results if entry["status"] == "failed"]
+        if failed:
+            raise CommandError(
+                "migration-write-failed",
+                f"{len(failed)} of {len(results)} file(s) failed to migrate.",
+                data={"results": results},
+                warnings=warnings,
+            )
+
+        migrated = [entry["file"] for entry in results]
 
     return {"migrated": migrated, "warnings": warnings}
