@@ -12,7 +12,7 @@ from adrpy.core.atomic_write import atomic_write_text, split_real_lines
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
-from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, parse_header
+from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within
 
@@ -147,13 +147,22 @@ def load_target(fileadr):
 
 
 def family_members(folder, config, number):
-    """Every decision (current or legacy scheme) sharing `number`, with its
-    parsed header attached -- mirrors AdrService.ReadAllAdrByNumber."""
+    """Every decision (current or legacy scheme) sharing `number` that
+    actually counts as a family member, with its parsed header attached --
+    mirrors AdrService.ReadAllAdrByNumber, which filters on
+    `aux.Header.IsValid || aux.Header.IsMigrated` (counts_as_family_member)
+    before ever including a scanned file. Legacy-scheme census audit: a
+    hand-written legacy file matched by FILENAME but never run through
+    `migrate` has no valid header at all -- without this filter it still
+    got counted, and has_pending_sibling/latest_in_family (below) would
+    misjudge it as a genuine pending/latest member."""
     members = []
     for _, parsed, path in scan_decisions(folder, config):
         if parsed.number != number:
             continue
         header = parse_header(read_lines(path), config)
+        if not counts_as_family_member(header):
+            continue
         members.append((parsed, header, path))
     return members
 

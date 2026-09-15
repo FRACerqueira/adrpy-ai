@@ -8,6 +8,7 @@ from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
+    family_members,
     find_by_unique_title,
     next_number,
     scan_decisions,
@@ -63,6 +64,30 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Existing Decision", config, decisions) is not None
     assert find_by_unique_title("Existing decision", config, decisions) is not None
     assert find_by_unique_title("Totally different", config, decisions) is None
+
+
+def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
+    """Legacy-scheme census audit: family_members must apply
+    counts_as_family_member (is_valid OR is_migrated), mirroring
+    AdrService.ReadAllAdrByNumber -- a filename-matching file whose header
+    doesn't parse at all (unmigrated legacy, or simply corrupt) must never
+    be counted as a family member, regardless of which naming scheme
+    matched its filename."""
+    config_dict = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    config_dict["migrationpattern"] = "N00:04T04"
+    config = parse_repo_config(json.dumps(config_dict))
+
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
+    with open(adr_dir / "ADR001V01-existing-decision.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+    (adr_dir / "0001LegacyNotes.md").write_text("# Not a real header at all\n", encoding="utf-8")
+
+    members = family_members(adr_dir, config, 1)
+
+    assert len(members) == 1
+    assert members[0][0].title == "existing-decision"
 
 
 def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):

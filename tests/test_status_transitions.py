@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, reject, undo
@@ -7,6 +8,8 @@ from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text
 
 import pytest
+
+FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
 
 
 def _setup_repo(tmp_path):
@@ -242,6 +245,36 @@ def test_undo_rejects_when_pending_sibling_exists(tmp_path):
         undo.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "family-member-pending"
+
+
+def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
+    """Legacy-scheme census audit: family_members applied neither
+    is_structurally_valid nor counts_as_family_member -- it counted ANY
+    filename-matching sibling as a family member, even one whose header
+    doesn't parse at all (a hand-written legacy file nobody has run
+    `migrate` on yet). has_pending_sibling's predicate
+    (`status_update is None and not is_migrated`) then falsely fired for
+    it, blocking undo/version/revise on the *current-scheme* family member
+    during the entire window between "legacy file exists" and "migrate
+    has run" -- a window the harness explicitly says must work."""
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data["migrationpattern"] = "N00:04T04"
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    new.run(["--path", str(tmp_path), "--title", "First decision", "--refdate", "2026-01-01"])
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01-first-decision.md"
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+
+    # A hand-written, never-migrated legacy file sharing sequence number 1
+    # (matched by the "N00:04T04" pattern: 4-digit number at position 0,
+    # title starting at position 4) -- no AdrPlus header at all.
+    legacy_sibling = tmp_path / "doc" / "adr" / "0001LegacyNotes.md"
+    legacy_sibling.write_text("# Some legacy notes\n\nNever run through migrate.\n", encoding="utf-8")
+
+    result = undo.run(["--file", str(adr_path)])
+
+    assert result["status"] == "Proposed"
 
 
 def test_status_transitions_end_to_end_through_main(tmp_path):
