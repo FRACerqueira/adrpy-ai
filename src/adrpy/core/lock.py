@@ -23,10 +23,27 @@ LOCK_FILE_NAME = ".adrpy.lock"
 ABANDON_AFTER_SECONDS = 30
 WAIT_CEILING_SECONDS = 10
 POLL_INTERVAL_SECONDS = 0.2
+UNLINK_RETRY_ATTEMPTS = 3
+UNLINK_RETRY_DELAY_SECONDS = 0.05
 
 
 class LockTimeoutError(Exception):
     pass
+
+
+def _unlink_with_retry(path):
+    """Same transient-PermissionError retry as atomic_write_text (Fase 4) --
+    a Windows "pending delete"/sharing-violation window under heavy
+    concurrent lock churn can make an unlink of a file that genuinely is
+    ours fail momentarily. Best-effort: swallows a PermissionError that
+    outlasts every retry, since a stale lock file left behind is still
+    correctly reclaimed later by `_reclaim_if_abandoned`."""
+    for _ in range(UNLINK_RETRY_ATTEMPTS):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            time.sleep(UNLINK_RETRY_DELAY_SECONDS)
 
 
 def _read_lock(path):
@@ -62,7 +79,7 @@ def _reclaim_if_abandoned(path, abandon_after):
     if time.time() - timestamp <= abandon_after:
         return
     if _read_lock(path) == existing:
-        path.unlink(missing_ok=True)
+        _unlink_with_retry(path)
 
 
 @contextlib.contextmanager
@@ -93,4 +110,4 @@ def acquire_repo_lock(
     finally:
         existing = _read_lock(path)
         if existing is not None and existing[0] == token:
-            path.unlink(missing_ok=True)
+            _unlink_with_retry(path)
