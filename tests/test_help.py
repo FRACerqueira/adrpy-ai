@@ -43,6 +43,7 @@ def test_help_describes_single_command(capsys):
                     "name": "command",
                     "type": "string",
                     "required": False,
+                    "positional": True,
                     "description": "Name of the command to describe.",
                 },
             ],

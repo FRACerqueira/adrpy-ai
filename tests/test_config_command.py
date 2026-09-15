@@ -115,6 +115,25 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
 
 
+def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp_path):
+    """Usability audit A8 + achado #16 (config.py review): there was no
+    way to read the current config through the JSON contract at all (an
+    agent needed to know, e.g., whether lenrevision > 0 before calling
+    revise, or the current migrationpattern before calling migrate), and
+    `config --path X` with no field flags still rewrote (and reformatted)
+    the file as a side effect of a call that looks read-only."""
+    tmp_path = _init_repo(tmp_path)
+    before_bytes = (tmp_path / "adr-config.adrplus").read_bytes()
+
+    result = config.run(["--path", str(tmp_path)])
+
+    assert result["updated_fields"] == []
+    assert result["config"]["prefix"] == "ADR"
+    assert result["config"]["lenrevision"] == 0
+    assert "activeplugins" not in result["config"]
+    assert (tmp_path / "adr-config.adrplus").read_bytes() == before_bytes
+
+
 def test_config_does_not_expose_activeplugins(tmp_path):
     tmp_path = _init_repo(tmp_path)
 
@@ -143,3 +162,17 @@ def test_config_end_to_end_through_main(tmp_path):
     tmp_path = _init_repo(tmp_path)
 
     assert main(["config", "--path", str(tmp_path), "--prefix", "DOC"]) == EXIT_SUCCESS
+
+
+def test_config_describe_declares_correct_field_types():
+    """Usability audit M1: every editable field was declared "string" in
+    describe(), including the 3 integer fields and the boolean --
+    indistinguishable from a real string field until an agent hit
+    field-not-an-integer/field-not-a-boolean by trial and error."""
+    arguments = {argument["name"]: argument for argument in config.describe()["arguments"]}
+
+    assert arguments["lenseq"]["type"] == "integer"
+    assert arguments["lenversion"]["type"] == "integer"
+    assert arguments["lenrevision"]["type"] == "integer"
+    assert arguments["disableplugins"]["type"] == "boolean"
+    assert arguments["prefix"]["type"] == "string"

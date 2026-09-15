@@ -30,7 +30,11 @@ from adrpy.core.security import resolve_within
 def describe():
     return {
         "name": "revise",
-        "description": "Creates a new revision (wording fix) of an Accepted/Rejected decision.",
+        "description": (
+            "Creates a new revision (wording fix) of an Accepted/Rejected decision. "
+            "Requires the repository's lenrevision to be > 0 (see the `config` command); "
+            "fails with revision-not-configured otherwise -- true for any freshly-init'd repository."
+        ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
             {

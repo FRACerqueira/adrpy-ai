@@ -167,3 +167,11 @@ def test_revise_end_to_end_through_main(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
 
     assert main(["revise", "--file", str(adr_path)]) == EXIT_SUCCESS
+
+
+def test_revise_describe_documents_the_lenrevision_precondition():
+    """Usability audit A9: revise fails with revision-not-configured on
+    any freshly-init'd repository (100% of the time, not an edge case) --
+    describe() never said so, so an agent only discovered this by trial
+    and error."""
+    assert "lenrevision" in revise.describe()["description"]

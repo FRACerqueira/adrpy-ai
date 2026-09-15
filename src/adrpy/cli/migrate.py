@@ -29,7 +29,11 @@ from adrpy.core.security import is_within, resolve_within
 def describe():
     return {
         "name": "migrate",
-        "description": "Adds an AdrPlus-compliant header to existing, hand-written decision files.",
+        "description": (
+            "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
+            "Requires the repository's migrationpattern to already be set (see the `config` command); "
+            "fails with migration-pattern-not-configured otherwise -- true for any freshly-init'd repository."
+        ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
         ],

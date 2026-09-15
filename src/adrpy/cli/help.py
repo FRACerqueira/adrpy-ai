@@ -12,6 +12,14 @@ def describe():
                 "name": "command",
                 "type": "string",
                 "required": False,
+                # Usability audit A3: every other command's arguments are
+                # `--flag value`, parsed by parse_flags -- this one alone
+                # is positional (`help <command>`, no `--`), matching the
+                # real tool's own `adrplus help [command]` syntax. Without
+                # this flag an agent generalizing from the other 11
+                # commands would reasonably (and wrongly) try
+                # `help --command X`.
+                "positional": True,
                 "description": translate("help.arguments.command.description"),
             },
         ],

@@ -31,14 +31,31 @@ _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
 
 
+def _field_type(field):
+    if field in _INT_FIELDS:
+        return "integer"
+    if field in _BOOLEAN_FIELD_FLAGS:
+        return "boolean"
+    return "string"
+
+
 def describe():
     return {
         "name": "config",
-        "description": "Updates fields of an existing repository's adr-config.adrplus. Omitted fields keep their current value.",
+        "description": (
+            "Reads or updates fields of an existing repository's adr-config.adrplus. "
+            "With no field flags, returns the current config unchanged (read-only). "
+            "Omitted fields keep their current value; only the fields passed are updated."
+        ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
             *[
-                {"name": field, "type": "string", "required": False, "description": f"New value for '{field}'."}
+                {
+                    "name": field,
+                    "type": _field_type(field),
+                    "required": False,
+                    "description": f"New value for '{field}'.",
+                }
                 for field in _EDITABLE_FIELDS
             ],
         ],
@@ -83,6 +100,16 @@ def run(args):
             )
         merged["disableplugins"] = text == "true"
         updated_fields.append("disableplugins")
+
+    if not updated_fields:
+        # Usability audit A8 + a review of this command's own idempotency:
+        # there was no way to read the current config through the JSON
+        # contract at all, and calling this with no field flags -- the
+        # natural way an agent would try to "just look" -- still rewrote
+        # (and reformatted) the file as a side effect of what looks like a
+        # read-only call. `activeplugins` stays excluded, same as a write.
+        current_fields = {field: merged[field] for field in _EDITABLE_FIELDS}
+        return {"file": str(config_path), "updated_fields": [], "config": current_fields}
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure

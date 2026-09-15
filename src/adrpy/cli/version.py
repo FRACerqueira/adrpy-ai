@@ -49,9 +49,18 @@ def describe():
             },
             {
                 "name": "empty",
-                "type": "boolean",
+                "type": "switch",
                 "required": False,
-                "description": "Start from the default template instead of carrying the source's content forward.",
+                # Usability audit A2: this is presence-only (`--empty` with
+                # no value, like a getopt flag) -- confirmed live that
+                # `--empty true`/`--empty false` both fail with "Unknown
+                # argument", not a real boolean value flag. Labeled
+                # "boolean" before, which reads as accepting an explicit
+                # value the same way `config --disableplugins` does.
+                "description": (
+                    "Start from the default template instead of carrying the source's content forward. "
+                    "Presence-only: pass just '--empty' with no value; do not pass '--empty true/false'."
+                ),
             },
         ],
     }

@@ -164,3 +164,11 @@ def test_migrate_end_to_end_through_main(tmp_path):
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
 
     assert main(["migrate", "--path", str(tmp_path)]) == EXIT_SUCCESS
+
+
+def test_migrate_describe_documents_the_migrationpattern_precondition():
+    """Usability audit A9: migrate fails with migration-pattern-not-
+    configured on any freshly-init'd repository (100% of the time, not an
+    edge case) -- describe() never said so, so an agent only discovered
+    this by trial and error."""
+    assert "migrationpattern" in migrate.describe()["description"]

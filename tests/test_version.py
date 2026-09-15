@@ -176,3 +176,13 @@ def test_version_end_to_end_through_main(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     assert main(["version", "--file", str(adr_path)]) == EXIT_SUCCESS
+
+
+def test_version_describe_declares_empty_as_a_presence_only_switch():
+    """Usability audit A2: --empty is presence-only (confirmed live,
+    `--empty true` fails with "Unknown argument") -- must not be declared
+    "boolean", which implies accepting an explicit value like
+    `config --disableplugins true/false` does."""
+    arguments = {argument["name"]: argument for argument in version.describe()["arguments"]}
+
+    assert arguments["empty"]["type"] == "switch"
