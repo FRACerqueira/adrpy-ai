@@ -1,7 +1,10 @@
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, reject, version
+from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
+from adrpy.core.header import DecisionRecord, build_header
 
 import pytest
 
@@ -125,6 +128,34 @@ def test_version_rejects_embedded_delimiter(tmp_path):
         version.run(["--file", str(adr_path), "--scope", "Bad|scope"])
 
     assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_version_rejects_path_traversal_via_header_title(tmp_path):
+    """Security audit F1: unlike --title on `new`, version/revise/supersede
+    source the new record's title from the target's already-parsed header
+    cell (never delimiter-checked on read) -- a crafted header title
+    reaches build_filename the exact same way a hostile --title does.
+    Confirmed live: a hand-crafted header with '../../../../HDR-PWNED' as
+    its title made the real `version` write a file outside the repo."""
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
+    record = DecisionRecord(
+        number=1,
+        title="../../../outside",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "path-outside-repository"
+    assert not (tmp_path.parent / "outside.md").exists()
 
 
 def test_version_accepts_relative_file_path(tmp_path, monkeypatch):

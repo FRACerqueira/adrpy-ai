@@ -12,7 +12,7 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import resolve_within
+from adrpy.core.security import is_within, resolve_within
 
 
 def describe():
@@ -47,6 +47,8 @@ def run(args):
     entries = []
     if folder.is_dir():
         for candidate in folder.rglob("*.md"):
+            if not is_within(folder, candidate):
+                continue
             entries.append(_build_entry(candidate, config))
 
     # Mirrors AdrService.ReadAllAdr's real sort order:

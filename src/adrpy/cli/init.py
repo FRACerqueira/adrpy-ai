@@ -16,7 +16,7 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import resolve_within
+from adrpy.core.security import is_within, resolve_within
 
 
 def describe():
@@ -117,6 +117,8 @@ def _max_existing_numbers(target, config):
 
     max_number = max_version = max_revision = 0
     for candidate in folder.rglob("*.md"):
+        if not is_within(folder, candidate):
+            continue
         found = parse_any_filename(candidate.name, config)
         if found is None:
             continue

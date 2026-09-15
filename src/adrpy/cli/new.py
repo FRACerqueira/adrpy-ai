@@ -86,7 +86,7 @@ def run(args):
     )
 
     filename = build_filename(config, record)
-    file_path = folder / filename
+    file_path = resolve_within(folder, filename)
     if file_path.exists():
         raise CommandError("file-already-exists", f"File already exists: {filename}")
 

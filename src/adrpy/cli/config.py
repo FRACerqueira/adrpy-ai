@@ -25,6 +25,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
+from adrpy.core.security import resolve_within
 
 _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
@@ -84,7 +85,15 @@ def run(args):
         updated_fields.append("disableplugins")
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
-    parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+    new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+
+    # Fase 5: _is_relative_path only rejects an anchored escape ("C:\..",
+    # "\\server\.."); "../../evil" is still relative and passes that check,
+    # but resolves outside the repository -- validate before writing, the
+    # same order `init` already uses, so a hostile --folderadr can never
+    # get persisted and brick the repository (every subsequent command
+    # would refuse with path-outside-repository until hand-fixed).
+    resolve_within(target, new_config.folderadr)
 
     atomic_write_text(config_path, merged_text)
 

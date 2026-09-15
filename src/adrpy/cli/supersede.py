@@ -94,7 +94,7 @@ def run(args):
         superseded=filename_info.number,
     )
     filename = build_filename(config, successor)
-    successor_path = folder / filename
+    successor_path = resolve_within(folder, filename)
     if successor_path.exists():
         raise CommandError("file-already-exists", f"File already exists: {filename}")
 

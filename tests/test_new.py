@@ -92,6 +92,23 @@ def test_new_rejects_embedded_delimiter_in_title(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_new_rejects_path_traversal_via_title(tmp_path):
+    """Security audit F1: build_filename embeds the (case-transformed)
+    title verbatim into the filename, and case transforms don't touch '/'
+    or '..' -- confirmed live, a hostile --title escaped the repository
+    entirely (e.g. 5 levels of "../" landed a file next to the sandbox
+    root). The final path must be checked with the same resolve_within
+    guard already used for the folder itself."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "../../../outside"])
+
+    assert excinfo.value.code == "path-outside-repository"
+    assert not (tmp_path.parent / "outside.md").exists()
+    assert not (tmp_path.parent.parent / "outside.md").exists()
+
+
 def test_new_target_directory_not_found(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path / "missing"), "--title", "X"])

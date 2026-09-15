@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from datetime import date, timedelta
 
 import pytest
@@ -61,3 +63,37 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Existing Decision", config, decisions) is not None
     assert find_by_unique_title("Existing decision", config, decisions) is not None
     assert find_by_unique_title("Totally different", config, decisions) is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_path):
+    """Security audit F2: resolve_within only validates the repository
+    root; rglob("*.md") happily descends into a Windows junction planted
+    inside the decisions folder (no admin privilege required to create
+    one, and Path.is_symlink() does NOT detect it). Confirmed live:
+    `migrate` wrote a real AdrPlus header into a file OUTSIDE the repo
+    through exactly this, and `next_number` was poisoned by the outside
+    file's own (unrelated) sequence number."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / "repo" / config.folderadr
+    adr_dir.mkdir(parents=True)
+
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    record = DecisionRecord(number=9, title="Victim outside the repo", version=1)
+    with open(outside_dir / "ADR009V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not junction.is_symlink()  # confirms the audit's premise: junctions aren't symlinks
+
+    decisions = scan_decisions(adr_dir, config)
+
+    assert decisions == []
+    assert next_number(decisions) == 1

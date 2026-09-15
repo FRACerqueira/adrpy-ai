@@ -2,7 +2,10 @@ import json
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, reject, revise
+from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
+from adrpy.core.header import DecisionRecord, build_header
 
 import pytest
 
@@ -127,6 +130,34 @@ def test_revise_rejects_refdate_in_future(tmp_path):
         revise.run(["--file", str(adr_path), "--refdate", future])
 
     assert excinfo.value.code == "refdate-in-future"
+
+
+def test_revise_rejects_path_traversal_via_header_title(tmp_path):
+    """Security audit F1: same class as version's own finding -- revise's
+    new record's title also comes straight from the target's already-
+    parsed header cell (never delimiter-checked on read)."""
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
+    record = DecisionRecord(
+        number=1,
+        title="../../../outside",
+        version=1,
+        revision=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "path-outside-repository"
+    assert not (tmp_path.parent / "outside.md").exists()
 
 
 def test_revise_end_to_end_through_main(tmp_path):

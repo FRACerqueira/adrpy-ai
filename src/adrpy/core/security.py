@@ -11,10 +11,32 @@ def resolve_within(base_dir, candidate):
     rejects it if the real path escapes `base_dir` -- real path resolution
     (following `..` and symlinks), never a string-pattern blacklist."""
     base = Path(base_dir).resolve()
-    resolved = (base / candidate).resolve()
+    try:
+        resolved = (base / candidate).resolve()
+    except (OSError, ValueError) as error:
+        raise CommandError("path-invalid", f"'{candidate}' is not a usable path.") from error
     if not resolved.is_relative_to(base):
         raise CommandError("path-outside-repository", f"'{candidate}' resolves outside the repository.")
     return resolved
+
+
+def is_within(base_dir, candidate):
+    """True if `candidate`'s REAL path (following symlinks/junctions) is
+    inside `base_dir`'s real path -- used to filter directory-scan results
+    (rglob) after the fact, unlike resolve_within, which builds a path and
+    raises. `Path.rglob` happily descends into a Windows junction planted
+    inside the scanned folder even though `Path.is_symlink()` does NOT
+    detect one (confirmed live: this let `migrate` write a real header
+    into a file outside the repository, and poisoned `next_number` with
+    an unrelated file's own sequence number) -- so every rglob result must
+    be re-checked against the real, resolved boundary, not just the root
+    that was originally passed to resolve_within. Never raises: a scan
+    should silently treat an escaped candidate as outside the repository's
+    boundary, not fail the whole scan over it."""
+    try:
+        return Path(candidate).resolve().is_relative_to(Path(base_dir).resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def reject_embedded_delimiter(value, field_name):

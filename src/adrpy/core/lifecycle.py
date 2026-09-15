@@ -14,6 +14,7 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, parse_header
 from adrpy.core.naming import parse_any_filename
+from adrpy.core.security import is_within
 
 
 def parse_refdate(text):
@@ -51,6 +52,8 @@ def scan_decisions(folder, config):
         return []
     found = []
     for candidate in folder.rglob("*.md"):
+        if not is_within(folder, candidate):
+            continue
         result = parse_any_filename(candidate.name, config)
         if result is not None:
             scheme, parsed = result
