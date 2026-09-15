@@ -6,8 +6,9 @@ in the report, never dropped silently.
 
 from pathlib import Path
 
+from adrpy.core.args import parse_flags
 from adrpy.core.config import load_repo_config
-from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import resolve_within
@@ -29,7 +30,7 @@ def describe():
 
 
 def run(args):
-    path = _parse_args(args)
+    path = parse_flags(args, required=("path",))["path"]
     target = Path(path)
 
     if not target.is_dir():
@@ -61,24 +62,6 @@ def run(args):
     )
 
     return {"decisions": entries}
-
-
-def _parse_args(args):
-    path = None
-    i = 0
-    while i < len(args):
-        token = args[i]
-        if token == "--path":
-            i += 1
-            if i >= len(args):
-                raise UsageError("--path requires a value")
-            path = args[i]
-        else:
-            raise UsageError(f"Unknown argument: {token}")
-        i += 1
-    if not path:
-        raise UsageError("Missing required argument: --path")
-    return path
 
 
 def _build_entry(path, config):

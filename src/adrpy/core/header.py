@@ -21,6 +21,10 @@ _STATUS_CONFIG_FIELD = {
 
 @dataclass
 class DecisionRecord:
+    """Mirrors AdrRecord: one record feeds both the filename
+    (core.naming.build_filename) and the header (build_header below)."""
+
+    number: int
     title: str
     version: int
     revision: int | None = None
@@ -33,6 +37,7 @@ class DecisionRecord:
     status_change: str | None = None
     date_change: date_cls | None = None
     superseded_by_file: str | None = None
+    superseded: int | None = None
 
 
 def build_header(config, record, migrated=False):

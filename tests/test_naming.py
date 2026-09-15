@@ -1,7 +1,14 @@
 import json
 
 from adrpy.core.config import load_repo_config, parse_repo_config
-from adrpy.core.naming import parse_any_filename, parse_filename, parse_legacy_filename, parse_migration_pattern
+from adrpy.core.header import DecisionRecord
+from adrpy.core.naming import (
+    build_filename,
+    parse_any_filename,
+    parse_filename,
+    parse_legacy_filename,
+    parse_migration_pattern,
+)
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
 
@@ -140,3 +147,46 @@ def test_parse_any_filename_returns_none_for_neither_scheme():
     config = _config_with_migration_pattern("N00:04T04")
 
     assert parse_any_filename("README.md", config) is None
+
+
+def test_build_filename_matches_a_real_adr_filename():
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Select ADR templates based on configured UI language",
+        version=1,
+    )
+
+    filename = build_filename(config, record)
+
+    assert filename == "ADR001V01-select-adr-templates-based-on-configured-ui-language.md"
+
+
+def test_build_filename_omits_revision_when_lenrevision_is_zero():
+    config = load_repo_config(FIXTURE_PATH)
+    assert config.lenrevision == 0
+    record = DecisionRecord(number=1, title="Some decision", version=1, revision=None)
+
+    filename = build_filename(config, record)
+
+    assert "R" not in filename.split("-", 1)[0][len("ADR001V01") :]
+
+
+def test_build_filename_includes_revision_when_configured():
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data["lenrevision"] = 2
+    config = parse_repo_config(json.dumps(data))
+    record = DecisionRecord(number=1, title="Some decision", version=1, revision=1)
+
+    filename = build_filename(config, record)
+
+    assert filename.startswith("ADR001V01R01-")
+
+
+def test_build_filename_appends_supersede_suffix_unconditionally():
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(number=5, title="New decision", version=1, superseded=2)
+
+    filename = build_filename(config, record)
+
+    assert filename == "ADR005V01-new-decision--002.md"

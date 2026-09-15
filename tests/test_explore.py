@@ -69,6 +69,7 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
         {
             "ADR001V01-first-decision.md": _decision_text(
                 parse_repo_config(json.dumps(config_dict)),
+                number=1,
                 title="First decision",
                 version=1,
                 status_create="Proposed",
@@ -97,8 +98,8 @@ def test_explore_sorts_by_validity_then_migrated_then_descending_numbers(tmp_pat
     config_dict = _default_config_dict()
     config = parse_repo_config(json.dumps(config_dict))
     decisions = {
-        "ADR001V01-old-version.md": _decision_text(config, title="Old", version=1),
-        "ADR001V02-new-version.md": _decision_text(config, title="New", version=2),
+        "ADR001V01-old-version.md": _decision_text(config, number=1, title="Old", version=1),
+        "ADR001V02-new-version.md": _decision_text(config, number=1, title="New", version=2),
         "unrecognized.md": "not a header at all",
     }
     _write_repo(tmp_path, config_dict, decisions)
@@ -123,7 +124,7 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
     (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
     (adr_dir / "0001UsePostgreSQL.md").write_text("# legacy content, no header yet", encoding="utf-8")
     with open(adr_dir / "ADR002V01-current-scheme.md", "w", encoding="utf-8", newline="") as handle:
-        handle.write(_decision_text(config, title="Current scheme", version=1))
+        handle.write(_decision_text(config, number=2, title="Current scheme", version=1))
 
     result = explore.run(["--path", str(tmp_path)])
     by_name = {entry["filename"]: entry for entry in result["decisions"]}

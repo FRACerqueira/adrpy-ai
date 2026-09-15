@@ -28,6 +28,8 @@ Milestone 7's `supersede` command needs it.
 import re
 from dataclasses import dataclass
 
+from adrpy.core.casing import to_case
+
 _ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$")
 _MIGRATION_PATTERN = re.compile(
     r"^N(\d{2}):(\d{2})T(\d{2})(?:V(\d{2}):(\d{2}))?(?:R(\d{2}):(\d{2}))?(?:P(\d{2}):(\d{2}))?$"
@@ -164,3 +166,18 @@ def parse_any_filename(filename, config):
         return "legacy", parsed
 
     return None
+
+
+def build_filename(config, record):
+    """Mirrors AdrRecord.GetFileName exactly, including the incondicional
+    (never a collision-disambiguator) supersede suffix."""
+    base = f"{config.prefix or ''}{record.number:0{config.lenseq}d}"
+    version_part = f"V{record.version:0{config.lenversion}d}"
+    revision_part = f"R{record.revision:0{config.lenrevision}d}" if config.lenrevision > 0 else ""
+    title_part = to_case(record.title, config.casetransform)
+    supersede_part = (
+        f"{config.separator}{config.separator}{record.superseded:0{config.lenseq}d}"
+        if record.superseded
+        else ""
+    )
+    return f"{base}{version_part}{revision_part}{config.separator}{title_part}{supersede_part}.md"

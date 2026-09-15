@@ -20,6 +20,7 @@ def test_build_header_matches_real_adrplus_output():
     """
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
+        number=9,
         title="Fixture parity check",
         version=1,
         domain="Testing",
@@ -49,6 +50,7 @@ def test_build_header_matches_real_adrplus_output():
 def test_build_then_parse_round_trips_the_record():
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
+        number=1,
         title="Round trip",
         version=1,
         domain="Testing",

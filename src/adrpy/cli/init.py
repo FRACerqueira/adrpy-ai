@@ -12,9 +12,10 @@ import os
 from importlib import resources
 from pathlib import Path
 
+from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import parse_repo_config
-from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.errors import CommandError
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import resolve_within
 
@@ -41,7 +42,9 @@ def describe():
 
 
 def run(args):
-    path, file_arg = _parse_args(args)
+    flags = parse_flags(args, required=("path",), optional=("file",))
+    path = flags["path"]
+    file_arg = flags.get("file")
     target = Path(path)
 
     if not target.is_dir():
@@ -98,30 +101,6 @@ def run(args):
         created.append(str(folder_adr))
 
     return {"created": created}
-
-
-def _parse_args(args):
-    path = None
-    file_arg = None
-    i = 0
-    while i < len(args):
-        token = args[i]
-        if token == "--path":
-            i += 1
-            if i >= len(args):
-                raise UsageError("--path requires a value")
-            path = args[i]
-        elif token == "--file":
-            i += 1
-            if i >= len(args):
-                raise UsageError("--file requires a value")
-            file_arg = args[i]
-        else:
-            raise UsageError(f"Unknown argument: {token}")
-        i += 1
-    if not path:
-        raise UsageError("Missing required argument: --path")
-    return path, file_arg
 
 
 def _default_config_text():
