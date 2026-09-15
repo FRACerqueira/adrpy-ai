@@ -3,7 +3,6 @@
 import sys
 
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.i18n import translate
 from adrpy.core.output import emit_failure, emit_success, emit_usage_failure
 from adrpy.core.registry import COMMANDS
 
@@ -17,7 +16,7 @@ def main(argv=None):
     verb, rest = argv[0], argv[1:]
     command = COMMANDS.get(verb)
     if command is None:
-        return emit_usage_failure("unknown-command", translate("cli.unknown_verb", verb=verb))
+        return emit_usage_failure("unknown-command", f"Unknown command: {verb}")
 
     try:
         data = command.run(rest)

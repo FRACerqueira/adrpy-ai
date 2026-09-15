@@ -1,12 +1,10 @@
 """`help` command: lists available commands, or describes one of them."""
 
-from adrpy.core.i18n import translate
-
 
 def describe():
     return {
         "name": "help",
-        "description": translate("help.description"),
+        "description": "Lists available commands, or describes one command.",
         "arguments": [
             {
                 "name": "command",
@@ -20,7 +18,7 @@ def describe():
                 # commands would reasonably (and wrongly) try
                 # `help --command X`.
                 "positional": True,
-                "description": translate("help.arguments.command.description"),
+                "description": "Name of the command to describe.",
             },
         ],
     }
@@ -34,7 +32,7 @@ def run(args):
         name = args[0]
         command = COMMANDS.get(name)
         if command is None:
-            raise CommandError("unknown-command", translate("help.unknown_command", name=name))
+            raise CommandError("unknown-command", f"No such command: {name}")
         return {"commands": [command.describe()]}
 
     return {"commands": [command.describe() for command in COMMANDS.values()]}
