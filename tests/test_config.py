@@ -128,6 +128,67 @@ def test_invalid_casetransform_is_rejected():
     assert excinfo.value.code == "config-casetransform-invalid"
 
 
+@pytest.mark.parametrize("prefix", ["", "A", "ADR", "ABCDE"])
+def test_valid_prefixes_are_accepted(prefix):
+    data = _valid_config_dict()
+    data["prefix"] = prefix
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.prefix == prefix
+
+
+@pytest.mark.parametrize("prefix", ["ABCDEF", "AD1", "AD-R", "adr "])
+def test_invalid_prefixes_are_rejected(prefix):
+    data = _valid_config_dict()
+    data["prefix"] = prefix
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-prefix-invalid"
+
+
+def test_folderadr_too_long_is_rejected():
+    data = _valid_config_dict()
+    data["folderadr"] = "d" * 51
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-folderadr-too-long"
+
+
+def test_headerdisclaimer_too_long_is_rejected():
+    data = _valid_config_dict()
+    data["headerdisclaimer"] = "d" * 201
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-headerdisclaimer-too-long"
+
+
+def test_header_label_too_long_is_rejected():
+    data = _valid_config_dict()
+    data["headertitlefile"] = "d" * 41
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-headertitlefile-too-long"
+
+
+def test_status_label_too_long_is_rejected():
+    data = _valid_config_dict()
+    data["statusnew"] = "d" * 16
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-statusnew-too-long"
+
+
 def test_empty_required_string_field_is_rejected():
     data = _valid_config_dict()
     data["statusnew"] = ""

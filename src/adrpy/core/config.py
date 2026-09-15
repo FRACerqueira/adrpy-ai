@@ -6,6 +6,7 @@ invocations, so the two tools never see a stale copy of each other's writes.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,36 @@ VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
 LENSEQ_MIN, LENSEQ_MAX = 3, 6
 LENVERSION_MIN, LENVERSION_MAX = 2, 4
 LENREVISION_MIN, LENREVISION_MAX = 0, 3
+
+# Every bound below comes from the wizard too (PromptConsole.cs), not from
+# ValidateConfig.cs -- same reasoning as above, ported per the same
+# decision. `prefix`'s charset restriction is also a real correctness
+# requirement here, not just cosmetic: core/naming.py's filename parser
+# assumes the prefix segment is letters-only to tell it apart from the
+# digit run that follows (PromptEditFieldPrefix: AcceptInput restricts
+# typed characters to ASCII letters).
+PREFIX_MAX_LENGTH = 5
+_PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
+
+FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
+HEADER_DISCLAIMER_MAX_LENGTH = 200  # PromptEditFieldHeaderText(headerdisclaimer, 200, ...)
+HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
+STATUS_LABEL_MAX_LENGTH = 15  # PromptEditFieldStatus
+
+_HEADER_LABEL_FIELDS_MAX_40 = (
+    "headertitlefile",
+    "headerversion",
+    "headerrevision",
+    "headerscope",
+    "headerdomain",
+    "headertitlestatuscreated",
+    "headertitlestatuschanged",
+    "headertitlestatussuperseded",
+    "headertablefields",
+    "headertablevalues",
+    "headermigrated",
+)
+_STATUS_LABEL_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
 
 _STRING_FIELDS = (
     "folderadr",
@@ -161,6 +192,35 @@ def parse_repo_config(text):
     for name in _NON_EMPTY_STRING_FIELDS:
         if lowered[name] == "":
             raise CommandError("config-field-empty", f"Field '{name}' cannot be empty.")
+
+    if not _PREFIX_PATTERN.match(lowered["prefix"]):
+        raise CommandError(
+            "config-prefix-invalid",
+            f"prefix must be ASCII letters only, max {PREFIX_MAX_LENGTH} characters.",
+        )
+
+    if len(lowered["folderadr"]) > FOLDERADR_MAX_LENGTH:
+        raise CommandError(
+            "config-folderadr-too-long", f"folderadr must be <= {FOLDERADR_MAX_LENGTH} characters."
+        )
+
+    if len(lowered["headerdisclaimer"]) > HEADER_DISCLAIMER_MAX_LENGTH:
+        raise CommandError(
+            "config-headerdisclaimer-too-long",
+            f"headerdisclaimer must be <= {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
+        )
+
+    for name in _HEADER_LABEL_FIELDS_MAX_40:
+        if len(lowered[name]) > HEADER_LABEL_MAX_LENGTH:
+            raise CommandError(
+                f"config-{name}-too-long", f"Field '{name}' must be <= {HEADER_LABEL_MAX_LENGTH} characters."
+            )
+
+    for name in _STATUS_LABEL_FIELDS:
+        if len(lowered[name]) > STATUS_LABEL_MAX_LENGTH:
+            raise CommandError(
+                f"config-{name}-too-long", f"Field '{name}' must be <= {STATUS_LABEL_MAX_LENGTH} characters."
+            )
 
     # migrationpattern's own format (when non-empty) is validated in Fase 6,
     # once the legacy-scheme parser it depends on exists.
