@@ -11,6 +11,11 @@ def test_help_lists_commands(capsys):
     assert exit_code == EXIT_SUCCESS
     assert payload["success"] is True
     assert any(c["name"] == "help" for c in payload["data"]["commands"])
+    # Usability audit round 3 (finding #5): "warnings" is present
+    # unconditionally on every other command's result, even when empty --
+    # help omitted it entirely, breaking a generic wrapper that assumed
+    # the key always exists.
+    assert payload["data"]["warnings"] == []
 
 
 def test_top_level_help_flag_matches_help_command(capsys):

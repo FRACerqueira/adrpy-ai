@@ -59,6 +59,11 @@ def test_explore_returns_empty_when_adr_folder_missing(tmp_path):
     result = explore.run(["--path", str(tmp_path)])
 
     assert result["decisions"] == []
+    # Usability audit round 3 (finding #5): "warnings" is present
+    # unconditionally on every other command's result, even when empty --
+    # explore omitted it entirely, breaking a generic wrapper that
+    # assumed the key always exists.
+    assert result["warnings"] == []
 
 
 def test_explore_lists_recognized_and_unrecognized_files(tmp_path):

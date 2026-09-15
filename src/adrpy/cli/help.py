@@ -33,6 +33,10 @@ def run(args):
         command = COMMANDS.get(name)
         if command is None:
             raise CommandError("unknown-command", f"No such command: {name}")
-        return {"commands": [command.describe()]}
+        return {"commands": [command.describe()], "warnings": []}
 
-    return {"commands": [command.describe() for command in COMMANDS.values()]}
+    # Usability audit round 3 (finding #5): same reasoning as explore's
+    # own "warnings" key -- present unconditionally across every other
+    # command's result, even when empty, so a generic wrapper doesn't
+    # need a special case for the two read-only commands.
+    return {"commands": [command.describe() for command in COMMANDS.values()], "warnings": []}

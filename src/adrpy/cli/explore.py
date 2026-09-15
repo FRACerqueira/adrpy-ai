@@ -64,7 +64,12 @@ def run(args):
         )
     )
 
-    return {"decisions": entries}
+    # Usability audit round 3 (finding #5): every mutating command's
+    # result carries "warnings" unconditionally, even when empty (see
+    # config's own read-mode) -- explore never generates one (it's
+    # read-only), but omitting the key entirely broke a generic wrapper
+    # that assumed `data["warnings"]` always exists across all commands.
+    return {"decisions": entries, "warnings": []}
 
 
 def _build_entry(path, config):
