@@ -161,7 +161,7 @@ def test_folderadr_too_long_is_rejected():
 
 def test_headerdisclaimer_too_long_is_rejected():
     data = _valid_config_dict()
-    data["headerdisclaimer"] = "d" * 201
+    data["headerdisclaimer"] = "d" * 101
 
     with pytest.raises(CommandError) as excinfo:
         parse_repo_config(json.dumps(data))
@@ -181,7 +181,7 @@ def test_header_label_too_long_is_rejected():
 
 def test_status_label_too_long_is_rejected():
     data = _valid_config_dict()
-    data["statusnew"] = "d" * 16
+    data["statusnew"] = "d" * 26
 
     with pytest.raises(CommandError) as excinfo:
         parse_repo_config(json.dumps(data))

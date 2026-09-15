@@ -40,9 +40,12 @@ PREFIX_MAX_LENGTH = 5
 _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 
 FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
-HEADER_DISCLAIMER_MAX_LENGTH = 200  # PromptEditFieldHeaderText(headerdisclaimer, 200, ...)
+# headerdisclaimer and status labels: wizard's own real values are 200 and
+# 15 (PromptEditFieldHeaderText(headerdisclaimer, 200, ...); PromptEditFieldStatus's
+# MaxLength(15)) -- user chose 100/25 instead, same as the lenseq-family bounds.
+HEADER_DISCLAIMER_MAX_LENGTH = 100
 HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
-STATUS_LABEL_MAX_LENGTH = 15  # PromptEditFieldStatus
+STATUS_LABEL_MAX_LENGTH = 25
 
 _HEADER_LABEL_FIELDS_MAX_40 = (
     "headertitlefile",
