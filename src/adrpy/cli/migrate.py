@@ -112,12 +112,28 @@ def run(args):
             # leading UTF-8 BOM when reading, so it never appears in the
             # migrated result -- pass it through here and it lands stranded
             # in the middle of the file, after the new header.
-            raw_bytes = candidate_path.read_bytes()
-            if raw_bytes.startswith(b"\xef\xbb\xbf"):
-                raw_bytes = raw_bytes[3:]
-            record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
-            header_text = build_header(config, record, migrated=True)
-            attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+            try:
+                raw_bytes = candidate_path.read_bytes()
+                if raw_bytes.startswith(b"\xef\xbb\xbf"):
+                    raw_bytes = raw_bytes[3:]
+                record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
+                header_text = build_header(config, record, migrated=True)
+                attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+            except OSError as error:
+                # Mechanism-correctness audit round 2 (findings #3/#4),
+                # residual: unlike every other raise in this command, a
+                # real I/O failure here (permission denied, full disk) has
+                # no CommandError translation of its own -- it would
+                # otherwise propagate as __main__'s generic io-error, with
+                # no record of the files already migrated successfully
+                # before it. `data` carries that partial success, same
+                # shape as reject's own superseded-predecessor-not-found.
+                raise CommandError(
+                    "migration-write-failed",
+                    f"{candidate_path}: {error}",
+                    data={"migrated": list(migrated), "failed_file": str(candidate_path)},
+                    warnings=warnings,
+                ) from error
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

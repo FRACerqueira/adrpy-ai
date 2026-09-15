@@ -34,6 +34,39 @@ def _write_legacy_file(tmp_path, filename, content):
     return adr_dir / filename
 
 
+def test_migrate_reveals_partial_success_when_a_later_file_fails(tmp_path, monkeypatch):
+    """Mechanism-correctness audit round 2, residual finding: a real
+    OSError partway through the migration loop (file 2 of 2) used to
+    propagate as __main__'s generic io-error, with no trace that the
+    first file had already been migrated successfully before it.
+    Converted to a structured CommandError carrying that partial success
+    as `data`, the same shape already used for reject's own partial-
+    success case."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    _write_legacy_file(tmp_path, "0002Second.md", "# Second\n")
+
+    from adrpy.cli import migrate as migrate_module
+
+    real_atomic_write_bytes = migrate_module.atomic_write_bytes
+    processed = []
+
+    def flaky_write(path, content):
+        processed.append(str(path))
+        if len(processed) == 2:
+            raise OSError("simulated disk failure")
+        return real_atomic_write_bytes(path, content)
+
+    monkeypatch.setattr(migrate_module, "atomic_write_bytes", flaky_write)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-write-failed"
+    assert excinfo.value.data["migrated"] == processed[:1]
+    assert excinfo.value.data["failed_file"] == processed[1]
+
+
 def test_migrate_happy_path_preserves_original_content(tmp_path):
     _init_repo_with_pattern(tmp_path)
     legacy_path = _write_legacy_file(
