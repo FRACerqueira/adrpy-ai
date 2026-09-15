@@ -30,6 +30,7 @@ _INELIGIBILITY_DETAILS = {
     "already-rejected": "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
     "already-superseded": "This decision has already been superseded.",
     "not-proposed": "This decision's own status is not Proposed.",
+    "unexpected-status": "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
 }
 
 

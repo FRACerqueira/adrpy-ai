@@ -48,6 +48,27 @@ def test_approve_rejects_already_approved(tmp_path):
     assert excinfo.value.code == "already-accepted"
 
 
+def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
+    """Audit round 2 regression, confirmed live at the CLI level: a
+    hand-edited/corrupted file whose "Changed" cell holds the "Proposed"
+    label text (structurally valid, so header.is_valid stays True) was
+    silently accepted by `approve` -- ineligibility_reason_for_approve_or_
+    reject fell through to eligible for any status_update other than
+    exactly "Accepted"/"Rejected", instead of requiring None."""
+    _, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    lines = adr_path.read_text(encoding="utf-8").splitlines()
+    lines[9] = lines[9].replace("|Changed||", f"|Changed|{config.statusnew} (2026-01-02)|")
+    atomic_write_text(adr_path, "\n".join(lines) + "\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "unexpected-status"
+    # And the file must not have been silently overwritten to Accepted.
+    assert "|Changed|Accepted" not in adr_path.read_text(encoding="utf-8")
+
+
 def test_approve_rejects_refdate_before_create(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 

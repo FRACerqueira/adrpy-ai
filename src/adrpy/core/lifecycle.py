@@ -253,21 +253,32 @@ def latest_in_family(folder, config, number, members=None):
 
 def ineligibility_reason_for_approve_or_reject(header):
     """Mirrors ApproveCommandHandler/RejectCommandHandler's
-    SelectionCondition -- identical in both. Returns None when eligible,
-    else the SPECIFIC reason (usability audit: a single collapsed
+    SelectionCondition -- identical in both, and confirmed against the
+    real ApproveCommandHandler.cs:59 (`StatusUpdate == AdrStatus.Unknown`):
+    eligible requires status_update to be None, full stop -- not merely
+    "not Accepted and not Rejected". Returns None when eligible, else the
+    SPECIFIC reason (usability audit: a single collapsed
     not-eligible-for-* code couldn't distinguish "already Accepted" from
     "already Rejected" from "already Superseded" -- each calls for a
     different recovery action). Callers already guarantee header.is_valid
-    via load_target before reaching this check."""
+    via load_target before reaching this check.
+
+    Audit round 2 regression fix: a structurally-valid but corrupted/hand-
+    edited status_update (e.g. the "Changed" cell holding the "Proposed"
+    or "Superseded" label text) used to fall through to eligible here --
+    confirmed reachable live via approve on such a file. Any non-None,
+    non-Accepted, non-Rejected value must be ineligible too."""
     if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
         return "not-proposed"
     if header.status_change is not None:
         return "already-superseded"
+    if header.status_update is None:
+        return None
     if header.status_update == "Accepted":
         return "already-accepted"
     if header.status_update == "Rejected":
         return "already-rejected"
-    return None
+    return "unexpected-status"
 
 
 def ineligibility_reason_for_undo(header):
@@ -285,7 +296,12 @@ def ineligibility_reason_for_undo(header):
 def ineligibility_reason_for_supersede(header):
     """Mirrors SupersedeCommandHandler's SelectionCondition: must already
     be Accepted (or a migrated placeholder with no update status yet).
-    See ineligibility_reason_for_approve_or_reject's own note."""
+    See ineligibility_reason_for_approve_or_reject's own note.
+
+    Audit round 2 fix: the boolean outcome here always matched the
+    original (ineligible either way), but a corrupted status_update (e.g.
+    "Superseded" landing in the wrong cell) was mislabeled "already-
+    rejected" -- distinguished from a genuine Rejected value now."""
     if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
         return "not-proposed"
     if header.status_change is not None:
@@ -294,21 +310,30 @@ def ineligibility_reason_for_supersede(header):
         return None
     if header.status_update is None:
         return "still-proposed"
-    return "already-rejected"
+    if header.status_update == "Rejected":
+        return "already-rejected"
+    return "unexpected-status"
 
 
 def ineligibility_reason_for_version_or_revise(header):
     """Mirrors Version/ReviseCommandHandler's SelectionCondition (identical
     in both): must already be Accepted OR Rejected (or a migrated
     placeholder with no update status yet). See
-    ineligibility_reason_for_approve_or_reject's own note."""
+    ineligibility_reason_for_approve_or_reject's own note.
+
+    Audit round 2 fix: same mislabel class as ineligibility_reason_for_
+    supersede -- a corrupted non-None, non-Accepted, non-Rejected value
+    was labeled "still-proposed", which is only accurate when
+    status_update genuinely is None."""
     if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
         return "not-proposed"
     if header.status_change is not None:
         return "already-superseded"
     if header.status_update in ("Accepted", "Rejected") or (header.status_update is None and header.is_migrated):
         return None
-    return "still-proposed"
+    if header.status_update is None:
+        return "still-proposed"
+    return "unexpected-status"
 
 
 def _record_from_header(config, filename_info, header):

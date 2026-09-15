@@ -177,6 +177,20 @@ def _header(**overrides):
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted"}, "not-proposed"),
+        # Regression, audit round 2: a status_update value that is
+        # structurally valid (one of the 4 configured status labels, so
+        # header.is_valid stays True) but is neither "Accepted" nor
+        # "Rejected" -- reachable via a hand-edited/corrupted file whose
+        # "Changed" cell contains the "Proposed" or "Superseded" label
+        # text. Confirmed against the real ApproveCommandHandler.cs:59
+        # (`StatusUpdate == AdrStatus.Unknown`) and this project's own
+        # pre-refactor boolean (`status_update is None`): BOTH require
+        # status_update to be None to be eligible -- any other value,
+        # known or not, must be ineligible. The granular-code refactor
+        # only excluded "Accepted"/"Rejected" explicitly, silently
+        # falling through to eligible for anything else.
+        ({"status_update": "Proposed"}, "unexpected-status"),
+        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reason):
@@ -213,6 +227,11 @@ def test_ineligibility_reason_for_undo(header_kwargs, expected_reason):
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
+        # Regression, audit round 2: same class as approve_or_reject's own
+        # case above, but here it's a mislabel rather than a false
+        # eligibility -- ineligible either way, but calling a corrupted
+        # "Superseded"-in-the-wrong-cell value "already-rejected" is wrong.
+        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
@@ -229,6 +248,10 @@ def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
         ({"status_update": None}, "still-proposed"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
+        # Regression, audit round 2: mislabel, not a false-eligibility bug
+        # here (the boolean outcome already matched) -- but "still-proposed"
+        # is wrong for a status_update that isn't actually None.
+        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_version_or_revise(header_kwargs, expected_reason):
