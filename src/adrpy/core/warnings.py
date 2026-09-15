@@ -10,6 +10,39 @@ capture it, not a substitute for real operational logging (which stays
 the executor's responsibility, per the project's own args-in/JSON-out
 design)."""
 
+import contextlib
+
+from adrpy.core.errors import CommandError
+
+
+@contextlib.contextmanager
+def attach_warnings(warnings):
+    """Mechanism-correctness audit round 2 (findings #3/#4), class closure:
+    a real side effect already accumulated in `warnings` must survive ANY
+    CommandError this same run goes on to raise afterward -- not just the
+    raise sites living directly in a command's own cli/ module (already
+    threaded explicitly at each site), but also one raised from a shared
+    core/ helper the command calls (parse_refdate, validate_refdate_*,
+    reject_embedded_delimiter, resolve_within, or a LockTimeoutError
+    surfacing its own reclaim warning from acquire_repo_lock). Wrap the
+    whole region of a command's `run()` from where `warnings` starts
+    accumulating onward.
+
+    Merges rather than overwrites: an error that already carries its own
+    warnings (e.g. a LockTimeoutError's stale-lock-reclaim warning) keeps
+    them, with this command's own accumulated warnings prepended -- unless
+    `error.warnings` is literally this same list (an explicit `warnings=
+    warnings` already passed at the raise site), in which case there is
+    nothing to merge."""
+    try:
+        yield
+    except CommandError as error:
+        if error.warnings is None:
+            error.warnings = list(warnings)
+        elif error.warnings is not warnings:
+            error.warnings = list(warnings) + list(error.warnings)
+        raise
+
 
 def orphan_cleanup_warning(removed):
     if not removed:

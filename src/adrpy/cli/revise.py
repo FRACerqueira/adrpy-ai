@@ -26,7 +26,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import resolve_within
-from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
     "still-proposed": "This decision must be Accepted or Rejected before a new revision can be created.",
@@ -60,106 +60,109 @@ def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
     config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
     warnings = []
-    if encoding_repaired:
-        warnings.append(encoding_repaired_warning(path))
+    with attach_warnings(warnings):
+        if encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
 
-    if config.lenrevision == 0:
-        raise CommandError(
-            "revision-not-configured", "This repository's config has lenrevision == 0.", warnings=warnings
-        )
-
-    folder = resolve_within(root, config.folderadr)
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
-
-    # Concurrency audit (critical): same reasoning as `version`'s own
-    # comment -- family-state read and write must be one critical section.
-    with acquire_repo_lock(folder) as lock_warnings:
-        warnings.extend(lock_warnings)
-        # Performance backlog item: one scan, shared by all three checks
-        # below -- each used to call family_members (and so
-        # scan_decisions) on its own (3 scans per invocation).
-        members = family_members(folder, config, filename_info.number)
-        latest = latest_in_family(folder, config, filename_info.number, members=members)
-        if latest is None:
-            raise CommandError("family-not-found", "Could not resolve this decision's own family.", warnings=warnings)
-        latest_parsed, latest_header, latest_path = latest
-
-        if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
+        if config.lenrevision == 0:
             raise CommandError(
-                "lenrevision-too-small-for-new-revision",
-                f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
-                warnings=warnings,
+                "revision-not-configured", "This repository's config has lenrevision == 0.", warnings=warnings
             )
 
-        if latest_path.resolve() != path.resolve():
-            # Same branch-off-a-rejected-latest exception as `version`, but
-            # revision-only (revise never bumps the version number).
-            allowed = latest_header.status_update == "Rejected" and (latest_parsed.revision or 0) > (
-                filename_info.revision or 0
-            )
-            if not allowed:
-                # Usability audit: names the actual latest member as
-                # structured data -- see `version`'s own comment.
+        folder = resolve_within(root, config.folderadr)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
+
+        # Concurrency audit (critical): same reasoning as `version`'s own
+        # comment -- family-state read and write must be one critical section.
+        with acquire_repo_lock(folder) as lock_warnings:
+            warnings.extend(lock_warnings)
+            # Performance backlog item: one scan, shared by all three checks
+            # below -- each used to call family_members (and so
+            # scan_decisions) on its own (3 scans per invocation).
+            members = family_members(folder, config, filename_info.number)
+            latest = latest_in_family(folder, config, filename_info.number, members=members)
+            if latest is None:
                 raise CommandError(
-                    "not-latest-version",
-                    "This decision is not the latest version/revision in its family.",
-                    data={
-                        "latest_file": str(latest_path),
-                        "latest_version": latest_parsed.version,
-                        "latest_revision": latest_parsed.revision,
-                        "latest_status": latest_header.status_update,
-                    },
+                    "family-not-found", "Could not resolve this decision's own family.", warnings=warnings
+                )
+            latest_parsed, latest_header, latest_path = latest
+
+            if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
+                raise CommandError(
+                    "lenrevision-too-small-for-new-revision",
+                    f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
                     warnings=warnings,
                 )
 
-        # Usability audit: a specific reason code instead of one collapsed
-        # not-eligible-for-revision.
-        reason = ineligibility_reason_for_version_or_revise(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-        if has_superseded_sibling(folder, config, filename_info.number, members=members):
-            raise CommandError(
-                "family-member-superseded",
-                "A sibling decision in this family has already been superseded.",
-                warnings=warnings,
+            if latest_path.resolve() != path.resolve():
+                # Same branch-off-a-rejected-latest exception as `version`, but
+                # revision-only (revise never bumps the version number).
+                allowed = latest_header.status_update == "Rejected" and (latest_parsed.revision or 0) > (
+                    filename_info.revision or 0
+                )
+                if not allowed:
+                    # Usability audit: names the actual latest member as
+                    # structured data -- see `version`'s own comment.
+                    raise CommandError(
+                        "not-latest-version",
+                        "This decision is not the latest version/revision in its family.",
+                        data={
+                            "latest_file": str(latest_path),
+                            "latest_version": latest_parsed.version,
+                            "latest_revision": latest_parsed.revision,
+                            "latest_status": latest_header.status_update,
+                        },
+                        warnings=warnings,
+                    )
+
+            # Usability audit: a specific reason code instead of one collapsed
+            # not-eligible-for-revision.
+            reason = ineligibility_reason_for_version_or_revise(header)
+            if reason is not None:
+                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+            if has_superseded_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-superseded",
+                    "A sibling decision in this family has already been superseded.",
+                    warnings=warnings,
+                )
+            if has_pending_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-pending",
+                    "Another decision in this family is still unresolved (Proposed).",
+                    warnings=warnings,
+                )
+
+            refdate = parse_refdate(flags.get("refdate"))
+            validate_refdate_not_in_future(refdate)
+            not_before = latest_header.date_update or latest_header.date_create
+            if not_before is not None:
+                validate_refdate_not_before(refdate, not_before)
+
+            record = DecisionRecord(
+                number=filename_info.number,
+                title=header.title,
+                version=header.version or 0,
+                revision=(header.revision or 0) + 1,
+                scope=header.scope,
+                domain=header.domain,
+                status_create="Proposed",
+                date_create=refdate,
             )
-        if has_pending_sibling(folder, config, filename_info.number, members=members):
-            raise CommandError(
-                "family-member-pending",
-                "Another decision in this family is still unresolved (Proposed).",
-                warnings=warnings,
-            )
 
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        not_before = latest_header.date_update or latest_header.date_create
-        if not_before is not None:
-            validate_refdate_not_before(refdate, not_before)
+            filename = build_filename(config, record)
+            new_path = resolve_within(folder, filename)
+            if new_path.exists():
+                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
-        record = DecisionRecord(
-            number=filename_info.number,
-            title=header.title,
-            version=header.version or 0,
-            revision=(header.revision or 0) + 1,
-            scope=header.scope,
-            domain=header.domain,
-            status_create="Proposed",
-            date_create=refdate,
-        )
-
-        filename = build_filename(config, record)
-        new_path = resolve_within(folder, filename)
-        if new_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
-
-        content = build_header(config, record) + read_body(lines)
-        attempts = atomic_write_text(new_path, content)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            content = build_header(config, record) + read_body(lines)
+            attempts = atomic_write_text(new_path, content)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

@@ -20,7 +20,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import resolve_within
-from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
     "already-accepted": "This decision is already Accepted; run undo first to reconsider it.",
@@ -55,73 +55,74 @@ def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
     config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
     warnings = []
-    if encoding_repaired:
-        warnings.append(encoding_repaired_warning(path))
+    with attach_warnings(warnings):
+        if encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
 
-    # Usability audit: a specific reason code instead of one collapsed
-    # not-eligible-for-rejection.
-    reason = ineligibility_reason_for_approve_or_reject(header)
-    if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+        # Usability audit: a specific reason code instead of one collapsed
+        # not-eligible-for-rejection.
+        reason = ineligibility_reason_for_approve_or_reject(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-    folder = resolve_within(root, config.folderadr)
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
-    if has_superseded_sibling(folder, config, filename_info.number):
-        raise CommandError(
-            "family-member-superseded",
-            "A sibling decision in this family has already been superseded.",
-            warnings=warnings,
-        )
-
-    refdate = parse_refdate(flags.get("refdate"))
-    validate_refdate_not_in_future(refdate)
-    if header.date_create is not None:
-        validate_refdate_not_before(refdate, header.date_create)
-
-    _record, _content, attempts = rewrite_status_field(
-        path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
-    )
-    warning = retry_warning(attempts)
-    if warning:
-        warnings.append(warning)
-
-    undone_predecessor = None
-    if filename_info.superseded_from is not None:
-        predecessor = latest_in_family(folder, config, filename_info.superseded_from)
-        if predecessor is None:
-            # Mechanism-correctness audit round 2 (findings #3/#4): by this
-            # point the primary write above has already succeeded for
-            # real -- `path` genuinely is Rejected on disk. `data` names
-            # that partial success explicitly, so a caller doesn't have to
-            # infer it from `warnings` alone (there may be none) or
-            # discover it only by re-reading the file itself.
+        folder = resolve_within(root, config.folderadr)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
+        if has_superseded_sibling(folder, config, filename_info.number):
             raise CommandError(
-                "superseded-predecessor-not-found",
-                f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
-                data={"file": str(path), "status": "Rejected"},
+                "family-member-superseded",
+                "A sibling decision in this family has already been superseded.",
                 warnings=warnings,
             )
-        pred_parsed, pred_header, pred_path = predecessor
-        pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
-        if pred_encoding_repaired:
-            warnings.append(encoding_repaired_warning(pred_path))
+
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        if header.date_create is not None:
+            validate_refdate_not_before(refdate, header.date_create)
+
         _record, _content, attempts = rewrite_status_field(
-            pred_path,
-            config,
-            pred_lines,
-            pred_header,
-            pred_parsed,
-            field="change",
-            status=None,
-            refdate=None,
+            path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
         )
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)
-        undone_predecessor = str(pred_path)
+
+        undone_predecessor = None
+        if filename_info.superseded_from is not None:
+            predecessor = latest_in_family(folder, config, filename_info.superseded_from)
+            if predecessor is None:
+                # Mechanism-correctness audit round 2 (findings #3/#4): by this
+                # point the primary write above has already succeeded for
+                # real -- `path` genuinely is Rejected on disk. `data` names
+                # that partial success explicitly, so a caller doesn't have to
+                # infer it from `warnings` alone (there may be none) or
+                # discover it only by re-reading the file itself.
+                raise CommandError(
+                    "superseded-predecessor-not-found",
+                    f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
+                    data={"file": str(path), "status": "Rejected"},
+                    warnings=warnings,
+                )
+            pred_parsed, pred_header, pred_path = predecessor
+            pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
+            if pred_encoding_repaired:
+                warnings.append(encoding_repaired_warning(pred_path))
+            _record, _content, attempts = rewrite_status_field(
+                pred_path,
+                config,
+                pred_lines,
+                pred_header,
+                pred_parsed,
+                field="change",
+                status=None,
+                refdate=None,
+            )
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
+            undone_predecessor = str(pred_path)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
     return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}

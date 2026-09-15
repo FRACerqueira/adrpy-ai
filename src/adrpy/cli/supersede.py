@@ -23,7 +23,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
-from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
     "still-proposed": "This decision must be Accepted before it can be superseded; it is still Proposed.",
@@ -71,75 +71,76 @@ def run(args):
     )
     config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
     warnings = []
-    if encoding_repaired:
-        warnings.append(encoding_repaired_warning(path))
+    with attach_warnings(warnings):
+        if encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
 
-    # Usability audit: a specific reason code instead of one collapsed
-    # not-eligible-for-supersede.
-    reason = ineligibility_reason_for_supersede(header)
-    if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+        # Usability audit: a specific reason code instead of one collapsed
+        # not-eligible-for-supersede.
+        reason = ineligibility_reason_for_supersede(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-    refdate = parse_refdate(flags.get("refdate"))
-    validate_refdate_not_in_future(refdate)
-    not_before = header.date_update or header.date_create
-    if not_before is not None:
-        validate_refdate_not_before(refdate, not_before)
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        not_before = header.date_update or header.date_create
+        if not_before is not None:
+            validate_refdate_not_before(refdate, not_before)
 
-    # Unlike `new`, an omitted --scope/--domain defaults to the
-    # predecessor's own current value, not empty.
-    scope = flags["scope"] if "scope" in flags else (header.scope or "")
-    domain = flags["domain"] if "domain" in flags else (header.domain or "")
-    reject_embedded_delimiter(scope, "scope")
-    reject_embedded_delimiter(domain, "domain")
+        # Unlike `new`, an omitted --scope/--domain defaults to the
+        # predecessor's own current value, not empty.
+        scope = flags["scope"] if "scope" in flags else (header.scope or "")
+        domain = flags["domain"] if "domain" in flags else (header.domain or "")
+        reject_embedded_delimiter(scope, "scope")
+        reject_embedded_delimiter(domain, "domain")
 
-    folder = resolve_within(root, config.folderadr)
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
+        folder = resolve_within(root, config.folderadr)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
 
-    # Concurrency audit (critical): same next-number race as `new` -- see
-    # that command's comment. Also covers mark_superseded's mutation of
-    # the predecessor, so a concurrent scan by another command never
-    # observes the predecessor half-transitioned.
-    with acquire_repo_lock(folder) as lock_warnings:
-        warnings.extend(lock_warnings)
-        successor_number = next_number(scan_decisions(folder, config))
+        # Concurrency audit (critical): same next-number race as `new` -- see
+        # that command's comment. Also covers mark_superseded's mutation of
+        # the predecessor, so a concurrent scan by another command never
+        # observes the predecessor half-transitioned.
+        with acquire_repo_lock(folder) as lock_warnings:
+            warnings.extend(lock_warnings)
+            successor_number = next_number(scan_decisions(folder, config))
 
-        successor = DecisionRecord(
-            number=successor_number,
-            # The successor's title comes from the predecessor's FILENAME
-            # segment (already case-transformed), not its header's prose
-            # title -- confirmed via live comparison: SupersedeCommandHandler
-            # builds its new AdrRecord from `infoadr.Title` (AdrFileNameComponents'
-            # own property, filename-derived), not `infoadr.Header.Title`.
-            title=filename_info.title,
-            version=1,
-            revision=1 if config.lenrevision > 0 else None,
-            scope=scope,
-            domain=domain,
-            status_create="Proposed",
-            date_create=refdate,
-            superseded=filename_info.number,
-        )
-        filename = build_filename(config, successor)
-        successor_path = resolve_within(folder, filename)
-        if successor_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
+            successor = DecisionRecord(
+                number=successor_number,
+                # The successor's title comes from the predecessor's FILENAME
+                # segment (already case-transformed), not its header's prose
+                # title -- confirmed via live comparison: SupersedeCommandHandler
+                # builds its new AdrRecord from `infoadr.Title` (AdrFileNameComponents'
+                # own property, filename-derived), not `infoadr.Header.Title`.
+                title=filename_info.title,
+                version=1,
+                revision=1 if config.lenrevision > 0 else None,
+                scope=scope,
+                domain=domain,
+                status_create="Proposed",
+                date_create=refdate,
+                superseded=filename_info.number,
+            )
+            filename = build_filename(config, successor)
+            successor_path = resolve_within(folder, filename)
+            if successor_path.exists():
+                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
-        _record, _content, attempts = mark_superseded(
-            path, config, lines, header, filename_info, successor_number, refdate
-        )
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            _record, _content, attempts = mark_superseded(
+                path, config, lines, header, filename_info, successor_number, refdate
+            )
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
-        content = build_header(config, successor) + config.template
-        attempts = atomic_write_text(successor_path, content)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            content = build_header(config, successor) + config.template
+            attempts = atomic_write_text(successor_path, content)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
     return {"predecessor": str(path), "created": str(successor_path), "status": "Proposed", "warnings": warnings}

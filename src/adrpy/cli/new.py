@@ -24,7 +24,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
-from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -76,50 +76,51 @@ def run(args):
 
     folder = resolve_within(target, config.folderadr)
     warnings = []
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
+    with attach_warnings(warnings):
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
 
-    # Concurrency audit (critical): the whole scan -> decide-next-number ->
-    # write sequence is the critical section -- two calls that both scan
-    # before either writes will otherwise compute the identical "next"
-    # number (reproduced live, 10/10 times, with two concurrent `new`
-    # calls). core/lock.py existed and was tested in isolation since
-    # Milestone 4 but was never actually wired into any command.
-    with acquire_repo_lock(folder) as lock_warnings:
-        warnings.extend(lock_warnings)
-        decisions = scan_decisions(folder, config)
+        # Concurrency audit (critical): the whole scan -> decide-next-number ->
+        # write sequence is the critical section -- two calls that both scan
+        # before either writes will otherwise compute the identical "next"
+        # number (reproduced live, 10/10 times, with two concurrent `new`
+        # calls). core/lock.py existed and was tested in isolation since
+        # Milestone 4 but was never actually wired into any command.
+        with acquire_repo_lock(folder) as lock_warnings:
+            warnings.extend(lock_warnings)
+            decisions = scan_decisions(folder, config)
 
-        existing = find_by_unique_title(title, config, decisions)
-        if existing is not None:
-            raise CommandError(
-                "title-already-exists",
-                f"A decision with this title already exists: {existing.name}",
-                warnings=warnings,
+            existing = find_by_unique_title(title, config, decisions)
+            if existing is not None:
+                raise CommandError(
+                    "title-already-exists",
+                    f"A decision with this title already exists: {existing.name}",
+                    warnings=warnings,
+                )
+
+            record = DecisionRecord(
+                number=next_number(decisions),
+                title=title,
+                version=1,
+                revision=1 if config.lenrevision > 0 else None,
+                scope=scope,
+                domain=domain,
+                status_create="Proposed",
+                date_create=refdate,
             )
 
-        record = DecisionRecord(
-            number=next_number(decisions),
-            title=title,
-            version=1,
-            revision=1 if config.lenrevision > 0 else None,
-            scope=scope,
-            domain=domain,
-            status_create="Proposed",
-            date_create=refdate,
-        )
+            filename = build_filename(config, record)
+            file_path = resolve_within(folder, filename)
+            if file_path.exists():
+                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
-        filename = build_filename(config, record)
-        file_path = resolve_within(folder, filename)
-        if file_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
-
-        content = build_header(config, record) + config.template
-        attempts = atomic_write_text(file_path, content)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            content = build_header(config, record) + config.template
+            attempts = atomic_write_text(file_path, content)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Usability audit M4: the canonical keyword, not the repo's configured
     # label -- `explore` reports status_create the same way for the same

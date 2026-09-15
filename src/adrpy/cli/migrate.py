@@ -28,7 +28,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
-from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -65,61 +65,62 @@ def run(args):
 
     folder = resolve_within(target, config.folderadr)
     warnings = []
-    entries = []  # (ParsedFileName, Path, HeaderParseResult)
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
-        for candidate in folder.rglob("*.md"):
-            if not is_within(folder, candidate):
-                continue
-            found = parse_any_filename(candidate.name, config)
-            if found is None:
-                continue
-            _, parsed = found
-            lines = split_real_lines(candidate.read_text(encoding="utf-8", errors="replace"))
-            entries.append((parsed, candidate, parse_header(lines, config)))
+    with attach_warnings(warnings):
+        entries = []  # (ParsedFileName, Path, HeaderParseResult)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
+            for candidate in folder.rglob("*.md"):
+                if not is_within(folder, candidate):
+                    continue
+                found = parse_any_filename(candidate.name, config)
+                if found is None:
+                    continue
+                _, parsed = found
+                lines = split_real_lines(candidate.read_text(encoding="utf-8", errors="replace"))
+                entries.append((parsed, candidate, parse_header(lines, config)))
 
-    if not entries:
-        raise CommandError(
-            "no-decisions-found",
-            "No .md files matching a recognized naming scheme were found.",
-            warnings=warnings,
-        )
+        if not entries:
+            raise CommandError(
+                "no-decisions-found",
+                "No .md files matching a recognized naming scheme were found.",
+                warnings=warnings,
+            )
 
-    if any(header.is_valid and not header.is_migrated for _, _, header in entries):
-        raise CommandError(
-            "already-tool-created-adrs-exist",
-            "This repository already has decisions created by this tool; migration refuses to run.",
-            warnings=warnings,
-        )
+        if any(header.is_valid and not header.is_migrated for _, _, header in entries):
+            raise CommandError(
+                "already-tool-created-adrs-exist",
+                "This repository already has decisions created by this tool; migration refuses to run.",
+                warnings=warnings,
+            )
 
-    candidates = [
-        (parsed, candidate_path)
-        for parsed, candidate_path, header in entries
-        if header.status_create is None and not header.is_migrated and not header.is_valid
-    ]
-    if not candidates:
-        raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
+        candidates = [
+            (parsed, candidate_path)
+            for parsed, candidate_path, header in entries
+            if header.status_create is None and not header.is_migrated and not header.is_valid
+        ]
+        if not candidates:
+            raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
 
-    migrated = []
-    for parsed, candidate_path in candidates:
-        # Raw bytes, not text: the original content's own line endings
-        # (and anything else about its bytes) must pass through completely
-        # untouched -- only the header text is new. The one exception,
-        # confirmed live (fidelity audit F7): the real tool discards a
-        # leading UTF-8 BOM when reading, so it never appears in the
-        # migrated result -- pass it through here and it lands stranded
-        # in the middle of the file, after the new header.
-        raw_bytes = candidate_path.read_bytes()
-        if raw_bytes.startswith(b"\xef\xbb\xbf"):
-            raw_bytes = raw_bytes[3:]
-        record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
-        header_text = build_header(config, record, migrated=True)
-        attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
-        migrated.append(str(candidate_path))
+        migrated = []
+        for parsed, candidate_path in candidates:
+            # Raw bytes, not text: the original content's own line endings
+            # (and anything else about its bytes) must pass through completely
+            # untouched -- only the header text is new. The one exception,
+            # confirmed live (fidelity audit F7): the real tool discards a
+            # leading UTF-8 BOM when reading, so it never appears in the
+            # migrated result -- pass it through here and it lands stranded
+            # in the middle of the file, after the new header.
+            raw_bytes = candidate_path.read_bytes()
+            if raw_bytes.startswith(b"\xef\xbb\xbf"):
+                raw_bytes = raw_bytes[3:]
+            record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
+            header_text = build_header(config, record, migrated=True)
+            attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
+            migrated.append(str(candidate_path))
 
     return {"migrated": migrated, "warnings": warnings}

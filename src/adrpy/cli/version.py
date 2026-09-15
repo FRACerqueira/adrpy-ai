@@ -22,7 +22,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
-from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
     "still-proposed": "This decision must be Accepted or Rejected before a new version can be created.",
@@ -85,121 +85,124 @@ def run(args):
     )
     config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
     warnings = []
-    if encoding_repaired:
-        warnings.append(encoding_repaired_warning(path))
-    folder = resolve_within(root, config.folderadr)
-    if folder.is_dir():
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
-        if warning:
-            warnings.append(warning)
+    with attach_warnings(warnings):
+        if encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
+        folder = resolve_within(root, config.folderadr)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            if warning:
+                warnings.append(warning)
 
-    # Concurrency audit (critical): the family-state read (latest/sibling
-    # checks) and the eventual write must be one critical section -- a
-    # concurrent supersede/approve/etc. on a sibling could otherwise slip
-    # in between, and this call's next-version-number decision could go
-    # stale before it's ever written. Same class as `new`'s own comment.
-    with acquire_repo_lock(folder) as lock_warnings:
-        warnings.extend(lock_warnings)
-        # Performance backlog item: one scan, shared by all three checks
-        # below -- each used to call family_members (and so
-        # scan_decisions) on its own (3 scans per invocation).
-        members = family_members(folder, config, filename_info.number)
-        latest = latest_in_family(folder, config, filename_info.number, members=members)
-        if latest is None:
-            raise CommandError("family-not-found", "Could not resolve this decision's own family.", warnings=warnings)
-        latest_parsed, latest_header, latest_path = latest
-
-        if len(str(latest_parsed.version + 1)) > config.lenversion:
-            raise CommandError(
-                "lenversion-too-small-for-new-version",
-                f"New version {latest_parsed.version + 1} does not fit in lenversion={config.lenversion}.",
-                warnings=warnings,
-            )
-
-        if latest_path.resolve() != path.resolve():
-            # Branching a new version off an older member is allowed only when
-            # the actual latest was Rejected -- the harness's own documented
-            # exception (Fase 7 item 6).
-            allowed = latest_header.status_update == "Rejected" and (
-                latest_parsed.version > filename_info.version
-                or (
-                    latest_parsed.version == filename_info.version
-                    and (latest_parsed.revision or 0) > (filename_info.revision or 0)
-                )
-            )
-            if not allowed:
-                # Usability audit: names the actual latest member as
-                # structured data -- the code alone can't carry a version
-                # number, and an agent has no other way to learn it
-                # without a separate `explore` call.
+        # Concurrency audit (critical): the family-state read (latest/sibling
+        # checks) and the eventual write must be one critical section -- a
+        # concurrent supersede/approve/etc. on a sibling could otherwise slip
+        # in between, and this call's next-version-number decision could go
+        # stale before it's ever written. Same class as `new`'s own comment.
+        with acquire_repo_lock(folder) as lock_warnings:
+            warnings.extend(lock_warnings)
+            # Performance backlog item: one scan, shared by all three checks
+            # below -- each used to call family_members (and so
+            # scan_decisions) on its own (3 scans per invocation).
+            members = family_members(folder, config, filename_info.number)
+            latest = latest_in_family(folder, config, filename_info.number, members=members)
+            if latest is None:
                 raise CommandError(
-                    "not-latest-version",
-                    "This decision is not the latest version/revision in its family.",
-                    data={
-                        "latest_file": str(latest_path),
-                        "latest_version": latest_parsed.version,
-                        "latest_revision": latest_parsed.revision,
-                        "latest_status": latest_header.status_update,
-                    },
+                    "family-not-found", "Could not resolve this decision's own family.", warnings=warnings
+                )
+            latest_parsed, latest_header, latest_path = latest
+
+            if len(str(latest_parsed.version + 1)) > config.lenversion:
+                raise CommandError(
+                    "lenversion-too-small-for-new-version",
+                    f"New version {latest_parsed.version + 1} does not fit in lenversion={config.lenversion}.",
                     warnings=warnings,
                 )
 
-        # Usability audit: a specific reason code instead of one collapsed
-        # not-eligible-for-version.
-        reason = ineligibility_reason_for_version_or_revise(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-        if has_superseded_sibling(folder, config, filename_info.number, members=members):
-            raise CommandError(
-                "family-member-superseded",
-                "A sibling decision in this family has already been superseded.",
-                warnings=warnings,
+            if latest_path.resolve() != path.resolve():
+                # Branching a new version off an older member is allowed only when
+                # the actual latest was Rejected -- the harness's own documented
+                # exception (Fase 7 item 6).
+                allowed = latest_header.status_update == "Rejected" and (
+                    latest_parsed.version > filename_info.version
+                    or (
+                        latest_parsed.version == filename_info.version
+                        and (latest_parsed.revision or 0) > (filename_info.revision or 0)
+                    )
+                )
+                if not allowed:
+                    # Usability audit: names the actual latest member as
+                    # structured data -- the code alone can't carry a version
+                    # number, and an agent has no other way to learn it
+                    # without a separate `explore` call.
+                    raise CommandError(
+                        "not-latest-version",
+                        "This decision is not the latest version/revision in its family.",
+                        data={
+                            "latest_file": str(latest_path),
+                            "latest_version": latest_parsed.version,
+                            "latest_revision": latest_parsed.revision,
+                            "latest_status": latest_header.status_update,
+                        },
+                        warnings=warnings,
+                    )
+
+            # Usability audit: a specific reason code instead of one collapsed
+            # not-eligible-for-version.
+            reason = ineligibility_reason_for_version_or_revise(header)
+            if reason is not None:
+                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+            if has_superseded_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-superseded",
+                    "A sibling decision in this family has already been superseded.",
+                    warnings=warnings,
+                )
+            if has_pending_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-pending",
+                    "Another decision in this family is still unresolved (Proposed).",
+                    warnings=warnings,
+                )
+
+            refdate = parse_refdate(flags.get("refdate"))
+            validate_refdate_not_in_future(refdate)
+            not_before = latest_header.date_update or latest_header.date_create
+            if not_before is not None:
+                validate_refdate_not_before(refdate, not_before)
+
+            # Unlike `new`, an omitted --scope/--domain defaults to the LATEST
+            # family member's own current value, not empty -- and not the
+            # branch-target's value either, when branching off an older Rejected
+            # sibling (confirmed in VersionCommandHandler.cs).
+            scope = flags["scope"] if "scope" in flags else (latest_header.scope or "")
+            domain = flags["domain"] if "domain" in flags else (latest_header.domain or "")
+            reject_embedded_delimiter(scope, "scope")
+            reject_embedded_delimiter(domain, "domain")
+
+            template = config.template if flags.get("empty") else read_body(lines)
+
+            record = DecisionRecord(
+                number=filename_info.number,
+                title=header.title,
+                version=latest_parsed.version + 1,
+                revision=1 if config.lenrevision > 0 else None,
+                scope=scope,
+                domain=domain,
+                status_create="Proposed",
+                date_create=refdate,
             )
-        if has_pending_sibling(folder, config, filename_info.number, members=members):
-            raise CommandError(
-                "family-member-pending",
-                "Another decision in this family is still unresolved (Proposed).",
-                warnings=warnings,
-            )
 
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        not_before = latest_header.date_update or latest_header.date_create
-        if not_before is not None:
-            validate_refdate_not_before(refdate, not_before)
+            filename = build_filename(config, record)
+            new_path = resolve_within(folder, filename)
+            if new_path.exists():
+                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
-        # Unlike `new`, an omitted --scope/--domain defaults to the LATEST
-        # family member's own current value, not empty -- and not the
-        # branch-target's value either, when branching off an older Rejected
-        # sibling (confirmed in VersionCommandHandler.cs).
-        scope = flags["scope"] if "scope" in flags else (latest_header.scope or "")
-        domain = flags["domain"] if "domain" in flags else (latest_header.domain or "")
-        reject_embedded_delimiter(scope, "scope")
-        reject_embedded_delimiter(domain, "domain")
-
-        template = config.template if flags.get("empty") else read_body(lines)
-
-        record = DecisionRecord(
-            number=filename_info.number,
-            title=header.title,
-            version=latest_parsed.version + 1,
-            revision=1 if config.lenrevision > 0 else None,
-            scope=scope,
-            domain=domain,
-            status_create="Proposed",
-            date_create=refdate,
-        )
-
-        filename = build_filename(config, record)
-        new_path = resolve_within(folder, filename)
-        if new_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
-
-        content = build_header(config, record) + template
-        attempts = atomic_write_text(new_path, content)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            content = build_header(config, record) + template
+            attempts = atomic_write_text(new_path, content)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

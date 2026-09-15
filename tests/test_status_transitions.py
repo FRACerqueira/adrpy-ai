@@ -1,6 +1,7 @@
 import json
 from datetime import date, timedelta
 
+from adrpy.__main__ import main
 from adrpy.cli import approve, init, new, reject, undo
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
@@ -87,6 +88,44 @@ def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_pa
     assert excinfo.value.code == "already-accepted"
     assert excinfo.value.warnings
     assert any("utf-8" in w.lower() for w in excinfo.value.warnings)
+
+
+def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
+    """Class-closure check (advisor-caught gap): the fix above only threaded
+    `warnings` through raise sites living directly in the 8 command files.
+    The same invariant is violated just as easily by a CommandError raised
+    from a shared core/ helper (here, validate_refdate_not_before, called
+    from approve.py) while `warnings` already has entries in scope --
+    textually unrelated to the sites already patched, but the same bug."""
+    _, adr_path = _setup_repo(tmp_path)  # created with refdate 2026-01-01
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
+
+    assert excinfo.value.code == "refdate-before-history"
+    assert excinfo.value.warnings
+    assert any("utf-8" in w.lower() for w in excinfo.value.warnings)
+
+
+def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp_path, capsys):
+    """End-to-end closure of the same class, through the actual CLI entry
+    point rather than the CommandError object directly -- proves the
+    warnings genuinely reach the JSON an external caller would parse, not
+    just the in-process exception attribute."""
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+    capsys.readouterr()  # discard output from the two setup calls above
+
+    exit_code = main(["approve", "--file", str(adr_path)])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code != 0
+    assert payload["code"] == "already-accepted"
+    assert any("utf-8" in w.lower() for w in payload["warnings"])
 
 
 def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
