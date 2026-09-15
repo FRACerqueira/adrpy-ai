@@ -18,11 +18,6 @@ the default, empty `migrationpattern` never matches any file.
 **Precedence, mirroring AdrService.ParseFileNameOnly**: try the current
 scheme first; only fall back to the legacy scheme if the current scheme
 didn't match AND a valid `migrationpattern` is configured.
-
-Known gap (not yet needed by any command that exists so far): the current
-scheme's `title` doesn't strip a supersede suffix (a second, doubled
-separator followed by the superseded sequence number) -- to close once
-Milestone 7's `supersede` command needs it.
 """
 
 import re
@@ -43,15 +38,34 @@ class ParsedFileName:
     revision: int | None
     prefix: str | None = None
     title: str | None = None
+    superseded_from: int | None = None
 
 
 def parse_filename(filename, config):
     """Current scheme only. Declares (Fase 6 checklist): recognizes ONLY the
     current scheme -- pair with `parse_legacy_filename` (or use
-    `parse_any_filename`) wherever a legacy file must also be considered."""
+    `parse_any_filename`) wherever a legacy file must also be considered.
+
+    Ported from ParseAdrPlusFileNameAsync's supersede-suffix handling: the
+    suffix (a doubled separator followed by the superseded sequence
+    number) is split off BEFORE looking for the single-separator boundary
+    between the prefix+numbers segment and the title, so it never leaks
+    into `title`."""
     if not filename.lower().endswith(".md"):
         return None
     name = filename[:-3]
+
+    double_separator = config.separator * 2
+    supersede_parts = name.split(double_separator)
+    if len(supersede_parts) > 2:
+        return None
+    superseded_from = None
+    if len(supersede_parts) == 2:
+        suffix = supersede_parts[1]
+        if not suffix.isdigit():
+            return None
+        superseded_from = int(suffix)
+    name = supersede_parts[0]
 
     index = name.find(config.separator)
     if index < 0:
@@ -69,6 +83,7 @@ def parse_filename(filename, config):
         revision=int(match.group(4)) if match.group(4) else None,
         prefix=match.group(1) or None,
         title=title,
+        superseded_from=superseded_from,
     )
 
 

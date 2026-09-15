@@ -190,3 +190,45 @@ def test_build_filename_appends_supersede_suffix_unconditionally():
     filename = build_filename(config, record)
 
     assert filename == "ADR005V01-new-decision--002.md"
+
+
+def test_parse_filename_strips_supersede_suffix_and_reports_it():
+    config = load_repo_config(FIXTURE_PATH)
+
+    parsed = parse_filename("ADR005V01-new-decision--002.md", config)
+
+    assert parsed.number == 5
+    assert parsed.title == "new-decision"
+    assert parsed.superseded_from == 2
+
+
+def test_parse_filename_without_supersede_suffix_leaves_it_none():
+    config = load_repo_config(FIXTURE_PATH)
+
+    parsed = parse_filename("ADR001V01-select-adr-templates-based-on-configured-ui-language.md", config)
+
+    assert parsed.superseded_from is None
+
+
+def test_build_then_parse_round_trips_the_supersede_suffix():
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(number=7, title="Successor decision", version=1, superseded=3)
+
+    filename = build_filename(config, record)
+    parsed = parse_filename(filename, config)
+
+    assert parsed.number == 7
+    assert parsed.superseded_from == 3
+    assert parsed.title == "successor-decision"
+
+
+def test_parse_filename_rejects_non_numeric_supersede_suffix():
+    config = load_repo_config(FIXTURE_PATH)
+
+    assert parse_filename("ADR005V01-new-decision--abc.md", config) is None
+
+
+def test_parse_filename_rejects_more_than_one_supersede_suffix():
+    config = load_repo_config(FIXTURE_PATH)
+
+    assert parse_filename("ADR005V01-new-decision--002--003.md", config) is None
