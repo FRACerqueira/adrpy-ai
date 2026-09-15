@@ -15,7 +15,8 @@ from pathlib import Path
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.naming import parse_filename
+from adrpy.core.naming import parse_any_filename
+from adrpy.core.security import resolve_within
 
 
 def describe():
@@ -88,7 +89,10 @@ def run(args):
     atomic_write_text(config_path, config_text, newline=os.linesep)
     created.append(str(config_path))
 
-    folder_adr = target / config.folderadr
+    # config.folderadr is already validated as relative (Fase 3), but a
+    # "../.." traversal is still relative -- resolve_within is real path
+    # resolution, the actual containment guard (Fase 5).
+    folder_adr = resolve_within(target, config.folderadr)
     if not folder_adr.is_dir():
         folder_adr.mkdir(parents=True)
         created.append(str(folder_adr))
@@ -126,15 +130,19 @@ def _default_config_text():
 
 
 def _max_existing_numbers(target, config):
-    folder = target / config.folderadr
+    """Recognizes both naming schemes (Fase 6 checklist) -- a legacy file's
+    number must count too, or a shrunk lenseq could silently stop fitting
+    it without this check ever noticing."""
+    folder = resolve_within(target, config.folderadr)
     if not folder.is_dir():
         return 0, 0, 0
 
     max_number = max_version = max_revision = 0
     for candidate in folder.rglob("*.md"):
-        parsed = parse_filename(candidate.name, config)
-        if parsed is None:
+        found = parse_any_filename(candidate.name, config)
+        if found is None:
             continue
+        _, parsed = found
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)

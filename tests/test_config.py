@@ -159,6 +159,36 @@ def test_folderadr_too_long_is_rejected():
     assert excinfo.value.code == "config-folderadr-too-long"
 
 
+@pytest.mark.parametrize(
+    "folderadr",
+    [
+        r"C:\Windows\System32",
+        "/etc/passwd",
+        r"C:foo",
+        r"\\server\share",
+        "//server/share",
+    ],
+)
+def test_absolute_folderadr_is_rejected(folderadr):
+    data = _valid_config_dict()
+    data["folderadr"] = folderadr
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-folderadr-not-relative"
+
+
+@pytest.mark.parametrize("folderadr", ["doc/adr", "decisions", "../still-relative"])
+def test_relative_folderadr_is_accepted(folderadr):
+    data = _valid_config_dict()
+    data["folderadr"] = folderadr
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderadr == folderadr
+
+
 def test_headerdisclaimer_too_long_is_rejected():
     data = _valid_config_dict()
     data["headerdisclaimer"] = "d" * 101

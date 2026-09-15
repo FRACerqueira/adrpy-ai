@@ -98,3 +98,19 @@ def test_init_end_to_end_through_main(tmp_path):
 
     assert exit_code == EXIT_SUCCESS
     assert (tmp_path / "adr-config.adrplus").exists()
+
+
+def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
+    """`folderadr: "../.."` passes config.py's schema check (it isn't
+    absolute), but must still be caught at the point of use -- a hostile
+    config (e.g. from a cloned repo) must never be able to make init create
+    a directory outside the target repository."""
+    custom = json.loads(_default_config_text())
+    custom["folderadr"] = "../../escape"
+    file_path = tmp_path / "custom-config.json"
+    file_path.write_text(json.dumps(custom), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--file", str(file_path)])
+
+    assert excinfo.value.code == "path-outside-repository"

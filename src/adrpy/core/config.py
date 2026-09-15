@@ -8,7 +8,7 @@ invocations, so the two tools never see a stale copy of each other's writes.
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from adrpy.core.errors import CommandError
 
@@ -61,6 +61,21 @@ _HEADER_LABEL_FIELDS_MAX_40 = (
     "headermigrated",
 )
 _STATUS_LABEL_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
+
+
+def _is_relative_path(value):
+    """Rejects anything that could anchor outside the repository on either
+    platform, not just what looks absolute on the host OS: a POSIX-absolute
+    path, a Windows-absolute path, a Windows drive-relative reference
+    (`C:foo`, which PureWindowsPath does NOT consider absolute but which
+    still anchors to a specific drive's own current directory), and a UNC
+    path -- a hostile config (e.g. from a cloned repo) must never be able to
+    point folderadr outside the repo via `init`/`new`/etc."""
+    if PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute():
+        return False
+    if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\\\", "//")):
+        return False
+    return True
 
 _STRING_FIELDS = (
     "folderadr",
@@ -205,6 +220,12 @@ def parse_repo_config(text):
     if len(lowered["folderadr"]) > FOLDERADR_MAX_LENGTH:
         raise CommandError(
             "config-folderadr-too-long", f"folderadr must be <= {FOLDERADR_MAX_LENGTH} characters."
+        )
+
+    if not _is_relative_path(lowered["folderadr"]):
+        raise CommandError(
+            "config-folderadr-not-relative",
+            "folderadr must be a relative path (a hostile config must never point outside the repository).",
         )
 
     if len(lowered["headerdisclaimer"]) > HEADER_DISCLAIMER_MAX_LENGTH:
