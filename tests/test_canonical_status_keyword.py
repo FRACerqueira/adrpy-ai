@@ -31,7 +31,7 @@ def _custom_labels_config():
 def _init_repo_with_custom_labels(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_custom_labels_config()), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     return tmp_path
 
 

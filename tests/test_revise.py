@@ -21,7 +21,7 @@ def _config_with_revisions():
 def _setup_accepted_repo_with_revisions(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     new.run(
         [
             "--path",
@@ -93,7 +93,7 @@ def test_revise_rejects_when_revisions_not_configured(tmp_path):
 def test_revise_rejects_when_not_accepted_or_rejected(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     new.run(["--path", str(tmp_path), "--title", "Still proposed"])
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-still-proposed.md"
 
@@ -166,7 +166,7 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     parsed header cell (never delimiter-checked on read)."""
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     config = load_repo_config(tmp_path / "adr-config.adrplus")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(

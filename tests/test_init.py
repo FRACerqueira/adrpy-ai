@@ -30,22 +30,41 @@ def test_init_refuses_when_config_already_exists_without_file(tmp_path):
     assert excinfo.value.code == "config-already-exists"
 
 
-def test_init_with_file_overwrites_using_custom_config(tmp_path):
+def test_init_with_seed_overwrites_using_custom_config(tmp_path):
+    """Usability backlog item B2: init's own --file was renamed --seed --
+    everywhere else in the CLI, --file means "the decision file to
+    mutate"; here it meant "a config JSON to seed the repo with", a
+    naming collision an agent generalizing across commands could
+    reasonably get wrong. Confirmed with the user as a deliberate
+    divergence from the real tool's own `-f/--file` naming (decision-log:
+    accepted-divergence--2026-09-15--init--file-flag-renamed-to-seed.md)."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "decisions"
     file_path = tmp_path / "custom-config.json"
     file_path.write_text(json.dumps(custom), encoding="utf-8")
 
-    result = init.run(["--path", str(tmp_path), "--file", str(file_path)])
+    result = init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == json.dumps(custom)
     assert (tmp_path / "decisions").is_dir()
     assert str(tmp_path / "decisions") in result["created"]
 
 
+def test_init_no_longer_accepts_the_old_file_flag_name(tmp_path):
+    with pytest.raises(UsageError):
+        init.run(["--path", str(tmp_path), "--file", str(tmp_path / "whatever.json")])
+
+
+def test_init_describe_declares_seed_not_file():
+    arguments = {argument["name"] for argument in init.describe()["arguments"]}
+
+    assert "seed" in arguments
+    assert "file" not in arguments
+
+
 def test_init_file_not_found(tmp_path):
     with pytest.raises(CommandError) as excinfo:
-        init.run(["--path", str(tmp_path), "--file", str(tmp_path / "missing.json")])
+        init.run(["--path", str(tmp_path), "--seed", str(tmp_path / "missing.json")])
 
     assert excinfo.value.code == "config-file-not-found"
 
@@ -57,7 +76,7 @@ def test_init_invalid_config_schema_propagates(tmp_path):
     file_path.write_text(json.dumps(custom), encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
-        init.run(["--path", str(tmp_path), "--file", str(file_path)])
+        init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
     assert excinfo.value.code == "config-missing-field"
 
@@ -111,19 +130,19 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
     file_path.write_text(json.dumps(custom), encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
-        init.run(["--path", str(tmp_path), "--file", str(file_path)])
+        init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
     assert excinfo.value.code == "path-outside-repository"
 
 
 def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
     """Resilience audit R3, second call site of the same class: init's own
-    --file read used a bare read_text(encoding="utf-8") too."""
+    --seed read used a bare read_text(encoding="utf-8") too."""
     file_path = tmp_path / "custom-config.json"
     file_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
     with pytest.raises(CommandError) as excinfo:
-        init.run(["--path", str(tmp_path), "--file", str(file_path)])
+        init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
     assert excinfo.value.code == "config-invalid-encoding"
 
@@ -168,9 +187,9 @@ def test_init_accepts_every_supported_language(tmp_path, language):
     assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
 
 
-def test_init_rejects_language_combined_with_file(tmp_path):
+def test_init_rejects_language_combined_with_seed(tmp_path):
     file_path = tmp_path / "custom-config.json"
     file_path.write_text(_default_config_text(), encoding="utf-8")
 
     with pytest.raises(UsageError):
-        init.run(["--path", str(tmp_path), "--file", str(file_path), "--language", "pt-br"])
+        init.run(["--path", str(tmp_path), "--seed", str(file_path), "--language", "pt-br"])

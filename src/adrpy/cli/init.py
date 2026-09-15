@@ -54,9 +54,17 @@ def describe():
                 "description": "Target repository root directory (must already exist).",
             },
             {
-                "name": "file",
+                "name": "seed",
                 "type": "string",
                 "required": False,
+                # Usability backlog item B2: named `seed`, not `file` --
+                # every other command's `--file` means "the decision file
+                # to mutate"; this alone meant "a config JSON to seed the
+                # repo with", a naming collision an agent generalizing
+                # across commands could reasonably get wrong. Deliberate
+                # divergence from the real tool's own `-f/--file` naming,
+                # confirmed with the user (decision-log: accepted-
+                # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
                 "description": "Path to a config JSON to seed the repository with, instead of the built-in default.",
             },
             {
@@ -65,7 +73,7 @@ def describe():
                 "required": False,
                 "description": (
                     f"Built-in default language pack for header/status labels and the default template "
-                    f"(one of {SUPPORTED_LANGUAGES}); cannot be combined with --file. Defaults to en-us."
+                    f"(one of {SUPPORTED_LANGUAGES}); cannot be combined with --seed. Defaults to en-us."
                 ),
             },
         ],
@@ -76,16 +84,16 @@ def run(args):
     flags = parse_flags(
         args,
         required=("path",),
-        optional=("file", "language"),
-        aliases={"p": "path", "f": "file"},
+        optional=("seed", "language"),
+        aliases={"p": "path", "s": "seed"},
     )
     path = flags["path"]
-    file_arg = flags.get("file")
+    seed_arg = flags.get("seed")
     language_arg = flags.get("language")
     target = Path(path)
 
-    if file_arg is not None and language_arg is not None:
-        raise UsageError("--language cannot be combined with --file.")
+    if seed_arg is not None and language_arg is not None:
+        raise UsageError("--language cannot be combined with --seed.")
 
     if not target.is_dir():
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
@@ -94,15 +102,15 @@ def run(args):
 
     # Non-interactive by design (Fase 0: no wizard, no prompt to fall back
     # on) -- refuse cleanly instead of the original's confirm-or-refuse
-    # prompt when no --file is given to bypass it.
-    if config_path.exists() and file_arg is None:
+    # prompt when no --seed is given to bypass it.
+    if config_path.exists() and seed_arg is None:
         raise CommandError("config-already-exists", f"Configuration file already exists at: {config_path}")
 
-    if file_arg is not None:
-        file_path = Path(file_arg)
-        if not file_path.is_file():
-            raise CommandError("config-file-not-found", f"File not found: {file_arg}")
-        config_text = read_config_text(file_path)
+    if seed_arg is not None:
+        seed_path = Path(seed_arg)
+        if not seed_path.is_file():
+            raise CommandError("config-file-not-found", f"File not found: {seed_arg}")
+        config_text = read_config_text(seed_path)
     elif language_arg is not None:
         config_text = _default_config_text_for_language(language_arg)
     else:

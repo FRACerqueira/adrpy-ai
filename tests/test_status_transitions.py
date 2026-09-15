@@ -289,7 +289,7 @@ def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
     data["migrationpattern"] = "N00:04T04"
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     new.run(["--path", str(tmp_path), "--title", "First decision", "--refdate", "2026-01-01"])
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-first-decision.md"
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])

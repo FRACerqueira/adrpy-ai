@@ -19,7 +19,7 @@ def _seed_config_with_pattern(pattern):
 def _init_repo_with_pattern(tmp_path, pattern="N00:04T04"):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_seed_config_with_pattern(pattern)), encoding="utf-8")
-    init.run(["--path", str(tmp_path), "--file", str(config_file)])
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
     return tmp_path
 
 
