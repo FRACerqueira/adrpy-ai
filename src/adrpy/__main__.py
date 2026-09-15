@@ -2,7 +2,7 @@
 
 import sys
 
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.i18n import translate
 from adrpy.core.output import EXIT_USAGE_ERROR, emit_failure, emit_success
 from adrpy.core.registry import COMMANDS
@@ -22,6 +22,9 @@ def main(argv=None):
 
     try:
         data = command.run(rest)
+    except UsageError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_USAGE_ERROR
     except CommandError as error:
         return emit_failure(error.code, error.detail)
 
