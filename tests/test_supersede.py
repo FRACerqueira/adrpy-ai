@@ -27,6 +27,35 @@ def _setup_accepted_repo(tmp_path):
     return tmp_path, adr_path
 
 
+def test_supersede_reveals_predecessor_already_superseded_when_successor_write_fails(tmp_path, monkeypatch):
+    """Mechanism-correctness audit round 3 (resilience finding #1), the
+    worst instance found: supersede marks the predecessor Superseded
+    (mark_superseded, a real committed write) BEFORE writing the
+    successor. If only the successor write fails with a real OSError, the
+    predecessor is left permanently Superseded with no successor ever
+    created -- an orphaned, broken family state. The failure response
+    must name that partial mutation explicitly via `data`, not just
+    convert to the generic io-error the attach_warnings safety net alone
+    would produce."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    def flaky_write(path, content):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(supersede_module, "atomic_write_text", flaky_write)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-successor-write-failed"
+    assert excinfo.value.data["predecessor"] == str(adr_path)
+    assert excinfo.value.data["predecessor_status"] == "Superseded"
+    # The predecessor really was mutated on disk despite the overall failure.
+    assert "|Superseded|Superseded" in adr_path.read_text(encoding="utf-8")
+
+
 def test_supersede_happy_path(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

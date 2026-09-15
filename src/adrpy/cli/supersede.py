@@ -129,15 +129,43 @@ def run(args):
             if successor_path.exists():
                 raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
-            _record, _content, attempts = mark_superseded(
-                path, config, lines, header, filename_info, successor_number, refdate
-            )
+            try:
+                _record, _content, attempts = mark_superseded(
+                    path, config, lines, header, filename_info, successor_number, refdate
+                )
+            except OSError as error:
+                # Nothing has been written yet at this point (the
+                # predecessor's own mutation IS this write) -- the
+                # generic attach_warnings safety net's io-error is
+                # already the right shape, just give it a command-
+                # specific code for discoverability.
+                raise CommandError(
+                    "supersede-write-failed", f"{path}: {error}", warnings=warnings
+                ) from error
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
 
             content = build_header(config, successor) + config.template
-            attempts = atomic_write_text(successor_path, content)
+            try:
+                attempts = atomic_write_text(successor_path, content)
+            except OSError as error:
+                # Mechanism-correctness audit round 3 (resilience finding
+                # #1), the worst instance found: by this point the
+                # predecessor has ALREADY been marked Superseded for real
+                # (the write above already succeeded) -- data names that
+                # partial mutation explicitly, so a caller doesn't have to
+                # infer an orphaned family state from a generic io-error.
+                raise CommandError(
+                    "supersede-successor-write-failed",
+                    f"{successor_path}: {error}",
+                    data={
+                        "predecessor": str(path),
+                        "predecessor_status": "Superseded",
+                        "intended_successor": str(successor_path),
+                    },
+                    warnings=warnings,
+                ) from error
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

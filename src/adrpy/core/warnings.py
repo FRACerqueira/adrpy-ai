@@ -42,6 +42,20 @@ def attach_warnings(warnings):
         elif error.warnings is not warnings:
             error.warnings = list(warnings) + list(error.warnings)
         raise
+    except OSError as error:
+        # Mechanism-correctness audit round 3 (resilience finding #1): a
+        # real write failure (permission denied, full disk, a
+        # PermissionError outlasting atomic_write's retry budget) used to
+        # propagate as a bare OSError -- this context manager only caught
+        # CommandError, so it bypassed the whole mechanism entirely,
+        # reaching __main__'s generic io-error with none of this run's
+        # accumulated warnings attached. This is the safety net for every
+        # write in the wrapped region; a site that needs to reveal a
+        # PARTICULAR partial mutation (e.g. supersede's predecessor
+        # already marked Superseded before its successor write failed)
+        # still handles its own OSError explicitly, with tailored `data`,
+        # before it would ever reach here.
+        raise CommandError("io-error", str(error), warnings=list(warnings)) from error
 
 
 def orphan_cleanup_warning(removed):

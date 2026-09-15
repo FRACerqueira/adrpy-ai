@@ -1,5 +1,6 @@
 import json
 from datetime import date, timedelta
+from pathlib import Path
 
 from adrpy.__main__ import main
 from adrpy.cli import approve, init, new, reject, undo
@@ -155,6 +156,42 @@ def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
 
     assert excinfo.value.code == "superseded-predecessor-not-found"
     assert excinfo.value.data == {"file": str(successor_path), "status": "Rejected"}
+    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+
+
+def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):
+    """Mechanism-correctness audit round 3 (resilience finding #1): same
+    partial-mutation class as test_reject_reveals_partial_success_when_
+    predecessor_is_missing, but for a real OSError instead of a missing
+    predecessor -- the target's own write to Rejected already succeeded
+    before the predecessor's "undo Superseded" write fails."""
+    from adrpy.cli import supersede
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    successor_path = Path(result["created"])
+
+    from adrpy.cli import reject as reject_module
+
+    real_rewrite = reject_module.rewrite_status_field
+    calls = {"n": 0}
+
+    def flaky_rewrite(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated disk failure")
+        return real_rewrite(*args, **kwargs)
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path)])
+
+    assert excinfo.value.code == "reject-predecessor-write-failed"
+    assert excinfo.value.data["file"] == str(successor_path)
+    assert excinfo.value.data["status"] == "Rejected"
+    assert excinfo.value.data["predecessor_file"] == str(adr_path)
     assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
 
 

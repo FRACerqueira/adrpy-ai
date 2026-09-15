@@ -109,16 +109,30 @@ def run(args):
             pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
             if pred_encoding_repaired:
                 warnings.append(encoding_repaired_warning(pred_path))
-            _record, _content, attempts = rewrite_status_field(
-                pred_path,
-                config,
-                pred_lines,
-                pred_header,
-                pred_parsed,
-                field="change",
-                status=None,
-                refdate=None,
-            )
+            try:
+                _record, _content, attempts = rewrite_status_field(
+                    pred_path,
+                    config,
+                    pred_lines,
+                    pred_header,
+                    pred_parsed,
+                    field="change",
+                    status=None,
+                    refdate=None,
+                )
+            except OSError as error:
+                # Mechanism-correctness audit round 3 (resilience finding
+                # #1): by this point the primary write above has already
+                # succeeded for real -- `path` genuinely is Rejected on
+                # disk. Same partial-success shape as this command's own
+                # superseded-predecessor-not-found case, just for a real
+                # OSError instead of a missing predecessor.
+                raise CommandError(
+                    "reject-predecessor-write-failed",
+                    f"{pred_path}: {error}",
+                    data={"file": str(path), "status": "Rejected", "predecessor_file": str(pred_path)},
+                    warnings=warnings,
+                ) from error
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
