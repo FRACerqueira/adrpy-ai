@@ -219,6 +219,43 @@ def test_status_label_too_long_is_rejected():
     assert excinfo.value.code == "config-statusnew-too-long"
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "headertitlefile",
+        "headerversion",
+        "headerrevision",
+        "headerscope",
+        "headerdomain",
+        "headertitlestatuscreated",
+        "headertitlestatuschanged",
+        "headertitlestatussuperseded",
+        "headertablefields",
+        "headertablevalues",
+        "headermigrated",
+        "headerdisclaimer",
+        "statusnew",
+        "statusacc",
+        "statusrej",
+        "statussup",
+    ],
+)
+def test_header_cell_field_with_embedded_pipe_is_rejected(field):
+    """Security audit F3: a header/status label reaching a header table
+    cell verbatim, with no delimiter check, let a hostile config forge an
+    extra header row -- e.g. `headertitlestatuschanged` containing its own
+    '|Changed|Accepted (...)|' fabricates an approval no one ever granted.
+    Confirmed live end-to-end (config -> new -> explore/supersede saw the
+    forged Accepted status; approve then refused it as already-approved)."""
+    data = _valid_config_dict()
+    data[field] = "A|B"  # short enough to fit every field's own length bound
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-field-contains-forbidden-character"
+
+
 def test_empty_required_string_field_is_rejected():
     data = _valid_config_dict()
     data["statusnew"] = ""

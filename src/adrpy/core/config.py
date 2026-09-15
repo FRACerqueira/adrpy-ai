@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from adrpy.core.errors import CommandError
+from adrpy.core.security import reject_embedded_delimiter
 
 VALID_SEPARATORS = ("-", "_", ".")
 VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
@@ -245,6 +246,19 @@ def parse_repo_config(text):
             raise CommandError(
                 f"config-{name}-too-long", f"Field '{name}' must be <= {STATUS_LABEL_MAX_LENGTH} characters."
             )
+
+    # Every one of these lands verbatim in a fixed-position header-table
+    # cell (build_header/status rows) -- a hostile config that embeds '|'
+    # or a line-break-like character here can forge an extra row (Fase 5:
+    # confirmed live end-to-end, a forged Accepted status bypassed the
+    # approval workflow entirely). Same check already used for live
+    # command arguments (title/scope/domain); a config-specific code keeps
+    # it consistent with every other config-* validation error.
+    for name in _HEADER_LABEL_FIELDS_MAX_40 + (_STATUS_LABEL_FIELDS + ("headerdisclaimer",)):
+        try:
+            reject_embedded_delimiter(lowered[name], name)
+        except CommandError as error:
+            raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 
     # migrationpattern's own format (when non-empty) is validated in Fase 6,
     # once the legacy-scheme parser it depends on exists.

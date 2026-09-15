@@ -23,6 +23,25 @@ def test_atomic_write_leaves_no_temp_file_behind(tmp_path):
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monkeypatch):
+    """Resilience audit R6: only PermissionError triggered the orphan-temp
+    cleanup; any other OSError (ENOSPC, a missing parent directory) left
+    the temp file behind forever. Confirmed there is nothing transient
+    about these -- retrying wouldn't help -- so they must fail fast (no
+    retry budget wasted) but still never leak the temp file."""
+    target = tmp_path / "decision.md"
+
+    def boom(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
+
+    with pytest.raises(OSError):
+        atomic_write_text(target, "content")
+
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_atomic_write_failure_before_replace_leaves_target_untouched(tmp_path, monkeypatch):
     target = tmp_path / "decision.md"
     target.write_text("original")

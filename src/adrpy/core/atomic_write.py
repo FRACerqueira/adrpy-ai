@@ -13,7 +13,7 @@ import time
 import uuid
 from pathlib import Path
 
-RETRY_ATTEMPTS = 3
+RETRY_ATTEMPTS = 5
 RETRY_DELAY_SECONDS = 0.05
 ORPHAN_MAX_AGE_SECONDS = 30
 
@@ -68,28 +68,41 @@ def atomic_write_text(path, content):
 
 
 def atomic_write_bytes(path, content_bytes):
-    """Same atomicity/retry guarantees as atomic_write_text, but no newline
+    """Same atomicity guarantees as atomic_write_text, but no newline
     normalization at all -- for the one real case where that would be
     wrong: `migrate` prepends a header to an existing file's content
     verbatim, whatever line endings it already has (confirmed against a
     real `adrplus migrate` run: the original's own text encoding doesn't
     normalize an already-read string either, so a hand-written LF file
     ends up with a CRLF header pasted onto an untouched LF body -- mixed
-    endings in one file, by design, not a bug to "fix" by normalizing)."""
+    endings in one file, by design, not a bug to "fix" by normalizing).
+
+    Resilience audit R6/R7: only retries PermissionError -- the one
+    confirmed-transient failure (a Windows "pending delete"/sharing-
+    violation window under a concurrent reader). Any other OSError
+    (ENOSPC, a missing parent directory) is not transient -- retrying
+    wouldn't help -- so it fails on the first occurrence instead of
+    wasting the retry budget, but the orphaned temp file is always
+    cleaned up first, regardless of which OSError subclass was raised.
+    Exponential backoff (not a flat delay) on the PermissionError retry:
+    a flat 3x50ms window was empirically only ~68% reliable under an
+    aggressive concurrent reader (no pause between reads)."""
     path = Path(path)
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
 
     last_error = None
-    for _ in range(RETRY_ATTEMPTS):
+    for attempt in range(RETRY_ATTEMPTS):
         try:
             with open(temp_path, "wb") as handle:
                 handle.write(content_bytes)
             os.replace(temp_path, path)
             return
-        except PermissionError as error:
+        except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)
-            time.sleep(RETRY_DELAY_SECONDS)
+            if not isinstance(error, PermissionError):
+                raise
+            time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
     raise last_error
 
 
