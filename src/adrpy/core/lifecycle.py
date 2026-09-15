@@ -100,7 +100,23 @@ def read_lines(path):
     terminators only (see split_real_lines), never str.splitlines()'s
     broader Unicode line-boundary set (confirmed live NOT to be real line
     breaks for the original)."""
-    return split_real_lines(path.read_text(encoding="utf-8", errors="replace"))
+    lines, _encoding_repaired = read_lines_with_report(path)
+    return lines
+
+
+def read_lines_with_report(path):
+    """Same as read_lines, but also reports whether the decode was lossy
+    (observability audit: invalid UTF-8 bytes get silently replaced with
+    U+FFFD -- permanently, the instant the file is next rewritten -- with
+    nothing telling the caller this happened)."""
+    raw_bytes = path.read_bytes()
+    try:
+        text = raw_bytes.decode("utf-8")
+        encoding_repaired = False
+    except UnicodeDecodeError:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        encoding_repaired = True
+    return split_real_lines(text), encoding_repaired
 
 
 def read_body(lines):
@@ -133,7 +149,7 @@ def load_target(fileadr):
         )
     config = load_repo_config(config_path)
 
-    lines = read_lines(fileadr)
+    lines, encoding_repaired = read_lines_with_report(fileadr)
     found = parse_any_filename(fileadr.name, config)
     if found is None:
         raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {fileadr.name}")
@@ -147,7 +163,7 @@ def load_target(fileadr):
         # itself instead of discarding it behind one fixed label.
         raise CommandError(header.error or "header-invalid", "Header is not structurally valid.")
 
-    return config, config_path.parent, fileadr, filename_info, header, lines
+    return config, config_path.parent, fileadr, filename_info, header, lines, encoding_repaired
 
 
 def family_members(folder, config, number):
@@ -269,14 +285,16 @@ def rewrite_status_field(path, config, lines, header, filename_info, *, field, s
     """Mirrors StatusUpdateAdrAsync (`field="update"`) and
     StatusChangeAdrAsync (`field="change"`): mutate exactly one status+date
     pair on the already-parsed header, rebuild via build_header preserving
-    every other field and the original body verbatim, and write the file."""
+    every other field and the original body verbatim, and write the file.
+    Returns the write's own attempt count too (observability audit) --
+    callers can surface it as a warning when it's more than 1."""
     record = _record_from_header(config, filename_info, header)
     setattr(record, f"status_{field}", status)
     setattr(record, f"date_{field}", refdate if status is not None else None)
 
     content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
-    atomic_write_text(path, content)
-    return record, content
+    attempts = atomic_write_text(path, content)
+    return record, content, attempts
 
 
 def mark_superseded(path, config, lines, header, filename_info, successor_number, refdate):
@@ -293,5 +311,5 @@ def mark_superseded(path, config, lines, header, filename_info, successor_number
     record.superseded_by_file = f"{successor_number:0{config.lenseq}d}"
 
     content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
-    atomic_write_text(path, content)
-    return record, content
+    attempts = atomic_write_text(path, content)
+    return record, content, attempts

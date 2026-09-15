@@ -17,6 +17,7 @@ from adrpy.core.config import parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
+from adrpy.core.warnings import retry_warning
 
 
 def describe():
@@ -85,10 +86,14 @@ def run(args):
         )
 
     created = []
+    warnings = []
     # atomic_write_text normalizes to this host's line separator (Fase 2:
     # the real terminator is host-OS-dependent, not fixed) -- config_text
     # is otherwise written verbatim, never re-serialized from `config`.
-    atomic_write_text(config_path, config_text)
+    attempts = atomic_write_text(config_path, config_text)
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
     created.append(str(config_path))
 
     # config.folderadr is already validated as relative (Fase 3), but a
@@ -99,7 +104,7 @@ def run(args):
         folder_adr.mkdir(parents=True)
         created.append(str(folder_adr))
 
-    return {"created": created}
+    return {"created": created, "warnings": warnings}
 
 
 def _default_config_text():

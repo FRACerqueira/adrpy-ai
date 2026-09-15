@@ -14,12 +14,13 @@ from adrpy.core.lifecycle import (
     latest_in_family,
     load_target,
     parse_refdate,
-    read_lines,
+    read_lines_with_report,
     rewrite_status_field,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import resolve_within
+from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -40,7 +41,10 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path, filename_info, header, lines = load_target(flags["file"])
+    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    warnings = []
+    if encoding_repaired:
+        warnings.append(encoding_repaired_warning(path))
 
     if not is_eligible_for_approve_or_reject(header):
         raise CommandError(
@@ -50,7 +54,9 @@ def run(args):
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
             "family-member-superseded", "A sibling decision in this family has already been superseded."
@@ -61,9 +67,12 @@ def run(args):
     if header.date_create is not None:
         validate_refdate_not_before(refdate, header.date_create)
 
-    rewrite_status_field(
+    _record, _content, attempts = rewrite_status_field(
         path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
     )
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
 
     undone_predecessor = None
     if filename_info.superseded_from is not None:
@@ -74,17 +83,23 @@ def run(args):
                 f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
             )
         pred_parsed, pred_header, pred_path = predecessor
-        rewrite_status_field(
+        pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
+        if pred_encoding_repaired:
+            warnings.append(encoding_repaired_warning(pred_path))
+        _record, _content, attempts = rewrite_status_field(
             pred_path,
             config,
-            read_lines(pred_path),
+            pred_lines,
             pred_header,
             pred_parsed,
             field="change",
             status=None,
             refdate=None,
         )
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
         undone_predecessor = str(pred_path)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
-    return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor}
+    return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}

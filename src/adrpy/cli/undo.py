@@ -15,6 +15,7 @@ from adrpy.core.lifecycle import (
     rewrite_status_field,
 )
 from adrpy.core.security import resolve_within
+from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -29,7 +30,10 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), aliases={"f": "file"})
-    config, root, path, filename_info, header, lines = load_target(flags["file"])
+    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    warnings = []
+    if encoding_repaired:
+        warnings.append(encoding_repaired_warning(path))
 
     if not is_eligible_for_undo(header):
         raise CommandError(
@@ -39,7 +43,9 @@ def run(args):
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
             "family-member-superseded", "A sibling decision in this family has already been superseded."
@@ -50,7 +56,12 @@ def run(args):
             "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",
         )
 
-    rewrite_status_field(path, config, lines, header, filename_info, field="update", status=None, refdate=None)
+    _record, _content, attempts = rewrite_status_field(
+        path, config, lines, header, filename_info, field="update", status=None, refdate=None
+    )
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
-    return {"file": str(path), "status": "Proposed"}
+    return {"file": str(path), "status": "Proposed", "warnings": warnings}

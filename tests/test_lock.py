@@ -53,6 +53,27 @@ def test_lock_times_out_on_a_fresh_lock_still_held(tmp_path):
             pass
 
 
+def test_lock_reports_when_a_stale_lock_was_reclaimed(tmp_path):
+    """Observability audit: reclaiming a stale lock (a possibly-crashed or
+    genuinely-slow process) happened completely silently -- nothing
+    anywhere reported that it occurred, even though the harness (Fase 4)
+    explicitly calls for a warning naming the two possible causes."""
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_text(f"stale-token\n{time.time() - 999}")
+
+    with acquire_repo_lock(tmp_path, abandon_after=1, wait_ceiling=2, poll_interval=0.05) as warnings:
+        pass
+
+    assert any("stale" in w.lower() for w in warnings)
+
+
+def test_lock_reports_no_warnings_when_acquired_cleanly(tmp_path):
+    with acquire_repo_lock(tmp_path) as warnings:
+        pass
+
+    assert warnings == []
+
+
 def test_lock_timeout_is_a_command_error(tmp_path):
     """Resilience audit R4: LockTimeoutError was a bare Exception, so once
     the lock is actually wired into a command (see the concurrency audit's

@@ -64,7 +64,13 @@ def normalize_newlines(text):
 
 
 def atomic_write_text(path, content):
-    atomic_write_bytes(path, normalize_newlines(content).encode("utf-8"))
+    """Returns the number of attempts the underlying write actually took
+    (see atomic_write_bytes) -- 1 in the overwhelming majority of calls,
+    >1 only after absorbing transient contention. Callers that want to
+    surface this as a warning (observability) check the return value;
+    callers that don't care can simply ignore it, same as before this
+    return value existed."""
+    return atomic_write_bytes(path, normalize_newlines(content).encode("utf-8"))
 
 
 def atomic_write_bytes(path, content_bytes):
@@ -96,7 +102,7 @@ def atomic_write_bytes(path, content_bytes):
             with open(temp_path, "wb") as handle:
                 handle.write(content_bytes)
             os.replace(temp_path, path)
-            return
+            return attempt + 1
         except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)

@@ -78,15 +78,21 @@ def _try_create(path, token):
 def _reclaim_if_abandoned(path, abandon_after):
     """Removes the lock file only if it is still the exact same abandoned
     lock just inspected -- narrows, but cannot fully close, the race against
-    a different process reclaiming (or refreshing) it at the same moment."""
+    a different process reclaiming (or refreshing) it at the same moment.
+    Returns True only when this call actually removed a stale lock, so the
+    caller can report it (harness Fase 4: a reclaim must warn, naming the
+    two possible causes -- a crashed process or a genuinely slow one --
+    since neither can be told apart from here)."""
     existing = _read_lock(path)
     if existing is None:
-        return
+        return False
     _, timestamp = existing
     if time.time() - timestamp <= abandon_after:
-        return
+        return False
     if _read_lock(path) == existing:
         _unlink_with_retry(path)
+        return True
+    return False
 
 
 @contextlib.contextmanager
@@ -109,17 +115,30 @@ def acquire_repo_lock(
     # jump made the old time.time()-based deadline never trip, hanging
     # past wait_ceiling for a lock genuinely still held.
     deadline = time.monotonic() + wait_ceiling
+    reclaimed_stale_lock = False
 
     while True:
         if _try_create(path, token):
             break
-        _reclaim_if_abandoned(path, abandon_after)
+        if _reclaim_if_abandoned(path, abandon_after):
+            reclaimed_stale_lock = True
         if time.monotonic() >= deadline:
             raise LockTimeoutError(f"Timed out waiting for the repository lock at {path}")
         time.sleep(poll_interval)
 
+    # Observability audit: yields the warnings list the caller should
+    # attach to its own result -- reclaiming a stale lock used to be
+    # completely silent, even though the harness explicitly requires a
+    # warning here.
+    warnings = []
+    if reclaimed_stale_lock:
+        warnings.append(
+            "A stale repository lock (from a possibly-crashed or genuinely slow process) was reclaimed "
+            "before this operation could proceed."
+        )
+
     try:
-        yield
+        yield warnings
     finally:
         existing = _read_lock(path)
         if existing is not None and existing[0] == token:

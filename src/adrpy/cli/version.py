@@ -21,6 +21,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -74,17 +75,23 @@ def run(args):
         switches=("empty",),
         aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate", "e": "empty"},
     )
-    config, root, path, filename_info, header, lines = load_target(flags["file"])
+    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    warnings = []
+    if encoding_repaired:
+        warnings.append(encoding_repaired_warning(path))
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
 
     # Concurrency audit (critical): the family-state read (latest/sibling
     # checks) and the eventual write must be one critical section -- a
     # concurrent supersede/approve/etc. on a sibling could otherwise slip
     # in between, and this call's next-version-number decision could go
     # stale before it's ever written. Same class as `new`'s own comment.
-    with acquire_repo_lock(folder):
+    with acquire_repo_lock(folder) as lock_warnings:
+        warnings.extend(lock_warnings)
         latest = latest_in_family(folder, config, filename_info.number)
         if latest is None:
             raise CommandError("family-not-found", "Could not resolve this decision's own family.")
@@ -160,7 +167,10 @@ def run(args):
             raise CommandError("file-already-exists", f"File already exists: {filename}")
 
         content = build_header(config, record) + template
-        atomic_write_text(new_path, content)
+        attempts = atomic_write_text(new_path, content)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
-    return {"created": str(new_path), "status": "Proposed"}
+    return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

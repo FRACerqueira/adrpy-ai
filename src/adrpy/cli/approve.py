@@ -15,6 +15,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import resolve_within
+from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -35,7 +36,10 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path, filename_info, header, lines = load_target(flags["file"])
+    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    warnings = []
+    if encoding_repaired:
+        warnings.append(encoding_repaired_warning(path))
 
     if not is_eligible_for_approve_or_reject(header):
         raise CommandError(
@@ -45,7 +49,9 @@ def run(args):
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
             "family-member-superseded", "A sibling decision in this family has already been superseded."
@@ -56,10 +62,13 @@ def run(args):
     if header.date_create is not None:
         validate_refdate_not_before(refdate, header.date_create)
 
-    rewrite_status_field(
+    _record, _content, attempts = rewrite_status_field(
         path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
     )
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
 
     # Usability audit M4: canonical keyword, matching explore's own
     # status_create/status_update -- not the repo's configured label.
-    return {"file": str(path), "status": "Accepted"}
+    return {"file": str(path), "status": "Accepted", "warnings": warnings}

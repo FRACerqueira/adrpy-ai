@@ -26,6 +26,7 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.security import resolve_within
+from adrpy.core.warnings import retry_warning
 
 _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
@@ -109,7 +110,7 @@ def run(args):
         # (and reformatted) the file as a side effect of what looks like a
         # read-only call. `activeplugins` stays excluded, same as a write.
         current_fields = {field: merged[field] for field in _EDITABLE_FIELDS}
-        return {"file": str(config_path), "updated_fields": [], "config": current_fields}
+        return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
@@ -122,6 +123,10 @@ def run(args):
     # would refuse with path-outside-repository until hand-fixed).
     resolve_within(target, new_config.folderadr)
 
-    atomic_write_text(config_path, merged_text)
+    attempts = atomic_write_text(config_path, merged_text)
+    warnings = []
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
 
-    return {"file": str(config_path), "updated_fields": updated_fields}
+    return {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}

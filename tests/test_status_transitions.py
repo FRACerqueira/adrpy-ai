@@ -125,11 +125,15 @@ def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_p
     with open(adr_path, "ab") as handle:
         handle.write(b"\r\nInvalid UTF-8 marker: \xa4\xe9\xe8 end.\r\n")
 
-    approve.run(["--file", str(adr_path)])
+    result = approve.run(["--file", str(adr_path)])
 
     body_bytes = adr_path.read_bytes()
     assert b"\xa4\xe9\xe8" not in body_bytes
     assert "Invalid UTF-8 marker: ��� end.".encode("utf-8") in body_bytes
+    # Observability audit, end-to-end: load_target's own encoding_repaired
+    # report (test_lifecycle.py) must actually reach a real command's
+    # result, not just the lifecycle module in isolation.
+    assert any("invalid utf-8" in warning.lower() for warning in result["warnings"])
 
 
 def test_approve_file_not_found(tmp_path):

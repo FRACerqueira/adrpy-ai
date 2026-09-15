@@ -28,6 +28,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
+from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -63,9 +64,12 @@ def run(args):
         )
 
     folder = resolve_within(target, config.folderadr)
+    warnings = []
     entries = []  # (ParsedFileName, Path, HeaderParseResult)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
         for candidate in folder.rglob("*.md"):
             if not is_within(folder, candidate):
                 continue
@@ -107,7 +111,10 @@ def run(args):
             raw_bytes = raw_bytes[3:]
         record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
         header_text = build_header(config, record, migrated=True)
-        atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+        attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
         migrated.append(str(candidate_path))
 
-    return {"migrated": migrated}
+    return {"migrated": migrated, "warnings": warnings}

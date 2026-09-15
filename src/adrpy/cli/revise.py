@@ -25,6 +25,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import resolve_within
+from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -49,18 +50,24 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path, filename_info, header, lines = load_target(flags["file"])
+    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    warnings = []
+    if encoding_repaired:
+        warnings.append(encoding_repaired_warning(path))
 
     if config.lenrevision == 0:
         raise CommandError("revision-not-configured", "This repository's config has lenrevision == 0.")
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
 
     # Concurrency audit (critical): same reasoning as `version`'s own
     # comment -- family-state read and write must be one critical section.
-    with acquire_repo_lock(folder):
+    with acquire_repo_lock(folder) as lock_warnings:
+        warnings.extend(lock_warnings)
         latest = latest_in_family(folder, config, filename_info.number)
         if latest is None:
             raise CommandError("family-not-found", "Could not resolve this decision's own family.")
@@ -120,7 +127,10 @@ def run(args):
             raise CommandError("file-already-exists", f"File already exists: {filename}")
 
         content = build_header(config, record) + read_body(lines)
-        atomic_write_text(new_path, content)
+        attempts = atomic_write_text(new_path, content)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Usability audit M4: canonical keyword, not the repo's configured label.
-    return {"created": str(new_path), "status": "Proposed"}
+    return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

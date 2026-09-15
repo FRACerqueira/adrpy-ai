@@ -24,6 +24,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -74,8 +75,11 @@ def run(args):
     validate_refdate_not_in_future(refdate)
 
     folder = resolve_within(target, config.folderadr)
+    warnings = []
     if folder.is_dir():
-        cleanup_orphaned_temp_files(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+        if warning:
+            warnings.append(warning)
 
     # Concurrency audit (critical): the whole scan -> decide-next-number ->
     # write sequence is the critical section -- two calls that both scan
@@ -83,7 +87,8 @@ def run(args):
     # number (reproduced live, 10/10 times, with two concurrent `new`
     # calls). core/lock.py existed and was tested in isolation since
     # Milestone 4 but was never actually wired into any command.
-    with acquire_repo_lock(folder):
+    with acquire_repo_lock(folder) as lock_warnings:
+        warnings.extend(lock_warnings)
         decisions = scan_decisions(folder, config)
 
         existing = find_by_unique_title(title, config, decisions)
@@ -109,9 +114,12 @@ def run(args):
             raise CommandError("file-already-exists", f"File already exists: {filename}")
 
         content = build_header(config, record) + config.template
-        atomic_write_text(file_path, content)
+        attempts = atomic_write_text(file_path, content)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Usability audit M4: the canonical keyword, not the repo's configured
     # label -- `explore` reports status_create the same way for the same
     # file, and the two must agree even when statusnew is customized.
-    return {"created": str(file_path), "status": "Proposed"}
+    return {"created": str(file_path), "status": "Proposed", "warnings": warnings}

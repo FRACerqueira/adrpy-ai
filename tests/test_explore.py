@@ -101,6 +101,35 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
     assert by_name["not-an-adr.md"]["header"]["is_valid"] is False
 
 
+def test_explore_reports_encoding_repair_for_a_file_with_invalid_utf8_bytes(tmp_path):
+    """Observability audit: explore already tolerates invalid UTF-8 bytes
+    (Fase 4, confirmed live to match the real tool) but never told the
+    caller a file needed repair -- the most natural place for this,
+    since explore's whole purpose is giving an agent visibility into
+    repository state."""
+    config_dict = _default_config_dict()
+    config = _write_repo(
+        tmp_path,
+        config_dict,
+        {
+            "ADR001V01-clean.md": _decision_text(
+                parse_repo_config(json.dumps(config_dict)), number=1, title="Clean", version=1
+            ),
+        },
+    )
+    dirty_path = tmp_path / config.folderadr / "ADR002V01-dirty.md"
+    with open(dirty_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(_decision_text(config, number=2, title="Dirty", version=1))
+    with open(dirty_path, "ab") as handle:
+        handle.write(b"\r\nInvalid byte: \xa4 end.\r\n")
+
+    result = explore.run(["--path", str(tmp_path)])
+
+    by_name = {entry["filename"]: entry for entry in result["decisions"]}
+    assert by_name["ADR001V01-clean.md"]["header"]["encoding_repaired"] is False
+    assert by_name["ADR002V01-dirty.md"]["header"]["encoding_repaired"] is True
+
+
 def test_explore_exposes_scope_and_domain(tmp_path):
     """Fidelity audit F14: the real tool's own report has Scope/Domain
     columns; adrpy's JSON dropped both entirely."""

@@ -4,7 +4,12 @@ import time
 
 import pytest
 
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files, normalize_newlines
+from adrpy.core.atomic_write import (
+    atomic_write_bytes,
+    atomic_write_text,
+    cleanup_orphaned_temp_files,
+    normalize_newlines,
+)
 
 
 def test_atomic_write_normalizes_and_creates_file(tmp_path):
@@ -21,6 +26,45 @@ def test_atomic_write_leaves_no_temp_file_behind(tmp_path):
     atomic_write_text(target, "content")
 
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_atomic_write_bytes_returns_the_attempt_count(tmp_path):
+    target = tmp_path / "decision.md"
+
+    attempts = atomic_write_bytes(target, b"content")
+
+    assert attempts == 1
+
+
+def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_path, monkeypatch):
+    """Observability audit: the retry count was computed but never
+    returned to the caller, so nothing (not even the command's own
+    result) could tell whether a write needed contention-driven retries."""
+    target = tmp_path / "decision.md"
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError("simulated transient contention")
+        return real_replace(*args, **kwargs)
+
+    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", flaky_replace)
+    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+
+    attempts = atomic_write_bytes(target, b"content")
+
+    assert attempts == 3
+    assert target.read_bytes() == b"content"
+
+
+def test_atomic_write_text_also_returns_the_attempt_count(tmp_path):
+    target = tmp_path / "decision.md"
+
+    attempts = atomic_write_text(target, "content")
+
+    assert attempts == 1
 
 
 def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monkeypatch):

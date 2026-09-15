@@ -107,9 +107,34 @@ def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path
     old_time = time.time() - 999
     os.utime(orphan, (old_time, old_time))
 
-    new.run(["--path", str(tmp_path), "--title", "Triggers cleanup"])
+    result = new.run(["--path", str(tmp_path), "--title", "Triggers cleanup"])
 
     assert not orphan.exists()
+    assert any("leftover.md.deadbeef.tmp" in warning for warning in result["warnings"])
+
+
+def test_new_reports_a_reclaimed_stale_lock_as_a_warning(tmp_path):
+    """Observability audit, end-to-end: acquire_repo_lock's own reclaim
+    report (test_lock.py) must actually reach a real command's result,
+    not just the lock module in isolation."""
+    from adrpy.core.lock import LOCK_FILE_NAME
+
+    _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    lock_path = adr_dir / LOCK_FILE_NAME
+    lock_path.write_text(f"stale-token\n{time.time() - 999}")
+
+    result = new.run(["--path", str(tmp_path), "--title", "Triggers reclaim"])
+
+    assert any("stale" in warning.lower() for warning in result["warnings"])
+
+
+def test_new_reports_no_warnings_on_a_clean_run(tmp_path):
+    _init_repo(tmp_path)
+
+    result = new.run(["--path", str(tmp_path), "--title", "Clean run"])
+
+    assert result["warnings"] == []
 
 
 def test_new_rejects_path_traversal_via_title(tmp_path):

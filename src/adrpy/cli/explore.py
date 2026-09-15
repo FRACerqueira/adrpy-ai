@@ -73,7 +73,13 @@ def _build_entry(path, config):
 
     # Fase 4: tolerate invalid bytes rather than raising, mirroring the
     # original's confirmed-live behavior (see the Fase 4 commit).
-    text = path.read_text(encoding="utf-8", errors="replace")
+    raw_bytes = path.read_bytes()
+    try:
+        text = raw_bytes.decode("utf-8")
+        encoding_repaired = False
+    except UnicodeDecodeError:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        encoding_repaired = True
     header = parse_header(split_real_lines(text), config)
 
     return {
@@ -96,5 +102,9 @@ def _build_entry(path, config):
             "status_change": header.status_change,
             "date_change": header.date_change.isoformat() if header.date_change else None,
             "superseded_by_file": header.superseded_by_file,
+            # Observability audit: tells the caller this specific file's
+            # bytes were lossy-decoded (Fase 4 tolerance) -- explore is a
+            # read-only report, the natural place for this visibility.
+            "encoding_repaired": encoding_repaired,
         },
     }
