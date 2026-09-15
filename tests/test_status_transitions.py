@@ -1,4 +1,6 @@
 import json
+import os
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -159,6 +161,49 @@ def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
     assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
 
 
+def test_approve_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path):
+    """Test-adequacy audit round 3: no existing test had more than one
+    warning accumulated simultaneously before a later failure -- which
+    quietly weakens every `assert excinfo.value.warnings` check elsewhere
+    (they'd still pass even with a duplicated warning or the wrong
+    order). This combines two distinct real side effects (an encoding
+    repair AND an orphaned temp-file cleanup) surviving together to a
+    later, unrelated CommandError, and checks both content and order."""
+    tmp_path_root, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path_root / "adr-config.adrplus")
+
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path.write_text("stale", encoding="utf-8")
+    old_time = time.time() - 999
+    os.utime(orphan_path, (old_time, old_time))
+
+    sibling_record = DecisionRecord(
+        number=1,
+        title="Sibling",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="999",
+    )
+    sibling_path = adr_path.parent / "ADR001V02-sibling--999.md"
+    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+    assert len(excinfo.value.warnings) == 2
+    assert "utf-8" in excinfo.value.warnings[0].lower()
+    assert "orphaned" in excinfo.value.warnings[1].lower()
+
+
 def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):
     """Mechanism-correctness audit round 3 (resilience finding #1): same
     partial-mutation class as test_reject_reveals_partial_success_when_
@@ -202,6 +247,12 @@ def test_approve_rejects_refdate_before_create(tmp_path):
         approve.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
 
     assert excinfo.value.code == "refdate-before-history"
+    # Test-adequacy audit round 3: the real "nothing accumulated" value a
+    # command ever produces is `[]` (every command initializes `warnings
+    # = []` before any raise site), never `None` -- confirms
+    # attach_warnings' merge produces that exact value here, not just
+    # something falsy.
+    assert excinfo.value.warnings == []
 
 
 def test_approve_rejects_refdate_in_future(tmp_path):

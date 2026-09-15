@@ -95,10 +95,19 @@ def test_lock_timeout_is_a_command_error(tmp_path):
 def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
     """Mechanism-correctness audit round 2: reclaiming a stale lock is a
     real side effect, even when this process still can't acquire the lock
-    before its own wait_ceiling expires (e.g. a third process grabs it
-    first). That reclaim used to vanish completely from the resulting
-    LockTimeoutError -- exactly the same class of bug as a command's own
-    warnings being dropped on an unrelated later failure."""
+    before its own wait_ceiling expires (here: the ceiling is already
+    exhausted by the time the reclaim itself finishes, on the very first
+    iteration -- not a multi-iteration race against a third process, a
+    harder scenario to construct deterministically). That reclaim used to
+    vanish completely from the resulting LockTimeoutError -- exactly the
+    same class of bug as a command's own warnings being dropped on an
+    unrelated later failure.
+
+    Test-adequacy audit round 3: the assertion below now pins the exact
+    timeout-specific warning text, not just "stale" -- lock.py has TWO
+    warning strings containing that substring (this one, and the
+    reclaim-then-SUCCEEDED one on acquire_repo_lock's success path), so a
+    substring-only check couldn't actually tell them apart."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text(f"stale-token\n{time.time() - 999}")
 
@@ -107,6 +116,7 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
             pass
 
     assert excinfo.value.warnings
+    assert any("timing out" in w.lower() for w in excinfo.value.warnings)
     assert any("stale" in w.lower() for w in excinfo.value.warnings)
 
 
