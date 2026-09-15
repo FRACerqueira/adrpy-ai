@@ -94,6 +94,7 @@ def run(args):
                 raise CommandError(
                     "lenrevision-too-small-for-new-revision",
                     f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
+                    data={"new_revision": (latest_parsed.revision or 0) + 1, "lenrevision": config.lenrevision},
                     warnings=warnings,
                 )
 
@@ -156,7 +157,12 @@ def run(args):
             filename = build_filename(config, record)
             new_path = resolve_within(folder, filename)
             if new_path.exists():
-                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
+                raise CommandError(
+                    "file-already-exists",
+                    f"File already exists: {filename}",
+                    data={"file": filename},
+                    warnings=warnings,
+                )
 
             content = build_header(config, record) + read_body(lines)
             attempts = atomic_write_text(new_path, content)

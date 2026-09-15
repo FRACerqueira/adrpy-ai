@@ -56,6 +56,32 @@ def test_supersede_reveals_predecessor_already_superseded_when_successor_write_f
     assert "|Superseded|Superseded" in adr_path.read_text(encoding="utf-8")
 
 
+def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
+    """Simulates the TOCTOU race file-already-exists defends against: a
+    concurrent write creates the successor's target filename after this
+    call's own scan already took its snapshot (the scan itself would
+    otherwise always see any pre-existing file matching the naming scheme
+    and bump next_number past it)."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    colliding_path = tmp_path / "doc" / "adr" / "ADR002V01-use-postgre-sql--001.md"
+    colliding_path.write_text("already here", encoding="utf-8")
+
+    from adrpy.cli import supersede as supersede_module
+
+    real_scan_decisions = supersede_module.scan_decisions
+
+    def scan_without_colliding_file(folder, config):
+        return [entry for entry in real_scan_decisions(folder, config) if entry[2].name != colliding_path.name]
+
+    monkeypatch.setattr(supersede_module, "scan_decisions", scan_without_colliding_file)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR002V01-use-postgre-sql--001.md"}
+
+
 def test_supersede_happy_path(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

@@ -116,6 +116,7 @@ def run(args):
                 raise CommandError(
                     "lenversion-too-small-for-new-version",
                     f"New version {latest_parsed.version + 1} does not fit in lenversion={config.lenversion}.",
+                    data={"new_version": latest_parsed.version + 1, "lenversion": config.lenversion},
                     warnings=warnings,
                 )
 
@@ -196,7 +197,12 @@ def run(args):
             filename = build_filename(config, record)
             new_path = resolve_within(folder, filename)
             if new_path.exists():
-                raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
+                raise CommandError(
+                    "file-already-exists",
+                    f"File already exists: {filename}",
+                    data={"file": filename},
+                    warnings=warnings,
+                )
 
             content = build_header(config, record) + template
             attempts = atomic_write_text(new_path, content)

@@ -127,16 +127,19 @@ def run(args):
         raise CommandError(
             "lenseq-too-small-for-existing-decisions",
             f"Existing decision number {max_number} does not fit in lenseq={config.lenseq}.",
+            data={"max_number": max_number, "lenseq": config.lenseq},
         )
     if len(str(max_version)) > config.lenversion:
         raise CommandError(
             "lenversion-too-small-for-existing-decisions",
             f"Existing decision version {max_version} does not fit in lenversion={config.lenversion}.",
+            data={"max_version": max_version, "lenversion": config.lenversion},
         )
     if config.lenrevision > 0 and len(str(max_revision)) > config.lenrevision:
         raise CommandError(
             "lenrevision-too-small-for-existing-decisions",
             f"Existing decision revision {max_revision} does not fit in lenrevision={config.lenrevision}.",
+            data={"max_revision": max_revision, "lenrevision": config.lenrevision},
         )
 
     created = []

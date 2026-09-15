@@ -30,6 +30,43 @@ def _setup_accepted_repo(tmp_path):
     return tmp_path, adr_path
 
 
+def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=99,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = adr_dir / "ADR001V99-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "lenversion-too-small-for-new-version"
+    # Usability audit round 3: the real number was only ever in `detail`
+    # (stderr, free text).
+    assert excinfo.value.data == {"new_version": 100, "lenversion": 2}
+
+
+def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    colliding_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
+    colliding_path.write_text("already here", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR001V02-use-postgre-sql.md"}
+
+
 def test_version_happy_path(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

@@ -64,6 +64,34 @@ def test_new_rejects_duplicate_title(tmp_path):
         new.run(["--path", str(tmp_path), "--title", "use postgre sql"])
 
     assert excinfo.value.code == "title-already-exists"
+    # Usability audit round 3: the colliding filename was only ever in
+    # `detail` (stderr, free text), never in `data`.
+    assert excinfo.value.data == {"existing_file": "ADR001V01-use-postgre-sql.md"}
+
+
+def test_new_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
+    """Simulates the TOCTOU race file-already-exists actually defends
+    against: a concurrent `new` call creates the file after this call's
+    own scan already took its snapshot (the scan itself would otherwise
+    always see any pre-existing file matching the naming scheme and bump
+    next_number/find_by_unique_title past it -- there is no other way to
+    reach this collision for `new` specifically, since its filename and
+    its title-uniqueness key are derived from the same normalized
+    title)."""
+    _init_repo(tmp_path)
+    colliding_path = tmp_path / "doc" / "adr" / "ADR001V01-use-postgre-sql.md"
+    colliding_path.parent.mkdir(parents=True, exist_ok=True)
+    colliding_path.write_text("already here", encoding="utf-8")
+
+    from adrpy.cli import new as new_module
+
+    monkeypatch.setattr(new_module, "scan_decisions", lambda *args, **kwargs: [])
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR001V01-use-postgre-sql.md"}
 
 
 def test_new_rejects_refdate_in_the_future(tmp_path):

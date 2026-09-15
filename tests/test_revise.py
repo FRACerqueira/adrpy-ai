@@ -139,6 +139,35 @@ def test_revise_branching_from_immediate_predecessor_of_a_rejected_latest_collid
         revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
 
     assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR001V01R02-use-postgre-sql.md"}
+
+
+def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
+    data = _config_with_revisions()
+    data["lenrevision"] = 1
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=1,
+        revision=9,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = adr_dir / "ADR001V01R9-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "lenrevision-too-small-for-new-revision"
+    assert excinfo.value.data == {"new_revision": 10, "lenrevision": 1}
 
 
 def test_revise_rejects_refdate_before_latest_date(tmp_path):

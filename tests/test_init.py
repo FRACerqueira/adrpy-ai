@@ -107,6 +107,38 @@ def test_init_rejects_digit_overflow_against_existing_decisions(tmp_path):
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "lenseq-too-small-for-existing-decisions"
+    # Usability audit round 3: the real number was only ever in `detail`
+    # (stderr, free text) -- an agent automating "bump lenseq until it
+    # fits" would have had to parse that text instead of reading `data`.
+    assert excinfo.value.data == {"max_number": 1234, "lenseq": 3}
+
+
+def test_init_rejects_version_digit_overflow_against_existing_decisions(tmp_path):
+    existing_adr_dir = tmp_path / "doc" / "adr"
+    existing_adr_dir.mkdir(parents=True)
+    (existing_adr_dir / "ADR001V123-preexisting.md").write_text("irrelevant", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "lenversion-too-small-for-existing-decisions"
+    assert excinfo.value.data == {"max_version": 123, "lenversion": 2}
+
+
+def test_init_rejects_revision_digit_overflow_against_existing_decisions(tmp_path):
+    seed = json.loads(_default_config_text())
+    seed["lenrevision"] = 1
+    seed_path = tmp_path / "seed-config.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+    existing_adr_dir = tmp_path / "doc" / "adr"
+    existing_adr_dir.mkdir(parents=True)
+    (existing_adr_dir / "ADR001V01R12-preexisting.md").write_text("irrelevant", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "lenrevision-too-small-for-existing-decisions"
+    assert excinfo.value.data == {"max_revision": 12, "lenrevision": 1}
 
 
 def test_init_end_to_end_through_main(tmp_path):
