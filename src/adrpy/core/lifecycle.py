@@ -187,15 +187,23 @@ def is_eligible_for_undo(header):
     )
 
 
-def rewrite_status_field(path, config, lines, header, filename_info, *, field, status, refdate):
-    """Mirrors StatusUpdateAdrAsync (`field="update"`) and
-    StatusChangeAdrAsync (`field="change"`): mutate exactly one status+date
-    pair on the already-parsed header, rebuild via build_header preserving
-    every other field and the original body verbatim, and write the file.
+def is_eligible_for_supersede(header):
+    """Mirrors SupersedeCommandHandler's SelectionCondition: must already
+    be Accepted (or a migrated placeholder with no update status yet)."""
+    return (
+        header.is_valid
+        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
+        and (header.status_update == "Accepted" or (header.status_update is None and header.is_migrated))
+        and header.status_change is None
+    )
+
+
+def _record_from_header(config, filename_info, header):
+    """Mirrors Helper.CreateAdrRecord: rebuilds an AdrRecord-equivalent
+    from an already-parsed header, ready for a targeted field mutation.
     Version/Revision come from the header AS READ, never recalculated;
-    Revision is forced None whenever lenrevision == 0, matching
-    Helper.CreateAdrRecord."""
-    record = DecisionRecord(
+    Revision is forced None whenever lenrevision == 0."""
+    return DecisionRecord(
         number=filename_info.number,
         title=header.title,
         version=header.version or 0,
@@ -211,8 +219,33 @@ def rewrite_status_field(path, config, lines, header, filename_info, *, field, s
         superseded_by_file=header.superseded_by_file,
     )
 
+
+def rewrite_status_field(path, config, lines, header, filename_info, *, field, status, refdate):
+    """Mirrors StatusUpdateAdrAsync (`field="update"`) and
+    StatusChangeAdrAsync (`field="change"`): mutate exactly one status+date
+    pair on the already-parsed header, rebuild via build_header preserving
+    every other field and the original body verbatim, and write the file."""
+    record = _record_from_header(config, filename_info, header)
     setattr(record, f"status_{field}", status)
     setattr(record, f"date_{field}", refdate if status is not None else None)
+
+    content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
+    atomic_write_text(path, content)
+    return record, content
+
+
+def mark_superseded(path, config, lines, header, filename_info, successor_number, refdate):
+    """Mirrors StatusChangeSupersedeAdrAsync: like rewrite_status_field's
+    "change" field, but also stamps the successor's own zero-padded
+    sequence number into the Superseded row. NOT a filename, despite
+    DecisionRecord's `superseded_by_file` name (kept as-is -- it mirrors
+    GetHeader's own `supersedefile` parameter/row): confirmed in
+    SupersedeCommandHandler.cs, the real value passed is
+    `nextNumber.ToString($"D{LenSeq}")`, a bare padded number."""
+    record = _record_from_header(config, filename_info, header)
+    record.status_change = "Superseded"
+    record.date_change = refdate
+    record.superseded_by_file = f"{successor_number:0{config.lenseq}d}"
 
     content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
     atomic_write_text(path, content)
