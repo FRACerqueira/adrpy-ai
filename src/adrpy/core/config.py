@@ -14,6 +14,20 @@ from adrpy.core.errors import CommandError
 VALID_SEPARATORS = ("-", "_", ".")
 VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
 
+# Upper bounds are a deliberate divergence from the original, not fidelity:
+# AdrPlus's real non-interactive validator (ValidateConfig.
+# ValidateConfigRepoFieldValues) has no maximum at all for these three
+# fields -- only its interactive `config --wizard` slider limits them
+# (lenseq 3-5, lenversion 2-3, lenrevision 0-3, see PromptConsole.cs's
+# PromptEditFieldLenSeq/Revision/Version), and hand-editing the config file
+# (or `config --repository --file`) bypasses that slider entirely even in
+# the original. Without a wizard here, nothing else would ever guard these
+# values, so this project adds them explicitly -- confirmed with the user,
+# who chose slightly wider bounds than the wizard's own.
+LENSEQ_MIN, LENSEQ_MAX = 3, 6
+LENVERSION_MIN, LENVERSION_MAX = 2, 4
+LENREVISION_MIN, LENREVISION_MAX = 0, 3
+
 _STRING_FIELDS = (
     "folderadr",
     "migrationpattern",
@@ -123,12 +137,18 @@ def parse_repo_config(text):
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise CommandError("config-wrong-type", f"Field '{name}' must be an array of strings.")
 
-    if lowered["lenseq"] < 3:
-        raise CommandError("config-lenseq-too-small", "lenseq must be >= 3.")
-    if lowered["lenversion"] < 2:
-        raise CommandError("config-lenversion-too-small", "lenversion must be >= 2.")
-    if lowered["lenrevision"] < 0:
-        raise CommandError("config-lenrevision-negative", "lenrevision must be >= 0.")
+    if lowered["lenseq"] < LENSEQ_MIN:
+        raise CommandError("config-lenseq-too-small", f"lenseq must be >= {LENSEQ_MIN}.")
+    if lowered["lenseq"] > LENSEQ_MAX:
+        raise CommandError("config-lenseq-too-large", f"lenseq must be <= {LENSEQ_MAX}.")
+    if lowered["lenversion"] < LENVERSION_MIN:
+        raise CommandError("config-lenversion-too-small", f"lenversion must be >= {LENVERSION_MIN}.")
+    if lowered["lenversion"] > LENVERSION_MAX:
+        raise CommandError("config-lenversion-too-large", f"lenversion must be <= {LENVERSION_MAX}.")
+    if lowered["lenrevision"] < LENREVISION_MIN:
+        raise CommandError("config-lenrevision-negative", f"lenrevision must be >= {LENREVISION_MIN}.")
+    if lowered["lenrevision"] > LENREVISION_MAX:
+        raise CommandError("config-lenrevision-too-large", f"lenrevision must be <= {LENREVISION_MAX}.")
 
     if lowered["separator"] not in VALID_SEPARATORS:
         raise CommandError("config-separator-invalid", f"separator must be one of {VALID_SEPARATORS}.")

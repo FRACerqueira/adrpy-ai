@@ -91,8 +91,11 @@ def test_wrong_type_is_rejected():
     ("field", "value", "code"),
     [
         ("lenseq", 2, "config-lenseq-too-small"),
+        ("lenseq", 7, "config-lenseq-too-large"),
         ("lenversion", 1, "config-lenversion-too-small"),
+        ("lenversion", 5, "config-lenversion-too-large"),
         ("lenrevision", -1, "config-lenrevision-negative"),
+        ("lenrevision", 4, "config-lenrevision-too-large"),
     ],
 )
 def test_out_of_range_numeric_fields_are_rejected(field, value, code):
