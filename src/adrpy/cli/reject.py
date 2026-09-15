@@ -34,7 +34,11 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "reject",
-        "description": "Marks a Proposed decision as Rejected.",
+        "description": (
+            "Marks a Proposed decision as Rejected. If this decision is itself a successor "
+            "(created by `supersede`), also reverts the predecessor's Superseded status -- the "
+            "result's `undone_predecessor` names that file when this happens, or is null otherwise."
+        ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
             {
@@ -58,7 +62,7 @@ def run(args):
     # not-eligible-for-rejection.
     reason = ineligibility_reason_for_approve_or_reject(header)
     if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
@@ -67,7 +71,9 @@ def run(args):
             warnings.append(warning)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
-            "family-member-superseded", "A sibling decision in this family has already been superseded."
+            "family-member-superseded",
+            "A sibling decision in this family has already been superseded.",
+            warnings=warnings,
         )
 
     refdate = parse_refdate(flags.get("refdate"))
@@ -86,9 +92,17 @@ def run(args):
     if filename_info.superseded_from is not None:
         predecessor = latest_in_family(folder, config, filename_info.superseded_from)
         if predecessor is None:
+            # Mechanism-correctness audit round 2 (findings #3/#4): by this
+            # point the primary write above has already succeeded for
+            # real -- `path` genuinely is Rejected on disk. `data` names
+            # that partial success explicitly, so a caller doesn't have to
+            # infer it from `warnings` alone (there may be none) or
+            # discover it only by re-reading the file itself.
             raise CommandError(
                 "superseded-predecessor-not-found",
                 f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
+                data={"file": str(path), "status": "Rejected"},
+                warnings=warnings,
             )
         pred_parsed, pred_header, pred_path = predecessor
         pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)

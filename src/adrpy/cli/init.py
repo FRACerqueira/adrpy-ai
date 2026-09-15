@@ -65,7 +65,11 @@ def describe():
                 # divergence from the real tool's own `-f/--file` naming,
                 # confirmed with the user (decision-log: accepted-
                 # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
-                "description": "Path to a config JSON to seed the repository with, instead of the built-in default.",
+                "description": (
+                    "Path to a config JSON to seed the repository with, instead of the built-in default. "
+                    "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
+                    "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given."
+                ),
             },
             {
                 "name": "language",

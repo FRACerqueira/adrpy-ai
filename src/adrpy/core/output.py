@@ -13,10 +13,12 @@ def emit_success(data):
     return EXIT_SUCCESS
 
 
-def emit_failure(code, detail=None, data=None):
+def emit_failure(code, detail=None, data=None, warnings=None):
     payload = {"success": False, "code": code}
     if data:
         payload["data"] = data
+    if warnings:
+        payload["warnings"] = warnings
     print(json.dumps(payload))
     if detail:
         print(detail, file=sys.stderr)

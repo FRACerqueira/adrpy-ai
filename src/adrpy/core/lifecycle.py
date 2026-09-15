@@ -94,17 +94,6 @@ def find_repo_root(file_path):
         directory = parent
 
 
-def read_lines(path):
-    """Fase 4: tolerates invalid bytes rather than raising (confirmed live
-    against the real tool -- including that a rewrite persists the
-    replacement characters, same as the original). Splits on real line
-    terminators only (see split_real_lines), never str.splitlines()'s
-    broader Unicode line-boundary set (confirmed live NOT to be real line
-    breaks for the original)."""
-    lines, _encoding_repaired = read_lines_with_report(path)
-    return lines
-
-
 _HEADER_READ_CHUNK_SIZE = 4096
 _REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
 

@@ -73,6 +73,44 @@ def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch)
     assert payload["data"] == {"latest_version": 3}
 
 
+def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
+    """Mechanism-correctness audit round 2: a real side effect (an encoding
+    repair, an orphan-temp-file cleanup, a stale-lock reclaim, a retried
+    write) that already happened before a command goes on to fail for an
+    unrelated reason used to be silently dropped -- the failure envelope
+    carried no trace that anything had already occurred."""
+    from adrpy.cli import help as help_command
+    from adrpy.core.errors import CommandError
+
+    def boom(_args):
+        raise CommandError("some-failure", "human-readable detail", warnings=["something already happened"])
+
+    monkeypatch.setattr(help_command, "run", boom)
+
+    exit_code = main(["help"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == EXIT_FAILURE
+    assert payload["code"] == "some-failure"
+    assert payload["warnings"] == ["something already happened"]
+
+
+def test_command_error_omits_warnings_key_when_there_are_none(capsys, monkeypatch):
+    from adrpy.cli import help as help_command
+    from adrpy.core.errors import CommandError
+
+    def boom(_args):
+        raise CommandError("some-failure", "human-readable detail")
+
+    monkeypatch.setattr(help_command, "run", boom)
+
+    exit_code = main(["help"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == EXIT_FAILURE
+    assert "warnings" not in payload
+
+
 def test_help_unknown_command_reports_structured_failure(capsys):
     from adrpy.core.output import EXIT_FAILURE
 

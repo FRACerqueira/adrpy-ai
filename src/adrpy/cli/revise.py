@@ -64,7 +64,9 @@ def run(args):
         warnings.append(encoding_repaired_warning(path))
 
     if config.lenrevision == 0:
-        raise CommandError("revision-not-configured", "This repository's config has lenrevision == 0.")
+        raise CommandError(
+            "revision-not-configured", "This repository's config has lenrevision == 0.", warnings=warnings
+        )
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
@@ -82,13 +84,14 @@ def run(args):
         members = family_members(folder, config, filename_info.number)
         latest = latest_in_family(folder, config, filename_info.number, members=members)
         if latest is None:
-            raise CommandError("family-not-found", "Could not resolve this decision's own family.")
+            raise CommandError("family-not-found", "Could not resolve this decision's own family.", warnings=warnings)
         latest_parsed, latest_header, latest_path = latest
 
         if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
             raise CommandError(
                 "lenrevision-too-small-for-new-revision",
                 f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
+                warnings=warnings,
             )
 
         if latest_path.resolve() != path.resolve():
@@ -109,20 +112,25 @@ def run(args):
                         "latest_revision": latest_parsed.revision,
                         "latest_status": latest_header.status_update,
                     },
+                    warnings=warnings,
                 )
 
         # Usability audit: a specific reason code instead of one collapsed
         # not-eligible-for-revision.
         reason = ineligibility_reason_for_version_or_revise(header)
         if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
         if has_superseded_sibling(folder, config, filename_info.number, members=members):
             raise CommandError(
-                "family-member-superseded", "A sibling decision in this family has already been superseded."
+                "family-member-superseded",
+                "A sibling decision in this family has already been superseded.",
+                warnings=warnings,
             )
         if has_pending_sibling(folder, config, filename_info.number, members=members):
             raise CommandError(
-                "family-member-pending", "Another decision in this family is still unresolved (Proposed)."
+                "family-member-pending",
+                "Another decision in this family is still unresolved (Proposed).",
+                warnings=warnings,
             )
 
         refdate = parse_refdate(flags.get("refdate"))
@@ -145,7 +153,7 @@ def run(args):
         filename = build_filename(config, record)
         new_path = resolve_within(folder, filename)
         if new_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}")
+            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
         content = build_header(config, record) + read_body(lines)
         attempts = atomic_write_text(new_path, content)

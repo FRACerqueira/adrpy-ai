@@ -34,8 +34,8 @@ class LockTimeoutError(CommandError):
     as a real, named failure code (resilience audit R4) instead of falling
     through __main__'s catch-all as an internal-error."""
 
-    def __init__(self, detail):
-        super().__init__("repository-locked", detail)
+    def __init__(self, detail, warnings=None):
+        super().__init__("repository-locked", detail, warnings=warnings)
 
 
 def _unlink_with_retry(path):
@@ -123,7 +123,22 @@ def acquire_repo_lock(
         if _reclaim_if_abandoned(path, abandon_after):
             reclaimed_stale_lock = True
         if time.monotonic() >= deadline:
-            raise LockTimeoutError(f"Timed out waiting for the repository lock at {path}")
+            # Mechanism-correctness audit: reclaiming a stale lock right
+            # before timing out anyway used to vanish entirely -- the
+            # reclaim actually happened (a real side effect, same as
+            # the success-path warning below), but nothing in the
+            # resulting failure said so.
+            timeout_warnings = (
+                [
+                    "A stale repository lock (from a possibly-crashed or genuinely slow process) was "
+                    "reclaimed, but the lock could still not be acquired before timing out."
+                ]
+                if reclaimed_stale_lock
+                else None
+            )
+            raise LockTimeoutError(
+                f"Timed out waiting for the repository lock at {path}", warnings=timeout_warnings
+            )
         time.sleep(poll_interval)
 
     # Observability audit: yields the warnings list the caller should

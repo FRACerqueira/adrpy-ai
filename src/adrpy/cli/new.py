@@ -94,7 +94,9 @@ def run(args):
         existing = find_by_unique_title(title, config, decisions)
         if existing is not None:
             raise CommandError(
-                "title-already-exists", f"A decision with this title already exists: {existing.name}"
+                "title-already-exists",
+                f"A decision with this title already exists: {existing.name}",
+                warnings=warnings,
             )
 
         record = DecisionRecord(
@@ -111,7 +113,7 @@ def run(args):
         filename = build_filename(config, record)
         file_path = resolve_within(folder, filename)
         if file_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}")
+            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
         content = build_header(config, record) + config.template
         attempts = atomic_write_text(file_path, content)

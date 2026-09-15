@@ -92,6 +92,24 @@ def test_lock_timeout_is_a_command_error(tmp_path):
     assert excinfo.value.code == "repository-locked"
 
 
+def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
+    """Mechanism-correctness audit round 2: reclaiming a stale lock is a
+    real side effect, even when this process still can't acquire the lock
+    before its own wait_ceiling expires (e.g. a third process grabs it
+    first). That reclaim used to vanish completely from the resulting
+    LockTimeoutError -- exactly the same class of bug as a command's own
+    warnings being dropped on an unrelated later failure."""
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_text(f"stale-token\n{time.time() - 999}")
+
+    with pytest.raises(LockTimeoutError) as excinfo:
+        with acquire_repo_lock(tmp_path, abandon_after=0, wait_ceiling=0, poll_interval=0.05):
+            pass
+
+    assert excinfo.value.warnings
+    assert any("stale" in w.lower() for w in excinfo.value.warnings)
+
+
 def test_wait_ceiling_uses_monotonic_clock_not_wall_clock(tmp_path, monkeypatch):
     """Resilience audit R5: the wait-deadline used time.time(), so a
     stalled/backward-jumping wall clock (NTP correction) made the deadline

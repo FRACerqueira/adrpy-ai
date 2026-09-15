@@ -54,7 +54,7 @@ def run(args):
     # already-superseded each call for a different recovery action.
     reason = ineligibility_reason_for_approve_or_reject(header)
     if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
@@ -63,7 +63,9 @@ def run(args):
             warnings.append(warning)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
-            "family-member-superseded", "A sibling decision in this family has already been superseded."
+            "family-member-superseded",
+            "A sibling decision in this family has already been superseded.",
+            warnings=warnings,
         )
 
     refdate = parse_refdate(flags.get("refdate"))

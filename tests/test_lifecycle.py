@@ -149,10 +149,10 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     with open(target, "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body")
     from adrpy.core.header import parse_header
-    from adrpy.core.lifecycle import read_lines
+    from adrpy.core.lifecycle import read_lines_with_report
     from adrpy.core.naming import parse_any_filename
 
-    lines = read_lines(target)
+    lines, _encoding_repaired = read_lines_with_report(target)
     header = parse_header(lines, config)
     _, filename_info = parse_any_filename(target.name, config)
 

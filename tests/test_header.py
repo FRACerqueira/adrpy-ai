@@ -6,7 +6,6 @@ from adrpy.core.header import (
     DecisionRecord,
     build_header,
     counts_as_family_member,
-    is_structurally_valid,
     parse_header,
 )
 
@@ -63,7 +62,7 @@ def test_build_then_parse_round_trips_the_record():
 
     parsed = parse_header(lines, config)
 
-    assert is_structurally_valid(parsed)
+    assert parsed.is_valid
     assert counts_as_family_member(parsed)
     assert parsed.title == "Round trip"
     assert parsed.version == 1
@@ -97,7 +96,7 @@ def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid(
     parsed = parse_header(lines, config)
 
     assert parsed.is_migrated
-    assert not is_structurally_valid(parsed)
+    assert not parsed.is_valid
     assert counts_as_family_member(parsed)
 
 
@@ -107,5 +106,5 @@ def test_malformed_header_is_neither_valid_nor_a_family_member():
 
     parsed = parse_header(lines, config)
 
-    assert not is_structurally_valid(parsed)
+    assert not parsed.is_valid
     assert not counts_as_family_member(parsed)

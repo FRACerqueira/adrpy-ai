@@ -81,12 +81,17 @@ def run(args):
             entries.append((parsed, candidate, parse_header(lines, config)))
 
     if not entries:
-        raise CommandError("no-decisions-found", "No .md files matching a recognized naming scheme were found.")
+        raise CommandError(
+            "no-decisions-found",
+            "No .md files matching a recognized naming scheme were found.",
+            warnings=warnings,
+        )
 
     if any(header.is_valid and not header.is_migrated for _, _, header in entries):
         raise CommandError(
             "already-tool-created-adrs-exist",
             "This repository already has decisions created by this tool; migration refuses to run.",
+            warnings=warnings,
         )
 
     candidates = [
@@ -95,7 +100,7 @@ def run(args):
         if header.status_create is None and not header.is_migrated and not header.is_valid
     ]
     if not candidates:
-        raise CommandError("no-eligible-files-to-migrate", "No files need migration.")
+        raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
 
     migrated = []
     for parsed, candidate_path in candidates:

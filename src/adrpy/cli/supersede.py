@@ -78,7 +78,7 @@ def run(args):
     # not-eligible-for-supersede.
     reason = ineligibility_reason_for_supersede(header)
     if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
     refdate = parse_refdate(flags.get("refdate"))
     validate_refdate_not_in_future(refdate)
@@ -126,7 +126,7 @@ def run(args):
         filename = build_filename(config, successor)
         successor_path = resolve_within(folder, filename)
         if successor_path.exists():
-            raise CommandError("file-already-exists", f"File already exists: {filename}")
+            raise CommandError("file-already-exists", f"File already exists: {filename}", warnings=warnings)
 
         _record, _content, attempts = mark_superseded(
             path, config, lines, header, filename_info, successor_number, refdate

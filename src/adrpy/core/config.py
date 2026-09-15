@@ -153,7 +153,7 @@ def load_repo_config(path):
 
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
-    adr-config.adrplus, and init's --file seed) -- invalid bytes must
+    adr-config.adrplus, and init's --seed) -- invalid bytes must
     become a structured CommandError, not a raw UnicodeDecodeError with
     empty stdout (resilience audit R3)."""
     try:

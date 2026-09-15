@@ -46,7 +46,7 @@ def run(args):
     # not-eligible-for-undo.
     reason = ineligibility_reason_for_undo(header)
     if reason is not None:
-        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
@@ -58,12 +58,15 @@ def run(args):
     members = family_members(folder, config, filename_info.number)
     if has_superseded_sibling(folder, config, filename_info.number, members=members):
         raise CommandError(
-            "family-member-superseded", "A sibling decision in this family has already been superseded."
+            "family-member-superseded",
+            "A sibling decision in this family has already been superseded.",
+            warnings=warnings,
         )
     if has_pending_sibling(folder, config, filename_info.number, members=members):
         raise CommandError(
             "family-member-pending",
             "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",
+            warnings=warnings,
         )
 
     _record, _content, attempts = rewrite_status_field(

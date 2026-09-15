@@ -262,13 +262,6 @@ def _parse_status_cell(text, config):
     return status, parsed_date, None
 
 
-def is_structurally_valid(header):
-    """Full parse succeeded: every row of the fixed 12-line table matched the
-    expected shape and every status cell parsed cleanly. Used wherever a
-    specific target file's header must be trustworthy enough to act on."""
-    return header.is_valid
-
-
 def counts_as_family_member(header):
     """Looser test used when scanning the ADR folder to resolve sequence and
     version membership -- mirrors AdrService.cs's

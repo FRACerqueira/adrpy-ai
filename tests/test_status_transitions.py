@@ -69,6 +69,56 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
     assert "|Changed|Accepted" not in adr_path.read_text(encoding="utf-8")
 
 
+def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
+    """Mechanism-correctness audit round 2 (findings #3/#4): a warning
+    already recorded earlier in the same run (here, an encoding repair on
+    read) used to be silently discarded the moment the command went on to
+    fail for an unrelated reason (here, the decision is already Accepted)
+    -- nothing in the failure response revealed that a repair had already
+    happened to the file on disk."""
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "already-accepted"
+    assert excinfo.value.warnings
+    assert any("utf-8" in w.lower() for w in excinfo.value.warnings)
+
+
+def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
+    """Mechanism-correctness audit round 2 (findings #3/#4), the most
+    serious instance: reject's primary write (marking THIS file Rejected)
+    already succeeds before it discovers the predecessor it's supposed to
+    un-supersede doesn't exist. The previous failure response revealed
+    nothing about the mutation that had already happened for real."""
+    target = tmp_path
+    init.run(["--path", str(target)])
+    config = load_repo_config(target / "adr-config.adrplus")
+    adr_dir = target / "doc" / "adr"
+    successor_path = adr_dir / "ADR002V01-successor--999.md"
+    _write_raw(
+        successor_path,
+        config,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        superseded=999,
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path)])
+
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.data == {"file": str(successor_path), "status": "Rejected"}
+    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+
+
 def test_approve_rejects_refdate_before_create(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 
