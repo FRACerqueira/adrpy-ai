@@ -70,6 +70,24 @@ def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
     assert legacy_path.read_bytes() == expected_header.encode("utf-8") + body.encode("utf-8")
 
 
+def test_migrate_strips_a_leading_utf8_bom(tmp_path):
+    """Fidelity audit F7: confirmed live -- the real adrplus discards a
+    leading UTF-8 BOM when reading the legacy file, so the migrated result
+    never has one; adrpy preserved the raw bytes including the BOM, which
+    landed it in the MIDDLE of the file (after the new header, before the
+    body) instead of not existing at all."""
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    body_without_bom = "# BOM file\n"
+    legacy_path = _write_legacy_file(tmp_path, "0001WithBom.md", body_without_bom)
+    legacy_path.write_bytes(b"\xef\xbb\xbf" + body_without_bom.encode("utf-8"))
+
+    migrate.run(["--path", str(tmp_path)])
+
+    result_bytes = legacy_path.read_bytes()
+    assert b"\xef\xbb\xbf" not in result_bytes
+    assert result_bytes.endswith(body_without_bom.encode("utf-8"))
+
+
 def test_migrate_multiple_files(tmp_path):
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")

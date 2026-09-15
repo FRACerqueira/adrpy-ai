@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from adrpy.core.errors import CommandError
+from adrpy.core.naming import parse_migration_pattern
 from adrpy.core.security import reject_embedded_delimiter
 
 VALID_SEPARATORS = ("-", "_", ".")
@@ -271,7 +272,16 @@ def parse_repo_config(text):
         except CommandError as error:
             raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 
-    # migrationpattern's own format (when non-empty) is validated in Fase 6,
-    # once the legacy-scheme parser it depends on exists.
+    # Fidelity audit F2: confirmed against ValidateConfig.cs:494-506 (a
+    # real, pre-1.0.0 check, not part of the 1.0.2 refdate additions) --
+    # the real tool validates a non-empty migrationpattern with
+    # PatternParser.ParseMigratePattern and rejects anything that doesn't
+    # match the N##:##T##[V##:##][R##:##][P##:##] shape.
+    migrationpattern = lowered["migrationpattern"]
+    if migrationpattern and parse_migration_pattern(migrationpattern) is None:
+        raise CommandError(
+            "config-migrationpattern-invalid",
+            "migrationpattern must match N##:##T##[V##:##][R##:##][P##:##], e.g. 'N00:04T04'.",
+        )
 
     return RepoConfig(**{name: lowered[name] for name in ALL_FIELDS})

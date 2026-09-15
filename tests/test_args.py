@@ -25,6 +25,17 @@ def test_flag_missing_value_is_usage_error():
         parse_flags(["--path"], required=("path",))
 
 
+def test_flag_with_empty_string_value_is_usage_error():
+    """Fidelity audit F5: confirmed live -- `adrplus new --title ""`
+    refuses with "Missing value for argument", the same class of failure
+    as omitting the flag entirely. adrpy accepted an empty string as a
+    real value, which for --domain/--scope on `version` even let an
+    omitted-vs-explicitly-cleared distinction do something the real tool
+    has no way to express (erasing an inherited value)."""
+    with pytest.raises(UsageError):
+        parse_flags(["--title", ""], required=("title",))
+
+
 def test_no_flags_required_or_supplied_returns_empty_dict():
     assert parse_flags([]) == {}
 

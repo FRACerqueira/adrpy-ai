@@ -89,8 +89,14 @@ def run(args):
     for parsed, candidate_path in candidates:
         # Raw bytes, not text: the original content's own line endings
         # (and anything else about its bytes) must pass through completely
-        # untouched -- only the header text is new.
+        # untouched -- only the header text is new. The one exception,
+        # confirmed live (fidelity audit F7): the real tool discards a
+        # leading UTF-8 BOM when reading, so it never appears in the
+        # migrated result -- pass it through here and it lands stranded
+        # in the middle of the file, after the new header.
         raw_bytes = candidate_path.read_bytes()
+        if raw_bytes.startswith(b"\xef\xbb\xbf"):
+            raw_bytes = raw_bytes[3:]
         record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
         header_text = build_header(config, record, migrated=True)
         atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)

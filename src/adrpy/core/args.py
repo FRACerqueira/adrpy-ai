@@ -26,7 +26,14 @@ def parse_flags(args, required=(), optional=(), switches=()):
             continue
         if i >= len(args):
             raise UsageError(f"--{name} requires a value")
-        values[name] = args[i]
+        value = args[i]
+        if value == "":
+            # Fidelity audit F5: confirmed live, `adrplus --title ""`
+            # refuses with "Missing value for argument" -- the real tool
+            # treats an empty string the same as an omitted value, not as
+            # a real (if unusual) one.
+            raise UsageError(f"--{name} requires a non-empty value")
+        values[name] = value
         i += 1
 
     missing = [name for name in required if name not in values]

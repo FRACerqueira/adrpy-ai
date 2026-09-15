@@ -275,6 +275,44 @@ def test_field_names_are_case_insensitive():
     assert config.folderadr == "doc/adr"
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "{number}-{title}",
+        "*.md",
+        "T06N01:04",  # wrong order
+        "N01:04",  # missing T
+        "N1:4T6",  # single-digit segments
+        "n01:04t06",  # lowercase
+        "N01:04T06X99:99",  # unknown segment letter
+        "  N01:04T06  ",  # whitespace
+    ],
+)
+def test_invalid_migrationpattern_is_rejected(pattern):
+    """Fidelity audit F2: confirmed against ValidateConfig.cs:494-506 (a
+    real check present since before 1.0.0, not part of the 1.0.2 refdate
+    changes) -- the real tool validates migrationpattern with
+    PatternParser.ParseMigratePattern and rejects anything that doesn't
+    match; adrpy accepted any string at all."""
+    data = _valid_config_dict()
+    data["migrationpattern"] = pattern
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-migrationpattern-invalid"
+
+
+@pytest.mark.parametrize("pattern", ["", "N01:04T06", "N01:04T06V11:02R13:01P15:03"])
+def test_valid_migrationpattern_is_accepted(pattern):
+    data = _valid_config_dict()
+    data["migrationpattern"] = pattern
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.migrationpattern == pattern
+
+
 def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
     """Resilience audit R3: adr-config.adrplus with invalid UTF-8 bytes
     raised a raw UnicodeDecodeError with EMPTY stdout in 6 different entry
