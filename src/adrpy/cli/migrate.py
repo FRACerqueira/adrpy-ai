@@ -81,7 +81,24 @@ def run(args):
                 if found is None:
                     continue
                 _, parsed = found
-                lines = split_real_lines(candidate.read_text(encoding="utf-8", errors="replace"))
+                try:
+                    text = candidate.read_text(encoding="utf-8", errors="replace")
+                except OSError as error:
+                    # Mechanism-correctness audit round 3 (resilience
+                    # finding #2a): this scan-phase read used to run
+                    # entirely outside any try/except -- a real failure
+                    # here (permission denied, a locked file, a network-
+                    # drive hiccup) escaped as a raw OSError, discarding
+                    # the orphan-cleanup warning already appended above
+                    # and skipping the deterministic per-file reporting
+                    # the best-effort redesign otherwise guarantees.
+                    raise CommandError(
+                        "migration-scan-failed",
+                        f"{candidate}: {error}",
+                        data={"unreadable_file": str(candidate)},
+                        warnings=warnings,
+                    ) from error
+                lines = split_real_lines(text)
                 entries.append((parsed, candidate, parse_header(lines, config)))
 
         if not entries:
@@ -137,7 +154,13 @@ def run(args):
                 if warning:
                     warnings.append(warning)
                 results.append({"file": str(candidate_path), "status": "migrated", "error": None})
-            except OSError as error:
+            except (OSError, UnicodeError) as error:
+                # UnicodeError (e.g. a UnicodeEncodeError from a title
+                # containing a lone surrogate) is not an OSError, but is
+                # just as plausible here as a real per-file failure --
+                # mechanism-correctness audit round 3 (resilience finding
+                # #2b): only catching OSError let it escape the whole
+                # loop, discarding every result already collected.
                 results.append({"file": str(candidate_path), "status": "failed", "error": str(error)})
 
         failed = [entry for entry in results if entry["status"] == "failed"]

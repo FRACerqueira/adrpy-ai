@@ -35,6 +35,67 @@ def _write_legacy_file(tmp_path, filename, content):
     return adr_dir / filename
 
 
+def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):
+    """Mechanism-correctness audit round 3 (resilience finding #2a): the
+    initial directory scan's own read (building `entries`, used to decide
+    eligibility) ran outside the per-candidate try/except entirely -- an
+    OSError there (permission denied, a locked file, a network-drive
+    hiccup) escaped as a raw OSError, discarding the orphan-cleanup
+    warning already appended and skipping the deterministic per-file
+    `results` reporting the whole best-effort redesign exists to
+    guarantee."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
+    bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
+
+    real_read_text = Path.read_text
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self == bad_path:
+            raise OSError("simulated read failure")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-scan-failed"
+    assert excinfo.value.data["unreadable_file"] == str(bad_path)
+
+
+def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result_entry(tmp_path, monkeypatch):
+    """Mechanism-correctness audit round 3 (resilience finding #2b): the
+    per-candidate loop only caught OSError -- a plausible non-OSError
+    failure while building a candidate's new header (e.g. a
+    UnicodeEncodeError from a title containing a lone surrogate) escaped
+    the whole loop, discarding the results already collected for every
+    file migrated successfully before it."""
+    _init_repo_with_pattern(tmp_path)
+    good_path = _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
+    bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
+
+    from adrpy.cli import migrate as migrate_module
+
+    real_build_header = migrate_module.build_header
+
+    def flaky_build_header(config, record, migrated=False):
+        if record.number == 2:
+            raise UnicodeEncodeError("utf-8", "\udc80", 0, 1, "simulated surrogate")
+        return real_build_header(config, record, migrated=migrated)
+
+    monkeypatch.setattr(migrate_module, "build_header", flaky_build_header)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-write-failed"
+    results = excinfo.value.data["results"]
+    statuses = {r["file"]: r["status"] for r in results}
+    assert statuses[str(good_path)] == "migrated"
+    assert statuses[str(bad_path)] == "failed"
+
+
 def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, monkeypatch):
     """Design decision (2026-09-15), superseding the earlier fail-fast fix:
     migrate is best-effort per file -- one file's OSError must not block
@@ -72,7 +133,9 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
     assert statuses[processed[0]] == "migrated"
     assert statuses[processed[1]] == "failed"
     assert statuses[processed[2]] == "migrated"
-    assert results[1]["error"]  # the failed entry carries the real OSError text
+    # Test-adequacy audit round 3: was only `assert results[1]["error"]`
+    # (truthiness), which would pass even with the wrong error text.
+    assert "simulated disk failure" in results[1]["error"]
 
     # The files that succeeded really were migrated on disk, despite the
     # sibling failure and the overall command reporting success=False.
