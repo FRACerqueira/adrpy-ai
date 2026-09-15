@@ -112,4 +112,5 @@ def run(args):
         content = build_header(config, successor) + config.template
         atomic_write_text(successor_path, content)
 
-    return {"predecessor": str(path), "created": str(successor_path), "status": config.statusnew}
+    # Usability audit M4: canonical keyword, not the repo's configured label.
+    return {"predecessor": str(path), "created": str(successor_path), "status": "Proposed"}

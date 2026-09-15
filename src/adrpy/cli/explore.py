@@ -78,6 +78,7 @@ def _build_entry(path, config):
 
     return {
         "filename": path.name,
+        "path": str(path),
         "scheme": scheme,
         "number": parsed.number if parsed else 0,
         "version": parsed.version if parsed else 0,
@@ -86,6 +87,8 @@ def _build_entry(path, config):
         "header": {
             "is_valid": header.is_valid,
             "is_migrated": header.is_migrated,
+            "scope": header.scope,
+            "domain": header.domain,
             "status_create": header.status_create,
             "date_create": header.date_create.isoformat() if header.date_create else None,
             "status_update": header.status_update,

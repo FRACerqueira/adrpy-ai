@@ -10,6 +10,7 @@ from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
     family_members,
     find_by_unique_title,
+    load_target,
     next_number,
     scan_decisions,
     validate_refdate_not_before,
@@ -64,6 +65,31 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Existing Decision", config, decisions) is not None
     assert find_by_unique_title("Existing decision", config, decisions) is not None
     assert find_by_unique_title("Totally different", config, decisions) is None
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_code"),
+    [
+        ("", "adr-file-empty"),
+        ("|only one line|", "adr-file-too-short"),
+    ],
+)
+def test_load_target_surfaces_the_specific_header_error_as_the_code(tmp_path, content, expected_code):
+    """Usability audit A4: header.error is already a specific, correctly-
+    computed reason (adr-file-empty, adr-header-title-not-found, ...);
+    load_target discarded it behind a single fixed "header-invalid" code,
+    forcing an agent to fall back to a stderr string it can't rely on."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    target = adr_dir / "ADR001V01-broken.md"
+    target.write_text(content, encoding="utf-8")
+    (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        load_target(target)
+
+    assert excinfo.value.code == expected_code
 
 
 def test_family_members_excludes_a_structurally_invalid_file(tmp_path):

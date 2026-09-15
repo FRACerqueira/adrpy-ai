@@ -141,7 +141,11 @@ def load_target(fileadr):
 
     header = parse_header(lines, config)
     if not header.is_valid:
-        raise CommandError("header-invalid", header.error or "Header is not structurally valid.")
+        # Usability audit A4: header.error is already the specific,
+        # correctly-computed reason (adr-file-empty, adr-header-title-
+        # not-found, status-line-date-invalid, ...) -- use it as the code
+        # itself instead of discarding it behind one fixed label.
+        raise CommandError(header.error or "header-invalid", "Header is not structurally valid.")
 
     return config, config_path.parent, fileadr, filename_info, header, lines
 

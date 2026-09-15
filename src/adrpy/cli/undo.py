@@ -52,4 +52,5 @@ def run(args):
 
     rewrite_status_field(path, config, lines, header, filename_info, field="update", status=None, refdate=None)
 
-    return {"file": str(path), "status": config.statusnew}
+    # Usability audit M4: canonical keyword, not the repo's configured label.
+    return {"file": str(path), "status": "Proposed"}

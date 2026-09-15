@@ -147,4 +147,5 @@ def run(args):
         content = build_header(config, record) + template
         atomic_write_text(new_path, content)
 
-    return {"created": str(new_path), "status": config.statusnew}
+    # Usability audit M4: canonical keyword, not the repo's configured label.
+    return {"created": str(new_path), "status": "Proposed"}

@@ -104,4 +104,7 @@ def run(args):
         content = build_header(config, record) + config.template
         atomic_write_text(file_path, content)
 
-    return {"created": str(file_path), "status": config.statusnew}
+    # Usability audit M4: the canonical keyword, not the repo's configured
+    # label -- `explore` reports status_create the same way for the same
+    # file, and the two must agree even when statusnew is customized.
+    return {"created": str(file_path), "status": "Proposed"}

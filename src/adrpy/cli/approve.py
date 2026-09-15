@@ -60,4 +60,6 @@ def run(args):
         path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
     )
 
-    return {"file": str(path), "status": config.statusacc}
+    # Usability audit M4: canonical keyword, matching explore's own
+    # status_create/status_update -- not the repo's configured label.
+    return {"file": str(path), "status": "Accepted"}

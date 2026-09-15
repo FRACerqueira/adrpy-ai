@@ -88,10 +88,43 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
     assert by_name["ADR001V01-first-decision.md"]["header"]["is_valid"] is True
     assert by_name["ADR001V01-first-decision.md"]["header"]["status_create"] == "Proposed"
     assert by_name["ADR001V01-first-decision.md"]["header"]["date_create"] == "2026-01-01"
+    # Usability audit A1: the full path, not just the bare filename -- an
+    # agent needs this to act on the entry (--file on approve/reject/...)
+    # without re-deriving folder/filename itself, which isn't safe under a
+    # recursive scan that could have subfolders.
+    assert by_name["ADR001V01-first-decision.md"]["path"] == str(
+        tmp_path / config_dict["folderadr"] / "ADR001V01-first-decision.md"
+    )
 
     assert by_name["not-an-adr.md"]["scheme"] is None
     assert by_name["not-an-adr.md"]["number"] == 0
     assert by_name["not-an-adr.md"]["header"]["is_valid"] is False
+
+
+def test_explore_exposes_scope_and_domain(tmp_path):
+    """Fidelity audit F14: the real tool's own report has Scope/Domain
+    columns; adrpy's JSON dropped both entirely."""
+    config_dict = _default_config_dict()
+    _write_repo(
+        tmp_path,
+        config_dict,
+        {
+            "ADR001V01-first-decision.md": _decision_text(
+                parse_repo_config(json.dumps(config_dict)),
+                number=1,
+                title="First decision",
+                version=1,
+                scope="Data",
+                domain="Backend",
+            ),
+        },
+    )
+
+    result = explore.run(["--path", str(tmp_path)])
+
+    entry = result["decisions"][0]
+    assert entry["header"]["scope"] == "Data"
+    assert entry["header"]["domain"] == "Backend"
 
 
 def test_explore_sorts_by_validity_then_migrated_then_descending_numbers(tmp_path):

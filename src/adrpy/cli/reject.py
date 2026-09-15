@@ -86,4 +86,5 @@ def run(args):
         )
         undone_predecessor = str(pred_path)
 
-    return {"file": str(path), "status": config.statusrej, "undone_predecessor": undone_predecessor}
+    # Usability audit M4: canonical keyword, not the repo's configured label.
+    return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor}
