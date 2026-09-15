@@ -8,7 +8,6 @@ exists): this command never touches `activeplugins` beyond what the
 supplied or default config already contains.
 """
 
-import os
 from importlib import resources
 from pathlib import Path
 
@@ -86,10 +85,10 @@ def run(args):
         )
 
     created = []
-    # `os.linesep`: replicates the real terminator (host-OS-dependent, not
-    # fixed -- see the Fase 2 commit) -- config_text is written verbatim,
-    # exactly as the original does, never re-serialized from `config`.
-    atomic_write_text(config_path, config_text, newline=os.linesep)
+    # atomic_write_text normalizes to this host's line separator (Fase 2:
+    # the real terminator is host-OS-dependent, not fixed) -- config_text
+    # is otherwise written verbatim, never re-serialized from `config`.
+    atomic_write_text(config_path, config_text)
     created.append(str(config_path))
 
     # config.folderadr is already validated as relative (Fase 3), but a

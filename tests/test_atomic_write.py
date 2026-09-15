@@ -4,21 +4,21 @@ import time
 
 import pytest
 
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files, normalize_newlines
 
 
-def test_atomic_write_creates_file_with_exact_content(tmp_path):
+def test_atomic_write_normalizes_and_creates_file(tmp_path):
     target = tmp_path / "decision.md"
 
-    atomic_write_text(target, "hello\r\nworld", newline="")
+    atomic_write_text(target, "hello\r\nworld")
 
-    assert target.read_bytes() == b"hello\r\nworld"
+    assert target.read_bytes() == f"hello{os.linesep}world".encode()
 
 
 def test_atomic_write_leaves_no_temp_file_behind(tmp_path):
     target = tmp_path / "decision.md"
 
-    atomic_write_text(target, "content", newline="")
+    atomic_write_text(target, "content")
 
     assert list(tmp_path.glob("*.tmp")) == []
 
@@ -33,14 +33,14 @@ def test_atomic_write_failure_before_replace_leaves_target_untouched(tmp_path, m
     monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
 
     with pytest.raises(OSError):
-        atomic_write_text(target, "new content", newline="")
+        atomic_write_text(target, "new content")
 
     assert target.read_text() == "original"
 
 
 def test_atomic_write_readers_never_see_partial_content(tmp_path):
     target = tmp_path / "decision.md"
-    atomic_write_text(target, "version-0", newline="")
+    atomic_write_text(target, "version-0")
 
     observations = []
     stop = threading.Event()
@@ -64,7 +64,7 @@ def test_atomic_write_readers_never_see_partial_content(tmp_path):
 
     try:
         for i in range(1, 50):
-            atomic_write_text(target, f"version-{i}", newline="")
+            atomic_write_text(target, f"version-{i}")
     finally:
         stop.set()
         reader_thread.join(timeout=5)
@@ -88,3 +88,39 @@ def test_cleanup_removes_only_old_temp_files(tmp_path):
     assert removed == [old_temp]
     assert not old_temp.exists()
     assert fresh_temp.exists()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_lines", "trailing"),
+    [
+        ("a\nb\nc", ["a", "b", "c"], False),
+        ("a\r\nb\r\nc", ["a", "b", "c"], False),
+        ("a\rb\rc", ["a", "b", "c"], False),
+        ("a\r\nb\nc\r", ["a", "b", "c"], True),  # mixed conventions, trailing \r counts as a terminator
+        ("a\nb\n", ["a", "b"], True),
+        ("", [], False),
+    ],
+)
+def test_normalize_newlines_handles_any_convention(text, expected_lines, trailing):
+    expected = os.linesep.join(expected_lines) + (os.linesep if trailing else "")
+
+    assert normalize_newlines(text) == expected
+
+
+def test_normalize_newlines_is_idempotent():
+    once = normalize_newlines("a\r\nb\nc\r")
+    twice = normalize_newlines(once)
+
+    assert once == twice
+
+
+def test_normalize_then_write_never_doubles_a_cr(tmp_path):
+    """Regression: this exact shape (already-terminated content, written
+    with the wrong newline mode) doubled every CR into "\\r\\r\\n" in the
+    `new` command before atomic_write_text started normalizing itself."""
+    target = tmp_path / "decision.md"
+    already_crlf_content = "line1\r\nline2\r\n" + "template body\r\n"
+
+    atomic_write_text(target, already_crlf_content)
+
+    assert b"\r\r\n" not in target.read_bytes()

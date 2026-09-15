@@ -17,14 +17,35 @@ RETRY_DELAY_SECONDS = 0.05
 ORPHAN_MAX_AGE_SECONDS = 30
 
 
-def atomic_write_text(path, content, newline):
+def normalize_newlines(text):
+    """Splits `text` on ANY newline convention already present (bare "\\n",
+    "\\r\\n", lone "\\r" -- including a different OS's own convention) and
+    rejoins using THIS host's `os.linesep`. Not a Python-side invention --
+    mirrors what AdrPlus itself does when carrying body content forward
+    between operations (AdrService.cs:413: split into lines, then
+    `string.Join(Environment.NewLine, ...)`, discarding whatever terminator
+    the source had). Makes every write's newline handling the same single
+    call, regardless of whether the content came in already terminated,
+    with bare "\\n", or mixed -- the exact ambiguity that caused a real
+    doubled-CR bug in the `new` command (see that commit)."""
+    if not text:
+        return text
+    trailing = text[-1] in ("\n", "\r")
+    normalized = os.linesep.join(text.splitlines())
+    if trailing:
+        normalized += os.linesep
+    return normalized
+
+
+def atomic_write_text(path, content):
     path = Path(path)
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    content = normalize_newlines(content)
 
     last_error = None
     for _ in range(RETRY_ATTEMPTS):
         try:
-            with open(temp_path, "w", encoding="utf-8", newline=newline) as handle:
+            with open(temp_path, "w", encoding="utf-8", newline="") as handle:
                 handle.write(content)
             os.replace(temp_path, path)
             return

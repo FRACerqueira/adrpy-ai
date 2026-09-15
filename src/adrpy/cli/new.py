@@ -85,13 +85,8 @@ def run(args):
     if file_path.exists():
         raise CommandError("file-already-exists", f"File already exists: {filename}")
 
-    # newline="": `content` already carries its real line endings
-    # (build_header uses os.linesep internally; config.template's \r\n
-    # came through verbatim from JSON decoding, not normalized) -- writing
-    # with newline=os.linesep here would double every "\n" into "\r\r\n",
-    # exactly the bug the Fase 2 commit's test fix already caught once.
     content = build_header(config, record) + config.template
-    atomic_write_text(file_path, content, newline="")
+    atomic_write_text(file_path, content)
 
     return {"created": str(file_path), "status": config.statusnew}
 
