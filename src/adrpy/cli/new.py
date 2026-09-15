@@ -5,7 +5,6 @@ implemented -- that setting lives in the app-level config this project
 hasn't built yet (Milestone 7 item 6, `config`); revisit then.
 """
 
-from datetime import date as date_cls
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
@@ -13,7 +12,13 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.lifecycle import find_by_unique_title, next_number, scan_decisions, validate_refdate_not_in_future
+from adrpy.core.lifecycle import (
+    find_by_unique_title,
+    next_number,
+    parse_refdate,
+    scan_decisions,
+    validate_refdate_not_in_future,
+)
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 
@@ -57,7 +62,7 @@ def run(args):
     reject_embedded_delimiter(domain, "domain")
     reject_embedded_delimiter(scope, "scope")
 
-    refdate = _parse_refdate(flags.get("refdate"))
+    refdate = parse_refdate(flags.get("refdate"))
     validate_refdate_not_in_future(refdate)
 
     folder = resolve_within(target, config.folderadr)
@@ -89,12 +94,3 @@ def run(args):
     atomic_write_text(file_path, content)
 
     return {"created": str(file_path), "status": config.statusnew}
-
-
-def _parse_refdate(text):
-    if not text:
-        return date_cls.today()
-    try:
-        return date_cls.fromisoformat(text)
-    except ValueError as error:
-        raise CommandError("refdate-invalid-format", f"Invalid date: {text}") from error

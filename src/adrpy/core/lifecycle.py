@@ -1,13 +1,30 @@
 """Shared lifecycle-transition helpers (harness Fase 7): date-reference
-validation and title-uniqueness/next-number resolution, used by
-new/approve/reject/undo/supersede/version/revise so each command doesn't
-duplicate this logic (Fase 1: one shared function, not copies)."""
+validation, title-uniqueness/next-number resolution, and the read-mutate-
+rewrite mechanics every status-transition command
+(approve/reject/undo/supersede/version/revise) shares -- one function per
+concern, not copies (Fase 1)."""
 
+import os
 from datetime import date as date_cls
+from pathlib import Path
 
+from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.casing import unique_title_key
+from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
+from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, parse_header
 from adrpy.core.naming import parse_any_filename
+
+
+def parse_refdate(text):
+    """Shared `--refdate` parsing: defaults to today when omitted, else
+    strict ISO (YYYY-MM-DD)."""
+    if not text:
+        return date_cls.today()
+    try:
+        return date_cls.fromisoformat(text)
+    except ValueError as error:
+        raise CommandError("refdate-invalid-format", f"Invalid date: {text}") from error
 
 
 def validate_refdate_not_in_future(refdate):
@@ -56,3 +73,147 @@ def find_by_unique_title(title, config, decisions):
         if parsed.title is not None and unique_title_key(parsed.title, config) == key:
             return path
     return None
+
+
+def find_repo_root(file_path):
+    """Mirrors FileSystemService.GetFileRootRepositoryPath: walk up from
+    the file's own directory looking for adr-config.adrplus. Returns the
+    config file's Path, or None if never found."""
+    directory = file_path.parent
+    while True:
+        candidate = directory / "adr-config.adrplus"
+        if candidate.is_file():
+            return candidate
+        parent = directory.parent
+        if parent == directory:
+            return None
+        directory = parent
+
+
+def read_lines(path):
+    """Fase 4: tolerates invalid bytes rather than raising (confirmed live
+    against the real tool)."""
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+def read_body(lines):
+    """Mirrors AdrService.cs:413-417: rejoin everything past the 12-line
+    header with THIS host's line separator (discarding whatever per-line
+    terminator the source had), plus exactly one trailing terminator when
+    there is any body content at all."""
+    body_lines = lines[HEADER_LINE_COUNT:]
+    if not body_lines:
+        return ""
+    return os.linesep.join(body_lines) + os.linesep
+
+
+def load_target(fileadr):
+    """Ported from the common preamble approve/reject/undo/supersede/
+    version/revise all share: resolve the extension default, find the
+    file's own repository root by walking up for adr-config.adrplus, load
+    +validate that config, then parse this file's own name and header.
+    Declares (Fase 6 checklist): recognizes BOTH naming schemes."""
+    fileadr = Path(fileadr)
+    if fileadr.suffix == "":
+        fileadr = fileadr.with_suffix(".md")
+    if not fileadr.is_file():
+        raise CommandError("file-not-found", f"File not found: {fileadr}")
+
+    config_path = find_repo_root(fileadr)
+    if config_path is None:
+        raise CommandError(
+            "cannot-determine-root-path", f"Cannot determine the repository root for: {fileadr}"
+        )
+    config = load_repo_config(config_path)
+
+    lines = read_lines(fileadr)
+    found = parse_any_filename(fileadr.name, config)
+    if found is None:
+        raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {fileadr.name}")
+    _, filename_info = found
+
+    header = parse_header(lines, config)
+    if not header.is_valid:
+        raise CommandError("header-invalid", header.error or "Header is not structurally valid.")
+
+    return config, config_path.parent, fileadr, filename_info, header, lines
+
+
+def family_members(folder, config, number):
+    """Every decision (current or legacy scheme) sharing `number`, with its
+    parsed header attached -- mirrors AdrService.ReadAllAdrByNumber."""
+    members = []
+    for _, parsed, path in scan_decisions(folder, config):
+        if parsed.number != number:
+            continue
+        header = parse_header(read_lines(path), config)
+        members.append((parsed, header, path))
+    return members
+
+
+def has_superseded_sibling(folder, config, number):
+    return any(header.status_change == "Superseded" for _, header, _ in family_members(folder, config, number))
+
+
+def has_pending_sibling(folder, config, number):
+    """Mirrors the undo-specific extra check: a family member that is
+    itself still unresolved (no update status) and NOT a migrated
+    placeholder blocks undo -- undoing would otherwise leave two
+    simultaneously-pending members of the same family."""
+    return any(
+        header.status_update is None and not header.is_migrated
+        for _, header, _ in family_members(folder, config, number)
+    )
+
+
+def is_eligible_for_approve_or_reject(header):
+    """Mirrors ApproveCommandHandler/RejectCommandHandler's
+    SelectionCondition -- identical in both."""
+    return (
+        header.is_valid
+        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
+        and header.status_update is None
+        and header.status_change is None
+    )
+
+
+def is_eligible_for_undo(header):
+    """Mirrors UndoStatusCommandHandler's SelectionCondition."""
+    return (
+        header.is_valid
+        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
+        and header.status_update is not None
+        and header.status_change is None
+    )
+
+
+def rewrite_status_field(path, config, lines, header, filename_info, *, field, status, refdate):
+    """Mirrors StatusUpdateAdrAsync (`field="update"`) and
+    StatusChangeAdrAsync (`field="change"`): mutate exactly one status+date
+    pair on the already-parsed header, rebuild via build_header preserving
+    every other field and the original body verbatim, and write the file.
+    Version/Revision come from the header AS READ, never recalculated;
+    Revision is forced None whenever lenrevision == 0, matching
+    Helper.CreateAdrRecord."""
+    record = DecisionRecord(
+        number=filename_info.number,
+        title=header.title,
+        version=header.version or 0,
+        revision=None if config.lenrevision == 0 else header.revision,
+        scope=header.scope,
+        domain=header.domain,
+        status_create=header.status_create,
+        date_create=header.date_create,
+        status_update=header.status_update,
+        date_update=header.date_update,
+        status_change=header.status_change,
+        date_change=header.date_change,
+        superseded_by_file=header.superseded_by_file,
+    )
+
+    setattr(record, f"status_{field}", status)
+    setattr(record, f"date_{field}", refdate if status is not None else None)
+
+    content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
+    atomic_write_text(path, content)
+    return record, content
