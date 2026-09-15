@@ -88,6 +88,47 @@ def test_approve_rejects_when_sibling_superseded(tmp_path):
     assert excinfo.value.code == "family-member-superseded"
 
 
+def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
+    """Regression for the resilience audit's R1 finding: a body containing
+    a Unicode line-separator character that is NOT a real line terminator
+    (form feed, NEL, LINE SEPARATOR, ...) must survive a status rewrite
+    byte-for-byte. Confirmed live against the real adrplus: none of these
+    is treated as a line break there, so the body's line count and content
+    are unchanged by `approve`."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    exotic_body = "Body line one.\x0cAfter form-feed.\nNEL here:After NEL.\nLS here: After LS.\n"
+    with open(adr_path, "a", encoding="utf-8", newline="") as handle:
+        handle.write(exotic_body)
+    body_lines_before = adr_path.read_text(encoding="utf-8").count("\n")
+
+    approve.run(["--file", str(adr_path)])
+
+    text_after = adr_path.read_text(encoding="utf-8")
+    assert "Body line one.\x0cAfter form-feed." in text_after
+    assert "NEL here:After NEL." in text_after
+    assert "LS here: After LS." in text_after
+    assert text_after.count("\n") == body_lines_before
+
+
+def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_path):
+    """Not a bug: confirmed live against the real adrplus (approve on a
+    body containing raw invalid UTF-8 bytes) that it ALSO replaces them
+    with U+FFFD on rewrite, byte-for-byte identical to this port. Recorded
+    as a permanent test so this doesn't get re-investigated as a suspected
+    data-loss bug -- tolerating invalid bytes on read (Fase 4) was already
+    confirmed fidelity; this confirms the read-then-rewrite round trip is
+    too, not an extra liberty this port took on its own."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"\r\nInvalid UTF-8 marker: \xa4\xe9\xe8 end.\r\n")
+
+    approve.run(["--file", str(adr_path)])
+
+    body_bytes = adr_path.read_bytes()
+    assert b"\xa4\xe9\xe8" not in body_bytes
+    assert "Invalid UTF-8 marker: ��� end.".encode("utf-8") in body_bytes
+
+
 def test_approve_file_not_found(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
 

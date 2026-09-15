@@ -124,3 +124,20 @@ def test_normalize_then_write_never_doubles_a_cr(tmp_path):
     atomic_write_text(target, already_crlf_content)
 
     assert b"\r\r\n" not in target.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "", " ", " "],
+    ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
+)
+def test_normalize_newlines_does_not_treat_unicode_separators_as_line_breaks(separator):
+    """Confirmed live against the real adrplus/.NET (approve on a body
+    containing each of these mid-line): none is treated as a line break
+    there -- the body survives byte-for-byte, same line count before and
+    after. Only str.splitlines()'s much broader definition of "line
+    boundary" treats these as breaks, which is a pure porting bug, not a
+    fidelity choice (unlike invalid-UTF-8-byte replacement on rewrite,
+    separately confirmed live to match the real tool exactly)."""
+    text = f"before{separator}after"
+    assert normalize_newlines(text) == text

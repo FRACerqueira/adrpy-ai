@@ -8,7 +8,7 @@ import os
 from datetime import date as date_cls
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import atomic_write_text, split_real_lines
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
@@ -92,8 +92,12 @@ def find_repo_root(file_path):
 
 def read_lines(path):
     """Fase 4: tolerates invalid bytes rather than raising (confirmed live
-    against the real tool)."""
-    return path.read_text(encoding="utf-8", errors="replace").splitlines()
+    against the real tool -- including that a rewrite persists the
+    replacement characters, same as the original). Splits on real line
+    terminators only (see split_real_lines), never str.splitlines()'s
+    broader Unicode line-boundary set (confirmed live NOT to be real line
+    breaks for the original)."""
+    return split_real_lines(path.read_text(encoding="utf-8", errors="replace"))
 
 
 def read_body(lines):

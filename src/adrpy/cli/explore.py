@@ -7,6 +7,7 @@ in the report, never dropped silently.
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
+from adrpy.core.atomic_write import split_real_lines
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
@@ -71,7 +72,7 @@ def _build_entry(path, config):
     # Fase 4: tolerate invalid bytes rather than raising, mirroring the
     # original's confirmed-live behavior (see the Fase 4 commit).
     text = path.read_text(encoding="utf-8", errors="replace")
-    header = parse_header(text.splitlines(), config)
+    header = parse_header(split_real_lines(text), config)
 
     return {
         "filename": path.name,

@@ -8,6 +8,7 @@ a concurrent reader); anything past that surfaces as a real error.
 """
 
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -16,22 +17,47 @@ RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 0.05
 ORPHAN_MAX_AGE_SECONDS = 30
 
+_REAL_NEWLINE = re.compile(r"\r\n|\r|\n")
+
+
+def split_real_lines(text):
+    """Splits `text` on real line terminators only -- CRLF, lone CR, lone
+    LF -- unlike `str.splitlines()`, which also treats several Unicode
+    line-separator characters (vertical tab, form feed, FS/GS/RS, NEL,
+    LINE/PARAGRAPH SEPARATOR) as breaks. Confirmed live against the real
+    adrplus/.NET: a decision body containing any of those mid-line survives
+    `approve` byte-for-byte, same line count before and after -- none of
+    them is a line break there. Using `str.splitlines()` for this was a
+    pure porting bug (silently corrupting such a body into extra CRLF
+    lines), not a fidelity choice.
+
+    Matches str.splitlines()'s own convention of never producing a
+    trailing empty element for a trailing terminator (only `re.split`'s
+    raw behavior would)."""
+    if text == "":
+        return []
+    parts = _REAL_NEWLINE.split(text)
+    if parts[-1] == "":
+        parts.pop()
+    return parts
+
 
 def normalize_newlines(text):
-    """Splits `text` on ANY newline convention already present (bare "\\n",
-    "\\r\\n", lone "\\r" -- including a different OS's own convention) and
-    rejoins using THIS host's `os.linesep`. Not a Python-side invention --
-    mirrors what AdrPlus itself does when carrying body content forward
-    between operations (AdrService.cs:413: split into lines, then
-    `string.Join(Environment.NewLine, ...)`, discarding whatever terminator
-    the source had). Makes every write's newline handling the same single
-    call, regardless of whether the content came in already terminated,
-    with bare "\\n", or mixed -- the exact ambiguity that caused a real
-    doubled-CR bug in the `new` command (see that commit)."""
+    """Splits `text` on ANY real newline convention already present (bare
+    "\\n", "\\r\\n", lone "\\r" -- including a different OS's own
+    convention) and rejoins using THIS host's `os.linesep`. Not a
+    Python-side invention -- mirrors what AdrPlus itself does when carrying
+    body content forward between operations (AdrService.cs:413: split into
+    lines, then `string.Join(Environment.NewLine, ...)`, discarding
+    whatever terminator the source had). Makes every write's newline
+    handling the same single call, regardless of whether the content came
+    in already terminated, with bare "\\n", or mixed -- the exact ambiguity
+    that caused a real doubled-CR bug in the `new` command (see that
+    commit)."""
     if not text:
         return text
     trailing = text[-1] in ("\n", "\r")
-    normalized = os.linesep.join(text.splitlines())
+    normalized = os.linesep.join(split_real_lines(text))
     if trailing:
         normalized += os.linesep
     return normalized

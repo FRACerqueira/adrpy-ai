@@ -18,7 +18,7 @@ must already be set; revisit once `config` exists.
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_bytes
+from adrpy.core.atomic_write import atomic_write_bytes, split_real_lines
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
@@ -62,7 +62,7 @@ def run(args):
             if found is None:
                 continue
             _, parsed = found
-            lines = candidate.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = split_real_lines(candidate.read_text(encoding="utf-8", errors="replace"))
             entries.append((parsed, candidate, parse_header(lines, config)))
 
     if not entries:
