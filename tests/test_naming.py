@@ -1,7 +1,16 @@
-from adrpy.core.config import load_repo_config
-from adrpy.core.naming import parse_filename
+import json
+
+from adrpy.core.config import load_repo_config, parse_repo_config
+from adrpy.core.naming import parse_any_filename, parse_filename, parse_legacy_filename, parse_migration_pattern
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+
+
+def _config_with_migration_pattern(pattern):
+    with open(FIXTURE_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    data["migrationpattern"] = pattern
+    return parse_repo_config(json.dumps(data))
 
 
 def test_parses_a_real_adr_filename():
@@ -14,6 +23,8 @@ def test_parses_a_real_adr_filename():
     assert parsed.number == 1
     assert parsed.version == 1
     assert parsed.revision is None
+    assert parsed.prefix == "ADR"
+    assert parsed.title == "select-adr-templates-based-on-configured-ui-language"
 
 
 def test_parses_a_real_adr_filename_with_higher_version():
@@ -43,3 +54,89 @@ def test_non_matching_filename_returns_none():
     assert parse_filename("README.md", config) is None
     assert parse_filename("not-an-adr-file.txt", config) is None
     assert parse_filename("ADR-no-number-here.md", config) is None
+
+
+def test_parse_migration_pattern_matches_the_migration_guide_example():
+    """"N00:04T04" is the literal example from MigrationGuide.md, matching
+    filenames like "0001UsePostgreSQL.md"."""
+    pattern = parse_migration_pattern("N00:04T04")
+
+    assert pattern == {"N": (0, 4), "T": (4, 0)}
+
+
+def test_parse_migration_pattern_with_all_optional_segments():
+    pattern = parse_migration_pattern("N00:04T08V04:02R06:02P12:03")
+
+    assert pattern["N"] == (0, 4)
+    assert pattern["T"] == (8, 0)
+    assert pattern["V"] == (4, 2)
+    assert pattern["R"] == (6, 2)
+    assert pattern["P"] == (12, 3)
+
+
+def test_parse_migration_pattern_rejects_malformed_text():
+    assert parse_migration_pattern("") is None
+    assert parse_migration_pattern("not-a-pattern") is None
+
+
+def test_parses_the_migration_guide_example_filename():
+    """The literal example from MigrationGuide.md's "Example: Complete
+    Migration Workflow" section."""
+    config = _config_with_migration_pattern("N00:04T04")
+
+    parsed = parse_legacy_filename("0001UsePostgreSQL.md", config)
+
+    assert parsed.number == 1
+    assert parsed.version == 0
+    assert parsed.revision == 0
+    assert parsed.title == "UsePostgreSQL"
+
+
+def test_legacy_filename_with_non_digit_sequence_is_rejected():
+    config = _config_with_migration_pattern("N00:04T04")
+
+    assert parse_legacy_filename("DECISION-001.md", config) is None
+
+
+def test_legacy_filename_too_short_for_pattern_is_rejected():
+    config = _config_with_migration_pattern("N00:04T04")
+
+    assert parse_legacy_filename("001.md", config) is None
+
+
+def test_legacy_scheme_is_not_recognized_when_migrationpattern_is_empty():
+    config = load_repo_config(FIXTURE_PATH)
+    assert config.migrationpattern == ""
+
+    assert parse_legacy_filename("0001UsePostgreSQL.md", config) is None
+
+
+def test_parse_any_filename_prefers_current_scheme():
+    config = _config_with_migration_pattern("N00:04T04")
+
+    found = parse_any_filename(
+        "ADR001V01-select-adr-templates-based-on-configured-ui-language.md", config
+    )
+
+    assert found is not None
+    scheme, parsed = found
+    assert scheme == "current"
+    assert parsed.number == 1
+
+
+def test_parse_any_filename_falls_back_to_legacy():
+    config = _config_with_migration_pattern("N00:04T04")
+
+    found = parse_any_filename("0001UsePostgreSQL.md", config)
+
+    assert found is not None
+    scheme, parsed = found
+    assert scheme == "legacy"
+    assert parsed.number == 1
+    assert parsed.title == "UsePostgreSQL"
+
+
+def test_parse_any_filename_returns_none_for_neither_scheme():
+    config = _config_with_migration_pattern("N00:04T04")
+
+    assert parse_any_filename("README.md", config) is None
