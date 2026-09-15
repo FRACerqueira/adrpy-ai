@@ -23,6 +23,7 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core import config as config_schema
 from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.security import resolve_within
@@ -40,6 +41,57 @@ def _field_type(field):
     return "string"
 
 
+_INT_FIELD_BOUNDS = {
+    "lenseq": (config_schema.LENSEQ_MIN, config_schema.LENSEQ_MAX),
+    "lenversion": (config_schema.LENVERSION_MIN, config_schema.LENVERSION_MAX),
+    "lenrevision": (config_schema.LENREVISION_MIN, config_schema.LENREVISION_MAX),
+}
+
+
+def _field_description(field):
+    """Usability audit M2: cites the same constants core/config.py's own
+    validator enforces (never a hand-copied number), so a field's real
+    domain is discoverable via `help config` instead of only by
+    deliberately triggering the matching config-*-invalid/-too-long
+    error -- and the two can never silently drift apart."""
+    if field == "folderadr":
+        return (
+            f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
+            "cannot be empty, absolute, or escape the repository."
+        )
+    if field == "migrationpattern":
+        return (
+            "Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' "
+            "(N##:##T##[V##:##][R##:##][P##:##]); may be empty."
+        )
+    if field == "template":
+        return "Default template content for a new decision's body; may be empty."
+    if field == "prefix":
+        return f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; may be empty."
+    if field == "separator":
+        return f"One of {config_schema.VALID_SEPARATORS}."
+    if field == "casetransform":
+        return f"One of {config_schema.VALID_CASE_TRANSFORMS}."
+    if field in config_schema._STATUS_LABEL_FIELDS:
+        return (
+            f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
+            "characters; cannot be empty."
+        )
+    if field == "headerdisclaimer":
+        return (
+            f"Header disclaimer text, max {config_schema.HEADER_DISCLAIMER_MAX_LENGTH} characters; "
+            "cannot be empty."
+        )
+    if field in config_schema._HEADER_LABEL_FIELDS_MAX_40:
+        return f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty."
+    if field in _INT_FIELD_BOUNDS:
+        low, high = _INT_FIELD_BOUNDS[field]
+        return f"Integer between {low} and {high} (inclusive)."
+    if field == "disableplugins":
+        return "'true' or 'false'."
+    return f"New value for '{field}'."
+
+
 def describe():
     return {
         "name": "config",
@@ -55,7 +107,7 @@ def describe():
                     "name": field,
                     "type": _field_type(field),
                     "required": False,
-                    "description": f"New value for '{field}'.",
+                    "description": _field_description(field),
                 }
                 for field in _EDITABLE_FIELDS
             ],

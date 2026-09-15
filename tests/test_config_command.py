@@ -176,3 +176,36 @@ def test_config_describe_declares_correct_field_types():
     assert arguments["lenrevision"]["type"] == "integer"
     assert arguments["disableplugins"]["type"] == "boolean"
     assert arguments["prefix"]["type"] == "string"
+
+
+def test_config_describe_documents_the_real_domain_constraints():
+    """Usability audit M2: every field's description was the tautological
+    "New value for '<field>'." -- an agent could only discover a field's
+    real domain (separator ∈ {-,_,.}, lenseq ∈ [3,6], prefix max 5
+    ASCII letters, ...) by deliberately triggering the corresponding
+    config-*-invalid/-too-long error. Descriptions now cite the same
+    constants the validator itself enforces, so the two can never drift
+    apart silently."""
+    from adrpy.core import config as config_schema
+
+    arguments = {argument["name"]: argument["description"] for argument in config.describe()["arguments"]}
+
+    for separator in config_schema.VALID_SEPARATORS:
+        assert separator in arguments["separator"]
+    for transform in config_schema.VALID_CASE_TRANSFORMS:
+        assert transform in arguments["casetransform"]
+    assert str(config_schema.LENSEQ_MIN) in arguments["lenseq"]
+    assert str(config_schema.LENSEQ_MAX) in arguments["lenseq"]
+    assert str(config_schema.LENVERSION_MIN) in arguments["lenversion"]
+    assert str(config_schema.LENVERSION_MAX) in arguments["lenversion"]
+    assert str(config_schema.LENREVISION_MIN) in arguments["lenrevision"]
+    assert str(config_schema.LENREVISION_MAX) in arguments["lenrevision"]
+    assert str(config_schema.PREFIX_MAX_LENGTH) in arguments["prefix"]
+    assert str(config_schema.FOLDERADR_MAX_LENGTH) in arguments["folderadr"]
+    assert str(config_schema.HEADER_DISCLAIMER_MAX_LENGTH) in arguments["headerdisclaimer"]
+    for field in config_schema._HEADER_LABEL_FIELDS_MAX_40:
+        assert str(config_schema.HEADER_LABEL_MAX_LENGTH) in arguments[field]
+    for field in config_schema._STATUS_LABEL_FIELDS:
+        assert str(config_schema.STATUS_LABEL_MAX_LENGTH) in arguments[field]
+    assert "N" in arguments["migrationpattern"] and "T" in arguments["migrationpattern"]
+    assert "true" in arguments["disableplugins"] and "false" in arguments["disableplugins"]
