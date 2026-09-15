@@ -8,16 +8,38 @@ exists): this command never touches `activeplugins` beyond what the
 supplied or default config already contains.
 """
 
+import json
 from importlib import resources
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import parse_repo_config, read_config_text
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
 from adrpy.core.warnings import retry_warning
+
+# Matches adrplus.json's own documented `language` values verbatim.
+# Confirmed against AdrPlusRepoConfig.cs's field initializers: `language`
+# in the real tool doesn't just affect interactive UI text -- it also
+# selects the DEFAULT header/status labels (from a per-culture .resx) and
+# the default template content (a per-culture template file) baked into
+# a newly init'd repo. Each pack below was extracted verbatim from
+# AdrSource's own resources, never hand-translated.
+SUPPORTED_LANGUAGES = (
+    "en-us",
+    "pt-br",
+    "de-de",
+    "es-es",
+    "fr-fr",
+    "it-it",
+    "ja-jp",
+    "ko-kr",
+    "nl-be",
+    "ru-ru",
+    "zh-cn",
+)
 
 
 def describe():
@@ -37,15 +59,33 @@ def describe():
                 "required": False,
                 "description": "Path to a config JSON to seed the repository with, instead of the built-in default.",
             },
+            {
+                "name": "language",
+                "type": "string",
+                "required": False,
+                "description": (
+                    f"Built-in default language pack for header/status labels and the default template "
+                    f"(one of {SUPPORTED_LANGUAGES}); cannot be combined with --file. Defaults to en-us."
+                ),
+            },
         ],
     }
 
 
 def run(args):
-    flags = parse_flags(args, required=("path",), optional=("file",), aliases={"p": "path", "f": "file"})
+    flags = parse_flags(
+        args,
+        required=("path",),
+        optional=("file", "language"),
+        aliases={"p": "path", "f": "file"},
+    )
     path = flags["path"]
     file_arg = flags.get("file")
+    language_arg = flags.get("language")
     target = Path(path)
+
+    if file_arg is not None and language_arg is not None:
+        raise UsageError("--language cannot be combined with --file.")
 
     if not target.is_dir():
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
@@ -63,6 +103,8 @@ def run(args):
         if not file_path.is_file():
             raise CommandError("config-file-not-found", f"File not found: {file_arg}")
         config_text = read_config_text(file_path)
+    elif language_arg is not None:
+        config_text = _default_config_text_for_language(language_arg)
     else:
         config_text = _default_config_text()
 
@@ -110,6 +152,28 @@ def run(args):
 def _default_config_text():
     resource = resources.files("adrpy.resources").joinpath("default_repo_config.json")
     return resource.read_text(encoding="utf-8")
+
+
+def _load_language_pack(language):
+    if language not in SUPPORTED_LANGUAGES:
+        raise CommandError(
+            "init-language-not-supported",
+            f"--language must be one of {SUPPORTED_LANGUAGES}, got: {language}",
+        )
+    resource = resources.files("adrpy.resources.language_packs").joinpath(f"{language}.json")
+    return json.loads(resource.read_text(encoding="utf-8"))
+
+
+def _default_config_text_for_language(language):
+    """Merges a language pack's ~17 fields (labels/status/template) onto
+    the built-in default -- everything else (folderadr, separator,
+    lenseq/lenversion/lenrevision, casetransform, migrationpattern) is
+    language-independent in the real tool too (AdrPlusRepoConfig.cs's own
+    field initializers), so it keeps the same built-in default regardless
+    of --language."""
+    base = json.loads(_default_config_text())
+    base.update(_load_language_pack(language))
+    return json.dumps(base, indent=2, ensure_ascii=False)
 
 
 def _max_existing_numbers(target, config):

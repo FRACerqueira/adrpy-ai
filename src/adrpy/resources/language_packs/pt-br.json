@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Proposto",
+  "statusacc": "Aceito",
+  "statusrej": "Rejeitado",
+  "statussup": "Substituído",
+  "headerdisclaimer": "Não remova este comentário, linhas e tabela",
+  "headertitlefile": "Título do aquivo md",
+  "headerversion": "Versão",
+  "headerrevision": "Revisão",
+  "headerscope": "Escopo",
+  "headerdomain": "Domínio",
+  "headertitlestatuscreated": "Criado",
+  "headertitlestatuschanged": "Modificado",
+  "headertitlestatussuperseded": "Substituído",
+  "headertablefields": "Campos",
+  "headertablevalues": "Valores",
+  "headermigrated": "Migrado",
+  "template": "---\n# [Título breve da decisão]\n\n## Decisores\n\n* Tomadores de Decisão: [liste todas as pessoas envolvidas na decisão] <!-- opcional -->\n\nHistória Técnica: [descrição | URL do ticket/issue] <!-- opcional -->\n\n## Contexto e Declaração do Problema\n\n[Descreva o contexto e o problema, por exemplo, em formato livre usando duas ou três frases. Você pode querer articular o problema na forma de uma pergunta.]\n\n## Drivers da Decisão <!-- opcional -->\n\n* [driver 1, por exemplo, uma força, preocupação enfrentada, …]\n* [driver 2, por exemplo, uma força, preocupação enfrentada, …]\n* … <!-- o número de drivers pode variar -->\n\n## Opções Consideradas\n\n* [opção 1]\n* [opção 2]\n* [opção 3]\n* … <!-- o número de opções pode variar -->\n\n## Resultado da Decisão\n\nOpção escolhida: \"[opção 1]\", porque [justificativa. por exemplo, única opção que atende ao critério k.o. do driver de decisão | que resolve a força força | … | funciona melhor (veja abaixo)].\n\n### Consequências Positivas <!-- opcional -->\n\n* [por exemplo, melhoria da satisfação do atributo de qualidade, decisões de acompanhamento necessárias, …]\n* …\n\n### Consequências Negativas <!-- opcional -->\n\n* [por exemplo, comprometimento da qualidade do atributo, decisões de acompanhamento necessárias, …]\n* …\n\n## Prós e Contras das Opções <!-- opcional -->\n\n### [opção 1]\n\n[exemplo | descrição | apontador para mais informações | …] <!-- opcional -->\n\n* Bom, porque [argumento a]\n* Bom, porque [argumento b]\n* Ruim, porque [argumento c]\n* … <!-- o número de prós e contras pode variar -->\n\n### [opção 2]\n\n[exemplo | descrição | apontador para mais informações | …] <!-- opcional -->\n\n* Bom, porque [argumento a]\n* Bom, porque [argumento b]\n* Ruim, porque [argumento c]\n* … <!-- o número de prós e contras pode variar -->\n\n### [opção 3]\n\n[exemplo | descrição | apontador para mais informações | …] <!-- opcional -->\n\n* Bom, porque [argumento a]\n* Bom, porque [argumento b]\n* Ruim, porque [argumento c]\n* … <!-- o número de prós e contras pode variar -->\n\n## Links <!-- opcional -->\n\n* [Tipo de link] [Link para ADR] <!-- exemplo: Refinado por [ADR-0005](0005-exemplo.md) -->\n* … <!-- o número de links pode variar -->\n"
+}

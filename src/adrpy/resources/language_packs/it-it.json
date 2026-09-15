@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Proposto",
+  "statusacc": "Accettato",
+  "statusrej": "Rifiutato",
+  "statussup": "Sostituito",
+  "headerdisclaimer": "Non rimuovere questo commento, le righe e la tabella",
+  "headertitlefile": "Titolo file md",
+  "headerversion": "Versione",
+  "headerrevision": "Revisione",
+  "headerscope": "Ambito",
+  "headerdomain": "Dominio",
+  "headertitlestatuscreated": "Creato",
+  "headertitlestatuschanged": "Modificato",
+  "headertitlestatussuperseded": "Sostituito",
+  "headertablefields": "Campi",
+  "headertablevalues": "Valori",
+  "headermigrated": "Migrato",
+  "template": "<!-- Machine-translated; pending native-speaker review. See TRANSLATIONS.md. -->\n---\n# [Titolo breve della decisione]\n\n## Decisori\n\n* Decisori: [elencare tutte le persone coinvolte nella decisione] <!-- opzionale -->\n\nStoria Tecnica: [descrizione | URL del ticket/issue] <!-- opzionale -->\n\n## Contesto e Definizione del Problema\n\n[Descrivere il contesto e la definizione del problema, ad esempio in forma libera usando da due a tre frasi. Potrebbe essere utile formulare il problema sotto forma di domanda.]\n\n## Driver della Decisione <!-- opzionale -->\n\n* [driver 1, ad es., una forza, una preoccupazione da affrontare, …]\n* [driver 2, ad es., una forza, una preoccupazione da affrontare, …]\n* … <!-- il numero di driver può variare -->\n\n## Opzioni Considerate\n\n* [opzione 1]\n* [opzione 2]\n* [opzione 3]\n* … <!-- il numero di opzioni può variare -->\n\n## Esito della Decisione\n\nOpzione scelta: \"[opzione 1]\", perché [giustificazione, ad es., unica opzione che soddisfa il criterio eliminatorio del driver di decisione | che risolve la forza forza | … | risulta la migliore (vedi sotto)].\n\n### Conseguenze Positive <!-- opzionale -->\n\n* [ad es., miglioramento della soddisfazione di un attributo di qualità, decisioni successive necessarie, …]\n* …\n\n### Conseguenze Negative <!-- opzionale -->\n\n* [ad es., compromissione di un attributo di qualità, decisioni successive necessarie, …]\n* …\n\n## Pro e Contro delle Opzioni <!-- opzionale -->\n\n### [opzione 1]\n\n[esempio | descrizione | rimando a maggiori informazioni | …] <!-- opzionale -->\n\n* Positivo, perché [argomento a]\n* Positivo, perché [argomento b]\n* Negativo, perché [argomento c]\n* … <!-- il numero di pro e contro può variare -->\n\n### [opzione 2]\n\n[esempio | descrizione | rimando a maggiori informazioni | …] <!-- opzionale -->\n\n* Positivo, perché [argomento a]\n* Positivo, perché [argomento b]\n* Negativo, perché [argomento c]\n* … <!-- il numero di pro e contro può variare -->\n\n### [opzione 3]\n\n[esempio | descrizione | rimando a maggiori informazioni | …] <!-- opzionale -->\n\n* Positivo, perché [argomento a]\n* Positivo, perché [argomento b]\n* Negativo, perché [argomento c]\n* … <!-- il numero di pro e contro può variare -->\n\n## Link <!-- opzionale -->\n\n* [Tipo di link] [Link all'ADR] <!-- esempio: Perfezionato da [ADR-0005](0005-esempio.md) -->\n* … <!-- il numero di link può variare -->\n"
+}

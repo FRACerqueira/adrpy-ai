@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Propuesto",
+  "statusacc": "Aceptado",
+  "statusrej": "Rechazado",
+  "statussup": "Sustituido",
+  "headerdisclaimer": "No elimine este comentario, las líneas y la tabla",
+  "headertitlefile": "Título del archivo md",
+  "headerversion": "Versión",
+  "headerrevision": "Revisión",
+  "headerscope": "Ámbito",
+  "headerdomain": "Dominio",
+  "headertitlestatuscreated": "Creado",
+  "headertitlestatuschanged": "Modificado",
+  "headertitlestatussuperseded": "Sustituido",
+  "headertablefields": "Campos",
+  "headertablevalues": "Valores",
+  "headermigrated": "Migrado",
+  "template": "<!-- Machine-translated; pending native-speaker review. See TRANSLATIONS.md. -->\n---\n# [Título breve de la decisión]\n\n## Decisores\n\n* Decisores: [enumere a todos los involucrados en la decisión] <!-- opcional -->\n\nHistoria Técnica: [descripción | URL del ticket/incidencia] <!-- opcional -->\n\n## Contexto y Enunciado del Problema\n\n[Describa el contexto y el enunciado del problema, por ejemplo, en forma libre usando dos o tres frases. Puede que desee articular el problema en forma de pregunta.]\n\n## Impulsores de la Decisión <!-- opcional -->\n\n* [impulsor 1, por ejemplo, una fuerza, preocupación que se enfrenta, …]\n* [impulsor 2, por ejemplo, una fuerza, preocupación que se enfrenta, …]\n* … <!-- el número de impulsores puede variar -->\n\n## Opciones Consideradas\n\n* [opción 1]\n* [opción 2]\n* [opción 3]\n* … <!-- el número de opciones puede variar -->\n\n## Resultado de la Decisión\n\nOpción elegida: \"[opción 1]\", porque [justificación. por ejemplo, única opción que cumple el criterio eliminatorio del impulsor de decisión | que resuelve la fuerza fuerza | … | resulta ser la mejor (ver abajo)].\n\n### Consecuencias Positivas <!-- opcional -->\n\n* [por ejemplo, mejora de la satisfacción de un atributo de calidad, decisiones de seguimiento necesarias, …]\n* …\n\n### Consecuencias Negativas <!-- opcional -->\n\n* [por ejemplo, compromiso de un atributo de calidad, decisiones de seguimiento necesarias, …]\n* …\n\n## Pros y Contras de las Opciones <!-- opcional -->\n\n### [opción 1]\n\n[ejemplo | descripción | referencia a más información | …] <!-- opcional -->\n\n* Bien, porque [argumento a]\n* Bien, porque [argumento b]\n* Mal, porque [argumento c]\n* … <!-- el número de pros y contras puede variar -->\n\n### [opción 2]\n\n[ejemplo | descripción | referencia a más información | …] <!-- opcional -->\n\n* Bien, porque [argumento a]\n* Bien, porque [argumento b]\n* Mal, porque [argumento c]\n* … <!-- el número de pros y contras puede variar -->\n\n### [opción 3]\n\n[ejemplo | descripción | referencia a más información | …] <!-- opcional -->\n\n* Bien, porque [argumento a]\n* Bien, porque [argumento b]\n* Mal, porque [argumento c]\n* … <!-- el número de pros y contras puede variar -->\n\n## Enlaces <!-- opcional -->\n\n* [Tipo de enlace] [Enlace al ADR] <!-- ejemplo: Refinado por [ADR-0005](0005-ejemplo.md) -->\n* … <!-- el número de enlaces puede variar -->\n"
+}

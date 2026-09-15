@@ -126,3 +126,51 @@ def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
         init.run(["--path", str(tmp_path), "--file", str(file_path)])
 
     assert excinfo.value.code == "config-invalid-encoding"
+
+
+def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
+    """The real adrplus's `language` app setting (adrplus.json) doesn't
+    just affect interactive UI text -- it also picks the DEFAULT header/
+    status labels and template content baked into a newly init'd repo
+    (AdrPlusRepoConfig.cs's own field initializers read from a per-
+    culture .resx; the default template file is swapped for a per-
+    culture variant). Extracted verbatim from AdrSource's own resources,
+    never hand-translated."""
+    result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
+
+    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert config["statusnew"] == "Proposto"
+    assert config["statusacc"] == "Aceito"
+    assert config["headerversion"] == "Versão"
+    assert config["headerscope"] == "Escopo"
+    assert "Contexto e Declaração do Problema" in config["template"]
+    # Everything NOT covered by the language pack keeps the built-in default.
+    assert config["folderadr"] == "doc/adr"
+    assert config["separator"] == "-"
+    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
+
+
+def test_init_rejects_unsupported_language(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--language", "klingon"])
+
+    assert excinfo.value.code == "init-language-not-supported"
+
+
+@pytest.mark.parametrize("language", init.SUPPORTED_LANGUAGES)
+def test_init_accepts_every_supported_language(tmp_path, language):
+    """Every language pack must itself pass the real schema validation
+    (label length limits, ASCII-only prefix, ...) -- not just pt-br."""
+    result = init.run(["--path", str(tmp_path), "--language", language])
+
+    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
+    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
+
+
+def test_init_rejects_language_combined_with_file(tmp_path):
+    file_path = tmp_path / "custom-config.json"
+    file_path.write_text(_default_config_text(), encoding="utf-8")
+
+    with pytest.raises(UsageError):
+        init.run(["--path", str(tmp_path), "--file", str(file_path), "--language", "pt-br"])
