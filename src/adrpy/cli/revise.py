@@ -4,7 +4,7 @@ ReviseCommandHandler.cs. Unlike `version`, revise has no --scope/--domain
 and no --empty -- it always carries the source's content forward, and its
 scope/domain come from the TARGET file's own header (not the latest
 member's), a genuine difference confirmed against the original. --open is
-not implemented (see `new.py`'s note).
+permanently not implemented (see `new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags

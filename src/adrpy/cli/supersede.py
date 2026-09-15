@@ -2,8 +2,8 @@
 creates its successor (harness Fase 7, item 5). Ported from
 SupersedeCommandHandler.cs. The successor never copies the predecessor's
 body (always starts from the config's default template) and its filename
-suffix is unconditional, never a collision-disambiguator. `--open` is not
-implemented (see `new.py`'s note -- same app-level config gap).
+suffix is unconditional, never a collision-disambiguator. `--open` is
+permanently not implemented (see `new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags

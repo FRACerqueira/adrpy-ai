@@ -1,8 +1,10 @@
 """`new` command: creates a new decision with status Proposed (harness
 Fase 7, item 2). Ported from NewAdrCommandHandler.cs. `--open` (launches an
-external editor via the app-level `comandopenadr` setting) is not
-implemented -- that setting lives in the app-level config this project
-hasn't built yet (Milestone 7 item 6, `config`); revisit then.
+external editor via the app-level `comandopenadr` setting) is permanently
+not implemented -- confirmed with the user as a deliberate divergence, not
+a gap to fill later: adrpy-ai is args-in/JSON-out for a non-interactive
+caller, with no session to hand an opened editor back to (decision-log:
+accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 """
 
 from pathlib import Path

@@ -1,6 +1,6 @@
 """`version` command: creates a new major version of an Accepted/Rejected
 decision (harness Fase 7, item 6). Ported from VersionCommandHandler.cs.
-`--open` is not implemented (see `new.py`'s note).
+`--open` is permanently not implemented (see `new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags
