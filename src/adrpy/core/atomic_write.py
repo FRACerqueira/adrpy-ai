@@ -38,15 +38,26 @@ def normalize_newlines(text):
 
 
 def atomic_write_text(path, content):
+    atomic_write_bytes(path, normalize_newlines(content).encode("utf-8"))
+
+
+def atomic_write_bytes(path, content_bytes):
+    """Same atomicity/retry guarantees as atomic_write_text, but no newline
+    normalization at all -- for the one real case where that would be
+    wrong: `migrate` prepends a header to an existing file's content
+    verbatim, whatever line endings it already has (confirmed against a
+    real `adrplus migrate` run: the original's own text encoding doesn't
+    normalize an already-read string either, so a hand-written LF file
+    ends up with a CRLF header pasted onto an untouched LF body -- mixed
+    endings in one file, by design, not a bug to "fix" by normalizing)."""
     path = Path(path)
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    content = normalize_newlines(content)
 
     last_error = None
     for _ in range(RETRY_ATTEMPTS):
         try:
-            with open(temp_path, "w", encoding="utf-8", newline="") as handle:
-                handle.write(content)
+            with open(temp_path, "wb") as handle:
+                handle.write(content_bytes)
             os.replace(temp_path, path)
             return
         except PermissionError as error:

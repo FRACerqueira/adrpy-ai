@@ -4,6 +4,7 @@ from adrpy.cli import approve as approve_command
 from adrpy.cli import explore as explore_command
 from adrpy.cli import help as help_command
 from adrpy.cli import init as init_command
+from adrpy.cli import migrate as migrate_command
 from adrpy.cli import new as new_command
 from adrpy.cli import reject as reject_command
 from adrpy.cli import revise as revise_command
@@ -22,4 +23,5 @@ COMMANDS = {
     "supersede": supersede_command,
     "version": version_command,
     "revise": revise_command,
+    "migrate": migrate_command,
 }
