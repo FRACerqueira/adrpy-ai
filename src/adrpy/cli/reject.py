@@ -8,9 +8,9 @@ failed along with the successor.
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
-    family_members,
     has_superseded_sibling,
     is_eligible_for_approve_or_reject,
+    latest_in_family,
     load_target,
     parse_refdate,
     read_lines,
@@ -64,7 +64,7 @@ def run(args):
 
     undone_predecessor = None
     if filename_info.superseded_from is not None:
-        predecessor = _latest_in_family(folder, config, filename_info.superseded_from)
+        predecessor = latest_in_family(folder, config, filename_info.superseded_from)
         if predecessor is None:
             raise CommandError(
                 "superseded-predecessor-not-found",
@@ -84,12 +84,3 @@ def run(args):
         undone_predecessor = str(pred_path)
 
     return {"file": str(path), "status": config.statusrej, "undone_predecessor": undone_predecessor}
-
-
-def _latest_in_family(folder, config, number):
-    """Mirrors AdrService.GetLatestADRSequence: the family member with the
-    highest version/revision, ties broken the same way ReadAllAdr sorts."""
-    members = family_members(folder, config, number)
-    if not members:
-        return None
-    return max(members, key=lambda item: (item[0].version, item[0].revision or 0))

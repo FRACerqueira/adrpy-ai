@@ -166,6 +166,16 @@ def has_pending_sibling(folder, config, number):
     )
 
 
+def latest_in_family(folder, config, number):
+    """Mirrors AdrService.GetLatestADRSequence: the family member with the
+    highest (version, revision), same tie-break as ReadAllAdr's sort.
+    Returns (ParsedFileName, HeaderParseResult, Path), or None."""
+    members = family_members(folder, config, number)
+    if not members:
+        return None
+    return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
+
+
 def is_eligible_for_approve_or_reject(header):
     """Mirrors ApproveCommandHandler/RejectCommandHandler's
     SelectionCondition -- identical in both."""
@@ -194,6 +204,21 @@ def is_eligible_for_supersede(header):
         header.is_valid
         and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
         and (header.status_update == "Accepted" or (header.status_update is None and header.is_migrated))
+        and header.status_change is None
+    )
+
+
+def is_eligible_for_version_or_revise(header):
+    """Mirrors Version/ReviseCommandHandler's SelectionCondition (identical
+    in both): must already be Accepted OR Rejected (or a migrated
+    placeholder with no update status yet)."""
+    return (
+        header.is_valid
+        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
+        and (
+            header.status_update in ("Accepted", "Rejected")
+            or (header.status_update is None and header.is_migrated)
+        )
         and header.status_change is None
     )
 
