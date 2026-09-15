@@ -97,7 +97,11 @@ def describe():
         "name": "config",
         "description": (
             "Reads or updates fields of an existing repository's adr-config.adrplus. "
-            "With no field flags, returns the current config unchanged (read-only). "
+            "With no field flags, reads the current config back (read-only, no write). "
+            "`activeplugins` is never included in that read result or accepted as a field to update -- "
+            "the plugin system is out of scope for now (see the `init` command's own note) -- "
+            "so this is a subset of the raw file, not its full contents; do not round-trip it as "
+            "`init --seed` input without adding `activeplugins` back. "
             "Omitted fields keep their current value; only the fields passed are updated."
         ),
         "arguments": [

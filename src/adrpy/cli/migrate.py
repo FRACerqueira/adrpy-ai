@@ -3,9 +3,12 @@ hand-written decision files (harness Fase 7, item 7). Ported from
 MigrateCommandHandler.cs. Refuses outright if ANY file already has a
 valid, non-migrated header (current-scheme, tool-created) -- migration is
 a one-time operation for repositories with only manually-created
-decisions. Rewrites only the header in place; the file's own content
-(whatever it was) is preserved verbatim after it, and the filename is
-never changed.
+decisions. Rewrites only the header in place, and the filename is never
+changed; the file's own content passes through byte-for-byte after the
+new header, with the one confirmed exception (see the BOM-stripping
+comment below) of a leading UTF-8 BOM, which is discarded rather than
+carried through -- "preserved verbatim" refers to the body's own line
+endings and bytes otherwise, not literally its every byte.
 
 Known simplification, tracked as deferred (decision-log:
 deferred--2026-09-15--migrate--no-install-level-fallback-for-migrationpattern.md):

@@ -2,10 +2,11 @@
 
 Ported from InitCommandHandler.cs. Plugin-baseline discovery/writing
 (`WriteActivePluginsBaselineAsync` in the original) is intentionally not
-implemented -- the plugin system is out of scope for now (confirmed
-decision, to be recorded as a `deferred` decision-log entry once that log
-exists): this command never touches `activeplugins` beyond what the
-supplied or default config already contains.
+implemented -- the plugin system is out of scope for now (decision-log:
+deferred--2026-09-15--plugins--sync-and-plugins-out-of-scope.md): this
+command never touches `activeplugins` beyond what the supplied or
+default config already contains (confirmed true even with --language's
+own merge, since no language pack defines that field).
 """
 
 import json

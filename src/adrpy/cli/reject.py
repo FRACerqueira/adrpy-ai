@@ -37,7 +37,11 @@ def describe():
         "description": (
             "Marks a Proposed decision as Rejected. If this decision is itself a successor "
             "(created by `supersede`), also reverts the predecessor's Superseded status -- the "
-            "result's `undone_predecessor` names that file when this happens, or is null otherwise."
+            "result's `undone_predecessor` names that file when this happens, or is null otherwise. "
+            "This is two writes in sequence, not one: a failure reverting the predecessor "
+            "(superseded-predecessor-not-found, reject-predecessor-write-failed) means success=false "
+            "even though this decision's OWN status was already committed to Rejected -- that code's "
+            "own `data.file`/`data.status` names the file already mutated despite the overall failure."
         ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},

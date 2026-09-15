@@ -37,7 +37,13 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "supersede",
-        "description": "Marks an Accepted decision as Superseded and creates its successor.",
+        "description": (
+            "Marks an Accepted decision as Superseded and creates its successor. "
+            "This is two writes in sequence, not one: a failure creating the successor "
+            "(supersede-successor-write-failed) means success=false even though the predecessor "
+            "was already committed to Superseded -- that code's own `data.predecessor`/"
+            "`data.predecessor_status` names the file already mutated despite the overall failure."
+        ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
             {
