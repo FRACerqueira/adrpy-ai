@@ -1,6 +1,7 @@
 """Maps each CLI verb to its command module (harness Fase 1: one module per command)."""
 
 from adrpy.cli import approve as approve_command
+from adrpy.cli import config as config_command
 from adrpy.cli import explore as explore_command
 from adrpy.cli import help as help_command
 from adrpy.cli import init as init_command
@@ -24,4 +25,5 @@ COMMANDS = {
     "version": version_command,
     "revise": revise_command,
     "migrate": migrate_command,
+    "config": config_command,
 }
