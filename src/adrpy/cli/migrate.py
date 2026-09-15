@@ -7,12 +7,16 @@ decisions. Rewrites only the header in place; the file's own content
 (whatever it was) is preserved verbatim after it, and the filename is
 never changed.
 
-Known simplification: the real tool falls back to an install-level
-shared default `migrationpattern` when the repo's own is empty
-(`config --migrate` sets that shared default, independent of any single
-repo). adrpy-ai has no such install-level mechanism yet (Milestone 7 item
-8, `config`, not implemented) -- for now the repo's own `migrationpattern`
-must already be set; revisit once `config` exists.
+Known simplification, tracked as deferred (decision-log:
+deferred--2026-09-15--migrate--no-install-level-fallback-for-migrationpattern.md):
+the real tool falls back to an install-level shared default
+`migrationpattern` when the repo's own is empty (`config --migrate` sets
+that shared default, independent of any single repo) -- confirmed
+against MigrateCommandHandler.cs:97-105. adrpy-ai has no install-level
+config module at all (the `config` command that exists edits the repo's
+own adr-config.adrplus directly, not a separate install-level layer) --
+for now the repo's own `migrationpattern` must already be set; revisit
+once that module exists.
 """
 
 from pathlib import Path
