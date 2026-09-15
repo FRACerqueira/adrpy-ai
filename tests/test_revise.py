@@ -55,6 +55,29 @@ def test_revise_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-05)|" in text
 
 
+def test_revise_scans_the_directory_only_once(tmp_path, monkeypatch):
+    """Performance backlog item: latest_in_family, has_superseded_sibling,
+    and has_pending_sibling each called family_members (and so
+    scan_decisions) independently -- 3 full directory scans per revise
+    call for information a single scan already has."""
+    from adrpy.core import lifecycle
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+
+    calls = []
+    original = lifecycle.scan_decisions
+
+    def counting_scan_decisions(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(lifecycle, "scan_decisions", counting_scan_decisions)
+
+    revise.run(["--file", str(adr_path)])
+
+    assert len(calls) == 1
+
+
 def test_revise_rejects_when_revisions_not_configured(tmp_path):
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "No revisions here"])

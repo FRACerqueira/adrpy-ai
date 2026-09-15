@@ -1,6 +1,8 @@
 import subprocess
 import sys
 from datetime import date, timedelta
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +14,7 @@ from adrpy.core.lifecycle import (
     find_by_unique_title,
     load_target,
     next_number,
+    read_header_lines,
     rewrite_status_field,
     scan_decisions,
     validate_refdate_not_before,
@@ -154,6 +157,34 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     )
 
     assert attempts == 1
+
+
+def test_read_header_lines_does_not_read_the_whole_file(tmp_path):
+    """Performance backlog item: family_members only ever needs the fixed
+    12-line header to decide membership -- reading a potentially huge
+    body just for that is wasted I/O, repeated for every sibling on every
+    lifecycle check (approve/reject/undo/version/revise/supersede)."""
+    header_lines = [f"line{i}" for i in range(12)]
+    huge_body = "x" * (5 * 1024 * 1024)
+    target = tmp_path / "big.md"
+    target.write_text("\n".join(header_lines) + "\n" + huge_body, encoding="utf-8")
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("read_header_lines must not read the whole file")
+
+    with patch.object(Path, "read_text", boom), patch.object(Path, "read_bytes", boom):
+        lines = read_header_lines(target, count=12)
+
+    assert lines == header_lines
+
+
+def test_read_header_lines_handles_a_file_shorter_than_the_header(tmp_path):
+    target = tmp_path / "short.md"
+    target.write_text("only\ntwo\n", encoding="utf-8")
+
+    lines = read_header_lines(target, count=12)
+
+    assert lines == ["only", "two"]
 
 
 def test_family_members_excludes_a_structurally_invalid_file(tmp_path):

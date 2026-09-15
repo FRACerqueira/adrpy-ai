@@ -5,6 +5,7 @@ rewrite mechanics every status-transition command
 concern, not copies (Fase 1)."""
 
 import os
+import re
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -104,6 +105,31 @@ def read_lines(path):
     return lines
 
 
+_HEADER_READ_CHUNK_SIZE = 4096
+_REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
+
+
+def read_header_lines(path, count=HEADER_LINE_COUNT):
+    """Performance backlog item: reads only enough of `path` to recover
+    the first `count` real lines (see split_real_lines) -- never the
+    whole file. Used wherever only the header is needed (family
+    membership checks), which previously read a candidate's entire body,
+    however large, just to look at its first 12 lines. Reads in bounded
+    chunks, growing only if the header genuinely doesn't fit in one
+    (the config schema's own field-length limits keep a real header well
+    under a single chunk in practice); tolerates invalid bytes the same
+    way read_lines does."""
+    with open(path, "rb") as handle:
+        buffer = handle.read(_HEADER_READ_CHUNK_SIZE)
+        while len(_REAL_NEWLINE_BYTES.findall(buffer)) < count:
+            more = handle.read(_HEADER_READ_CHUNK_SIZE)
+            if not more:
+                break
+            buffer += more
+    text = buffer.decode("utf-8", errors="replace")
+    return split_real_lines(text)[:count]
+
+
 def read_lines_with_report(path):
     """Same as read_lines, but also reports whether the decode was lossy
     (observability audit: invalid UTF-8 bytes get silently replaced with
@@ -180,33 +206,46 @@ def family_members(folder, config, number):
     for _, parsed, path in scan_decisions(folder, config):
         if parsed.number != number:
             continue
-        header = parse_header(read_lines(path), config)
+        # Performance backlog item: only the header (12 lines) decides
+        # membership -- read_header_lines never loads the (potentially
+        # large) body just to check that.
+        header = parse_header(read_header_lines(path), config)
         if not counts_as_family_member(header):
             continue
         members.append((parsed, header, path))
     return members
 
 
-def has_superseded_sibling(folder, config, number):
-    return any(header.status_change == "Superseded" for _, header, _ in family_members(folder, config, number))
+def has_superseded_sibling(folder, config, number, members=None):
+    """Performance backlog item: accepts an already-fetched `members` list
+    (from family_members) so a caller needing more than one of
+    has_superseded_sibling/has_pending_sibling/latest_in_family can scan
+    the directory once and reuse the same snapshot, instead of each
+    function independently re-scanning (undo did 2 scans, version/revise
+    did 3, for a single command invocation)."""
+    if members is None:
+        members = family_members(folder, config, number)
+    return any(header.status_change == "Superseded" for _, header, _ in members)
 
 
-def has_pending_sibling(folder, config, number):
+def has_pending_sibling(folder, config, number, members=None):
     """Mirrors the undo-specific extra check: a family member that is
     itself still unresolved (no update status) and NOT a migrated
     placeholder blocks undo -- undoing would otherwise leave two
-    simultaneously-pending members of the same family."""
-    return any(
-        header.status_update is None and not header.is_migrated
-        for _, header, _ in family_members(folder, config, number)
-    )
+    simultaneously-pending members of the same family. See
+    has_superseded_sibling's own note about the optional `members`."""
+    if members is None:
+        members = family_members(folder, config, number)
+    return any(header.status_update is None and not header.is_migrated for _, header, _ in members)
 
 
-def latest_in_family(folder, config, number):
+def latest_in_family(folder, config, number, members=None):
     """Mirrors AdrService.GetLatestADRSequence: the family member with the
     highest (version, revision), same tie-break as ReadAllAdr's sort.
-    Returns (ParsedFileName, HeaderParseResult, Path), or None."""
-    members = family_members(folder, config, number)
+    Returns (ParsedFileName, HeaderParseResult, Path), or None. See
+    has_superseded_sibling's own note about the optional `members`."""
+    if members is None:
+        members = family_members(folder, config, number)
     if not members:
         return None
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))

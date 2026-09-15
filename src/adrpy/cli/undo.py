@@ -8,6 +8,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
+    family_members,
     has_pending_sibling,
     has_superseded_sibling,
     is_eligible_for_undo,
@@ -46,11 +47,14 @@ def run(args):
         warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
         if warning:
             warnings.append(warning)
-    if has_superseded_sibling(folder, config, filename_info.number):
+    # Performance backlog item: one scan, shared by both checks below --
+    # each used to call family_members (and so scan_decisions) on its own.
+    members = family_members(folder, config, filename_info.number)
+    if has_superseded_sibling(folder, config, filename_info.number, members=members):
         raise CommandError(
             "family-member-superseded", "A sibling decision in this family has already been superseded."
         )
-    if has_pending_sibling(folder, config, filename_info.number):
+    if has_pending_sibling(folder, config, filename_info.number, members=members):
         raise CommandError(
             "family-member-pending",
             "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",

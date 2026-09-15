@@ -12,6 +12,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    family_members,
     has_pending_sibling,
     has_superseded_sibling,
     is_eligible_for_version_or_revise,
@@ -68,7 +69,11 @@ def run(args):
     # comment -- family-state read and write must be one critical section.
     with acquire_repo_lock(folder) as lock_warnings:
         warnings.extend(lock_warnings)
-        latest = latest_in_family(folder, config, filename_info.number)
+        # Performance backlog item: one scan, shared by all three checks
+        # below -- each used to call family_members (and so
+        # scan_decisions) on its own (3 scans per invocation).
+        members = family_members(folder, config, filename_info.number)
+        latest = latest_in_family(folder, config, filename_info.number, members=members)
         if latest is None:
             raise CommandError("family-not-found", "Could not resolve this decision's own family.")
         latest_parsed, latest_header, latest_path = latest
@@ -95,11 +100,11 @@ def run(args):
                 "not-eligible-for-revision",
                 "This decision cannot get a new revision: it must be Accepted or Rejected.",
             )
-        if has_superseded_sibling(folder, config, filename_info.number):
+        if has_superseded_sibling(folder, config, filename_info.number, members=members):
             raise CommandError(
                 "family-member-superseded", "A sibling decision in this family has already been superseded."
             )
-        if has_pending_sibling(folder, config, filename_info.number):
+        if has_pending_sibling(folder, config, filename_info.number, members=members):
             raise CommandError(
                 "family-member-pending", "Another decision in this family is still unresolved (Proposed)."
             )

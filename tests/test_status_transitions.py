@@ -221,6 +221,30 @@ def test_undo_happy_path(tmp_path):
     assert "|Changed||" in text
 
 
+def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):
+    """Performance backlog item: has_superseded_sibling and
+    has_pending_sibling each called family_members (and so scan_decisions)
+    independently -- 2 full directory scans per undo call for information
+    a single scan already has."""
+    from adrpy.core import lifecycle
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+
+    calls = []
+    original = lifecycle.scan_decisions
+
+    def counting_scan_decisions(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(lifecycle, "scan_decisions", counting_scan_decisions)
+
+    undo.run(["--file", str(adr_path)])
+
+    assert len(calls) == 1
+
+
 def test_undo_rejects_when_still_proposed(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 
