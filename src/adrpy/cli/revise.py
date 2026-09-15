@@ -10,7 +10,7 @@ not implemented (see `new.py`'s note).
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
     has_pending_sibling,
     has_superseded_sibling,
@@ -22,6 +22,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import resolve_within
 
@@ -50,66 +51,71 @@ def run(args):
         raise CommandError("revision-not-configured", "This repository's config has lenrevision == 0.")
 
     folder = resolve_within(root, config.folderadr)
+    if folder.is_dir():
+        cleanup_orphaned_temp_files(folder)
 
-    latest = latest_in_family(folder, config, filename_info.number)
-    if latest is None:
-        raise CommandError("family-not-found", "Could not resolve this decision's own family.")
-    latest_parsed, latest_header, latest_path = latest
+    # Concurrency audit (critical): same reasoning as `version`'s own
+    # comment -- family-state read and write must be one critical section.
+    with acquire_repo_lock(folder):
+        latest = latest_in_family(folder, config, filename_info.number)
+        if latest is None:
+            raise CommandError("family-not-found", "Could not resolve this decision's own family.")
+        latest_parsed, latest_header, latest_path = latest
 
-    if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
-        raise CommandError(
-            "lenrevision-too-small-for-new-revision",
-            f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
-        )
-
-    if latest_path.resolve() != path.resolve():
-        # Same branch-off-a-rejected-latest exception as `version`, but
-        # revision-only (revise never bumps the version number).
-        allowed = latest_header.status_update == "Rejected" and (latest_parsed.revision or 0) > (
-            filename_info.revision or 0
-        )
-        if not allowed:
+        if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
             raise CommandError(
-                "not-latest-version", "This decision is not the latest version/revision in its family."
+                "lenrevision-too-small-for-new-revision",
+                f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
             )
 
-    if not is_eligible_for_version_or_revise(header):
-        raise CommandError(
-            "not-eligible-for-revision",
-            "This decision cannot get a new revision: it must be Accepted or Rejected.",
+        if latest_path.resolve() != path.resolve():
+            # Same branch-off-a-rejected-latest exception as `version`, but
+            # revision-only (revise never bumps the version number).
+            allowed = latest_header.status_update == "Rejected" and (latest_parsed.revision or 0) > (
+                filename_info.revision or 0
+            )
+            if not allowed:
+                raise CommandError(
+                    "not-latest-version", "This decision is not the latest version/revision in its family."
+                )
+
+        if not is_eligible_for_version_or_revise(header):
+            raise CommandError(
+                "not-eligible-for-revision",
+                "This decision cannot get a new revision: it must be Accepted or Rejected.",
+            )
+        if has_superseded_sibling(folder, config, filename_info.number):
+            raise CommandError(
+                "family-member-superseded", "A sibling decision in this family has already been superseded."
+            )
+        if has_pending_sibling(folder, config, filename_info.number):
+            raise CommandError(
+                "family-member-pending", "Another decision in this family is still unresolved (Proposed)."
+            )
+
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        not_before = latest_header.date_update or latest_header.date_create
+        if not_before is not None:
+            validate_refdate_not_before(refdate, not_before)
+
+        record = DecisionRecord(
+            number=filename_info.number,
+            title=header.title,
+            version=header.version or 0,
+            revision=(header.revision or 0) + 1,
+            scope=header.scope,
+            domain=header.domain,
+            status_create="Proposed",
+            date_create=refdate,
         )
-    if has_superseded_sibling(folder, config, filename_info.number):
-        raise CommandError(
-            "family-member-superseded", "A sibling decision in this family has already been superseded."
-        )
-    if has_pending_sibling(folder, config, filename_info.number):
-        raise CommandError(
-            "family-member-pending", "Another decision in this family is still unresolved (Proposed)."
-        )
 
-    refdate = parse_refdate(flags.get("refdate"))
-    validate_refdate_not_in_future(refdate)
-    not_before = latest_header.date_update or latest_header.date_create
-    if not_before is not None:
-        validate_refdate_not_before(refdate, not_before)
+        filename = build_filename(config, record)
+        new_path = resolve_within(folder, filename)
+        if new_path.exists():
+            raise CommandError("file-already-exists", f"File already exists: {filename}")
 
-    record = DecisionRecord(
-        number=filename_info.number,
-        title=header.title,
-        version=header.version or 0,
-        revision=(header.revision or 0) + 1,
-        scope=header.scope,
-        domain=header.domain,
-        status_create="Proposed",
-        date_create=refdate,
-    )
-
-    filename = build_filename(config, record)
-    new_path = resolve_within(folder, filename)
-    if new_path.exists():
-        raise CommandError("file-already-exists", f"File already exists: {filename}")
-
-    content = build_header(config, record) + read_body(lines)
-    atomic_write_text(new_path, content)
+        content = build_header(config, record) + read_body(lines)
+        atomic_write_text(new_path, content)
 
     return {"created": str(new_path), "status": config.statusnew}

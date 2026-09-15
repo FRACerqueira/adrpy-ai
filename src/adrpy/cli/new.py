@@ -8,7 +8,7 @@ hasn't built yet (Milestone 7 item 6, `config`); revisit then.
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
@@ -19,6 +19,7 @@ from adrpy.core.lifecycle import (
     scan_decisions,
     validate_refdate_not_in_future,
 )
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 
@@ -66,31 +67,41 @@ def run(args):
     validate_refdate_not_in_future(refdate)
 
     folder = resolve_within(target, config.folderadr)
-    decisions = scan_decisions(folder, config)
+    if folder.is_dir():
+        cleanup_orphaned_temp_files(folder)
 
-    existing = find_by_unique_title(title, config, decisions)
-    if existing is not None:
-        raise CommandError(
-            "title-already-exists", f"A decision with this title already exists: {existing.name}"
+    # Concurrency audit (critical): the whole scan -> decide-next-number ->
+    # write sequence is the critical section -- two calls that both scan
+    # before either writes will otherwise compute the identical "next"
+    # number (reproduced live, 10/10 times, with two concurrent `new`
+    # calls). core/lock.py existed and was tested in isolation since
+    # Milestone 4 but was never actually wired into any command.
+    with acquire_repo_lock(folder):
+        decisions = scan_decisions(folder, config)
+
+        existing = find_by_unique_title(title, config, decisions)
+        if existing is not None:
+            raise CommandError(
+                "title-already-exists", f"A decision with this title already exists: {existing.name}"
+            )
+
+        record = DecisionRecord(
+            number=next_number(decisions),
+            title=title,
+            version=1,
+            revision=1 if config.lenrevision > 0 else None,
+            scope=scope,
+            domain=domain,
+            status_create="Proposed",
+            date_create=refdate,
         )
 
-    record = DecisionRecord(
-        number=next_number(decisions),
-        title=title,
-        version=1,
-        revision=1 if config.lenrevision > 0 else None,
-        scope=scope,
-        domain=domain,
-        status_create="Proposed",
-        date_create=refdate,
-    )
+        filename = build_filename(config, record)
+        file_path = resolve_within(folder, filename)
+        if file_path.exists():
+            raise CommandError("file-already-exists", f"File already exists: {filename}")
 
-    filename = build_filename(config, record)
-    file_path = resolve_within(folder, filename)
-    if file_path.exists():
-        raise CommandError("file-already-exists", f"File already exists: {filename}")
-
-    content = build_header(config, record) + config.template
-    atomic_write_text(file_path, content)
+        content = build_header(config, record) + config.template
+        atomic_write_text(file_path, content)
 
     return {"created": str(file_path), "status": config.statusnew}

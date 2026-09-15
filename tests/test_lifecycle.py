@@ -65,6 +65,23 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Totally different", config, decisions) is None
 
 
+def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):
+    """Harness Fase 4/6/7 requirement (flagged by the resilience audit as
+    unchecked by any front): LOCK_FILE_NAME must never appear as an
+    "unrecognized file" nor be mistaken for a naming-scheme candidate.
+    Confirmed here as an explicit guarantee, not an accident of every
+    rglob call happening to filter on "*.md" -- if that filter ever
+    changed, this is the test that would catch a regression."""
+    from adrpy.core.lock import LOCK_FILE_NAME
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    (adr_dir / LOCK_FILE_NAME).write_text("holder-token\n123.0")
+
+    assert scan_decisions(adr_dir, config) == []
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_path):
     """Security audit F2: resolve_within only validates the repository

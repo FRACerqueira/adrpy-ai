@@ -18,7 +18,7 @@ must already be set; revisit once `config` exists.
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_bytes, split_real_lines
+from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_files, split_real_lines
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
@@ -57,6 +57,7 @@ def run(args):
     folder = resolve_within(target, config.folderadr)
     entries = []  # (ParsedFileName, Path, HeaderParseResult)
     if folder.is_dir():
+        cleanup_orphaned_temp_files(folder)
         for candidate in folder.rglob("*.md"):
             if not is_within(folder, candidate):
                 continue

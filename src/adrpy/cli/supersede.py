@@ -9,7 +9,7 @@ implemented (see `new.py`'s note -- same app-level config gap).
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
     is_eligible_for_supersede,
     load_target,
@@ -20,6 +20,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 
@@ -75,32 +76,40 @@ def run(args):
     reject_embedded_delimiter(domain, "domain")
 
     folder = resolve_within(root, config.folderadr)
-    successor_number = next_number(scan_decisions(folder, config))
+    if folder.is_dir():
+        cleanup_orphaned_temp_files(folder)
 
-    successor = DecisionRecord(
-        number=successor_number,
-        # The successor's title comes from the predecessor's FILENAME
-        # segment (already case-transformed), not its header's prose
-        # title -- confirmed via live comparison: SupersedeCommandHandler
-        # builds its new AdrRecord from `infoadr.Title` (AdrFileNameComponents'
-        # own property, filename-derived), not `infoadr.Header.Title`.
-        title=filename_info.title,
-        version=1,
-        revision=1 if config.lenrevision > 0 else None,
-        scope=scope,
-        domain=domain,
-        status_create="Proposed",
-        date_create=refdate,
-        superseded=filename_info.number,
-    )
-    filename = build_filename(config, successor)
-    successor_path = resolve_within(folder, filename)
-    if successor_path.exists():
-        raise CommandError("file-already-exists", f"File already exists: {filename}")
+    # Concurrency audit (critical): same next-number race as `new` -- see
+    # that command's comment. Also covers mark_superseded's mutation of
+    # the predecessor, so a concurrent scan by another command never
+    # observes the predecessor half-transitioned.
+    with acquire_repo_lock(folder):
+        successor_number = next_number(scan_decisions(folder, config))
 
-    mark_superseded(path, config, lines, header, filename_info, successor_number, refdate)
+        successor = DecisionRecord(
+            number=successor_number,
+            # The successor's title comes from the predecessor's FILENAME
+            # segment (already case-transformed), not its header's prose
+            # title -- confirmed via live comparison: SupersedeCommandHandler
+            # builds its new AdrRecord from `infoadr.Title` (AdrFileNameComponents'
+            # own property, filename-derived), not `infoadr.Header.Title`.
+            title=filename_info.title,
+            version=1,
+            revision=1 if config.lenrevision > 0 else None,
+            scope=scope,
+            domain=domain,
+            status_create="Proposed",
+            date_create=refdate,
+            superseded=filename_info.number,
+        )
+        filename = build_filename(config, successor)
+        successor_path = resolve_within(folder, filename)
+        if successor_path.exists():
+            raise CommandError("file-already-exists", f"File already exists: {filename}")
 
-    content = build_header(config, successor) + config.template
-    atomic_write_text(successor_path, content)
+        mark_superseded(path, config, lines, header, filename_info, successor_number, refdate)
+
+        content = build_header(config, successor) + config.template
+        atomic_write_text(successor_path, content)
 
     return {"predecessor": str(path), "created": str(successor_path), "status": config.statusnew}

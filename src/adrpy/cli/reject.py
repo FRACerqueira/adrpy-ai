@@ -6,6 +6,7 @@ failed along with the successor.
 """
 
 from adrpy.core.args import parse_flags
+from adrpy.core.atomic_write import cleanup_orphaned_temp_files
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
     has_superseded_sibling,
@@ -48,6 +49,8 @@ def run(args):
         )
 
     folder = resolve_within(root, config.folderadr)
+    if folder.is_dir():
+        cleanup_orphaned_temp_files(folder)
     if has_superseded_sibling(folder, config, filename_info.number):
         raise CommandError(
             "family-member-superseded", "A sibling decision in this family has already been superseded."

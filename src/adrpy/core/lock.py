@@ -19,6 +19,8 @@ import time
 import uuid
 from pathlib import Path
 
+from adrpy.core.errors import CommandError
+
 LOCK_FILE_NAME = ".adrpy.lock"
 ABANDON_AFTER_SECONDS = 30
 WAIT_CEILING_SECONDS = 10
@@ -27,8 +29,13 @@ UNLINK_RETRY_ATTEMPTS = 3
 UNLINK_RETRY_DELAY_SECONDS = 0.05
 
 
-class LockTimeoutError(Exception):
-    pass
+class LockTimeoutError(CommandError):
+    """A CommandError (not a bare Exception) so a genuine timeout surfaces
+    as a real, named failure code (resilience audit R4) instead of falling
+    through __main__'s catch-all as an internal-error."""
+
+    def __init__(self, detail):
+        super().__init__("repository-locked", detail)
 
 
 def _unlink_with_retry(path):
@@ -95,13 +102,19 @@ def acquire_repo_lock(
     in different subfolders never exclude each other."""
     path = Path(decisions_dir) / LOCK_FILE_NAME
     token = uuid.uuid4().hex
-    deadline = time.time() + wait_ceiling
+    # time.monotonic(), not time.time(): this deadline is purely in-process
+    # (never compared against another process's clock, unlike the reclaim
+    # check below), so it must be immune to a wall-clock adjustment (NTP
+    # correction) happening mid-wait -- confirmed live that a backward
+    # jump made the old time.time()-based deadline never trip, hanging
+    # past wait_ceiling for a lock genuinely still held.
+    deadline = time.monotonic() + wait_ceiling
 
     while True:
         if _try_create(path, token):
             break
         _reclaim_if_abandoned(path, abandon_after)
-        if time.time() >= deadline:
+        if time.monotonic() >= deadline:
             raise LockTimeoutError(f"Timed out waiting for the repository lock at {path}")
         time.sleep(poll_interval)
 

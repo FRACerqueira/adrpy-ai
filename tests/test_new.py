@@ -1,4 +1,6 @@
 import json
+import os
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -90,6 +92,24 @@ def test_new_rejects_embedded_delimiter_in_title(tmp_path):
         new.run(["--path", str(tmp_path), "--title", "Bad|title"])
 
     assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path):
+    """Observability + resilience audits (2 independent fronts, same
+    finding): cleanup_orphaned_temp_files existed and was tested in
+    isolation since Milestone 4, but no command ever called it -- a
+    process killed between the temp write and os.replace left the orphan
+    behind forever, no cleanup, no warning."""
+    _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    orphan = adr_dir / "leftover.md.deadbeef.tmp"
+    orphan.write_text("never committed")
+    old_time = time.time() - 999
+    os.utime(orphan, (old_time, old_time))
+
+    new.run(["--path", str(tmp_path), "--title", "Triggers cleanup"])
+
+    assert not orphan.exists()
 
 
 def test_new_rejects_path_traversal_via_title(tmp_path):
