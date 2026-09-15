@@ -41,7 +41,7 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("path",), optional=("file",))
+    flags = parse_flags(args, required=("path",), optional=("file",), aliases={"p": "path", "f": "file"})
     path = flags["path"]
     file_arg = flags.get("file")
     target = Path(path)

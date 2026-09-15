@@ -34,7 +34,7 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("file",), optional=("refdate",))
+    flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
     config, root, path, filename_info, header, lines = load_target(flags["file"])
 
     if not is_eligible_for_approve_or_reject(header):

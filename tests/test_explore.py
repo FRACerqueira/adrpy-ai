@@ -178,3 +178,15 @@ def test_explore_end_to_end_through_main(tmp_path):
     exit_code = main(["explore", "--path", str(tmp_path)])
 
     assert exit_code == EXIT_SUCCESS
+
+
+def test_explore_accepts_short_flag_end_to_end_through_main(tmp_path):
+    """Fidelity audit F10: real adrplus's -p; end-to-end through main(),
+    not just parse_flags in isolation."""
+    from adrpy.__main__ import main
+    from adrpy.core.output import EXIT_SUCCESS
+
+    config_dict = _default_config_dict()
+    (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
+
+    assert main(["explore", "-p", str(tmp_path)]) == EXIT_SUCCESS

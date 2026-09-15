@@ -54,7 +54,12 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("file",), optional=("domain", "scope", "refdate"))
+    flags = parse_flags(
+        args,
+        required=("file",),
+        optional=("domain", "scope", "refdate"),
+        aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate"},
+    )
     config, root, path, filename_info, header, lines = load_target(flags["file"])
 
     if not is_eligible_for_supersede(header):

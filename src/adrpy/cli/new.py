@@ -44,7 +44,12 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("path", "title"), optional=("domain", "scope", "refdate"))
+    flags = parse_flags(
+        args,
+        required=("path", "title"),
+        optional=("domain", "scope", "refdate"),
+        aliases={"p": "path", "t": "title", "d": "domain", "s": "scope", "r": "refdate"},
+    )
     target = Path(flags["path"])
     title = flags["title"]
     domain = flags.get("domain", "")

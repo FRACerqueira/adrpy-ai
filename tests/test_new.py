@@ -153,3 +153,21 @@ def test_new_end_to_end_through_main(tmp_path):
 
     assert exit_code == EXIT_SUCCESS
     assert (tmp_path / "doc" / "adr" / "ADR001V01-through-main.md").exists()
+
+
+def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
+    """Fidelity audit F10: real adrplus's -p/-t/-d/-s/-r; end-to-end
+    through main(), not just parse_flags in isolation."""
+    from adrpy.__main__ import main
+    from adrpy.core.output import EXIT_SUCCESS
+
+    _init_repo(tmp_path)
+
+    exit_code = main(["new", "-p", str(tmp_path), "-t", "Short flags", "-d", "Backend", "-s", "Data"])
+
+    assert exit_code == EXIT_SUCCESS
+    created = tmp_path / "doc" / "adr" / "ADR001V01-short-flags.md"
+    assert created.exists()
+    text = created.read_text(encoding="utf-8")
+    assert "|Domain|Backend|" in text
+    assert "|Scope|Data|" in text

@@ -286,3 +286,15 @@ def test_status_transitions_end_to_end_through_main(tmp_path):
     assert main(["approve", "--file", str(adr_path)]) == EXIT_SUCCESS
     assert main(["undo", "--file", str(adr_path)]) == EXIT_SUCCESS
     assert main(["reject", "--file", str(adr_path)]) == EXIT_SUCCESS
+
+
+def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
+    """Fidelity audit F10: real adrplus's -f/-r; end-to-end through
+    main(), not just parse_flags in isolation."""
+    from adrpy.__main__ import main
+    from adrpy.core.output import EXIT_SUCCESS
+
+    _, adr_path = _setup_repo(tmp_path)
+
+    assert main(["approve", "-f", str(adr_path), "-r", "2026-01-02"]) == EXIT_SUCCESS
+    assert "|Changed|Accepted (2026-01-02)|" in adr_path.read_text(encoding="utf-8")

@@ -67,7 +67,13 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("file",), optional=("domain", "scope", "refdate"), switches=("empty",))
+    flags = parse_flags(
+        args,
+        required=("file",),
+        optional=("domain", "scope", "refdate"),
+        switches=("empty",),
+        aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate", "e": "empty"},
+    )
     config, root, path, filename_info, header, lines = load_target(flags["file"])
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():

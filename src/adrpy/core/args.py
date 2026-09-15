@@ -4,22 +4,33 @@ CLI args follow the same shape, so this is one function, not N near-copies."""
 from adrpy.core.errors import UsageError
 
 
-def parse_flags(args, required=(), optional=(), switches=()):
+def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
     """`required`/`optional` are flag names (without `--`) that take a
     value; `switches` are presence-only flags (e.g. `--empty`) that take
-    none. Returns a dict keyed by flag name -- switches map to True when
-    present, and are simply absent from the dict otherwise. Raises
-    UsageError for an unknown flag, a value-flag missing its value, or a
-    missing required flag."""
+    none. `aliases` (Fase 7/fidelity audit F10) maps a single-letter short
+    form (without `-`, e.g. "p") to the long flag name it stands for
+    (e.g. "path") -- `-p value` is then exactly equivalent to
+    `--path value`, matching the real adrplus's own short-alias-per-
+    argument convention. Returns a dict keyed by the LONG flag name --
+    switches map to True when present, and are simply absent from the
+    dict otherwise. Raises UsageError for an unknown flag, a value-flag
+    missing its value or given an empty one, or a missing required flag.
+    """
     known_values = set(required) | set(optional)
     known_switches = set(switches)
+    aliases = aliases or {}
     values = {}
     i = 0
     while i < len(args):
         token = args[i]
-        if not token.startswith("--") or token[2:] not in known_values | known_switches:
+        if token.startswith("--"):
+            name = token[2:]
+        elif len(token) == 2 and token[0] == "-" and token[1] in aliases:
+            name = aliases[token[1]]
+        else:
             raise UsageError(f"Unknown argument: {token}")
-        name = token[2:]
+        if name not in known_values | known_switches:
+            raise UsageError(f"Unknown argument: {token}")
         i += 1
         if name in known_switches:
             values[name] = True

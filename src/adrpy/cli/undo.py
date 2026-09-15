@@ -28,7 +28,7 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("file",))
+    flags = parse_flags(args, required=("file",), aliases={"f": "file"})
     config, root, path, filename_info, header, lines = load_target(flags["file"])
 
     if not is_eligible_for_undo(header):

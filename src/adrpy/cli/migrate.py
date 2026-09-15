@@ -41,7 +41,7 @@ def describe():
 
 
 def run(args):
-    path = parse_flags(args, required=("path",))["path"]
+    path = parse_flags(args, required=("path",), aliases={"p": "path"})["path"]
     target = Path(path)
 
     if not target.is_dir():

@@ -25,6 +25,35 @@ def test_flag_missing_value_is_usage_error():
         parse_flags(["--path"], required=("path",))
 
 
+def test_short_flag_alias_is_equivalent_to_the_long_flag():
+    """Fidelity audit F10: the real adrplus documents a short alias for
+    every argument on every command (-p/--path, -t/--title, ...); adrpy
+    only ever accepted the long form."""
+    values = parse_flags(
+        ["-p", "/repo", "-t", "Hello"],
+        required=("path", "title"),
+        aliases={"p": "path", "t": "title"},
+    )
+
+    assert values == {"path": "/repo", "title": "Hello"}
+
+
+def test_short_flag_alias_works_for_a_switch():
+    values = parse_flags(
+        ["-f", "x", "-e"],
+        required=("file",),
+        switches=("empty",),
+        aliases={"f": "file", "e": "empty"},
+    )
+
+    assert values == {"file": "x", "empty": True}
+
+
+def test_unknown_short_flag_is_usage_error():
+    with pytest.raises(UsageError):
+        parse_flags(["-z", "x"], required=("path",), aliases={"p": "path"})
+
+
 def test_flag_with_empty_string_value_is_usage_error():
     """Fidelity audit F5: confirmed live -- `adrplus new --title ""`
     refuses with "Missing value for argument", the same class of failure
