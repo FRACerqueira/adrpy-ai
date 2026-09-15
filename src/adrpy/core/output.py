@@ -18,3 +18,16 @@ def emit_failure(code, detail=None):
     if detail:
         print(detail, file=sys.stderr)
     return EXIT_FAILURE
+
+
+def emit_usage_failure(code, detail=None):
+    """Same JSON-envelope contract as emit_failure, but for a malformed CLI
+    invocation itself (unknown verb, unknown flag, missing required value)
+    -- exit code 2, not 1. Usability/resilience audit: a UsageError used to
+    print free text to stderr with NOTHING on stdout, forcing an agent to
+    parse two different shapes of failure depending on which layer caught
+    the mistake."""
+    print(json.dumps({"success": False, "code": code}))
+    if detail:
+        print(detail, file=sys.stderr)
+    return EXIT_USAGE_ERROR

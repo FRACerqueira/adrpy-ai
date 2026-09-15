@@ -273,3 +273,19 @@ def test_field_names_are_case_insensitive():
     config = parse_repo_config(json.dumps(data))
 
     assert config.folderadr == "doc/adr"
+
+
+def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
+    """Resilience audit R3: adr-config.adrplus with invalid UTF-8 bytes
+    raised a raw UnicodeDecodeError with EMPTY stdout in 6 different entry
+    points (explore/new/approve/migrate/config/init --file), breaking the
+    JSON contract. read_text(encoding="utf-8") has no default error
+    handling of its own -- must be caught and turned into a CommandError,
+    the same as a malformed-JSON config already is."""
+    config_path = tmp_path / "adr-config.adrplus"
+    config_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
+
+    with pytest.raises(CommandError) as excinfo:
+        load_repo_config(config_path)
+
+    assert excinfo.value.code == "config-invalid-encoding"

@@ -114,3 +114,15 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
         init.run(["--path", str(tmp_path), "--file", str(file_path)])
 
     assert excinfo.value.code == "path-outside-repository"
+
+
+def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
+    """Resilience audit R3, second call site of the same class: init's own
+    --file read used a bare read_text(encoding="utf-8") too."""
+    file_path = tmp_path / "custom-config.json"
+    file_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--file", str(file_path)])
+
+    assert excinfo.value.code == "config-invalid-encoding"

@@ -146,8 +146,19 @@ class RepoConfig:
 
 
 def load_repo_config(path):
-    text = Path(path).read_text(encoding="utf-8")
+    text = read_config_text(path)
     return parse_repo_config(text)
+
+
+def read_config_text(path):
+    """Shared by every reader of a config JSON file (the repo's own
+    adr-config.adrplus, and init's --file seed) -- invalid bytes must
+    become a structured CommandError, not a raw UnicodeDecodeError with
+    empty stdout (resilience audit R3)."""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise CommandError("config-invalid-encoding", f"{path}: {error}") from error
 
 
 def parse_repo_config(text):

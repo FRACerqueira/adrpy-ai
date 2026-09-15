@@ -20,6 +20,17 @@ def test_resolve_within_rejects_path_traversal_escape(tmp_path):
     assert excinfo.value.code == "path-outside-repository"
 
 
+def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
+    """Security audit F5: a NUL byte in folderadr raised a raw ValueError
+    (\"embedded null character in path\") with empty stdout instead of a
+    structured CommandError -- same JSON-contract violation as the other
+    audit fronts' unhandled-exception findings, just a different trigger."""
+    with pytest.raises(CommandError) as excinfo:
+        resolve_within(tmp_path, "doc\x00adr")
+
+    assert excinfo.value.code == "path-invalid"
+
+
 def test_resolve_within_rejects_absolute_path_outside_repo(tmp_path, tmp_path_factory):
     other = tmp_path_factory.mktemp("elsewhere")
 

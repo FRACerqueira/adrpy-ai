@@ -13,7 +13,7 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.config import parse_repo_config
+from adrpy.core.config import parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
@@ -61,7 +61,7 @@ def run(args):
         file_path = Path(file_arg)
         if not file_path.is_file():
             raise CommandError("config-file-not-found", f"File not found: {file_arg}")
-        config_text = file_path.read_text(encoding="utf-8")
+        config_text = read_config_text(file_path)
     else:
         config_text = _default_config_text()
 

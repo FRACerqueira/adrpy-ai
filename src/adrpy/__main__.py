@@ -4,7 +4,7 @@ import sys
 
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.i18n import translate
-from adrpy.core.output import EXIT_USAGE_ERROR, emit_failure, emit_success
+from adrpy.core.output import emit_failure, emit_success, emit_usage_failure
 from adrpy.core.registry import COMMANDS
 
 
@@ -17,16 +17,24 @@ def main(argv=None):
     verb, rest = argv[0], argv[1:]
     command = COMMANDS.get(verb)
     if command is None:
-        print(translate("cli.unknown_verb", verb=verb), file=sys.stderr)
-        return EXIT_USAGE_ERROR
+        return emit_usage_failure("unknown-command", translate("cli.unknown_verb", verb=verb))
 
     try:
         data = command.run(rest)
     except UsageError as error:
-        print(str(error), file=sys.stderr)
-        return EXIT_USAGE_ERROR
+        return emit_usage_failure("usage-error", str(error))
     except CommandError as error:
         return emit_failure(error.code, error.detail)
+    except OSError as error:
+        # Fidelity/resilience/usability audits (independently, 3 fronts):
+        # any OSError not already translated into a CommandError by the
+        # command itself (a permission failure, a full disk, a missing
+        # parent directory) used to propagate as a raw traceback with
+        # EMPTY stdout -- breaking the JSON contract this whole project
+        # exists to provide, at exactly the moment an agent needs it most.
+        return emit_failure("io-error", str(error))
+    except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see above
+        return emit_failure("internal-error", str(error))
 
     return emit_success(data)
 
