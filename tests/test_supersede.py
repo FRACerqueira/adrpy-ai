@@ -71,7 +71,7 @@ def test_supersede_rejects_not_yet_accepted(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-supersede"
+    assert excinfo.value.code == "still-proposed"
 
 
 def test_supersede_rejects_already_superseded(tmp_path):
@@ -81,7 +81,7 @@ def test_supersede_rejects_already_superseded(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-supersede"
+    assert excinfo.value.code == "already-superseded"
 
 
 def test_supersede_rejects_refdate_before_accepted_date(tmp_path):

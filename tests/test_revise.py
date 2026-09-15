@@ -100,10 +100,12 @@ def test_revise_rejects_when_not_accepted_or_rejected(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-revision"
+    assert excinfo.value.code == "still-proposed"
 
 
 def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
+    """Usability audit: not-latest-version must name WHICH revision
+    actually is the latest -- see `version`'s own equivalent test."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
@@ -113,6 +115,9 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
         revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
 
     assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(r2_path)
+    assert excinfo.value.data["latest_revision"] == 2
+    assert excinfo.value.data["latest_status"] == "Accepted"
 
 
 def test_revise_branching_from_immediate_predecessor_of_a_rejected_latest_collides(tmp_path):

@@ -8,10 +8,14 @@ import pytest
 
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
-from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.header import DecisionRecord, HeaderParseResult, build_header
 from adrpy.core.lifecycle import (
     family_members,
     find_by_unique_title,
+    ineligibility_reason_for_approve_or_reject,
+    ineligibility_reason_for_supersede,
+    ineligibility_reason_for_undo,
+    ineligibility_reason_for_version_or_revise,
     load_target,
     next_number,
     read_header_lines,
@@ -157,6 +161,80 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     )
 
     assert attempts == 1
+
+
+def _header(**overrides):
+    defaults = dict(is_valid=True, status_create="Proposed", status_update=None, status_change=None)
+    defaults.update(overrides)
+    return HeaderParseResult(**defaults)
+
+
+@pytest.mark.parametrize(
+    ("header_kwargs", "expected_reason"),
+    [
+        ({"status_update": None}, None),
+        ({"status_update": "Accepted"}, "already-accepted"),
+        ({"status_update": "Rejected"}, "already-rejected"),
+        ({"status_change": "Superseded"}, "already-superseded"),
+        ({"status_create": "Accepted"}, "not-proposed"),
+    ],
+)
+def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reason):
+    """Usability audit: replaces a single collapsed not-eligible-for-*
+    boolean with the SPECIFIC observed state -- an agent needs to know
+    whether a decision is already accepted, already rejected, or already
+    superseded, since each calls for a different recovery action."""
+    header = _header(**header_kwargs)
+
+    assert ineligibility_reason_for_approve_or_reject(header) == expected_reason
+
+
+@pytest.mark.parametrize(
+    ("header_kwargs", "expected_reason"),
+    [
+        ({"status_update": "Accepted"}, None),
+        ({"status_update": "Rejected"}, None),
+        ({"status_update": None}, "still-proposed"),
+        ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
+        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
+    ],
+)
+def test_ineligibility_reason_for_undo(header_kwargs, expected_reason):
+    header = _header(**header_kwargs)
+
+    assert ineligibility_reason_for_undo(header) == expected_reason
+
+
+@pytest.mark.parametrize(
+    ("header_kwargs", "expected_reason"),
+    [
+        ({"status_update": "Accepted"}, None),
+        ({"status_update": None}, "still-proposed"),
+        ({"status_update": "Rejected"}, "already-rejected"),
+        ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
+        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
+    ],
+)
+def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
+    header = _header(**header_kwargs)
+
+    assert ineligibility_reason_for_supersede(header) == expected_reason
+
+
+@pytest.mark.parametrize(
+    ("header_kwargs", "expected_reason"),
+    [
+        ({"status_update": "Accepted"}, None),
+        ({"status_update": "Rejected"}, None),
+        ({"status_update": None}, "still-proposed"),
+        ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
+        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
+    ],
+)
+def test_ineligibility_reason_for_version_or_revise(header_kwargs, expected_reason):
+    header = _header(**header_kwargs)
+
+    assert ineligibility_reason_for_version_or_revise(header) == expected_reason
 
 
 def test_read_header_lines_does_not_read_the_whole_file(tmp_path):

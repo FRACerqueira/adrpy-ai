@@ -45,7 +45,7 @@ def test_approve_rejects_already_approved(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         approve.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-approval"
+    assert excinfo.value.code == "already-accepted"
 
 
 def test_approve_rejects_refdate_before_create(tmp_path):
@@ -166,7 +166,7 @@ def test_reject_rejects_already_resolved(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-rejection"
+    assert excinfo.value.code == "already-accepted"
 
 
 def test_reject_undoes_predecessor_supersede_status(tmp_path):
@@ -251,7 +251,7 @@ def test_undo_rejects_when_still_proposed(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         undo.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "not-eligible-for-undo"
+    assert excinfo.value.code == "still-proposed"
 
 
 def test_undo_rejects_when_pending_sibling_exists(tmp_path):

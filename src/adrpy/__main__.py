@@ -24,7 +24,7 @@ def main(argv=None):
     except UsageError as error:
         return emit_usage_failure("usage-error", str(error))
     except CommandError as error:
-        return emit_failure(error.code, error.detail)
+        return emit_failure(error.code, error.detail, error.data)
     except OSError as error:
         # Fidelity/resilience/usability audits (independently, 3 fronts):
         # any OSError not already translated into a CommandError by the

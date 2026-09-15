@@ -11,7 +11,7 @@ from adrpy.core.lifecycle import (
     family_members,
     has_pending_sibling,
     has_superseded_sibling,
-    is_eligible_for_version_or_revise,
+    ineligibility_reason_for_version_or_revise,
     latest_in_family,
     load_target,
     parse_refdate,
@@ -23,6 +23,12 @@ from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+
+_INELIGIBILITY_DETAILS = {
+    "still-proposed": "This decision must be Accepted or Rejected before a new version can be created.",
+    "already-superseded": "This decision has already been superseded.",
+    "not-proposed": "This decision's own status is not Proposed.",
+}
 
 
 def describe():
@@ -120,15 +126,26 @@ def run(args):
                 )
             )
             if not allowed:
+                # Usability audit: names the actual latest member as
+                # structured data -- the code alone can't carry a version
+                # number, and an agent has no other way to learn it
+                # without a separate `explore` call.
                 raise CommandError(
-                    "not-latest-version", "This decision is not the latest version/revision in its family."
+                    "not-latest-version",
+                    "This decision is not the latest version/revision in its family.",
+                    data={
+                        "latest_file": str(latest_path),
+                        "latest_version": latest_parsed.version,
+                        "latest_revision": latest_parsed.revision,
+                        "latest_status": latest_header.status_update,
+                    },
                 )
 
-        if not is_eligible_for_version_or_revise(header):
-            raise CommandError(
-                "not-eligible-for-version",
-                "This decision cannot get a new version: it must be Accepted or Rejected.",
-            )
+        # Usability audit: a specific reason code instead of one collapsed
+        # not-eligible-for-version.
+        reason = ineligibility_reason_for_version_or_revise(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
         if has_superseded_sibling(folder, config, filename_info.number, members=members):
             raise CommandError(
                 "family-member-superseded", "A sibling decision in this family has already been superseded."

@@ -13,8 +13,11 @@ def emit_success(data):
     return EXIT_SUCCESS
 
 
-def emit_failure(code, detail=None):
-    print(json.dumps({"success": False, "code": code}))
+def emit_failure(code, detail=None, data=None):
+    payload = {"success": False, "code": code}
+    if data:
+        payload["data"] = data
+    print(json.dumps(payload))
     if detail:
         print(detail, file=sys.stderr)
     return EXIT_FAILURE

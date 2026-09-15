@@ -11,7 +11,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
-    is_eligible_for_supersede,
+    ineligibility_reason_for_supersede,
     load_target,
     mark_superseded,
     next_number,
@@ -24,6 +24,13 @@ from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+
+_INELIGIBILITY_DETAILS = {
+    "still-proposed": "This decision must be Accepted before it can be superseded; it is still Proposed.",
+    "already-rejected": "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
+    "already-superseded": "This decision has already been superseded.",
+    "not-proposed": "This decision's own status is not Proposed.",
+}
 
 
 def describe():
@@ -66,10 +73,11 @@ def run(args):
     if encoding_repaired:
         warnings.append(encoding_repaired_warning(path))
 
-    if not is_eligible_for_supersede(header):
-        raise CommandError(
-            "not-eligible-for-supersede", "This decision cannot be superseded: it must currently be Accepted."
-        )
+    # Usability audit: a specific reason code instead of one collapsed
+    # not-eligible-for-supersede.
+    reason = ineligibility_reason_for_supersede(header)
+    if reason is not None:
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
 
     refdate = parse_refdate(flags.get("refdate"))
     validate_refdate_not_in_future(refdate)

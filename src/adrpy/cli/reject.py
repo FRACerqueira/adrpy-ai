@@ -10,7 +10,7 @@ from adrpy.core.atomic_write import cleanup_orphaned_temp_files
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
     has_superseded_sibling,
-    is_eligible_for_approve_or_reject,
+    ineligibility_reason_for_approve_or_reject,
     latest_in_family,
     load_target,
     parse_refdate,
@@ -21,6 +21,13 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+
+_INELIGIBILITY_DETAILS = {
+    "already-accepted": "This decision is already Accepted; run undo first to reconsider it.",
+    "already-rejected": "This decision is already Rejected.",
+    "already-superseded": "This decision has already been superseded.",
+    "not-proposed": "This decision's own status is not Proposed.",
+}
 
 
 def describe():
@@ -46,11 +53,11 @@ def run(args):
     if encoding_repaired:
         warnings.append(encoding_repaired_warning(path))
 
-    if not is_eligible_for_approve_or_reject(header):
-        raise CommandError(
-            "not-eligible-for-rejection",
-            "This decision cannot be rejected: it must be Proposed and not yet approved/rejected.",
-        )
+    # Usability audit: a specific reason code instead of one collapsed
+    # not-eligible-for-rejection.
+    reason = ineligibility_reason_for_approve_or_reject(header)
+    if reason is not None:
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():

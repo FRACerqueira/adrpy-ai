@@ -251,51 +251,64 @@ def latest_in_family(folder, config, number, members=None):
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
 
 
-def is_eligible_for_approve_or_reject(header):
+def ineligibility_reason_for_approve_or_reject(header):
     """Mirrors ApproveCommandHandler/RejectCommandHandler's
-    SelectionCondition -- identical in both."""
-    return (
-        header.is_valid
-        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
-        and header.status_update is None
-        and header.status_change is None
-    )
+    SelectionCondition -- identical in both. Returns None when eligible,
+    else the SPECIFIC reason (usability audit: a single collapsed
+    not-eligible-for-* code couldn't distinguish "already Accepted" from
+    "already Rejected" from "already Superseded" -- each calls for a
+    different recovery action). Callers already guarantee header.is_valid
+    via load_target before reaching this check."""
+    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
+        return "not-proposed"
+    if header.status_change is not None:
+        return "already-superseded"
+    if header.status_update == "Accepted":
+        return "already-accepted"
+    if header.status_update == "Rejected":
+        return "already-rejected"
+    return None
 
 
-def is_eligible_for_undo(header):
-    """Mirrors UndoStatusCommandHandler's SelectionCondition."""
-    return (
-        header.is_valid
-        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
-        and header.status_update is not None
-        and header.status_change is None
-    )
+def ineligibility_reason_for_undo(header):
+    """Mirrors UndoStatusCommandHandler's SelectionCondition. See
+    ineligibility_reason_for_approve_or_reject's own note."""
+    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
+        return "not-proposed"
+    if header.status_change is not None:
+        return "already-superseded"
+    if header.status_update is None:
+        return "still-proposed"
+    return None
 
 
-def is_eligible_for_supersede(header):
+def ineligibility_reason_for_supersede(header):
     """Mirrors SupersedeCommandHandler's SelectionCondition: must already
-    be Accepted (or a migrated placeholder with no update status yet)."""
-    return (
-        header.is_valid
-        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
-        and (header.status_update == "Accepted" or (header.status_update is None and header.is_migrated))
-        and header.status_change is None
-    )
+    be Accepted (or a migrated placeholder with no update status yet).
+    See ineligibility_reason_for_approve_or_reject's own note."""
+    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
+        return "not-proposed"
+    if header.status_change is not None:
+        return "already-superseded"
+    if header.status_update == "Accepted" or (header.status_update is None and header.is_migrated):
+        return None
+    if header.status_update is None:
+        return "still-proposed"
+    return "already-rejected"
 
 
-def is_eligible_for_version_or_revise(header):
+def ineligibility_reason_for_version_or_revise(header):
     """Mirrors Version/ReviseCommandHandler's SelectionCondition (identical
     in both): must already be Accepted OR Rejected (or a migrated
-    placeholder with no update status yet)."""
-    return (
-        header.is_valid
-        and (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated))
-        and (
-            header.status_update in ("Accepted", "Rejected")
-            or (header.status_update is None and header.is_migrated)
-        )
-        and header.status_change is None
-    )
+    placeholder with no update status yet). See
+    ineligibility_reason_for_approve_or_reject's own note."""
+    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
+        return "not-proposed"
+    if header.status_change is not None:
+        return "already-superseded"
+    if header.status_update in ("Accepted", "Rejected") or (header.status_update is None and header.is_migrated):
+        return None
+    return "still-proposed"
 
 
 def _record_from_header(config, filename_info, header):

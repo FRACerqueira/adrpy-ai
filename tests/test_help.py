@@ -51,6 +51,28 @@ def test_help_describes_single_command(capsys):
     ]
 
 
+def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch):
+    """Usability audit: some failures need more than a code and a stderr-
+    only detail string to be actionable -- not-latest-version, for
+    instance, needs to name WHICH version actually is the latest. A
+    CommandError should be able to carry that as real JSON data, not a
+    number buried in free text."""
+    from adrpy.cli import help as help_command
+    from adrpy.core.errors import CommandError
+
+    def boom(_args):
+        raise CommandError("some-failure", "human-readable detail", data={"latest_version": 3})
+
+    monkeypatch.setattr(help_command, "run", boom)
+
+    exit_code = main(["help"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == EXIT_FAILURE
+    assert payload["code"] == "some-failure"
+    assert payload["data"] == {"latest_version": 3}
+
+
 def test_help_unknown_command_reports_structured_failure(capsys):
     from adrpy.core.output import EXIT_FAILURE
 

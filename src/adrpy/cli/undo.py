@@ -11,12 +11,18 @@ from adrpy.core.lifecycle import (
     family_members,
     has_pending_sibling,
     has_superseded_sibling,
-    is_eligible_for_undo,
+    ineligibility_reason_for_undo,
     load_target,
     rewrite_status_field,
 )
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+
+_INELIGIBILITY_DETAILS = {
+    "still-proposed": "This decision has never been approved or rejected; there is nothing to undo.",
+    "already-superseded": "This decision has already been superseded.",
+    "not-proposed": "This decision's own status is not Proposed.",
+}
 
 
 def describe():
@@ -36,11 +42,11 @@ def run(args):
     if encoding_repaired:
         warnings.append(encoding_repaired_warning(path))
 
-    if not is_eligible_for_undo(header):
-        raise CommandError(
-            "not-eligible-for-undo",
-            "This decision cannot be undone: it must currently be Accepted or Rejected.",
-        )
+    # Usability audit: a specific reason code instead of one collapsed
+    # not-eligible-for-undo.
+    reason = ineligibility_reason_for_undo(header)
+    if reason is not None:
+        raise CommandError(reason, _INELIGIBILITY_DETAILS[reason])
 
     folder = resolve_within(root, config.folderadr)
     if folder.is_dir():
