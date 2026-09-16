@@ -17,7 +17,14 @@ def emit_failure(code, detail=None, data=None, warnings=None):
     payload = {"success": False, "code": code}
     if data:
         payload["data"] = data
-    if warnings:
+    # Round 4 (observability audit Finding 4 / test-adequacy audit Finding
+    # 4): `if warnings:` treated an explicitly empty list (a command's own
+    # attach_warnings region genuinely started, nothing to report yet) the
+    # same as None (never started at all) -- contradicting round 3's own
+    # "warnings always present" guarantee on the success side. `is not
+    # None` distinguishes the two; a raw OSError/internal-error caught in
+    # __main__ before any command's own region began still omits the key.
+    if warnings is not None:
         payload["warnings"] = warnings
     print(json.dumps(payload))
     if detail:

@@ -100,6 +100,28 @@ def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
     assert payload["warnings"] == ["something already happened"]
 
 
+def test_command_error_includes_an_explicitly_empty_warnings_list(capsys, monkeypatch):
+    """Round 4 (observability audit Finding 4 / test-adequacy audit
+    Finding 4): distinct from the "no warnings" case below -- warnings=[]
+    means a command's own attach_warnings region genuinely started
+    accumulating and just had nothing to report yet, not "nothing to
+    report at all". See core/output.py's own emit_failure fix."""
+    from adrpy.cli import help as help_command
+    from adrpy.core.errors import CommandError
+
+    def boom(_args):
+        raise CommandError("some-failure", "human-readable detail", warnings=[])
+
+    monkeypatch.setattr(help_command, "run", boom)
+
+    exit_code = main(["help"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == EXIT_FAILURE
+    assert payload["code"] == "some-failure"
+    assert payload["warnings"] == []
+
+
 def test_command_error_omits_warnings_key_when_there_are_none(capsys, monkeypatch):
     from adrpy.cli import help as help_command
     from adrpy.core.errors import CommandError
