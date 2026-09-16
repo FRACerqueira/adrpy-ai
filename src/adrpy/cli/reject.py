@@ -74,8 +74,6 @@ def run(args):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
             filename_info, header, lines, encoding_repaired = read_target(path, config)
-            if encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
 
             # Usability audit: a specific reason code instead of one collapsed
             # not-eligible-for-rejection.
@@ -101,6 +99,10 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
+            # Round 4 resilience audit, Finding 1: only true once the write
+            # above has actually happened -- see approve.py's own comment.
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
@@ -123,8 +125,6 @@ def run(args):
                     )
                 pred_parsed, pred_header, pred_path = predecessor
                 pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
-                if pred_encoding_repaired:
-                    warnings.append(encoding_repaired_warning(pred_path))
                 try:
                     # ADR001, part 3: this is this command's SECOND write --
                     # guarantees it never commits blindly either, on its own,
@@ -140,6 +140,11 @@ def run(args):
                         status=None,
                         refdate=None,
                     )
+                    # Round 4 resilience audit, Finding 1: only true once
+                    # this second write has actually happened -- see
+                    # approve.py's own comment.
+                    if pred_encoding_repaired:
+                        warnings.append(encoding_repaired_warning(pred_path))
                 except OSError as error:
                     # Mechanism-correctness audit round 3 (resilience finding
                     # #1): by this point the primary write above has already

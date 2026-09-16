@@ -41,6 +41,21 @@ def _setup_accepted_repo_with_revisions(tmp_path):
     return tmp_path, adr_path
 
 
+def test_revise_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    version's own test: revise never rewrites its own source either."""
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+    source_bytes_before = adr_path.read_bytes()
+
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert not any("rewritten" in w.lower() for w in result["warnings"])
+    assert any("utf-8" in w.lower() and str(adr_path) in w for w in result["warnings"])
+    assert adr_path.read_bytes() == source_bytes_before  # source genuinely untouched
+
+
 def test_revise_happy_path(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
 

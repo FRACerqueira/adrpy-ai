@@ -23,7 +23,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
-from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
     "still-proposed": "This decision must be Accepted or Rejected before a new version can be created.",
@@ -105,8 +105,14 @@ def run(args):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
             filename_info, header, lines, encoding_repaired = read_target(path, config)
+            # Round 4 resilience audit, Finding 1: version never rewrites
+            # its own source (only its BODY is carried into a newly
+            # created file) -- encoding_repaired_warning's "the file has
+            # been rewritten" claim is never true here; this stays
+            # accurate regardless of whether the command goes on to
+            # succeed, so it fires right away, not after a write.
             if encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
+                warnings.append(encoding_repaired_source_warning(path))
 
             # Performance backlog item: one scan, shared by all three checks
             # below -- each used to call family_members (and so

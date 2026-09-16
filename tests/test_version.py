@@ -67,6 +67,23 @@ def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(t
     assert excinfo.value.data == {"file": "ADR001V02-use-postgre-sql.md"}
 
 
+def test_version_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    warning unconditionally claimed "the file has been rewritten... bytes
+    are now lost" -- always false here, since version never rewrites its
+    own source (only its BODY is carried into a newly created file)."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+    source_bytes_before = adr_path.read_bytes()
+
+    result = version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert not any("rewritten" in w.lower() for w in result["warnings"])
+    assert any("utf-8" in w.lower() and str(adr_path) in w for w in result["warnings"])
+    assert adr_path.read_bytes() == source_bytes_before  # source genuinely untouched
+
+
 def test_version_happy_path(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

@@ -64,8 +64,6 @@ def run(args):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
             filename_info, header, lines, encoding_repaired = read_target(path, config)
-            if encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
 
             # Usability audit: a specific reason code instead of one collapsed
             # not-eligible-for-approval -- already-accepted/already-rejected/
@@ -94,6 +92,12 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
             )
+            # Round 4 resilience audit, Finding 1: encoding_repaired_warning
+            # claims "the file has been rewritten... bytes are now lost" --
+            # only true once the write above has actually happened, not at
+            # read time (an eligibility check could still have failed first).
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

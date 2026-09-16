@@ -73,15 +73,15 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
     assert "|Changed|Accepted" not in adr_path.read_text(encoding="utf-8")
 
 
-def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
-    """Mechanism-correctness audit round 2 (findings #3/#4): a warning
-    already recorded earlier in the same run (here, an encoding repair on
-    read) used to be silently discarded the moment the command went on to
-    fail for an unrelated reason (here, the decision is already Accepted)
-    -- nothing in the failure response revealed that a repair had already
-    happened to the file on disk."""
+def test_approve_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    warning claims "the file has been rewritten... bytes are now lost" --
+    false whenever the command fails before ever reaching its own write.
+    Confirmed live: approve on an already-Accepted, encoding-corrupted
+    file used to report this claim anyway, even though the file was never
+    touched by this call."""
     _, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    approve.run(["--file", str(adr_path)])
     with open(adr_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
 
@@ -89,8 +89,47 @@ def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_pa
         approve.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "already-accepted"
+    assert not any("rewritten" in w.lower() for w in (excinfo.value.warnings or []))
+
+
+def test_approve_claims_the_rewrite_once_it_actually_happens(tmp_path):
+    _, adr_path = _setup_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    result = approve.run(["--file", str(adr_path)])
+
+    assert result["status"] == "Accepted"
+    assert any("rewritten" in w.lower() for w in result["warnings"])
+
+
+def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
+    """Mechanism-correctness audit round 2 (findings #3/#4): a warning
+    already recorded earlier in the same run (here, an orphaned temp-file
+    cleanup, which runs before the lock/eligibility check either way) used
+    to be silently discarded the moment the command went on to fail for an
+    unrelated reason (here, the decision is already Accepted) -- nothing
+    in the failure response revealed that the cleanup had already happened
+    for real.
+
+    Round 4 note (resilience audit Finding 1): this used to use an
+    encoding-repair warning for the same purpose, but that warning is now
+    only ever appended after the write it describes genuinely happens --
+    `already-accepted` fails before any write, so it's no longer a valid
+    example of "a warning that already happened before this failure"."""
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path.write_text("stale", encoding="utf-8")
+    old_time = time.time() - 999
+    os.utime(orphan_path, (old_time, old_time))
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "already-accepted"
     assert excinfo.value.warnings
-    assert any("utf-8" in w.lower() for w in excinfo.value.warnings)
+    assert any("orphaned" in w.lower() for w in excinfo.value.warnings)
 
 
 def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
@@ -99,17 +138,23 @@ def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
     The same invariant is violated just as easily by a CommandError raised
     from a shared core/ helper (here, validate_refdate_not_before, called
     from approve.py) while `warnings` already has entries in scope --
-    textually unrelated to the sites already patched, but the same bug."""
+    textually unrelated to the sites already patched, but the same bug.
+
+    Round 4 note (resilience audit Finding 1): uses an orphaned temp-file
+    cleanup instead of an encoding-repair warning for the same reason as
+    the test above -- refdate-before-history also fails before any write."""
     _, adr_path = _setup_repo(tmp_path)  # created with refdate 2026-01-01
-    with open(adr_path, "ab") as handle:
-        handle.write(b"Invalid byte here: \xa4 end.\n")
+    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path.write_text("stale", encoding="utf-8")
+    old_time = time.time() - 999
+    os.utime(orphan_path, (old_time, old_time))
 
     with pytest.raises(CommandError) as excinfo:
         approve.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
 
     assert excinfo.value.code == "refdate-before-history"
     assert excinfo.value.warnings
-    assert any("utf-8" in w.lower() for w in excinfo.value.warnings)
+    assert any("orphaned" in w.lower() for w in excinfo.value.warnings)
 
 
 def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp_path, capsys):
@@ -119,8 +164,10 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
     just the in-process exception attribute."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    with open(adr_path, "ab") as handle:
-        handle.write(b"Invalid byte here: \xa4 end.\n")
+    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path.write_text("stale", encoding="utf-8")
+    old_time = time.time() - 999
+    os.utime(orphan_path, (old_time, old_time))
     capsys.readouterr()  # discard output from the two setup calls above
 
     exit_code = main(["approve", "--file", str(adr_path)])
@@ -128,7 +175,7 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
     payload = json.loads(capsys.readouterr().out)
     assert exit_code != 0
     assert payload["code"] == "already-accepted"
-    assert any("utf-8" in w.lower() for w in payload["warnings"])
+    assert any("orphaned" in w.lower() for w in payload["warnings"])
 
 
 def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
@@ -161,53 +208,55 @@ def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
     assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
 
 
-def test_approve_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path):
+def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path):
     """Test-adequacy audit round 3: no existing test had more than one
     warning accumulated simultaneously before a later failure -- which
     quietly weakens every `assert excinfo.value.warnings` check elsewhere
     (they'd still pass even with a duplicated warning or the wrong
-    order). This combines two distinct real side effects (an encoding
-    repair AND an orphaned temp-file cleanup) surviving together to a
+    order). This combines two distinct real side effects (an orphaned
+    temp-file cleanup AND an encoding repair) surviving together to a
     later, unrelated CommandError, and checks both content and order.
 
-    Order note (round 4, ADR001): orphan cleanup now runs before the
-    repository lock is acquired (matching new.py/supersede.py's own
-    already-established order), and the encoding repair is only detected
-    once the target is read fresh, inside the lock -- so orphan cleanup
-    is now warnings[0], the encoding repair warnings[1]."""
-    tmp_path_root, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path_root / "adr-config.adrplus")
-
-    with open(adr_path, "ab") as handle:
+    Round 4 note (resilience audit Finding 1): previously used `approve`
+    failing on family-member-superseded, a failure that happens BEFORE
+    any write -- encoding_repaired_warning now only fires once the write
+    it describes has actually happened (this test's own point predates
+    that fix, and was itself asserting the bug). `reject` on a successor
+    whose predecessor is missing is the natural home for this now: its
+    own target write genuinely succeeds first (encoding_repaired_warning
+    becomes true), and the LATER, unrelated failure is discovering the
+    predecessor doesn't exist -- both warnings are real by the time they
+    survive to that failure, not merely by coincidence of timing."""
+    target = tmp_path
+    init.run(["--path", str(target)])
+    config = load_repo_config(target / "adr-config.adrplus")
+    adr_dir = target / "doc" / "adr"
+    successor_path = adr_dir / "ADR002V01-successor--999.md"
+    _write_raw(
+        successor_path,
+        config,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        superseded=999,
+    )
+    with open(successor_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
 
-    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path = adr_dir / "orphan.md.abc123.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
     old_time = time.time() - 999
     os.utime(orphan_path, (old_time, old_time))
 
-    sibling_record = DecisionRecord(
-        number=1,
-        title="Sibling",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-        status_change="Superseded",
-        date_change=date(2026, 1, 3),
-        superseded_by_file="999",
-    )
-    sibling_path = adr_path.parent / "ADR001V02-sibling--999.md"
-    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
-
     with pytest.raises(CommandError) as excinfo:
-        approve.run(["--file", str(adr_path)])
+        reject.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "family-member-superseded"
+    assert excinfo.value.code == "superseded-predecessor-not-found"
     assert len(excinfo.value.warnings) == 2
     assert "orphaned" in excinfo.value.warnings[0].lower()
-    assert "utf-8" in excinfo.value.warnings[1].lower()
+    assert "rewritten" in excinfo.value.warnings[1].lower()
 
 
 def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):
@@ -373,6 +422,73 @@ def test_reject_rejects_already_resolved(tmp_path):
     assert excinfo.value.code == "already-accepted"
 
 
+def test_reject_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    approve's own test."""
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "already-accepted"
+    assert not any("rewritten" in w.lower() for w in (excinfo.value.warnings or []))
+
+
+def test_reject_claims_the_rewrite_once_it_actually_happens(tmp_path):
+    _, adr_path = _setup_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    result = reject.run(["--file", str(adr_path)])
+
+    assert result["status"] == "Rejected"
+    assert any("rewritten" in w.lower() for w in result["warnings"])
+
+
+def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp_path):
+    """Same class as the target's own fix above, for reject's SECOND write
+    (undoing the predecessor's Superseded status)."""
+    tmp_path, _ = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    predecessor_path = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        predecessor_path,
+        config,
+        number=1,
+        title="First decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="ADR002V01-successor--001.md",
+    )
+    with open(predecessor_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path,
+        config,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 3),
+    )
+
+    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-04"])
+
+    assert result["undone_predecessor"] == str(predecessor_path)
+    assert any("rewritten" in w.lower() and str(predecessor_path) in w for w in result["warnings"])
+
+
 def test_reject_undoes_predecessor_supersede_status(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
@@ -423,6 +539,32 @@ def test_undo_happy_path(tmp_path):
     assert result["status"] == "Proposed"
     text = adr_path.read_text(encoding="utf-8")
     assert "|Changed||" in text
+
+
+def test_undo_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    approve's own test."""
+    _, adr_path = _setup_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])  # still Proposed -- nothing to undo
+
+    assert excinfo.value.code == "still-proposed"
+    assert not any("rewritten" in w.lower() for w in (excinfo.value.warnings or []))
+
+
+def test_undo_claims_the_rewrite_once_it_actually_happens(tmp_path):
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    result = undo.run(["--file", str(adr_path)])
+
+    assert result["status"] == "Proposed"
+    assert any("rewritten" in w.lower() for w in result["warnings"])
 
 
 def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):

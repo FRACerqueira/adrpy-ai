@@ -54,8 +54,6 @@ def run(args):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
             filename_info, header, lines, encoding_repaired = read_target(path, config)
-            if encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
 
             # Usability audit: a specific reason code instead of one collapsed
             # not-eligible-for-undo.
@@ -83,6 +81,10 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status=None, refdate=None
             )
+            # Round 4 resilience audit, Finding 1: only true once the write
+            # above has actually happened -- see approve.py's own comment.
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

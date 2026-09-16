@@ -72,7 +72,28 @@ def retry_warning(attempts):
 
 
 def encoding_repaired_warning(path):
+    """Only accurate once `path` itself has genuinely been rewritten --
+    round 4 resilience audit, Finding 1, reproduced: several call sites
+    used to append this before the write was even attempted (an
+    ineligibility check could still fail first), or on `path`s this
+    command never rewrites at all (version/revise's own source, which
+    only ever donates its BODY to a newly created file -- see
+    encoding_repaired_source_warning below). Callers now append this
+    only after the write to this exact path has actually succeeded."""
     return (
         f"{path}: invalid UTF-8 bytes were replaced with U+FFFD while reading; "
         "the original bytes are now lost, since the file has been rewritten."
+    )
+
+
+def encoding_repaired_source_warning(path):
+    """For a read-only source whose BODY is carried into a newly created
+    file (version/revise) -- `path` itself is never rewritten by these
+    commands, so encoding_repaired_warning's "the file has been
+    rewritten" claim is never true here, success or failure (round 4
+    resilience audit, Finding 1)."""
+    return (
+        f"{path}: invalid UTF-8 bytes were replaced with U+FFFD while reading its body; "
+        "the source file itself is unchanged, but a new file created from this content "
+        "would carry the replacement forward permanently."
     )

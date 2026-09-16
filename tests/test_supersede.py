@@ -167,6 +167,35 @@ def test_supersede_rejects_embedded_delimiter_in_scope(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_supersede_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
+    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    warning claims "the file has been rewritten... bytes are now lost" --
+    false whenever the command fails before ever reaching its own write
+    (mark_superseded, here blocked by the target still being Proposed)."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01-use-postgre-sql.md"
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "still-proposed"
+    assert not any("rewritten" in w.lower() for w in (excinfo.value.warnings or []))
+
+
+def test_supersede_claims_the_rewrite_once_it_actually_happens(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    with open(adr_path, "ab") as handle:
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+
+    result = supersede.run(["--file", str(adr_path)])
+
+    assert result["status"] == "Proposed"
+    assert any("rewritten" in w.lower() for w in result["warnings"])
+
+
 def test_supersede_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
