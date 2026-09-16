@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import threading
 
 from adrpy.cli import init
 from adrpy.core.errors import CommandError, UsageError
@@ -77,6 +78,93 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
     result = init.run(["--path", str(tmp_path)])
 
     assert any("3 attempts" in w for w in result["warnings"])
+
+
+def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(tmp_path, monkeypatch):
+    """Round 5 stability re-run, Finding 1 (HIGH): `init --seed` on a
+    repository that already has a config -- a documented overwrite, not a
+    fresh bootstrap -- used to write completely unlocked. A concurrent
+    `config` edit already committed under lock protection
+    (verify_still_held() passed, reported success) could be silently
+    clobbered by init's own unprotected write immediately after, with
+    neither caller having any way to detect it. Distinct from the
+    already-accepted config-already-exists race (ADR001's own addendum):
+    that race is on a genuinely fresh path with no lock location to even
+    acquire yet -- here the decisions folder already exists (every prior
+    init created it), so there's no such excuse; init now locks this path
+    exactly like config.py's own bootstrap-then-lock pattern."""
+    from adrpy.cli import config
+
+    init.run(["--path", str(tmp_path)])  # fresh bootstrap: unlocked, unaffected by this fix
+
+    resource_text = init._default_config_text()
+    seed = json.loads(resource_text)
+    seed["prefix"] = "SEED"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    from adrpy.cli import config as config_module
+
+    entered_critical_section = threading.Event()
+    release_config = threading.Event()
+    real_write = config_module.atomic_write_text
+
+    def paused_write(*args, **kwargs):
+        entered_critical_section.set()
+        released = release_config.wait(timeout=5)
+        errors_common.append(None if released else AssertionError("release_config was never signalled"))
+        return real_write(*args, **kwargs)
+
+    errors_common = []
+    monkeypatch.setattr(config_module, "atomic_write_text", paused_write)
+
+    config_result = {}
+    config_errors = []
+
+    def run_config():
+        try:
+            config_result["value"] = config.run(["--path", str(tmp_path), "--prefix", "DOC"])
+        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
+            config_errors.append(error)
+
+    config_thread = threading.Thread(target=run_config)
+    config_thread.start()
+    assert entered_critical_section.wait(timeout=5), "config never reached its critical section"
+
+    # config now holds the repository lock and is paused right before its
+    # own write. init's --seed write on this already-existing repo must
+    # now block on that same lock instead of proceeding unprotected.
+    init_result = {}
+    init_errors = []
+
+    def run_init():
+        try:
+            init_result["value"] = init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
+            init_errors.append(error)
+
+    init_thread = threading.Thread(target=run_init)
+    init_thread.start()
+
+    # Bounded real-world window for init to race ahead if it were still
+    # unlocked -- it must not have written yet while config holds the lock.
+    init_thread.join(timeout=0.3)
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["prefix"] != "SEED", "init wrote before config released the lock -- init is not actually locked"
+
+    release_config.set()
+    config_thread.join(timeout=5)
+    init_thread.join(timeout=5)
+
+    assert errors_common == [None]
+    assert config_errors == [], f"config raised unexpectedly: {config_errors}"
+    assert init_errors == [], f"init raised unexpectedly: {init_errors}"
+    assert config_result["value"]["updated_fields"] == ["prefix"]
+
+    final = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    # init ran (definitively) second, and --seed's own contract is a full
+    # overwrite -- its raw content is what should survive, not a torn mix.
+    assert final["prefix"] == "SEED"
 
 
 def test_init_refuses_when_config_already_exists_without_file(tmp_path):

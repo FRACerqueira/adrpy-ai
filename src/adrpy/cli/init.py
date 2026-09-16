@@ -15,11 +15,12 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.config import parse_repo_config, read_config_text
+from adrpy.core.config import load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
-from adrpy.core.warnings import excluded_candidate_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, retry_warning
 
 # Matches adrplus.json's own documented `language` values verbatim.
 # Confirmed against AdrPlusRepoConfig.cs's field initializers: `language`
@@ -48,9 +49,12 @@ def describe():
         "name": "init",
         "description": (
             "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
-            "Not safe to call concurrently on the same --path (deliberately, see doc/adr/ADR001V01-...): "
-            "two simultaneous calls on a fresh path can silently overwrite one another's config, both "
-            "reporting success -- callers must ensure at most one init runs per repository path at a time."
+            "Not safe to call concurrently on a FRESH --path with no config yet (deliberately, see "
+            "doc/adr/ADR001V01-...): two simultaneous first-time calls can silently overwrite one "
+            "another's config, both reporting success -- callers must ensure at most one first-time "
+            "init runs per fresh repository path at a time. --seed overwriting an ALREADY-existing "
+            "repository's config is, by contrast, protected by the same repository lock every other "
+            "write command uses (round 5 stability re-run, Finding 1)."
         ),
         "arguments": [
             {
@@ -109,11 +113,16 @@ def run(args):
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
 
     config_path = target / "adr-config.adrplus"
+    # Captured before any write below: round 5 stability re-run, Finding 1
+    # -- this is what decides whether the write path below is live shared
+    # state (needs a lock) or a genuine fresh bootstrap (nothing to race
+    # against yet).
+    config_already_existed = config_path.exists()
 
     # Non-interactive by design (Fase 0: no wizard, no prompt to fall back
     # on) -- refuse cleanly instead of the original's confirm-or-refuse
     # prompt when no --seed is given to bypass it.
-    if config_path.exists() and seed_arg is None:
+    if config_already_existed and seed_arg is None:
         raise CommandError("config-already-exists", f"Configuration file already exists at: {config_path}")
 
     if seed_arg is not None:
@@ -129,6 +138,31 @@ def run(args):
     config = parse_repo_config(config_text)
     warnings = []
 
+    if config_already_existed:
+        # Round 5 stability re-run, Finding 1 (HIGH): --seed overwriting an
+        # ALREADY-existing repository is live shared state, not bootstrap
+        # -- ADR001's exemption for init only covers the truly-fresh-path
+        # case, where the decisions folder doesn't exist yet to even
+        # locate a lock in. Here it already does (every prior init created
+        # it), so lock it exactly like config.py's own bootstrap-then-lock
+        # pattern: read the PRE-edit config just to find where the lock
+        # lives, then do the whole scan-validate-write under that lock,
+        # freshly -- closing both the lost-update (a concurrent config
+        # write silently clobbered) and the narrower lenseq/lenversion/
+        # lenrevision gating race (scanned without a lock at all before).
+        bootstrap_config = load_repo_config(config_path)
+        lock_folder = resolve_within(target, bootstrap_config.folderadr)
+        with attach_warnings(warnings):
+            with acquire_repo_lock(lock_folder) as lock:
+                warnings.extend(lock.warnings)
+                created = _validate_and_write(target, config_path, config_text, config, warnings, lock)
+        return {"created": created, "warnings": warnings}
+
+    created = _validate_and_write(target, config_path, config_text, config, warnings, lock=None)
+    return {"created": created, "warnings": warnings}
+
+
+def _validate_and_write(target, config_path, config_text, config, warnings, lock):
     # Round 4 observability audit, Finding 3: same as scan_decisions/
     # explore/migrate -- an is_within-excluded candidate used to be
     # dropped with zero signal, even from the very numbers these three
@@ -157,6 +191,10 @@ def run(args):
         )
 
     created = []
+    if lock is not None:
+        # ADR001, part 3: guarantees this write never commits blindly if
+        # the lease was reclaimed.
+        lock.verify_still_held()
     # atomic_write_text normalizes to this host's line separator (Fase 2:
     # the real terminator is host-OS-dependent, not fixed) -- config_text
     # is otherwise written verbatim, never re-serialized from `config`.
@@ -184,7 +222,7 @@ def run(args):
     if not folder_already_existed:
         created.append(str(folder_adr))
 
-    return {"created": created, "warnings": warnings}
+    return created
 
 
 def _default_config_text():
