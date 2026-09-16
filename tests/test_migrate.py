@@ -1,12 +1,14 @@
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from adrpy.cli import init, migrate, new
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.lock import LockTimeoutError, acquire_repo_lock
 
 import pytest
 
@@ -329,6 +331,47 @@ def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     result_data = migrate.run(["--path", str(tmp_path)])
 
     assert any("escapes the repository boundary" in w for w in result_data["warnings"])
+
+
+def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):
+    """Round 4 second corroboration pass (2/3 and 3/3, both independent):
+    migrate held no lock at all -- confirmed empirically (real thread
+    interleaving) to let it silently erase a concurrent approve's
+    already-committed write, even though approve correctly held the lock
+    and its own verify_still_held() passed honestly. migrate's missing
+    lock defeated ADR001's guarantee for a command that did everything
+    right. Proves migrate now holds the SAME repository lock for its
+    whole operation (scan through every write), not just around a single
+    write: while migrate is paused mid-run (in its write loop), a
+    separate attempt to acquire the same lock with a short wait_ceiling
+    must time out."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
+
+    entered = threading.Event()
+    release = threading.Event()
+    real_build_header = migrate.build_header
+
+    def pausing_build_header(*args, **kwargs):
+        entered.set()
+        release.wait(timeout=5)
+        return real_build_header(*args, **kwargs)
+
+    monkeypatch.setattr(migrate, "build_header", pausing_build_header)
+
+    migrate_thread = threading.Thread(target=lambda: migrate.run(["--path", str(tmp_path)]))
+    migrate_thread.start()
+    try:
+        assert entered.wait(timeout=5), "migrate never reached its write loop"
+
+        adr_dir = tmp_path / "doc" / "adr"
+        with pytest.raises(LockTimeoutError):
+            with acquire_repo_lock(adr_dir, wait_ceiling=0.3, poll_interval=0.05):
+                pass
+    finally:
+        release.set()
+        migrate_thread.join(timeout=5)
+    assert not migrate_thread.is_alive()
 
 
 def test_migrate_describe_documents_the_migrationpattern_precondition():
