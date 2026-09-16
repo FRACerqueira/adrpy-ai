@@ -361,3 +361,63 @@ def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_pat
 
     assert decisions == []
     assert next_number(decisions) == 1
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list(tmp_path):
+    """Round 4 observability audit, Finding 3: is_within deliberately never
+    RAISES over an escaped candidate (a scan should keep going, not fail
+    over one), but that's a decision about raising, not about reporting --
+    every call site used to drop the exclusion with zero signal. An agent
+    seeing an unexpected next_number, or an inventory that doesn't match
+    what's physically listable in the folder, had no way to learn why."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / "repo" / config.folderadr
+    adr_dir.mkdir(parents=True)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    record = DecisionRecord(number=9, title="Victim outside the repo", version=1)
+    with open(outside_dir / "ADR009V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    warnings = []
+    scan_decisions(adr_dir, config, warnings=warnings)
+
+    assert len(warnings) == 1
+    assert "escapes the repository boundary" in warnings[0]
+    assert str(junction) in warnings[0]
+
+    # Backward compatible: no warnings= at all (the default) never raises.
+    assert scan_decisions(adr_dir, config) == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / "repo" / config.folderadr
+    adr_dir.mkdir(parents=True)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    record = DecisionRecord(number=1, title="Victim outside the repo", version=1)
+    with open(outside_dir / "ADR001V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    warnings = []
+    family_members(adr_dir, config, 1, warnings=warnings)
+
+    assert len(warnings) == 1
+    assert "escapes the repository boundary" in warnings[0]

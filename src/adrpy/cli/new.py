@@ -90,7 +90,7 @@ def run(args):
         # Milestone 4 but was never actually wired into any command.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            decisions = scan_decisions(folder, config)
+            decisions = scan_decisions(folder, config, warnings=warnings)
 
             existing = find_by_unique_title(title, config, decisions)
             if existing is not None:

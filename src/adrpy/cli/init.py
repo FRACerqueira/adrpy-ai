@@ -19,7 +19,7 @@ from adrpy.core.config import parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
-from adrpy.core.warnings import retry_warning
+from adrpy.core.warnings import excluded_candidate_warning, retry_warning
 
 # Matches adrplus.json's own documented `language` values verbatim.
 # Confirmed against AdrPlusRepoConfig.cs's field initializers: `language`
@@ -122,29 +122,36 @@ def run(args):
         config_text = _default_config_text()
 
     config = parse_repo_config(config_text)
+    warnings = []
 
-    max_number, max_version, max_revision = _max_existing_numbers(target, config)
+    # Round 4 observability audit, Finding 3: same as scan_decisions/
+    # explore/migrate -- an is_within-excluded candidate used to be
+    # dropped with zero signal, even from the very numbers these three
+    # checks are about to gate a fresh init on.
+    max_number, max_version, max_revision = _max_existing_numbers(target, config, warnings=warnings)
     if len(str(max_number)) > config.lenseq:
         raise CommandError(
             "lenseq-too-small-for-existing-decisions",
             f"Existing decision number {max_number} does not fit in lenseq={config.lenseq}.",
             data={"max_number": max_number, "lenseq": config.lenseq},
+            warnings=warnings,
         )
     if len(str(max_version)) > config.lenversion:
         raise CommandError(
             "lenversion-too-small-for-existing-decisions",
             f"Existing decision version {max_version} does not fit in lenversion={config.lenversion}.",
             data={"max_version": max_version, "lenversion": config.lenversion},
+            warnings=warnings,
         )
     if config.lenrevision > 0 and len(str(max_revision)) > config.lenrevision:
         raise CommandError(
             "lenrevision-too-small-for-existing-decisions",
             f"Existing decision revision {max_revision} does not fit in lenrevision={config.lenrevision}.",
             data={"max_revision": max_revision, "lenrevision": config.lenrevision},
+            warnings=warnings,
         )
 
     created = []
-    warnings = []
     # atomic_write_text normalizes to this host's line separator (Fase 2:
     # the real terminator is host-OS-dependent, not fixed) -- config_text
     # is otherwise written verbatim, never re-serialized from `config`.
@@ -192,17 +199,23 @@ def _default_config_text_for_language(language):
     return json.dumps(base, indent=2, ensure_ascii=False)
 
 
-def _max_existing_numbers(target, config):
+def _max_existing_numbers(target, config, warnings=None):
     """Recognizes both naming schemes (Fase 6 checklist) -- a legacy file's
     number must count too, or a shrunk lenseq could silently stop fitting
-    it without this check ever noticing."""
+    it without this check ever noticing.
+
+    `warnings`, when given, reports (round 4 observability audit, Finding
+    3) any candidate is_within excluded -- same convention as
+    scan_decisions/explore/migrate."""
     folder = resolve_within(target, config.folderadr)
     if not folder.is_dir():
         return 0, 0, 0
 
     max_number = max_version = max_revision = 0
+    excluded = []
     for candidate in folder.rglob("*.md"):
         if not is_within(folder, candidate):
+            excluded.append(candidate)
             continue
         found = parse_any_filename(candidate.name, config)
         if found is None:
@@ -211,4 +224,8 @@ def _max_existing_numbers(target, config):
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)
+    if warnings is not None:
+        warning = excluded_candidate_warning(excluded)
+        if warning:
+            warnings.append(warning)
     return max_number, max_version, max_revision

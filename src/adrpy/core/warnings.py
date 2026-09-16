@@ -86,6 +86,24 @@ def encoding_repaired_warning(path):
     )
 
 
+def excluded_candidate_warning(paths):
+    """`core.security.is_within` deliberately never raises over a
+    candidate whose real path escapes the repository boundary (e.g. a
+    Windows junction planted inside the decisions folder) -- a scan
+    should keep going, not fail over one. That's a decision about
+    raising, not about reporting: every scan call site used to drop the
+    exclusion with zero signal, leaving an agent no way to learn why an
+    inventory or a next-number looked off from what's physically
+    listable in the folder (round 4 observability audit, Finding 3)."""
+    if not paths:
+        return None
+    names = ", ".join(str(path) for path in paths)
+    return (
+        f"{len(paths)} candidate file(s) were excluded from this scan because their real path "
+        f"escapes the repository boundary (e.g. a symlink/junction): {names}."
+    )
+
+
 def encoding_repaired_source_warning(path):
     """For a read-only source whose BODY is carried into a newly created
     file (version/revise) -- `path` itself is never rewritten by these

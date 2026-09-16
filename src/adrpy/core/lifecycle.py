@@ -16,6 +16,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within
+from adrpy.core.warnings import excluded_candidate_warning
 
 
 def parse_refdate(text):
@@ -44,21 +45,32 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-def scan_decisions(folder, config):
+def scan_decisions(folder, config, warnings=None):
     """Recognizes BOTH naming schemes (Fase 6 checklist) -- every command
     that resolves "next number" or "does this title already exist" must
     consider legacy files too. Returns a list of (scheme, ParsedFileName,
-    path) for every recognized file under `folder`."""
+    path) for every recognized file under `folder`.
+
+    When `warnings` is given, reports (round 4 observability audit,
+    Finding 3) any candidate is_within excluded because its real path
+    escapes `folder`'s boundary -- previously silent, indistinguishable
+    from "no such file" to every caller."""
     if not folder.is_dir():
         return []
     found = []
+    excluded = []
     for candidate in folder.rglob("*.md"):
         if not is_within(folder, candidate):
+            excluded.append(candidate)
             continue
         result = parse_any_filename(candidate.name, config)
         if result is not None:
             scheme, parsed = result
             found.append((scheme, parsed, candidate))
+    if warnings is not None:
+        warning = excluded_candidate_warning(excluded)
+        if warning:
+            warnings.append(warning)
     return found
 
 
@@ -210,7 +222,7 @@ def load_target(fileadr):
     return config, root, path, filename_info, header, lines, encoding_repaired
 
 
-def family_members(folder, config, number):
+def family_members(folder, config, number, warnings=None):
     """Every decision (current or legacy scheme) sharing `number` that
     actually counts as a family member, with its parsed header attached --
     mirrors AdrService.ReadAllAdrByNumber, which filters on
@@ -219,9 +231,12 @@ def family_members(folder, config, number):
     hand-written legacy file matched by FILENAME but never run through
     `migrate` has no valid header at all -- without this filter it still
     got counted, and has_pending_sibling/latest_in_family (below) would
-    misjudge it as a genuine pending/latest member."""
+    misjudge it as a genuine pending/latest member.
+
+    `warnings`, when given, is forwarded to scan_decisions -- see its own
+    note (round 4 observability audit, Finding 3)."""
     members = []
-    for _, parsed, path in scan_decisions(folder, config):
+    for _, parsed, path in scan_decisions(folder, config, warnings=warnings):
         if parsed.number != number:
             continue
         # Performance backlog item: only the header (12 lines) decides

@@ -1,7 +1,11 @@
 """`explore` command: read-only inventory of every decision file (harness
 Fase 7, item 3). Declares (Fase 6 checklist): recognizes BOTH naming
 schemes via `parse_any_filename` -- a file matching neither still appears
-in the report, never dropped silently.
+in the report, never dropped silently. A distinct mechanism, is_within
+(core/security.py), CAN still exclude a candidate whose real path
+escapes the repository boundary (e.g. a symlink/junction) -- that
+exclusion is reported via `warnings` instead (round 4 observability
+audit, Finding 3), not silently either.
 """
 
 from pathlib import Path
@@ -13,6 +17,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
+from adrpy.core.warnings import excluded_candidate_warning
 
 
 def describe():
@@ -45,9 +50,11 @@ def run(args):
     folder = resolve_within(target, config.folderadr)
 
     entries = []
+    excluded = []
     if folder.is_dir():
         for candidate in folder.rglob("*.md"):
             if not is_within(folder, candidate):
+                excluded.append(candidate)
                 continue
             entries.append(_build_entry(candidate, config))
 
@@ -66,10 +73,18 @@ def run(args):
 
     # Usability audit round 3 (finding #5): every mutating command's
     # result carries "warnings" unconditionally, even when empty (see
-    # config's own read-mode) -- explore never generates one (it's
-    # read-only), but omitting the key entirely broke a generic wrapper
-    # that assumed `data["warnings"]` always exists across all commands.
-    return {"decisions": entries, "warnings": []}
+    # config's own read-mode) -- explore never generates one from a write
+    # (it's read-only), but omitting the key entirely broke a generic
+    # wrapper that assumed `data["warnings"]` always exists across all
+    # commands. Round 4 observability audit, Finding 3: explore's own
+    # docstring promises no file is ever dropped silently from this
+    # report -- is_within's exclusion is a second, distinct mechanism
+    # that promise didn't cover; reported here now.
+    warnings = []
+    warning = excluded_candidate_warning(excluded)
+    if warning:
+        warnings.append(warning)
+    return {"decisions": entries, "warnings": warnings}
 
 
 def _build_entry(path, config):

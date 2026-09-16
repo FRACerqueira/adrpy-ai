@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 from adrpy.cli import init
 from adrpy.core.errors import CommandError, UsageError
@@ -217,6 +219,29 @@ def test_init_accepts_every_supported_language(tmp_path, language):
     assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
     config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
     assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_init_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
+    """Round 4 observability audit, Finding 3: init's own pre-existing-
+    decisions scan (_max_existing_numbers) used to drop an is_within-
+    excluded candidate with zero signal, same as scan_decisions/explore."""
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "ADR001V01-victim.md").write_text("# Victim\n", encoding="utf-8")
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    result_data = init.run(["--path", str(tmp_path)])
+
+    assert any("escapes the repository boundary" in w for w in result_data["warnings"])
 
 
 def test_init_rejects_language_combined_with_seed(tmp_path):

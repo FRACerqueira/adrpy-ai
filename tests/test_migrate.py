@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from adrpy.cli import init, migrate, new
@@ -303,6 +305,30 @@ def test_migrate_end_to_end_through_main(tmp_path):
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
 
     assert main(["migrate", "--path", str(tmp_path)]) == EXIT_SUCCESS
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
+    """Round 4 observability audit, Finding 3: migrate's own scan used to
+    drop an is_within-excluded candidate with zero signal, same as
+    scan_decisions/explore."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "0002Victim.md").write_text("# Victim\n", encoding="utf-8")
+    adr_dir = tmp_path / "doc" / "adr"
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    result_data = migrate.run(["--path", str(tmp_path)])
+
+    assert any("escapes the repository boundary" in w for w in result_data["warnings"])
 
 
 def test_migrate_describe_documents_the_migrationpattern_precondition():

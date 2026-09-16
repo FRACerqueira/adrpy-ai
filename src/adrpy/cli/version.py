@@ -117,7 +117,7 @@ def run(args):
             # Performance backlog item: one scan, shared by all three checks
             # below -- each used to call family_members (and so
             # scan_decisions) on its own (3 scans per invocation).
-            members = family_members(folder, config, filename_info.number)
+            members = family_members(folder, config, filename_info.number, warnings=warnings)
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
                 raise CommandError(

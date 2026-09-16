@@ -70,7 +70,7 @@ def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists
 
     real_scan_decisions = supersede_module.scan_decisions
 
-    def scan_without_colliding_file(folder, config):
+    def scan_without_colliding_file(folder, config, warnings=None):
         return [entry for entry in real_scan_decisions(folder, config) if entry[2].name != colliding_path.name]
 
     monkeypatch.setattr(supersede_module, "scan_decisions", scan_without_colliding_file)

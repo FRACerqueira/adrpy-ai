@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -33,6 +35,31 @@ def test_new_creates_first_decision(tmp_path):
     assert "|File title md|Use PostgreSQL|" in text
     assert "|Created|Proposed (2026-01-01)|" in text
     assert "|Revision||" in text  # fixture's lenrevision == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
+    """Round 4 observability audit, Finding 3: closes the class through
+    one representative write command -- new calls scan_decisions
+    directly (for next_number/title-uniqueness), the same mechanism
+    scan_decisions/family_members/explore/migrate/init's own tests
+    already cover."""
+    _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "ADR009V01-victim.md").write_text("# Victim\n", encoding="utf-8")
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    result_data = new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
+
+    assert any("escapes the repository boundary" in w for w in result_data["warnings"])
 
 
 def test_new_includes_revision_when_configured(tmp_path):

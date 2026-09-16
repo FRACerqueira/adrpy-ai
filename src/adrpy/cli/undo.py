@@ -63,7 +63,7 @@ def run(args):
 
             # Performance backlog item: one scan, shared by both checks below --
             # each used to call family_members (and so scan_decisions) on its own.
-            members = family_members(folder, config, filename_info.number)
+            members = family_members(folder, config, filename_info.number, warnings=warnings)
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
                     "family-member-superseded",

@@ -32,7 +32,7 @@ from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.lifecycle import read_lines_with_report
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
-from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -82,8 +82,10 @@ def run(args):
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
                 warnings.append(warning)
+            excluded = []
             for candidate in folder.rglob("*.md"):
                 if not is_within(folder, candidate):
+                    excluded.append(candidate)
                     continue
                 found = parse_any_filename(candidate.name, config)
                 if found is None:
@@ -120,6 +122,13 @@ def run(args):
                 if encoding_repaired:
                     unreliable_files.append(str(candidate))
                 entries.append((parsed, candidate, parse_header(lines, config)))
+
+            # Round 4 observability audit, Finding 3: same as scan_
+            # decisions/explore -- an is_within-excluded candidate used to
+            # be dropped with zero signal.
+            warning = excluded_candidate_warning(excluded)
+            if warning:
+                warnings.append(warning)
 
         if not entries:
             raise CommandError(

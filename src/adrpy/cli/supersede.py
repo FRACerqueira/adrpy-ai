@@ -120,7 +120,7 @@ def run(args):
             reject_embedded_delimiter(scope, "scope")
             reject_embedded_delimiter(domain, "domain")
 
-            successor_number = next_number(scan_decisions(folder, config))
+            successor_number = next_number(scan_decisions(folder, config, warnings=warnings))
 
             successor = DecisionRecord(
                 number=successor_number,

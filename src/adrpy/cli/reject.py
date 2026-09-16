@@ -9,6 +9,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
+    family_members,
     has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
     latest_in_family,
@@ -81,7 +82,11 @@ def run(args):
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            if has_superseded_sibling(folder, config, filename_info.number):
+            # Performance backlog item's own pattern applied here too:
+            # pre-fetching members is also how the scan's own warnings=
+            # (round 4 observability audit, Finding 3) reach this command.
+            members = family_members(folder, config, filename_info.number, warnings=warnings)
+            if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
                     "family-member-superseded",
                     "A sibling decision in this family has already been superseded.",
@@ -109,7 +114,8 @@ def run(args):
 
             undone_predecessor = None
             if filename_info.superseded_from is not None:
-                predecessor = latest_in_family(folder, config, filename_info.superseded_from)
+                pred_members = family_members(folder, config, filename_info.superseded_from, warnings=warnings)
+                predecessor = latest_in_family(folder, config, filename_info.superseded_from, members=pred_members)
                 if predecessor is None:
                     # Mechanism-correctness audit round 2 (findings #3/#4): by this
                     # point the primary write above has already succeeded for

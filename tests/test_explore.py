@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from datetime import date
 
 from adrpy.cli import explore
@@ -200,6 +202,36 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
     assert by_name["0001UsePostgreSQL.md"]["number"] == 1
     assert by_name["0001UsePostgreSQL.md"]["title"] == "UsePostgreSQL"
     assert by_name["ADR002V01-current-scheme.md"]["scheme"] == "current"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
+    """Round 4 observability audit, Finding 3: explore's own docstring
+    promises "a file matching neither [naming scheme] still appears in
+    the report, never dropped silently" -- but a file excluded via
+    is_within (e.g. behind a junction escaping the folder) genuinely was
+    dropped silently from that same report, by a different mechanism the
+    promise didn't cover."""
+    config = _write_repo(tmp_path, _default_config_dict(), {})
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "ADR009V01-victim-outside-the-repo.md").write_text(
+        _decision_text(config, number=9, title="Victim outside the repo", version=1), encoding="utf-8"
+    )
+    adr_dir = tmp_path / config.folderadr
+    junction = adr_dir / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    payload = explore.run(["--path", str(tmp_path)])
+
+    assert payload["decisions"] == []
+    assert len(payload["warnings"]) == 1
+    assert "escapes the repository boundary" in payload["warnings"][0]
 
 
 def test_explore_end_to_end_through_main(tmp_path):
