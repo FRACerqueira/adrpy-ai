@@ -113,7 +113,10 @@ def describe():
             "Omitted fields keep their current value; only the fields passed are updated. "
             "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
             "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
-            "names the count) rather than silently orphaning them at their old, still-real path."
+            "names the count) rather than silently orphaning them at their old, still-real path. "
+            "A write call may also fail with repository-locked if the repository lock could not be "
+            "acquired in time, or lock-lost if it was acquired but reclaimed before the write could "
+            "commit -- in both cases no write was made; a pure read (no field flags) never takes the lock."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},

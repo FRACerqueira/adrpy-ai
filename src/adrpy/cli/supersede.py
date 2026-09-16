@@ -43,7 +43,10 @@ def describe():
             "This is two writes in sequence, not one: a failure creating the successor "
             "(supersede-successor-write-failed) means success=false even though the predecessor "
             "was already committed to Superseded -- that code's own `data.predecessor`/"
-            "`data.predecessor_status` names the file already mutated despite the overall failure."
+            "`data.predecessor_status` names the file already mutated despite the overall failure "
+            "(a lock lost before this SECOND write also surfaces this same code/data, not lock-lost). "
+            "May instead fail with repository-locked (lock never acquired) or lock-lost (lost before the "
+            "FIRST write) -- in both of those cases no write was made at all."
         ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},

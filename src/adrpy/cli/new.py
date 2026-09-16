@@ -30,7 +30,12 @@ from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_w
 def describe():
     return {
         "name": "new",
-        "description": "Creates a new decision with status Proposed.",
+        "description": (
+            "Creates a new decision with status Proposed. "
+            "May fail with repository-locked if the repository lock could not be acquired in time, or "
+            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
+            "in both cases no write was made."
+        ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
             {"name": "title", "type": "string", "required": True, "description": "Title of the new decision."},

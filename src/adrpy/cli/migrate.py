@@ -49,6 +49,8 @@ def describe():
             "If the repository lock is lost partway through (a different process reclaimed it), the whole run "
             "aborts immediately instead of continuing unprotected, with migration-lock-lost -- its own "
             "`data.results` names only the candidates actually attempted before the loss; none after. "
+            "May instead fail with repository-locked if the lock could not be acquired in time before any "
+            "file is touched. "
             "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
             "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
             "can't be trusted for the already-tool-created-adrs-exist safety check or for candidate eligibility."

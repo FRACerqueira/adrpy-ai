@@ -82,7 +82,10 @@ def describe():
                     "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. "
                     "If the seed's own folderadr differs from the current one AND the OLD folder already has "
                     "recognized decisions, fails with folderadr-change-blocked-by-existing-decisions instead "
-                    "of silently orphaning them (same rule as the `config` command's own --folderadr guard)."
+                    "of silently orphaning them (same rule as the `config` command's own --folderadr guard). "
+                    "On this same already-existing-repository path, may also fail with repository-locked or "
+                    "lock-lost (see this command's own top-level description) -- never on a genuinely fresh "
+                    "path, which takes no lock at all."
                 ),
             },
             {

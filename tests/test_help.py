@@ -2,6 +2,26 @@ import json
 
 from adrpy.__main__ import main
 from adrpy.core.output import EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR
+from adrpy.core.registry import COMMANDS
+
+
+_LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init")
+
+
+def test_every_locked_command_documents_repository_locked():
+    """Round 5 stability re-run, Usability Finding 1: repository-locked/
+    lock-lost are the ADR001-designed failure boundary for every command
+    that acquires the repository lock, but were undocumented anywhere on
+    the caller-facing describe() surface -- an agent had no way to learn
+    these codes exist short of reading core/lock.py's own source. Checks
+    every description string in describe() (top-level and each
+    argument's own), not just the top-level one, since init's own note
+    lives on its --seed argument, scoped to the already-existing-
+    repository path only."""
+    for name in _LOCKED_COMMANDS:
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "repository-locked" in text, f"{name}'s describe() never mentions repository-locked"
 
 
 def test_help_lists_commands(capsys):

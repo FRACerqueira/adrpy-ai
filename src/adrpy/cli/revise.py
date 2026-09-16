@@ -43,7 +43,10 @@ def describe():
         "description": (
             "Creates a new revision (wording fix) of an Accepted/Rejected decision. "
             "Requires the repository's lenrevision to be > 0 (see the `config` command); "
-            "fails with revision-not-configured otherwise -- true for any freshly-init'd repository."
+            "fails with revision-not-configured otherwise -- true for any freshly-init'd repository. "
+            "May fail with repository-locked if the repository lock could not be acquired in time, or "
+            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
+            "in both cases no write was made."
         ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},

@@ -36,7 +36,12 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "version",
-        "description": "Creates a new major version of an Accepted/Rejected decision.",
+        "description": (
+            "Creates a new major version of an Accepted/Rejected decision. "
+            "May fail with repository-locked if the repository lock could not be acquired in time, or "
+            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
+            "in both cases no write was made."
+        ),
         "arguments": [
             {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
             {
