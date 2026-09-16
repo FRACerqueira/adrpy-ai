@@ -16,7 +16,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import is_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within
 from adrpy.core.warnings import excluded_candidate_warning
 
 
@@ -78,6 +78,16 @@ def scan_decisions(folder, config, warnings=None):
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
+        # Round 6 resilience re-run, Finding B, class closure: rglob
+        # (used above) silently swallows an OSError from an unreadable
+        # subdirectory -- see find_unreadable_subdirectories' own note.
+        unreadable = find_unreadable_subdirectories(folder)
+        if unreadable:
+            names = ", ".join(unreadable)
+            warnings.append(
+                f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
+                f"(permission denied or similar) -- this scan may be missing decision files inside them: {names}."
+            )
     return found
 
 
@@ -94,9 +104,25 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
     silent data-loss/race the original finding described.
 
     Scans against `old_config` (never the new one): the existing files
-    were written under the OLD naming rules, not the new ones."""
+    were written under the OLD naming rules, not the new ones.
+
+    Round 6 resilience re-run, Finding B: unlike scan_decisions' other
+    callers (a warning is enough there -- nothing unsafe happens from an
+    under-reported inventory), this guard gates a real safety decision --
+    `existing == []` here is only trustworthy if the scan that produced
+    it was actually complete. Fails closed instead of allowing an
+    orphaning it could not actually rule out."""
     if new_folderadr == old_folderadr:
         return
+    unreadable = find_unreadable_subdirectories(old_folder)
+    if unreadable:
+        raise CommandError(
+            "folderadr-change-scan-incomplete",
+            f"Cannot safely determine whether '{old_folderadr}' still has decisions: "
+            f"{len(unreadable)} subdirectory/subdirectories could not be scanned.",
+            data={"folderadr": old_folderadr, "unreadable": unreadable},
+            warnings=warnings,
+        )
     existing = scan_decisions(old_folder, old_config, warnings=warnings)
     if existing:
         raise CommandError(

@@ -1,10 +1,11 @@
+import os
 import subprocess
 import sys
 
 import pytest
 
 from adrpy.core.errors import CommandError
-from adrpy.core.security import is_within, reject_embedded_delimiter, resolve_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within, reject_embedded_delimiter, resolve_within
 
 
 def test_is_within_accepts_a_candidate_inside_the_base_dir(tmp_path):
@@ -139,3 +140,37 @@ def test_reject_embedded_delimiter_rejects_unicode_line_separators(char):
         reject_embedded_delimiter(f"before{char}after", "title")
 
     assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "b").mkdir()
+
+    assert find_unreadable_subdirectories(tmp_path) == []
+
+
+def test_find_unreadable_subdirectories_reports_a_subdirectory_os_walk_cannot_enter(tmp_path, monkeypatch):
+    """Round 6 resilience re-run, Finding B: `Path.rglob` (used by every
+    scan in this project) silently swallows an `OSError` raised while
+    walking a subtree -- a subfolder that becomes unreadable mid-scan
+    makes it return fewer results, or none, with no exception and no
+    signal at all. `os.scandir` is the primitive `os.walk` (and
+    `Path.rglob` internally) both build on -- monkeypatching it to deny
+    one specific subdirectory reproduces the class without needing a
+    real OS-level ACL setup."""
+    blocked = tmp_path / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    result = find_unreadable_subdirectories(tmp_path)
+
+    assert len(result) == 1
+    assert str(blocked) in result[0]

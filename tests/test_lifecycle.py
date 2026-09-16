@@ -22,6 +22,7 @@ from adrpy.core.lifecycle import (
     read_body,
     read_header_lines,
     read_header_lines_with_report,
+    reject_folderadr_change_if_decisions_exist,
     resolve_repo_and_target,
     rewrite_status_field,
     scan_decisions,
@@ -550,6 +551,68 @@ def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list
 
     # Backward compatible: no warnings= at all (the default) never raises.
     assert scan_decisions(adr_dir, config) == []
+
+
+def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 6 resilience re-run, Finding B, class closure: Path.rglob
+    (which scan_decisions uses) silently swallows an OSError raised
+    while walking a subtree -- a subfolder that becomes unreadable
+    mid-scan used to just make the result set smaller, with zero
+    signal. Every caller that passes warnings= now finds out."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    warnings = []
+    scan_decisions(adr_dir, config, warnings=warnings)
+
+    assert len(warnings) == 1
+    assert "could not be scanned" in warnings[0]
+    assert str(blocked) in warnings[0]
+
+
+def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
+    """Round 6 resilience re-run, Finding B: unlike scan_decisions'
+    own generic callers (a warning is enough there -- nothing unsafe
+    happens from an under-reported inventory), this specific guard
+    gates a real safety decision (round 5, Finding 5): whether a
+    folderadr change is allowed to proceed. If the scan it depends on
+    might have silently missed decisions hiding in an unreadable
+    subdirectory, `existing == []` can no longer be trusted to mean
+    "genuinely empty" -- fails closed instead of allowing an orphaning
+    it could not actually rule out."""
+    config = load_repo_config(FIXTURE_PATH)
+    old_folder = tmp_path / config.folderadr
+    old_folder.mkdir(parents=True)
+    blocked = old_folder / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_folderadr_change_if_decisions_exist(old_folder, config.folderadr, "doc/adrB", config)
+
+    assert excinfo.value.code == "folderadr-change-scan-incomplete"
+    assert excinfo.value.data["folderadr"] == config.folderadr
+    assert str(blocked) in excinfo.value.data["unreadable"][0]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")

@@ -1,6 +1,7 @@
 """Adversarial-input safety checks (harness Fase 5, closed alongside Fase 4,
 not after)."""
 
+import os
 from pathlib import Path
 
 from adrpy.core.errors import CommandError
@@ -45,6 +46,39 @@ def is_within(base_dir, candidate, *, resolved_base=None):
         return Path(candidate).resolve().is_relative_to(base)
     except (OSError, ValueError):
         return False
+
+
+def find_unreadable_subdirectories(folder):
+    """Round 6 resilience re-run, Finding B, class closure: `Path.rglob`
+    (CPython's own pathlib implementation) silently swallows any
+    `OSError` raised while walking a subtree -- a subfolder that becomes
+    unreadable mid-scan (an ordinary ACL choice for a team-restricted
+    area, something `core/lock.py`'s own module docstring already
+    anticipates for a repo organized into per-team/per-domain
+    subfolders) makes every `rglob("*.md")` call in this project
+    (`scan_decisions`, `explore`, `migrate`'s own scan, `init`'s
+    `_max_existing_numbers`) silently return fewer results, or none,
+    with no exception and no signal at all.
+
+    `os.walk`'s own `onerror` hook is the one stdlib mechanism that
+    surfaces this instead of swallowing it -- used here PURELY for error
+    detection; its own file/directory listing is discarded, so every
+    caller keeps using `folder.rglob()` unchanged for the actual scan,
+    preserving its own junction-following behavior exactly (already
+    covered by other tests) rather than risking a traversal-mechanism
+    swap changing what gets found.
+
+    Returns a list of the directory paths (as strings) that could not be
+    scanned -- empty when nothing was unreadable."""
+    folder = Path(folder)
+    unreadable = []
+
+    def _on_error(error):
+        unreadable.append(getattr(error, "filename", None) or str(error))
+
+    for _dirpath, _dirnames, _filenames in os.walk(folder, onerror=_on_error):
+        pass
+    return unreadable
 
 
 def reject_embedded_delimiter(value, field_name):

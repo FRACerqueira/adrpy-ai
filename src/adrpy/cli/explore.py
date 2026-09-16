@@ -16,7 +16,7 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import is_within, resolve_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import excluded_candidate_warning
 
 
@@ -51,6 +51,7 @@ def run(args):
 
     entries = []
     excluded = []
+    unreadable = []
     if folder.is_dir():
         # Round 4 performance front: resolved once, not once per
         # candidate -- see is_within's own note.
@@ -63,6 +64,10 @@ def run(args):
                 excluded.append(candidate)
                 continue
             entries.append(_build_entry(candidate, config))
+        # Round 6 resilience re-run, Finding B, class closure: rglob
+        # above silently swallows an OSError from an unreadable
+        # subdirectory -- see find_unreadable_subdirectories' own note.
+        unreadable = find_unreadable_subdirectories(folder)
 
     # Mirrors AdrService.ReadAllAdr's real sort order:
     # OrderByDescending(IsValid).ThenBy(IsMigrated).ThenByDescending(Number)
@@ -90,6 +95,12 @@ def run(args):
     warning = excluded_candidate_warning(excluded)
     if warning:
         warnings.append(warning)
+    if unreadable:
+        names = ", ".join(unreadable)
+        warnings.append(
+            f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
+            f"(permission denied or similar) -- this report may be missing decision files inside them: {names}."
+        )
     return {"decisions": entries, "warnings": warnings}
 
 

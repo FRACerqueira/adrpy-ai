@@ -32,7 +32,7 @@ from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.lifecycle import read_header_lines_with_report, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import is_within, resolve_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
 
 
@@ -169,6 +169,18 @@ def run(args):
                 warning = excluded_candidate_warning(excluded)
                 if warning:
                     warnings.append(warning)
+                # Round 6 resilience re-run, Finding B, class closure:
+                # rglob above silently swallows an OSError from an
+                # unreadable subdirectory -- see
+                # find_unreadable_subdirectories' own note.
+                unreadable_dirs = find_unreadable_subdirectories(folder)
+                if unreadable_dirs:
+                    names = ", ".join(unreadable_dirs)
+                    warnings.append(
+                        f"{len(unreadable_dirs)} subdirectory/subdirectories under {folder} could not be "
+                        f"scanned (permission denied or similar) -- this scan may be missing decision "
+                        f"files inside them: {names}."
+                    )
 
             if not entries:
                 raise CommandError(

@@ -23,7 +23,7 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import is_within, resolve_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, retry_warning
 
 # Matches adrplus.json's own documented `language` values verbatim.
@@ -323,4 +323,14 @@ def _max_existing_numbers(target, config, warnings=None):
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
+        # Round 6 resilience re-run, Finding B, class closure: rglob
+        # above silently swallows an OSError from an unreadable
+        # subdirectory -- see find_unreadable_subdirectories' own note.
+        unreadable = find_unreadable_subdirectories(folder)
+        if unreadable:
+            names = ", ".join(unreadable)
+            warnings.append(
+                f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
+                f"(permission denied or similar) -- this scan may be missing decision files inside them: {names}."
+            )
     return max_number, max_version, max_revision
