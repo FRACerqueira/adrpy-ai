@@ -168,7 +168,13 @@ def test_approve_reports_two_warnings_together_in_order_before_an_unrelated_fail
     (they'd still pass even with a duplicated warning or the wrong
     order). This combines two distinct real side effects (an encoding
     repair AND an orphaned temp-file cleanup) surviving together to a
-    later, unrelated CommandError, and checks both content and order."""
+    later, unrelated CommandError, and checks both content and order.
+
+    Order note (round 4, ADR001): orphan cleanup now runs before the
+    repository lock is acquired (matching new.py/supersede.py's own
+    already-established order), and the encoding repair is only detected
+    once the target is read fresh, inside the lock -- so orphan cleanup
+    is now warnings[0], the encoding repair warnings[1]."""
     tmp_path_root, adr_path = _setup_repo(tmp_path)
     config = load_repo_config(tmp_path_root / "adr-config.adrplus")
 
@@ -200,8 +206,8 @@ def test_approve_reports_two_warnings_together_in_order_before_an_unrelated_fail
 
     assert excinfo.value.code == "family-member-superseded"
     assert len(excinfo.value.warnings) == 2
-    assert "utf-8" in excinfo.value.warnings[0].lower()
-    assert "orphaned" in excinfo.value.warnings[1].lower()
+    assert "orphaned" in excinfo.value.warnings[0].lower()
+    assert "utf-8" in excinfo.value.warnings[1].lower()
 
 
 def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):

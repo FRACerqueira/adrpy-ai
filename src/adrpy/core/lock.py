@@ -25,8 +25,11 @@ LOCK_FILE_NAME = ".adrpy.lock"
 ABANDON_AFTER_SECONDS = 30
 WAIT_CEILING_SECONDS = 10
 POLL_INTERVAL_SECONDS = 0.2
-UNLINK_RETRY_ATTEMPTS = 3
-UNLINK_RETRY_DELAY_SECONDS = 0.05
+# Shared by every transient-I/O retry in this file (unlink, read) -- same
+# contention window atomic_write_bytes documents for the identical class
+# of Windows "pending delete"/sharing-violation failure.
+LOCK_IO_RETRY_ATTEMPTS = 3
+LOCK_IO_RETRY_DELAY_SECONDS = 0.05
 
 
 class LockTimeoutError(CommandError):
@@ -38,26 +41,63 @@ class LockTimeoutError(CommandError):
         super().__init__("repository-locked", detail, warnings=warnings)
 
 
+class LockLostError(CommandError):
+    """Round 4 ADR001 (doc/adr/ADR001V01-...): the lock was acquired
+    successfully but was reclaimed by another process before this
+    command's write could commit -- distinct from LockTimeoutError (never
+    acquired the lock at all), so a caller retrying on this code knows
+    the repository itself is fine and only this specific race was lost."""
+
+    def __init__(self, detail, warnings=None):
+        super().__init__("lock-lost", detail, warnings=warnings)
+
+
 def _unlink_with_retry(path):
     """Same transient-PermissionError retry as atomic_write_text (Fase 4) --
     a Windows "pending delete"/sharing-violation window under heavy
     concurrent lock churn can make an unlink of a file that genuinely is
-    ours fail momentarily. Best-effort: swallows a PermissionError that
-    outlasts every retry, since a stale lock file left behind is still
-    correctly reclaimed later by `_reclaim_if_abandoned`."""
-    for _ in range(UNLINK_RETRY_ATTEMPTS):
+    ours fail momentarily.
+
+    Returns True once the file is confirmed gone (removed by this call, or
+    already absent), False when removal could not be confirmed. Never
+    raises: best-effort, since a lock file left behind is still eligible
+    for reclaim later by `_reclaim_if_abandoned` -- but round 4's
+    resilience/observability audit found the return value was missing
+    entirely (every caller assumed success) and that only PermissionError
+    was even caught, so any other OSError during release used to escape
+    `acquire_repo_lock`'s own `finally` block raw, turning a fully
+    successful write into a reported failure."""
+    for attempt in range(LOCK_IO_RETRY_ATTEMPTS):
         try:
             path.unlink(missing_ok=True)
-            return
+            return True
         except PermissionError:
-            time.sleep(UNLINK_RETRY_DELAY_SECONDS)
+            if attempt < LOCK_IO_RETRY_ATTEMPTS - 1:
+                time.sleep(LOCK_IO_RETRY_DELAY_SECONDS)
+        except OSError:
+            return False
+    return False
 
 
 def _read_lock(path):
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
+    """Retries a transient PermissionError, the same tolerance
+    `_unlink_with_retry`/`atomic_write_bytes` already have for this
+    project's own documented contention window (round 4, resilience
+    Finding 4) -- called both from the wait loop (every poll) and from
+    the release path, so an intolerant read here could abort a wait that
+    should have simply retried, or raise out of a `finally` block."""
+    attempt = 0
+    while True:
+        try:
+            raw = path.read_text(encoding="utf-8")
+            break
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            attempt += 1
+            if attempt >= LOCK_IO_RETRY_ATTEMPTS:
+                raise
+            time.sleep(LOCK_IO_RETRY_DELAY_SECONDS)
     token, _, timestamp_text = raw.partition("\n")
     try:
         return token, float(timestamp_text)
@@ -66,12 +106,24 @@ def _read_lock(path):
 
 
 def _try_create(path, token):
+    """Round 4, resilience Finding 2: a process killed (or any other
+    OSError, e.g. disk full) between os.open and the write landing used to
+    leave a 0-byte/truncated lock file behind with no cleanup -- unlike
+    atomic_write_bytes, hardened for this exact class in round 1. Left
+    behind, that file is unparseable, which is exactly the case
+    `_reclaim_if_abandoned`'s mtime fallback below exists for -- but
+    cleaning it up immediately here means a future reclaim isn't the only
+    thing standing between a crash and a permanent deadlock."""
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         return False
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(f"{token}\n{time.time()}")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{token}\n{time.time()}")
+    except OSError:
+        _unlink_with_retry(path)
+        raise
     return True
 
 
@@ -79,20 +131,74 @@ def _reclaim_if_abandoned(path, abandon_after):
     """Removes the lock file only if it is still the exact same abandoned
     lock just inspected -- narrows, but cannot fully close, the race against
     a different process reclaiming (or refreshing) it at the same moment.
-    Returns True only when this call actually removed a stale lock, so the
-    caller can report it (harness Fase 4: a reclaim must warn, naming the
-    two possible causes -- a crashed process or a genuinely slow one --
-    since neither can be told apart from here)."""
+    Returns True only when this call's own `_unlink_with_retry` confirms
+    the removal happened, not merely attempted (round 4, resilience/
+    observability Finding 1a: this used to return True unconditionally,
+    producing a false "reclaimed" claim while the lock file was still on
+    disk), so the caller can report it (harness Fase 4: a reclaim must
+    warn, naming the two possible causes -- a crashed process or a
+    genuinely slow one -- since neither can be told apart from here).
+
+    A lock file whose content doesn't parse (e.g. 0 bytes or truncated, as
+    `_try_create` above can no longer leave behind itself, but a crash
+    mid-write could still produce via a different path) has no timestamp
+    to compare against `abandon_after` -- falls back to the file's own
+    mtime, or such a lock could never be recognized as abandoned and the
+    repository deadlocks permanently (round 4, resilience Finding 2,
+    reproduced)."""
     existing = _read_lock(path)
-    if existing is None:
+    if existing is not None:
+        _, timestamp = existing
+        if time.time() - timestamp <= abandon_after:
+            return False
+        if _read_lock(path) != existing:
+            return False
+        return _unlink_with_retry(path)
+
+    try:
+        mtime = path.stat().st_mtime
+    except FileNotFoundError:
         return False
-    _, timestamp = existing
-    if time.time() - timestamp <= abandon_after:
+    if time.time() - mtime <= abandon_after:
         return False
-    if _read_lock(path) == existing:
-        _unlink_with_retry(path)
-        return True
-    return False
+    try:
+        # Same race-guard intent as the parsed-lock branch above: only
+        # remove if it's still the exact same malformed file just observed.
+        still_malformed = _read_lock(path) is None and path.stat().st_mtime == mtime
+    except FileNotFoundError:
+        return False
+    if not still_malformed:
+        return False
+    return _unlink_with_retry(path)
+
+
+class RepoLock:
+    """Yielded by acquire_repo_lock in place of a bare warnings list (round
+    4 ADR001): bundles the warnings accumulated so far with the means to
+    prove this process still owns the lock immediately before a command's
+    final write. No bounded-lease lock without heartbeat/renewal can
+    prevent every reclaim of a still-working holder -- this guarantees
+    that holder never commits a write believing it still has exclusivity
+    when it does not, converting a possible silent collision into a
+    clean, explicit failure instead."""
+
+    def __init__(self, path, token, warnings):
+        self._path = path
+        self._token = token
+        self.warnings = warnings
+
+    def verify_still_held(self):
+        existing = _read_lock(self._path)
+        if existing is None or existing[0] != self._token:
+            # No `warnings=` here deliberately: every caller raises this
+            # from inside its own attach_warnings(warnings)-wrapped region,
+            # which fills in the command's own up-to-date list (possibly
+            # grown since this lock's own acquire-time snapshot). Passing
+            # this list's own stale copy here would double it instead.
+            raise LockLostError(
+                f"The repository lock at {self._path} was lost before this write could commit "
+                "(reclaimed by another process) -- no write was made."
+            )
 
 
 @contextlib.contextmanager
@@ -152,8 +258,9 @@ def acquire_repo_lock(
             "before this operation could proceed."
         )
 
+    lock = RepoLock(path, token, warnings)
     try:
-        yield warnings
+        yield lock
     finally:
         existing = _read_lock(path)
         if existing is not None and existing[0] == token:

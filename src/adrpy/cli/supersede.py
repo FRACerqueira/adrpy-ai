@@ -12,10 +12,11 @@ from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
     ineligibility_reason_for_supersede,
-    load_target,
     mark_superseded,
     next_number,
     parse_refdate,
+    read_target,
+    resolve_repo_and_target,
     scan_decisions,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
@@ -75,32 +76,10 @@ def run(args):
         optional=("domain", "scope", "refdate"),
         aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate"},
     )
-    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    config, root, path = resolve_repo_and_target(flags["file"])
+    folder = resolve_within(root, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        if encoding_repaired:
-            warnings.append(encoding_repaired_warning(path))
-
-        # Usability audit: a specific reason code instead of one collapsed
-        # not-eligible-for-supersede.
-        reason = ineligibility_reason_for_supersede(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        not_before = header.date_update or header.date_create
-        if not_before is not None:
-            validate_refdate_not_before(refdate, not_before)
-
-        # Unlike `new`, an omitted --scope/--domain defaults to the
-        # predecessor's own current value, not empty.
-        scope = flags["scope"] if "scope" in flags else (header.scope or "")
-        domain = flags["domain"] if "domain" in flags else (header.domain or "")
-        reject_embedded_delimiter(scope, "scope")
-        reject_embedded_delimiter(domain, "domain")
-
-        folder = resolve_within(root, config.folderadr)
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
@@ -110,8 +89,39 @@ def run(args):
         # that command's comment. Also covers mark_superseded's mutation of
         # the predecessor, so a concurrent scan by another command never
         # observes the predecessor half-transitioned.
-        with acquire_repo_lock(folder) as lock_warnings:
-            warnings.extend(lock_warnings)
+        #
+        # Round 4 ADR001 (doc/adr/ADR001V01-...): the predecessor's own
+        # header/lines are now read fresh, inside the lock, instead of
+        # before it -- previously, two concurrent supersede calls on the
+        # SAME predecessor each wrote it from their own stale, pre-lock
+        # snapshot; the lock only ever prevented a successor NUMBER
+        # collision, not this (stability audit Finding 2, reproduced: two
+        # live successors, only one referenced by the predecessor at all).
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
+            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+
+            # Usability audit: a specific reason code instead of one collapsed
+            # not-eligible-for-supersede.
+            reason = ineligibility_reason_for_supersede(header)
+            if reason is not None:
+                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+
+            refdate = parse_refdate(flags.get("refdate"))
+            validate_refdate_not_in_future(refdate)
+            not_before = header.date_update or header.date_create
+            if not_before is not None:
+                validate_refdate_not_before(refdate, not_before)
+
+            # Unlike `new`, an omitted --scope/--domain defaults to the
+            # predecessor's own current value, not empty.
+            scope = flags["scope"] if "scope" in flags else (header.scope or "")
+            domain = flags["domain"] if "domain" in flags else (header.domain or "")
+            reject_embedded_delimiter(scope, "scope")
+            reject_embedded_delimiter(domain, "domain")
+
             successor_number = next_number(scan_decisions(folder, config))
 
             successor = DecisionRecord(
@@ -141,6 +151,9 @@ def run(args):
                 )
 
             try:
+                # ADR001, part 3: guarantees the predecessor write below
+                # never commits blindly if the lease was reclaimed.
+                lock.verify_still_held()
                 _record, _content, attempts = mark_superseded(
                     path, config, lines, header, filename_info, successor_number, refdate
                 )
@@ -159,6 +172,9 @@ def run(args):
 
             content = build_header(config, successor) + config.template
             try:
+                # ADR001, part 3: this command's SECOND write -- guarantees
+                # it never commits blindly either, on its own.
+                lock.verify_still_held()
                 attempts = atomic_write_text(successor_path, content)
             except OSError as error:
                 # Mechanism-correctness audit round 3 (resilience finding

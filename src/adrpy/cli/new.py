@@ -88,8 +88,8 @@ def run(args):
         # number (reproduced live, 10/10 times, with two concurrent `new`
         # calls). core/lock.py existed and was tested in isolation since
         # Milestone 4 but was never actually wired into any command.
-        with acquire_repo_lock(folder) as lock_warnings:
-            warnings.extend(lock_warnings)
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
             decisions = scan_decisions(folder, config)
 
             existing = find_by_unique_title(title, config, decisions)
@@ -123,6 +123,9 @@ def run(args):
                 )
 
             content = build_header(config, record) + config.template
+            # ADR001, part 3 (doc/adr/ADR001V01-...): guarantees this write
+            # never commits blindly if the lease was reclaimed.
+            lock.verify_still_held()
             attempts = atomic_write_text(file_path, content)
             warning = retry_warning(attempts)
             if warning:

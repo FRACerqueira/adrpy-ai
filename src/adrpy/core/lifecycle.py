@@ -145,12 +145,16 @@ def read_body(lines):
     return os.linesep.join(body_lines) + os.linesep
 
 
-def load_target(fileadr):
-    """Ported from the common preamble approve/reject/undo/supersede/
-    version/revise all share: resolve the extension default, find the
-    file's own repository root by walking up for adr-config.adrplus, load
-    +validate that config, then parse this file's own name and header.
-    Declares (Fase 6 checklist): recognizes BOTH naming schemes."""
+def resolve_repo_and_target(fileadr):
+    """The non-content-dependent half of load_target (round 4 ADR001,
+    doc/adr/ADR001V01-...): resolve the extension default, find the
+    file's own repository root by walking up for adr-config.adrplus, and
+    load+validate that config -- everything that doesn't require reading
+    the target file's own content. Split out so a caller that goes on to
+    write can acquire the repository lock (scoped to config.folderadr,
+    only resolvable once `config` is known) BEFORE the content-dependent
+    read (read_target below), keeping that read fresh with respect to the
+    lock instead of captured before it."""
     fileadr = Path(fileadr)
     if fileadr.suffix == "":
         fileadr = fileadr.with_suffix(".md")
@@ -163,11 +167,20 @@ def load_target(fileadr):
             "cannot-determine-root-path", f"Cannot determine the repository root for: {fileadr}"
         )
     config = load_repo_config(config_path)
+    return config, config_path.parent, fileadr
 
-    lines, encoding_repaired = read_lines_with_report(fileadr)
-    found = parse_any_filename(fileadr.name, config)
+
+def read_target(path, config):
+    """The content-dependent half of load_target (round 4 ADR001): reads
+    and parses the target file's own name and header. Call this AFTER
+    acquiring the repository lock for any command that goes on to write,
+    so eligibility/write decisions are made from a fresh read, not one
+    captured before the lock -- the reproduced defect (round 4, stability
+    Finding 2) ADR001 closes."""
+    lines, encoding_repaired = read_lines_with_report(path)
+    found = parse_any_filename(path.name, config)
     if found is None:
-        raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {fileadr.name}")
+        raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {path.name}")
     _, filename_info = found
 
     header = parse_header(lines, config)
@@ -178,7 +191,23 @@ def load_target(fileadr):
         # itself instead of discarding it behind one fixed label.
         raise CommandError(header.error or "header-invalid", "Header is not structurally valid.")
 
-    return config, config_path.parent, fileadr, filename_info, header, lines, encoding_repaired
+    return filename_info, header, lines, encoding_repaired
+
+
+def load_target(fileadr):
+    """Ported from the common preamble approve/reject/undo/supersede/
+    version/revise all share: resolve the extension default, find the
+    file's own repository root by walking up for adr-config.adrplus, load
+    +validate that config, then parse this file's own name and header.
+    Declares (Fase 6 checklist): recognizes BOTH naming schemes.
+
+    Kept as a single call for any caller that doesn't need the lock-then-
+    read split (round 4 ADR001) -- see resolve_repo_and_target/
+    read_target above for that split, now used by every command that
+    goes on to write."""
+    config, root, path = resolve_repo_and_target(fileadr)
+    filename_info, header, lines, encoding_repaired = read_target(path, config)
+    return config, root, path, filename_info, header, lines, encoding_repaired
 
 
 def family_members(folder, config, number):

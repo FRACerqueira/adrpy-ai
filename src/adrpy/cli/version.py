@@ -13,9 +13,10 @@ from adrpy.core.lifecycle import (
     has_superseded_sibling,
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
-    load_target,
     parse_refdate,
     read_body,
+    read_target,
+    resolve_repo_and_target,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
@@ -83,12 +84,10 @@ def run(args):
         switches=("empty",),
         aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate", "e": "empty"},
     )
-    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    config, root, path = resolve_repo_and_target(flags["file"])
+    folder = resolve_within(root, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        if encoding_repaired:
-            warnings.append(encoding_repaired_warning(path))
-        folder = resolve_within(root, config.folderadr)
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
@@ -99,8 +98,16 @@ def run(args):
         # concurrent supersede/approve/etc. on a sibling could otherwise slip
         # in between, and this call's next-version-number decision could go
         # stale before it's ever written. Same class as `new`'s own comment.
-        with acquire_repo_lock(folder) as lock_warnings:
-            warnings.extend(lock_warnings)
+        #
+        # Round 4 ADR001 (doc/adr/ADR001V01-...): the target's own header is
+        # now read fresh, inside the lock, instead of via load_target before
+        # it -- same freshness fix as approve/reject/undo/supersede.
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
+            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+
             # Performance backlog item: one scan, shared by all three checks
             # below -- each used to call family_members (and so
             # scan_decisions) on its own (3 scans per invocation).
@@ -205,6 +212,9 @@ def run(args):
                 )
 
             content = build_header(config, record) + template
+            # ADR001, part 3: guarantees this write never commits blindly
+            # if the lease was reclaimed.
+            lock.verify_still_held()
             attempts = atomic_write_text(new_path, content)
             warning = retry_warning(attempts)
             if warning:

@@ -27,8 +27,11 @@ import re
 import threading
 import time
 
-from adrpy.cli import approve, init, new, supersede
+import pytest
+
+from adrpy.cli import approve, init, new, reject, supersede
 from adrpy.core import lifecycle
+from adrpy.core.errors import CommandError
 
 
 def _run_concurrently(callables):
@@ -111,3 +114,115 @@ def test_concurrent_supersede_calls_never_collide_on_the_same_successor_number(t
     numbers = [_sequence_number(result["created"]) for result in results]
     assert numbers[0] != numbers[1], f"both successors got sequence number {numbers[0]}"
     assert sorted(numbers) == [3, 4]
+
+
+def test_concurrent_approve_and_reject_on_the_same_file_do_not_both_succeed(tmp_path, monkeypatch):
+    """Round 4 stability audit, Finding 1, reproduced: approve/reject held
+    no repository lock at all, so two concurrent calls on the same
+    Proposed file each independently read-decided-wrote and both reported
+    success with mutually exclusive final statuses -- a lost update, with
+    neither caller told a conflict happened. ADR001 (doc/adr/ADR001V01...)
+    closes this by giving both commands the same lock new/supersede/
+    version/revise already use, with the eligibility read happening
+    fresh, inside it -- so the second command to actually acquire the
+    lock sees the first one's already-committed status and fails cleanly
+    instead of silently clobbering it."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Decision"])
+    target = tmp_path / "doc" / "adr" / "ADR001V01-decision.md"
+
+    original = lifecycle.rewrite_status_field
+
+    def delayed(*args, **kwargs):
+        time.sleep(0.1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(approve, "rewrite_status_field", delayed)
+    monkeypatch.setattr(reject, "rewrite_status_field", delayed)
+
+    results, errors = _run_concurrently(
+        [
+            lambda: approve.run(["--file", str(target)]),
+            lambda: reject.run(["--file", str(target)]),
+        ]
+    )
+
+    successes = [r for r in results if r is not None]
+    failures = [e for e in errors if e is not None]
+    assert len(successes) == 1, f"expected exactly one of approve/reject to succeed, got: {results}"
+    assert len(failures) == 1, f"expected exactly one clean failure, got: {errors}"
+    assert isinstance(failures[0], CommandError)
+
+
+def test_concurrent_supersede_calls_on_the_same_predecessor_do_not_both_succeed(tmp_path, monkeypatch):
+    """Round 4 stability audit, Finding 2, reproduced: supersede captured
+    the predecessor's header/lines via load_target BEFORE acquiring the
+    lock, so two concurrent supersede calls on the SAME predecessor each
+    wrote it from their own stale, pre-lock snapshot -- both successors
+    got created (the lock genuinely prevents a NUMBER collision, per the
+    test above), but the predecessor's own header ends up referencing
+    only whichever wrote last, permanently orphaning the other successor
+    with no back-reference from the predecessor at all. ADR001 closes
+    this by reading the predecessor fresh, inside the lock, so the second
+    call sees it already Superseded and fails cleanly."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Predecessor"])
+    predecessor = tmp_path / "doc" / "adr" / "ADR001V01-predecessor.md"
+    approve.run(["--file", str(predecessor)])
+
+    original = supersede.ineligibility_reason_for_supersede
+
+    def delayed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        time.sleep(0.1)
+        return result
+
+    monkeypatch.setattr(supersede, "ineligibility_reason_for_supersede", delayed)
+
+    results, errors = _run_concurrently(
+        [
+            lambda: supersede.run(["--file", str(predecessor)]),
+            lambda: supersede.run(["--file", str(predecessor)]),
+        ]
+    )
+
+    successes = [r for r in results if r is not None]
+    failures = [e for e in errors if e is not None]
+    assert len(successes) == 1, (
+        f"expected exactly one supersede on the same predecessor to succeed, got: {results}"
+    )
+    assert len(failures) == 1, f"expected exactly one clean failure, got: {errors}"
+    assert isinstance(failures[0], CommandError)
+
+
+def test_pre_commit_lock_recheck_aborts_the_write_if_the_lock_was_stolen(tmp_path, monkeypatch):
+    """Round 4 ADR001, part 3 (pre-commit ownership recheck): no bounded-
+    lease lock without heartbeat can prevent a legitimately slow holder's
+    lock from being reclaimed by another process mid-critical-section --
+    but the write that follows must never commit blindly once that's
+    happened. Simulates a steal happening immediately before the write
+    and confirms the command aborts with a distinct `lock-lost` code
+    instead of silently overwriting the file the new holder may already
+    be using, and that the file itself was never touched."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Decision"])
+    target = tmp_path / "doc" / "adr" / "ADR001V01-decision.md"
+    original_content = target.read_text(encoding="utf-8")
+
+    # Steals the lock during the eligibility check -- the step immediately
+    # before the pre-commit recheck in approve.run() -- so the recheck
+    # itself (not the write it guards) is what's under test here.
+    original_check = approve.ineligibility_reason_for_approve_or_reject
+
+    def steal_lock_then_check(header):
+        lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
+        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        return original_check(header)
+
+    monkeypatch.setattr(approve, "ineligibility_reason_for_approve_or_reject", steal_lock_then_check)
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(target)])
+
+    assert excinfo.value.code == "lock-lost"
+    assert target.read_text(encoding="utf-8") == original_content

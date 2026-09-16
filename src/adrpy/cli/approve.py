@@ -8,12 +8,14 @@ from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
     has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
-    load_target,
     parse_refdate,
+    read_target,
+    resolve_repo_and_target,
     rewrite_status_field,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
@@ -44,42 +46,57 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    config, root, path = resolve_repo_and_target(flags["file"])
+    folder = resolve_within(root, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        if encoding_repaired:
-            warnings.append(encoding_repaired_warning(path))
-
-        # Usability audit: a specific reason code instead of one collapsed
-        # not-eligible-for-approval -- already-accepted/already-rejected/
-        # already-superseded each call for a different recovery action.
-        reason = ineligibility_reason_for_approve_or_reject(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-
-        folder = resolve_within(root, config.folderadr)
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
                 warnings.append(warning)
-        if has_superseded_sibling(folder, config, filename_info.number):
-            raise CommandError(
-                "family-member-superseded",
-                "A sibling decision in this family has already been superseded.",
-                warnings=warnings,
+
+        # Round 4 ADR001 (doc/adr/ADR001V01-...): approve held no lock at
+        # all -- two concurrent approve/reject calls on the same file both
+        # read-decided-wrote independently and both reported success with
+        # mutually exclusive final statuses (stability audit Finding 1,
+        # reproduced). The read below now happens fresh, inside the lock,
+        # instead of before it.
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
+            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+
+            # Usability audit: a specific reason code instead of one collapsed
+            # not-eligible-for-approval -- already-accepted/already-rejected/
+            # already-superseded each call for a different recovery action.
+            reason = ineligibility_reason_for_approve_or_reject(header)
+            if reason is not None:
+                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+
+            if has_superseded_sibling(folder, config, filename_info.number):
+                raise CommandError(
+                    "family-member-superseded",
+                    "A sibling decision in this family has already been superseded.",
+                    warnings=warnings,
+                )
+
+            refdate = parse_refdate(flags.get("refdate"))
+            validate_refdate_not_in_future(refdate)
+            if header.date_create is not None:
+                validate_refdate_not_before(refdate, header.date_create)
+
+            # ADR001, part 3: the lease can still be reclaimed out from
+            # under a legitimately slow holder -- this can't prevent that,
+            # but guarantees the write below never commits blindly if it
+            # already happened.
+            lock.verify_still_held()
+            _record, _content, attempts = rewrite_status_field(
+                path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
             )
-
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        if header.date_create is not None:
-            validate_refdate_not_before(refdate, header.date_create)
-
-        _record, _content, attempts = rewrite_status_field(
-            path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
-        )
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Usability audit M4: canonical keyword, matching explore's own
     # status_create/status_update -- not the repo's configured label.

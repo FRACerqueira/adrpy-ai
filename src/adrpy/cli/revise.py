@@ -17,9 +17,10 @@ from adrpy.core.lifecycle import (
     has_superseded_sibling,
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
-    load_target,
     parse_refdate,
     read_body,
+    read_target,
+    resolve_repo_and_target,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
@@ -58,18 +59,16 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path, filename_info, header, lines, encoding_repaired = load_target(flags["file"])
+    config, root, path = resolve_repo_and_target(flags["file"])
+
+    if config.lenrevision == 0:
+        raise CommandError(
+            "revision-not-configured", "This repository's config has lenrevision == 0."
+        )
+
+    folder = resolve_within(root, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        if encoding_repaired:
-            warnings.append(encoding_repaired_warning(path))
-
-        if config.lenrevision == 0:
-            raise CommandError(
-                "revision-not-configured", "This repository's config has lenrevision == 0.", warnings=warnings
-            )
-
-        folder = resolve_within(root, config.folderadr)
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
@@ -77,8 +76,16 @@ def run(args):
 
         # Concurrency audit (critical): same reasoning as `version`'s own
         # comment -- family-state read and write must be one critical section.
-        with acquire_repo_lock(folder) as lock_warnings:
-            warnings.extend(lock_warnings)
+        #
+        # Round 4 ADR001 (doc/adr/ADR001V01-...): the target's own header is
+        # now read fresh, inside the lock, instead of via load_target before
+        # it -- same freshness fix as approve/reject/undo/supersede/version.
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
+            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            if encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+
             # Performance backlog item: one scan, shared by all three checks
             # below -- each used to call family_members (and so
             # scan_decisions) on its own (3 scans per invocation).
@@ -165,6 +172,9 @@ def run(args):
                 )
 
             content = build_header(config, record) + read_body(lines)
+            # ADR001, part 3: guarantees this write never commits blindly
+            # if the lease was reclaimed.
+            lock.verify_still_held()
             attempts = atomic_write_text(new_path, content)
             warning = retry_warning(attempts)
             if warning:
