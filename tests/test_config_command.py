@@ -320,3 +320,21 @@ def test_config_describe_documents_the_real_domain_constraints():
         assert str(config_schema.STATUS_LABEL_MAX_LENGTH) in arguments[field]
     assert "N" in arguments["migrationpattern"] and "T" in arguments["migrationpattern"]
     assert "true" in arguments["disableplugins"] and "false" in arguments["disableplugins"]
+
+
+def test_field_description_fails_loudly_for_a_field_it_does_not_recognize():
+    """Round 4 test-adequacy audit, Finding 10: _field_description's own
+    fallback (`return f"New value for '{field}'."`) is unreachable today
+    -- every one of the 26 fields in _EDITABLE_FIELDS hits a specific
+    branch above it (confirmed by test_config_describe_documents_the_
+    real_domain_constraints exercising every field). Silently returning
+    that generic, uninformative string for a field none of the branches
+    recognize would be the same usability regression M2 already fixed
+    (a tautological description an agent can't learn anything from) --
+    reintroduced silently the moment a new field is ever added to
+    _EDITABLE_FIELDS without a matching branch here. Fails loudly
+    instead, so that moment is caught immediately rather than shipped."""
+    from adrpy.cli.config import _field_description
+
+    with pytest.raises(AssertionError, match="no-such-field"):
+        _field_description("no-such-field")

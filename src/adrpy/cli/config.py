@@ -90,7 +90,13 @@ def _field_description(field):
         return f"Integer between {low} and {high} (inclusive)."
     if field == "disableplugins":
         return "'true' or 'false'."
-    return f"New value for '{field}'."
+    # Round 4 test-adequacy audit, Finding 10: unreachable today -- every
+    # field in _EDITABLE_FIELDS hits a branch above. A silent, generic
+    # fallback here would reintroduce the exact usability regression M2
+    # already fixed (a tautological "New value for '<field>'." an agent
+    # can't learn anything from) the moment a new field is ever added to
+    # _EDITABLE_FIELDS without a matching branch -- fail loudly instead.
+    raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
 def describe():
