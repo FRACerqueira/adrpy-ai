@@ -3,7 +3,13 @@ from pathlib import Path
 import pytest
 
 from adrpy.core.errors import CommandError
-from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import (
+    attach_warnings,
+    encoding_repaired_warning,
+    excluded_candidate_warning,
+    orphan_cleanup_warning,
+    retry_warning,
+)
 
 
 def test_attach_warnings_is_a_noop_on_success():
@@ -86,3 +92,33 @@ def test_retry_warning_names_the_attempt_count():
 
 def test_encoding_repaired_warning_names_the_path():
     assert "decision.md" in encoding_repaired_warning("decision.md")
+
+
+def test_excluded_candidate_warning_is_none_when_nothing_excluded():
+    """Round 5 test-adequacy re-run, Finding 3: this helper (used by
+    scan_decisions/family_members/explore/init/migrate) had zero direct
+    unit tests before this -- only ever exercised indirectly, and every
+    one of those indirect call sites happened to use exactly one excluded
+    path, so the count/pluralization/join logic was never actually
+    checked against 2+."""
+    assert excluded_candidate_warning([]) is None
+
+
+def test_excluded_candidate_warning_names_a_single_excluded_path():
+    warning = excluded_candidate_warning([Path("doc/adr/evil-junction.md")])
+
+    assert "1 candidate file(s)" in warning
+    assert "evil-junction.md" in warning
+
+
+def test_excluded_candidate_warning_counts_and_joins_multiple_excluded_paths():
+    """The specific gap every indirect (single-path) test left unchecked:
+    the exact count matches len(paths), and multiple names are actually
+    comma-joined, not overwritten/dropped."""
+    warning = excluded_candidate_warning([Path("a.md"), Path("b.md"), Path("c.md")])
+
+    assert "3 candidate file(s)" in warning
+    assert "a.md" in warning
+    assert "b.md" in warning
+    assert "c.md" in warning
+    assert "a.md, b.md, c.md" in warning

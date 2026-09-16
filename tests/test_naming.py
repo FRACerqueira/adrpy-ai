@@ -230,6 +230,37 @@ def test_build_filename_includes_revision_when_configured():
     assert filename.startswith("ADR001V01R01-")
 
 
+def test_parse_any_filename_recognizes_a_file_built_under_a_different_lenseq():
+    """Round 5 stability re-run, Finding 7 (negative result, recorded per
+    the project's own "a hypothesis that gets investigated and doesn't
+    hold becomes a permanent test" rule): every write command bootstraps
+    config BEFORE acquiring the repository lock (necessary -- the lock's
+    own location is derived from folderadr), so a concurrent `config`
+    edit to lenseq between that read and the write could, in theory, let
+    a file get built with a STALE width. Investigated and confirmed NOT
+    to cause the feared corruption (a file becoming unrecognized by a
+    later scan under the NEW config, letting next_number reuse a
+    number): _ADR_PATTERN matches variable-length digit runs, not a
+    lenseq-specific width -- a stale lenseq only changes zero-padding
+    cosmetically. A future session re-suspecting this should find this
+    test, not reinvestigate from scratch."""
+    stale_config_data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    stale_config_data["lenseq"] = 6  # much wider than the fixture's own real value
+    stale_config = parse_repo_config(json.dumps(stale_config_data))
+    record = DecisionRecord(number=1, title="Some decision", version=1)
+
+    filename_built_under_stale_config = build_filename(stale_config, record)
+    assert filename_built_under_stale_config.startswith("ADR000001V01-")
+
+    fresh_config = load_repo_config(FIXTURE_PATH)  # the real, un-stale lenseq
+    result = parse_any_filename(filename_built_under_stale_config, fresh_config)
+
+    assert result is not None
+    scheme, parsed = result
+    assert scheme == "current"
+    assert parsed.number == 1
+
+
 def test_build_filename_appends_supersede_suffix_unconditionally():
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(number=5, title="New decision", version=1, superseded=2)
