@@ -1,0 +1,7 @@
+# config's field descriptions no longer overclaim emptiness, omit the forbidden-character constraint, or hide the read/write key asymmetry
+
+**Front:** Usability (round 5 re-run), Findings 2, 3 and 4 | **Severity:** Medium
+
+Round 5 backlog, Fase 3 (`config.py`, grouped in one pass -- same file, distinct regions): Finding 3 -- `_field_description` advertised `migrationpattern`/`template`/`prefix` as "may be empty", but `parse_flags` structurally rejects an empty string for any optional flag before it ever reaches the field -- this command can never actually set any of the three to empty (only `init --seed`, which bypasses `parse_flags`, can). Finding 4 -- the 16 fields (4 status labels + 11 header labels + `headerdisclaimer`) validated by `reject_embedded_delimiter` never mentioned that constraint in their own description, so an agent following only the stated domain could still hit `config-field-contains-forbidden-character` with no warning. Finding 2 -- config's read result has a `config` key; its write result never does (only `updated_fields`) -- undocumented asymmetry that would `KeyError` a generic wrapper reading `data.config` unconditionally.
+
+**Fix**: all three corrected in `describe()`/documentation text -- Finding 3's claim rewritten to state the actual constraint, Finding 4's descriptions now mention the forbidden-character rule, Finding 2's asymmetry now stated in the top-level description.
