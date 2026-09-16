@@ -147,10 +147,14 @@ def describe():
             "on a write. "
             "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
             "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
-            "names the count) rather than silently orphaning them at their old, still-real path. "
+            "names the count) rather than silently orphaning them at their old, still-real path; if that "
+            "check itself can't be completed (a subdirectory couldn't be scanned), fails closed instead with "
+            "folderadr-change-scan-incomplete rather than assuming nothing was there. "
             "A write call may also fail with repository-locked if the repository lock could not be "
             "acquired in time, or lock-lost if it was acquired but reclaimed before the write could "
-            "commit -- in both cases no write was made; a pure read (no field flags) never takes the lock."
+            "commit -- in both cases no write was made; a pure read (no field flags) never takes the lock. "
+            "May also fail with folderadr-changed-after-lock-acquired if a concurrent config change moved "
+            "folderadr while this call was acquiring the lock -- no write was made either way; retry."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},

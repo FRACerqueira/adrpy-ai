@@ -47,7 +47,9 @@ def describe():
             "`data.predecessor_status` names the file already mutated despite the overall failure "
             "(a lock lost before this SECOND write also surfaces this same code/data, not lock-lost). "
             "May instead fail with repository-locked (lock never acquired) or lock-lost (lost before the "
-            "FIRST write) -- in both of those cases no write was made at all."
+            "FIRST write) -- in both of those cases no write was made at all. May also fail with "
+            "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
+            "this call was acquiring the lock -- no write was made either way; retry."
         ),
         "arguments": [
             {

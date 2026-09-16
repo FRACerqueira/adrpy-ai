@@ -25,6 +25,32 @@ def test_every_locked_command_documents_repository_locked():
         assert "repository-locked" in text, f"{name}'s describe() never mentions repository-locked"
 
 
+def test_every_locked_command_documents_folderadr_changed_after_lock_acquired():
+    """Round 6 calibration, usability finding: folderadr-changed-after-
+    lock-acquired (core.lifecycle.verify_folderadr_unchanged_since_lock,
+    used by all 9 write commands plus init's --seed-on-existing-repo
+    path) was introduced by round 6's own shared fix but never
+    documented in any describe() -- found by the calibration process
+    itself (a grep) before proposing round 7, not by a dedicated
+    audit pass."""
+    for name in _LOCKED_COMMANDS:
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "folderadr-changed-after-lock-acquired" in text, f"{name}'s describe() never mentions it"
+
+
+def test_config_and_init_document_folderadr_change_scan_incomplete():
+    """Round 6 calibration, usability finding: folderadr-change-scan-
+    incomplete (core.lifecycle.reject_folderadr_change_if_decisions_exist's
+    own fail-closed path) is only reachable from config and init (the
+    only two callers of that guard), also introduced by round 6 and also
+    undocumented until now."""
+    for name in ("config", "init"):
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "folderadr-change-scan-incomplete" in text, f"{name}'s describe() never mentions it"
+
+
 def test_every_per_file_command_documents_the_md_auto_suffix():
     """Round 5 usability re-run, Finding 7 (pre-existing, minor): every
     per-file command's `--file` silently gets '.md' appended when the

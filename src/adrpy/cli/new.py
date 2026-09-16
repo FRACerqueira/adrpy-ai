@@ -35,7 +35,9 @@ def describe():
             "Creates a new decision with status Proposed. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "
             "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
-            "in both cases no write was made."
+            "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
+            "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
+            "made either way; retry."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
