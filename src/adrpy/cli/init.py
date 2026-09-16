@@ -46,7 +46,12 @@ SUPPORTED_LANGUAGES = (
 def describe():
     return {
         "name": "init",
-        "description": "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder.",
+        "description": (
+            "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
+            "Not safe to call concurrently on the same --path (deliberately, see doc/adr/ADR001V01-...): "
+            "two simultaneous calls on a fresh path can silently overwrite one another's config, both "
+            "reporting success -- callers must ensure at most one init runs per repository path at a time."
+        ),
         "arguments": [
             {
                 "name": "path",

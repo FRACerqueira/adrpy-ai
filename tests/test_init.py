@@ -64,6 +64,15 @@ def test_init_describe_declares_seed_not_file():
     assert "file" not in arguments
 
 
+def test_init_describe_documents_the_concurrency_risk():
+    """ADR001V01's addendum (2026-09-16): init is deliberately exempted
+    from the repository-lock principle the other 8 write commands
+    follow (accepted risk, not fixed) -- the ADR's own visibility-plan
+    requirement means this has to be stated in the JSON contract surface
+    a caller actually reads, not only in the ADR."""
+    assert "concurrently" in init.describe()["description"].lower()
+
+
 def test_init_file_not_found(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path), "--seed", str(tmp_path / "missing.json")])
