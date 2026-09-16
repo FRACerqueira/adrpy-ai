@@ -26,6 +26,43 @@ def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     assert result["warnings"] == []
 
 
+def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
+    """Round 4 second corroboration pass (audit-stability instance 2,
+    verified live before this fix -- instance 2's own claim that this
+    escapes as a generic `internal-error` was checked and found
+    imprecise: it's actually a clean `io-error`, since FileExistsError is
+    an OSError subclass __main__.py already catches). Distinct from the
+    already-accepted config-already-exists race (doc/adr/ADR001V01-...'s
+    own addendum): that race has genuinely conflicting content between
+    two calls; this one doesn't -- both processes want the exact same
+    end state (the folder exists), so there's nothing to lose by closing
+    it outright, unlike init's other race."""
+    real_mkdir = init.Path.mkdir
+    triggered = {"done": False}
+
+    def racing_mkdir(self, *args, **kwargs):
+        if not triggered["done"] and self.name == "adr":
+            triggered["done"] = True
+            # Simulates a concurrent process creating the SAME directory
+            # first, exactly between init's own is_dir()==False check and
+            # this mkdir() call.
+            real_mkdir(self, parents=True)
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(init.Path, "mkdir", racing_mkdir)
+
+    result = init.run(["--path", str(tmp_path)])
+
+    # No exception -- the race is closed, not just reported better. Both
+    # processes wanted the exact same end state, so who structurally won
+    # the mkdir() syscall doesn't matter; `created` still names the
+    # folder, since this call's own is_dir() check (necessarily taken
+    # before the race is even injected) legitimately observed it as
+    # missing at that point -- a harmless reporting quirk, not a bug.
+    assert (tmp_path / "doc" / "adr").is_dir()
+    assert result["created"] == [str(tmp_path / "adr-config.adrplus"), str(tmp_path / "doc" / "adr")]
+
+
 def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """Round 4 test-adequacy audit, Finding 4: retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""

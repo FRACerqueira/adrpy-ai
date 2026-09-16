@@ -170,8 +170,18 @@ def run(args):
     # "../.." traversal is still relative -- resolve_within is real path
     # resolution, the actual containment guard (Fase 5).
     folder_adr = resolve_within(target, config.folderadr)
-    if not folder_adr.is_dir():
-        folder_adr.mkdir(parents=True)
+    # Round 4 second corroboration pass: check-then-create was a real
+    # TOCTOU -- a concurrent process creating this same directory between
+    # the check and the mkdir() call raised a raw FileExistsError (a
+    # clean io-error via __main__'s own OSError safety net, not a crash,
+    # but a generic code for a benign race: unlike the config-already-
+    # exists race this project already accepts as risk, both processes
+    # here want the exact same end state, so there's no conflicting
+    # content to lose -- exist_ok=True closes it outright rather than
+    # just reporting it better.
+    folder_already_existed = folder_adr.is_dir()
+    folder_adr.mkdir(parents=True, exist_ok=True)
+    if not folder_already_existed:
         created.append(str(folder_adr))
 
     return {"created": created, "warnings": warnings}
