@@ -25,10 +25,11 @@ once that module exists.
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_files, split_real_lines
+from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_files
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
+from adrpy.core.lifecycle import read_lines_with_report
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
@@ -43,7 +44,10 @@ def describe():
             "fails with migration-pattern-not-configured otherwise -- true for any freshly-init'd repository. "
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
             "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
-            "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter)."
+            "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
+            "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
+            "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
+            "can't be trusted for the already-tool-created-adrs-exist safety check or for candidate eligibility."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -73,6 +77,7 @@ def run(args):
     warnings = []
     with attach_warnings(warnings):
         entries = []  # (ParsedFileName, Path, HeaderParseResult)
+        unreliable_files = []
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
             if warning:
@@ -85,7 +90,18 @@ def run(args):
                     continue
                 _, parsed = found
                 try:
-                    text = candidate.read_text(encoding="utf-8", errors="replace")
+                    # Round 4 observability audit, Finding 2, reproduced:
+                    # this used to decode with errors="replace" and no
+                    # signal at all -- a single invalid UTF-8 byte in an
+                    # otherwise-valid, already-tool-created header's
+                    # status-label cell made parse_header see it as
+                    # invalid, bypassing the already-tool-created-adrs-
+                    # exist safety check below and letting the file get a
+                    # SECOND header stamped onto it. Same lossy-decode
+                    # detection every other read in this project already
+                    # uses; entries with a lossy read are set aside below,
+                    # never trusted for a safety-critical decision.
+                    lines, encoding_repaired = read_lines_with_report(candidate)
                 except OSError as error:
                     # Mechanism-correctness audit round 3 (resilience
                     # finding #2a): this scan-phase read used to run
@@ -101,13 +117,29 @@ def run(args):
                         data={"unreadable_file": str(candidate)},
                         warnings=warnings,
                     ) from error
-                lines = split_real_lines(text)
+                if encoding_repaired:
+                    unreliable_files.append(str(candidate))
                 entries.append((parsed, candidate, parse_header(lines, config)))
 
         if not entries:
             raise CommandError(
                 "no-decisions-found",
                 "No .md files matching a recognized naming scheme were found.",
+                warnings=warnings,
+            )
+
+        if unreliable_files:
+            # A lossy decode can't be trusted for either the safety check
+            # right below (it could be hiding a genuine, already-migrated
+            # header) or candidate eligibility (it could wrongly qualify a
+            # file that was never meant to be touched) -- refuse the whole
+            # run rather than guess, since migrate is a one-time, largely
+            # irreversible bulk operation.
+            raise CommandError(
+                "migration-scan-unreliable-encoding",
+                f"{len(unreliable_files)} file(s) could not be decoded cleanly as UTF-8; migration refuses "
+                "to run until they're fixed (their true header state can't be trusted).",
+                data={"unreliable_files": unreliable_files},
                 warnings=warnings,
             )
 

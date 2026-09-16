@@ -48,14 +48,16 @@ def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path,
     _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
 
-    real_read_text = Path.read_text
+    # Round 4 fix (migration-scan-unreliable-encoding): the scan-phase read
+    # now goes through read_lines_with_report, which reads bytes, not text.
+    real_read_bytes = Path.read_bytes
 
-    def flaky_read_text(self, *args, **kwargs):
+    def flaky_read_bytes(self, *args, **kwargs):
         if self == bad_path:
             raise OSError("simulated read failure")
-        return real_read_text(self, *args, **kwargs)
+        return real_read_bytes(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -226,6 +228,34 @@ def test_migrate_rejects_when_tool_created_adr_already_exists(tmp_path):
         migrate.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "already-tool-created-adrs-exist"
+
+
+def test_migrate_refuses_when_a_scanned_file_has_a_lossy_encoding(tmp_path):
+    """Round 4 observability audit, Finding 2, reproduced: the scan-phase
+    read used `errors="replace"` with no signal at all -- a single
+    invalid UTF-8 byte in an otherwise-valid, already-tool-created
+    header's status-label cell made parse_header see it as invalid,
+    bypassing the already-tool-created-adrs-exist safety check below and
+    letting the file get a SECOND header stamped onto it (real,
+    reproduced corruption -- the command reported success with
+    warnings: [] and gave no indication anything was abnormal)."""
+    _init_repo_with_pattern(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Already tool created"])
+    target = tmp_path / "doc" / "adr" / "ADR001V01-already-tool-created.md"
+    original_bytes = target.read_bytes()
+
+    # Corrupt one byte inside the "Created" row's own status-label cell
+    # (the exact class the audit reproduced), leaving the rest intact.
+    corrupted = original_bytes.replace(b"Proposed", b"Propos\xa4d", 1)
+    assert corrupted != original_bytes
+    target.write_bytes(corrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-scan-unreliable-encoding"
+    assert excinfo.value.data == {"unreliable_files": [str(target)]}
+    assert target.read_bytes() == corrupted  # never touched
 
 
 def test_migrate_rejects_when_no_files_found(tmp_path):
