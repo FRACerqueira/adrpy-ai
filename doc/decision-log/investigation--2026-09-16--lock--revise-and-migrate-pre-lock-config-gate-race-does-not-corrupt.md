@@ -1,0 +1,7 @@
+# revise/migrate's pre-lock eligibility gate racing against a concurrent config change does not corrupt data
+
+Round 7 stability audit: `revise.py` (`if config.lenrevision == 0`) and `migrate.py` (`if not config.migrationpattern`) both gate eligibility using a config read taken BEFORE the repository lock, never re-verified against the fresh post-lock config the way the `folderadr` freshness fix (round 6) covers. Suspected that a concurrent `config` change (e.g. `lenrevision` racing from >0 down to 0) mid-flight could let a write through that the repository no longer supports.
+
+Investigated with a real concurrent reproduction (config flips `lenrevision` 2->0 while `revise` is mid-flight): does **not** reproduce. `revise.py`'s own `lenrevision-too-small-for-new-revision` check further down is evaluated against the FRESH post-lock config regardless of the stale pre-lock gate, and any new revision number has at least 1 digit, so `len(str(new_revision)) > lenrevision` is always true once `lenrevision` has raced down to 0 -- an accidental but real backstop, not a designed one. The resulting error code is misleading given the actual cause (`lenrevision-too-small-for-new-revision` instead of something shaped like `revision-not-configured`), but no data corruption occurs and no write is made.
+
+Kept as a permanent regression test (`test_revise_still_fails_safely_when_lenrevision_races_to_zero_after_the_pre_lock_read`) per this project's own rule that a checked hypothesis becomes a test, so a future session doesn't re-investigate the same suspicion from scratch.
