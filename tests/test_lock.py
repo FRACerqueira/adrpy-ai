@@ -66,7 +66,14 @@ def test_lock_reports_when_a_stale_lock_was_reclaimed(tmp_path):
     with acquire_repo_lock(tmp_path, abandon_after=1, wait_ceiling=2, poll_interval=0.05) as lock:
         pass
 
-    assert any("stale" in w.lower() for w in lock.warnings)
+    # Test-adequacy audit round 4, Finding 3: this used to check only a
+    # "stale" substring -- lock.py has TWO warning strings containing it
+    # (this success-path one, and the timeout-path one below), so a
+    # substring-only check couldn't actually tell them apart.
+    assert lock.warnings == [
+        "A stale repository lock (from a possibly-crashed or genuinely slow process) was reclaimed "
+        "before this operation could proceed."
+    ]
 
 
 def test_lock_reports_no_warnings_when_acquired_cleanly(tmp_path):
@@ -105,11 +112,14 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
     same class of bug as a command's own warnings being dropped on an
     unrelated later failure.
 
-    Test-adequacy audit round 3: the assertion below now pins the exact
-    timeout-specific warning text, not just "stale" -- lock.py has TWO
-    warning strings containing that substring (this one, and the
-    reclaim-then-SUCCEEDED one on acquire_repo_lock's success path), so a
-    substring-only check couldn't actually tell them apart."""
+    Test-adequacy audit round 3 raised this same concern but the fix
+    landed as a substring check on two distinct phrases ("timing out"/
+    "stale"), not a true exact pin as its own docstring claimed -- round
+    4's test-adequacy audit caught the drift between that claim and the
+    actual assertion. Now genuinely exact: lock.py has TWO warning
+    strings containing "stale" (this one, and the reclaim-then-SUCCEEDED
+    one on acquire_repo_lock's success path), so only a full-string
+    match can tell them apart with certainty."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text(f"stale-token\n{time.time() - 999}")
 
@@ -117,9 +127,10 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
         with acquire_repo_lock(tmp_path, abandon_after=0, wait_ceiling=0, poll_interval=0.05):
             pass
 
-    assert excinfo.value.warnings
-    assert any("timing out" in w.lower() for w in excinfo.value.warnings)
-    assert any("stale" in w.lower() for w in excinfo.value.warnings)
+    assert excinfo.value.warnings == [
+        "A stale repository lock (from a possibly-crashed or genuinely slow process) was "
+        "reclaimed, but the lock could still not be acquired before timing out."
+    ]
 
 
 def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
@@ -288,6 +299,56 @@ def test_repo_lock_verify_still_held_raises_lock_lost_when_the_file_is_gone(tmp_
         (tmp_path / ".adrpy.lock").unlink()
         with pytest.raises(LockLostError):
             lock.verify_still_held()
+
+
+def test_lock_finally_block_never_deletes_another_owners_lock(tmp_path):
+    """Round 4 test-adequacy audit, Finding 1: acquire_repo_lock's own
+    `finally` block only unlinks the lock file if the on-disk token still
+    matches this call's own -- this is what stops a process from deleting
+    a lock that was reclaimed-as-abandoned and then re-acquired by
+    another process while the first was still finishing its own (now-
+    orphaned) critical section. No test ever made the on-disk token
+    diverge from the caller's own before release and confirmed the file
+    survives untouched."""
+    lock_path = tmp_path / ".adrpy.lock"
+
+    with acquire_repo_lock(tmp_path):
+        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+
+    assert lock_path.exists()
+    assert lock_path.read_text().startswith("someone-else-entirely\n")
+
+
+def test_reclaim_if_abandoned_race_guard_blocks_removal_when_the_second_read_differs(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 2: _reclaim_if_abandoned's own
+    inner race guard (`if _read_lock(path) != existing: return False`)
+    re-reads the lock a second time after confirming it's abandoned, and
+    only removes it if that second read still matches the first --
+    protects against a different process refreshing/reclaiming the lock
+    in the narrow window between the two reads. This branch was never
+    forced in any existing test."""
+    lock_path = tmp_path / ".adrpy.lock"
+    stale_timestamp = time.time() - 999
+    lock_path.write_text(f"stale-token\n{stale_timestamp}")
+
+    real_read_lock = lock_module._read_lock
+    calls = {"count": 0}
+
+    def flaky_read_lock(path):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            # Simulates a different process refreshing/reclaiming the
+            # lock between this function's own first and second read.
+            return ("a-different-process-own-token", stale_timestamp)
+        return real_read_lock(path)
+
+    monkeypatch.setattr(lock_module, "_read_lock", flaky_read_lock)
+
+    result = lock_module._reclaim_if_abandoned(lock_path, abandon_after=1)
+
+    assert result is False
+    assert lock_path.exists()
+    assert calls["count"] == 2
 
 
 def test_wait_ceiling_uses_monotonic_clock_not_wall_clock(tmp_path, monkeypatch):

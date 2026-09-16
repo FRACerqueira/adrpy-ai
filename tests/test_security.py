@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 
 from adrpy.core.errors import CommandError
@@ -68,6 +71,33 @@ def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
         resolve_within(tmp_path, "doc\x00adr")
 
     assert excinfo.value.code == "path-invalid"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_resolve_within_rejects_a_path_that_escapes_via_a_real_junction(tmp_path):
+    """Round 4 test-adequacy audit, Finding 9: resolve_within's own
+    docstring claims it follows real symlinks when resolving ("real path
+    resolution (following `..` and symlinks)") -- no existing test
+    constructed an actual symlink/junction against this function
+    directly, only indirectly via is_within/scan_decisions
+    (test_lifecycle.py's own junction test targets a different
+    function)."""
+    base = tmp_path / "repo"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    junction = base / "linked"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    with pytest.raises(CommandError) as excinfo:
+        resolve_within(base, "linked/escaped.md")
+
+    assert excinfo.value.code == "path-outside-repository"
 
 
 def test_resolve_within_rejects_absolute_path_outside_repo(tmp_path, tmp_path_factory):

@@ -1,6 +1,8 @@
 import os
 from datetime import date
 
+import pytest
+
 from adrpy.core.config import load_repo_config
 from adrpy.core.header import (
     DecisionRecord,
@@ -10,6 +12,18 @@ from adrpy.core.header import (
 )
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+
+
+def _valid_header_lines(config):
+    record = DecisionRecord(
+        number=1,
+        title="Baseline",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+    )
+    header_text = build_header(config, record)
+    return header_text.split(os.linesep)[:-1]  # drop the trailing empty split
 
 
 def test_build_header_matches_real_adrplus_output():
@@ -127,6 +141,75 @@ def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid(
     assert parsed.is_migrated
     assert not parsed.is_valid
     assert counts_as_family_member(parsed)
+
+
+def _replaced(lines, index, value):
+    mutated = list(lines)
+    mutated[index] = value
+    return mutated
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_code"),
+    [
+        # Round 4 test-adequacy audit, Finding 5: parse_header discriminates
+        # ~15 distinct error codes, only checked via `not parsed.is_valid`
+        # (or not at all) anywhere in this file -- an off-by-one that swaps
+        # two adjacent branches, or collapses two into a generic code, would
+        # ship undetected. One case per positional check, asserting the
+        # exact code.
+        (lambda lines: [], "adr-file-empty"),
+        (lambda lines: lines[:11], "adr-file-too-short"),
+        (lambda lines: _replaced(lines, 0, "not a comment"), "adr-header-comment-not-found"),
+        (lambda lines: _replaced(lines, 11, "not a comment"), "adr-header-comment-not-found"),
+        (lambda lines: _replaced(lines, 1, "not the fields row"), "adr-header-invalid-format"),
+        (lambda lines: _replaced(lines, 2, "not the separator row"), "adr-header-invalid-format"),
+        (lambda lines: _replaced(lines, 3, "no pipes at all"), "adr-header-title-not-found"),
+        (lambda lines: _replaced(lines, 4, "no pipes at all"), "adr-header-version-not-found"),
+        (lambda lines: _replaced(lines, 4, "|Version|notadigit|"), "adr-header-version-not-found"),
+        (lambda lines: _replaced(lines, 5, "no pipes at all"), "adr-header-revision-not-found"),
+        (lambda lines: _replaced(lines, 5, "|Revision|notadigit|"), "adr-header-revision-not-found"),
+        (lambda lines: _replaced(lines, 6, "no pipes at all"), "adr-header-scope-not-found"),
+        (lambda lines: _replaced(lines, 7, "no pipes at all"), "adr-header-domain-not-found"),
+        (lambda lines: _replaced(lines, 8, "no pipes at all"), "adr-header-status-created-not-found"),
+        (lambda lines: _replaced(lines, 9, "no pipes at all"), "adr-header-status-updated-not-found"),
+        (lambda lines: _replaced(lines, 10, "no pipes at all"), "adr-header-status-superseded-not-found"),
+        (lambda lines: _replaced(lines, 10, "|Superseded|Superseded (2026-01-01)|"), "adr-status-supersede-format-invalid"),
+        (lambda lines: _replaced(lines, 8, "|Created|Proposed 2026-01-01|"), "status-line-format-invalid"),
+        (lambda lines: _replaced(lines, 8, "|Created|Bogus (2026-01-01)|"), "status-line-unknown-status"),
+        (lambda lines: _replaced(lines, 8, "|Created|Proposed (not-a-date)|"), "status-line-date-invalid"),
+    ],
+    ids=[
+        "file-empty",
+        "file-too-short",
+        "opening-comment-malformed",
+        "closing-comment-malformed",
+        "fields-row-malformed",
+        "separator-row-malformed",
+        "title-cell-unparseable",
+        "version-cell-unparseable",
+        "version-not-a-digit",
+        "revision-cell-unparseable",
+        "revision-not-a-digit",
+        "scope-cell-unparseable",
+        "domain-cell-unparseable",
+        "created-cell-unparseable",
+        "changed-cell-unparseable",
+        "superseded-cell-unparseable",
+        "superseded-missing-colon",
+        "status-cell-missing-parens",
+        "status-cell-unknown-label",
+        "status-cell-invalid-date",
+    ],
+)
+def test_parse_header_reports_the_specific_error_code(mutate, expected_code):
+    config = load_repo_config(FIXTURE_PATH)
+    lines = mutate(_valid_header_lines(config))
+
+    parsed = parse_header(lines, config)
+
+    assert parsed.error == expected_code
+    assert not parsed.is_valid
 
 
 def test_malformed_header_is_neither_valid_nor_a_family_member():

@@ -99,6 +99,28 @@ def test_version_happy_path(tmp_path):
     assert "|Scope|Data|" in text
     assert "|Created|Proposed (2026-01-05)|" in text
     assert "# body" not in text  # body carried forward from the source (template, not literal marker)
+    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # empty-list value on a genuine happy path, only that the key exists.
+    assert result["warnings"] == []
+
+
+def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage."""
+    from adrpy.cli import version as version_module
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    real_atomic_write_text = version_module.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(version_module, "atomic_write_text", flaky_atomic_write_text)
+
+    result = version.run(["--file", str(adr_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
 
 
 def test_version_scans_the_directory_only_once(tmp_path, monkeypatch):
@@ -134,6 +156,80 @@ def test_version_rejects_when_not_accepted_or_rejected(tmp_path):
         version.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "still-proposed"
+
+
+def test_version_rejects_when_sibling_superseded(tmp_path):
+    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    is raised by hand at 8 call sites across 5 command files; version's
+    own had zero coverage. Target is V02 (latest, Accepted); a lower,
+    non-latest sibling V01 carries status_change=Superseded."""
+    tmp_path, _ = _setup_accepted_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+
+    sibling_path = adr_dir / "ADR001V01-use-postgre-sql.md"
+    sibling_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="999",
+    )
+    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
+
+    target_path = adr_dir / "ADR001V02-use-postgre-sql.md"
+    target_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(target_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
+def test_version_rejects_when_sibling_pending(tmp_path):
+    """Same class as the superseded case above, for family-member-pending."""
+    tmp_path, _ = _setup_accepted_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+
+    sibling_path = adr_dir / "ADR001V01-use-postgre-sql.md"
+    sibling_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+    )
+    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
+
+    target_path = adr_dir / "ADR001V02-use-postgre-sql.md"
+    target_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(target_path)])
+
+    assert excinfo.value.code == "family-member-pending"
 
 
 def test_version_rejects_when_not_latest_and_latest_not_rejected(tmp_path):

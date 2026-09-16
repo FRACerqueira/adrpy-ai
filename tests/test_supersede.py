@@ -196,6 +196,30 @@ def test_supersede_claims_the_rewrite_once_it_actually_happens(tmp_path):
     assert any("rewritten" in w.lower() for w in result["warnings"])
 
 
+def test_supersede_reports_a_retry_warning_when_the_successor_write_needed_several_attempts(
+    tmp_path, monkeypatch
+):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage.
+    supersede.py imports and calls atomic_write_text directly for the
+    SUCCESSOR write (unlike the predecessor's own mark_superseded write,
+    which goes through core.lifecycle's own reference)."""
+    from adrpy.cli import supersede as supersede_module
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    real_atomic_write_text = supersede_module.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(supersede_module, "atomic_write_text", flaky_atomic_write_text)
+
+    result = supersede.run(["--file", str(adr_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 def test_supersede_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS

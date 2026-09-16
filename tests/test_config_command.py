@@ -27,6 +27,23 @@ def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
     assert after.activeplugins == before.activeplugins  # untouched, not exposed
 
 
+def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage."""
+    tmp_path = _init_repo(tmp_path)
+    real_atomic_write_text = config.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(config, "atomic_write_text", flaky_atomic_write_text)
+
+    result = config.run(["--path", str(tmp_path), "--prefix", "DOC"])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 def test_concurrent_config_calls_on_different_fields_do_not_lose_an_update(tmp_path, monkeypatch):
     """Round 4 second corroboration pass (audit-stability, 2/3 and 3/3,
     both independent): config did a read-merge-write with no lock at all
@@ -149,6 +166,19 @@ def test_config_rejects_invalid_disableplugins_value(tmp_path):
         config.run(["--path", str(tmp_path), "--disableplugins", "maybe"])
 
     assert excinfo.value.code == "field-not-a-boolean"
+
+
+@pytest.mark.parametrize("value", ["True", "TRUE", " true ", "False", " FALSE "])
+def test_config_normalizes_non_canonical_disableplugins_input(tmp_path, value):
+    """Round 4 test-adequacy audit, Finding 9: --disableplugins's own
+    `.strip().lower()` normalization had no test with non-canonical input
+    (only exactly "true"/"false"/"maybe")."""
+    tmp_path = _init_repo(tmp_path)
+
+    config.run(["--path", str(tmp_path), "--disableplugins", value])
+
+    expected = value.strip().lower() == "true"
+    assert load_repo_config(tmp_path / "adr-config.adrplus").disableplugins is expected
 
 
 def test_config_rejects_non_integer_lenseq(tmp_path):

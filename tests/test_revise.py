@@ -70,6 +70,25 @@ def test_revise_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-05)|" in text
 
 
+def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage."""
+    from adrpy.cli import revise as revise_module
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    real_atomic_write_text = revise_module.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(revise_module, "atomic_write_text", flaky_atomic_write_text)
+
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 def test_revise_scans_the_directory_only_once(tmp_path, monkeypatch):
     """Performance backlog item: latest_in_family, has_superseded_sibling,
     and has_pending_sibling each called family_members (and so
@@ -116,6 +135,84 @@ def test_revise_rejects_when_not_accepted_or_rejected(tmp_path):
         revise.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "still-proposed"
+
+
+def test_revise_rejects_when_sibling_superseded(tmp_path):
+    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    is raised by hand at 8 call sites across 5 command files; revise's
+    own had zero coverage. Target is R02 (latest, Accepted); a lower,
+    non-latest sibling R01 carries status_change=Superseded."""
+    tmp_path, _ = _setup_accepted_repo_with_revisions(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+
+    sibling_path = adr_dir / "ADR001V01R01-use-postgre-sql.md"
+    sibling_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        revision=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="999",
+    )
+    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
+
+    target_path = adr_dir / "ADR001V01R02-use-postgre-sql.md"
+    target_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        revision=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(target_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
+def test_revise_rejects_when_sibling_pending(tmp_path):
+    """Same class as the superseded case above, for family-member-pending."""
+    tmp_path, _ = _setup_accepted_repo_with_revisions(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+
+    sibling_path = adr_dir / "ADR001V01R01-use-postgre-sql.md"
+    sibling_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        revision=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+    )
+    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
+
+    target_path = adr_dir / "ADR001V01R02-use-postgre-sql.md"
+    target_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        revision=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(target_path)])
+
+    assert excinfo.value.code == "family-member-pending"
 
 
 def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):

@@ -313,6 +313,177 @@ def test_valid_migrationpattern_is_accepted(pattern):
     assert config.migrationpattern == pattern
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "headertitlefile",
+        "headerversion",
+        "headerrevision",
+        "headerscope",
+        "headerdomain",
+        "headertitlestatuscreated",
+        "headertitlestatuschanged",
+        "headertitlestatussuperseded",
+        "headertablefields",
+        "headertablevalues",
+        "headermigrated",
+    ],
+)
+def test_header_label_field_too_long_is_rejected(field):
+    """Round 4 test-adequacy audit, Finding 7: only headertitlefile was
+    tested among the 11 header-label fields sharing this same 40-char
+    bound -- asymmetric with the sibling embedded-delimiter check
+    (test_header_cell_field_with_embedded_pipe_is_rejected above), which
+    correctly parametrizes over all 16 applicable fields."""
+    data = _valid_config_dict()
+    data[field] = "d" * 41
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == f"config-{field}-too-long"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "headertitlefile",
+        "headerversion",
+        "headerrevision",
+        "headerscope",
+        "headerdomain",
+        "headertitlestatuscreated",
+        "headertitlestatuschanged",
+        "headertitlestatussuperseded",
+        "headertablefields",
+        "headertablevalues",
+        "headermigrated",
+    ],
+)
+def test_header_label_field_at_exact_max_length_is_accepted(field):
+    """Round 4 test-adequacy audit, Finding 7: no field confirmed the
+    exact max value is ACCEPTED, only that max+1 is rejected -- the
+    project already knows this pattern (test_valid_prefixes_are_accepted
+    tests exactly PREFIX_MAX_LENGTH), just hadn't applied it here."""
+    data = _valid_config_dict()
+    data[field] = "d" * 40
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert getattr(config, field) == "d" * 40
+
+
+@pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
+def test_status_label_field_too_long_is_rejected(field):
+    """Same asymmetry as the header-label fields above, for the 4
+    status-label fields."""
+    data = _valid_config_dict()
+    data[field] = "d" * 26
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == f"config-{field}-too-long"
+
+
+@pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
+def test_status_label_field_at_exact_max_length_is_accepted(field):
+    data = _valid_config_dict()
+    data[field] = "d" * 25
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert getattr(config, field) == "d" * 25
+
+
+def test_headerdisclaimer_at_exact_max_length_is_accepted():
+    data = _valid_config_dict()
+    data["headerdisclaimer"] = "d" * 100
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.headerdisclaimer == "d" * 100
+
+
+def test_folderadr_at_exact_max_length_is_accepted():
+    data = _valid_config_dict()
+    data["folderadr"] = "d" * 50
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderadr == "d" * 50
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("lenseq", 6), ("lenversion", 4), ("lenrevision", 3)],
+)
+def test_numeric_field_at_exact_max_is_accepted(field, value):
+    data = _valid_config_dict()
+    data[field] = value
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert getattr(config, field) == value
+
+
+def test_int_field_given_a_bool_is_rejected_as_wrong_type():
+    """Round 4 test-adequacy audit, Finding 8: config-wrong-type covers 4
+    distinct branches (string/int/bool/list-of-strings); only the plain
+    string-given-for-int case was tested. `bool` is a subtype of `int` in
+    Python (`isinstance(True, int)` is True) -- config.py's own type
+    check explicitly guards against this (`isinstance(value, bool) or
+    not isinstance(value, int)`), otherwise `lenseq: true` would
+    silently pass as `lenseq=1`."""
+    data = _valid_config_dict()
+    data["lenseq"] = True
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-wrong-type"
+
+
+def test_string_field_given_a_wrong_type_is_rejected():
+    data = _valid_config_dict()
+    data["folderadr"] = 123
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-wrong-type"
+
+
+def test_bool_field_given_a_wrong_type_is_rejected():
+    data = _valid_config_dict()
+    data["disableplugins"] = "true"  # a JSON string, not a real boolean
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-wrong-type"
+
+
+def test_list_field_given_a_non_list_is_rejected():
+    data = _valid_config_dict()
+    data["activeplugins"] = "not-a-list"
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-wrong-type"
+
+
+def test_list_field_with_a_non_string_item_is_rejected():
+    data = _valid_config_dict()
+    data["activeplugins"] = [1, 2]
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-wrong-type"
+
+
 def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
     """Resilience audit R3: adr-config.adrplus with invalid UTF-8 bytes
     raised a raw UnicodeDecodeError with EMPTY stdout in 6 different entry

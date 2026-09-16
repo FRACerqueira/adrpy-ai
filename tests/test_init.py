@@ -21,6 +21,25 @@ def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     assert config_path.read_text(encoding="utf-8") == _default_config_text()
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
+    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # empty-list value on a genuine happy path, only that the key exists.
+    assert result["warnings"] == []
+
+
+def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage."""
+    real_atomic_write_text = init.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(init, "atomic_write_text", flaky_atomic_write_text)
+
+    result = init.run(["--path", str(tmp_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
 
 
 def test_init_refuses_when_config_already_exists_without_file(tmp_path):

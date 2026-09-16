@@ -118,6 +118,53 @@ def test_legacy_scheme_is_not_recognized_when_migrationpattern_is_empty():
     assert parse_legacy_filename("0001UsePostgreSQL.md", config) is None
 
 
+def test_parses_legacy_filename_with_version_revision_and_prefix_segments():
+    """Round 4 test-adequacy audit, Finding 6: every existing
+    parse_legacy_filename test used only the N/T segments (the
+    MigrationGuide.md pattern example) -- the V/R/P segment-extraction
+    guards (length/isdigit checks) had zero coverage. Pattern below:
+    N at [0:2], T at [2:], V at [4:6], R at [6:8], P at [8:10]."""
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    parsed = parse_legacy_filename("01XX0203AB.md", config)
+
+    assert parsed.number == 1
+    assert parsed.version == 2
+    assert parsed.revision == 3
+    assert parsed.prefix == "AB"
+    assert parsed.title == "XX0203AB"
+
+
+def test_legacy_filename_rejected_when_too_short_for_the_version_segment():
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    assert parse_legacy_filename("01XX.md", config) is None
+
+
+def test_legacy_filename_rejected_when_version_segment_is_not_a_digit():
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    assert parse_legacy_filename("01XXYY03AB.md", config) is None
+
+
+def test_legacy_filename_rejected_when_too_short_for_the_revision_segment():
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    assert parse_legacy_filename("01XX02.md", config) is None
+
+
+def test_legacy_filename_rejected_when_revision_segment_is_not_a_digit():
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    assert parse_legacy_filename("01XX02YY.md", config) is None
+
+
+def test_legacy_filename_rejected_when_too_short_for_the_prefix_segment():
+    config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
+
+    assert parse_legacy_filename("01XX0203.md", config) is None
+
+
 def test_parse_any_filename_prefers_current_scheme():
     config = _config_with_migration_pattern("N00:04T04")
 

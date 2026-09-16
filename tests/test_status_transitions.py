@@ -103,6 +103,31 @@ def test_approve_claims_the_rewrite_once_it_actually_happens(tmp_path):
     assert any("rewritten" in w.lower() for w in result["warnings"])
 
 
+def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage
+    proving it actually reaches a command's own result (only approve.py's
+    encoding-repair warning, and new.py's happy path, were ever checked
+    for warnings content at all). approve/reject/undo write through
+    core.lifecycle.rewrite_status_field, which calls atomic_write_text
+    from ITS OWN module namespace -- patching approve.py's own (absent)
+    reference would silently no-op."""
+    from adrpy.core import lifecycle
+
+    _, adr_path = _setup_repo(tmp_path)
+    real_atomic_write_text = lifecycle.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+
+    result = approve.run(["--file", str(adr_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
     """Mechanism-correctness audit round 2 (findings #3/#4): a warning
     already recorded earlier in the same run (here, an orphaned temp-file
@@ -422,6 +447,33 @@ def test_reject_rejects_already_resolved(tmp_path):
     assert excinfo.value.code == "already-accepted"
 
 
+def test_reject_rejects_when_sibling_superseded(tmp_path):
+    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    is raised by hand at 8 separate call sites across 5 command files;
+    only approve's own was tested. reject's own raise site (reject.py)
+    had zero coverage."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
+    _write_raw(
+        sibling_path,
+        config,
+        number=1,
+        title="First decision v2",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="ADR002V01-something.md",
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
 def test_reject_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
     """Round 4 resilience audit, Finding 1, reproduced -- same class as
     approve's own test."""
@@ -446,6 +498,25 @@ def test_reject_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
     assert result["status"] == "Rejected"
     assert any("rewritten" in w.lower() for w in result["warnings"])
+
+
+def test_reject_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4 -- same class as approve's
+    own test."""
+    from adrpy.core import lifecycle
+
+    _, adr_path = _setup_repo(tmp_path)
+    real_atomic_write_text = lifecycle.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+
+    result = reject.run(["--file", str(adr_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
 
 
 def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp_path):
@@ -567,6 +638,26 @@ def test_undo_claims_the_rewrite_once_it_actually_happens(tmp_path):
     assert any("rewritten" in w.lower() for w in result["warnings"])
 
 
+def test_undo_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4 -- same class as approve's
+    own test."""
+    from adrpy.core import lifecycle
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    real_atomic_write_text = lifecycle.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+
+    result = undo.run(["--file", str(adr_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):
     """Performance backlog item: has_superseded_sibling and
     has_pending_sibling each called family_members (and so scan_decisions)
@@ -598,6 +689,33 @@ def test_undo_rejects_when_still_proposed(tmp_path):
         undo.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "still-proposed"
+
+
+def test_undo_rejects_when_sibling_superseded(tmp_path):
+    """Round 4 test-adequacy audit, Finding 2: undo's own
+    family-member-superseded raise site had zero coverage (only its
+    sibling family-member-pending check, below, was tested)."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
+    _write_raw(
+        sibling_path,
+        config,
+        number=1,
+        title="First decision v2",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="ADR002V01-something.md",
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
 
 
 def test_undo_rejects_when_pending_sibling_exists(tmp_path):

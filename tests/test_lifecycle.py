@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -18,8 +19,10 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_version_or_revise,
     load_target,
     next_number,
+    read_body,
     read_header_lines,
     read_header_lines_with_report,
+    resolve_repo_and_target,
     rewrite_status_field,
     scan_decisions,
     validate_refdate_not_before,
@@ -74,6 +77,22 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Existing Decision", config, decisions) is not None
     assert find_by_unique_title("Existing decision", config, decisions) is not None
     assert find_by_unique_title("Totally different", config, decisions) is None
+
+
+def test_resolve_repo_and_target_reports_when_no_adr_config_is_found_above(tmp_path):
+    """Round 4 test-adequacy audit, Finding 8: cannot-determine-root-path
+    (raised when find_repo_root walks all the way up without finding
+    adr-config.adrplus) had zero coverage -- reachable from every one of
+    the 6 status-transition commands via resolve_repo_and_target."""
+    orphan_dir = tmp_path / "no-repo-here"
+    orphan_dir.mkdir()
+    target = orphan_dir / "ADR001V01-orphan.md"
+    target.write_text("not a real decision", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        resolve_repo_and_target(target)
+
+    assert excinfo.value.code == "cannot-determine-root-path"
 
 
 @pytest.mark.parametrize(
@@ -475,3 +494,20 @@ def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
 
     assert len(warnings) == 1
     assert "escapes the repository boundary" in warnings[0]
+
+
+def test_read_body_returns_empty_string_when_there_is_no_body(tmp_path):
+    """Round 4 test-adequacy audit, Finding 11: read_body's `if not
+    body_lines: return ""` branch had zero coverage -- config.py's own
+    schema documents an empty template as a legitimate, reachable state
+    (`config.py`'s `template` field "may be empty"), but every existing
+    fidelity test uses a non-empty body."""
+    header_only_lines = [f"line{i}" for i in range(12)]
+
+    assert read_body(header_only_lines) == ""
+
+
+def test_read_body_joins_with_the_host_line_separator(tmp_path):
+    header_and_body = [f"line{i}" for i in range(12)] + ["first body line", "second body line"]
+
+    assert read_body(header_and_body) == "first body line" + os.linesep + "second body line" + os.linesep

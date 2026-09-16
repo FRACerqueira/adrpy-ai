@@ -167,6 +167,28 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
     assert "|File title md|UsePostgreSQL|" in text
     assert "|Created||" in text  # StatusCreate stays Unknown, per the real tool
     assert "# Use PostgreSQL\n\n## Context\n\nWe need a database.\n" in text
+    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # empty-list value on a genuine happy path, only that the key exists.
+    assert result["warnings"] == []
+
+
+def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage.
+    migrate.py calls atomic_write_BYTES, not atomic_write_text."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001UsePostgreSQL.md", "# Use PostgreSQL\n")
+    real_atomic_write_bytes = migrate.atomic_write_bytes
+
+    def flaky_atomic_write_bytes(*args, **kwargs):
+        real_atomic_write_bytes(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(migrate, "atomic_write_bytes", flaky_atomic_write_bytes)
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert any("3 attempts" in w for w in result["warnings"])
 
 
 def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):

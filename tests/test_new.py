@@ -37,6 +37,23 @@ def test_new_creates_first_decision(tmp_path):
     assert "|Revision||" in text  # fixture's lenrevision == 0
 
 
+def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    "succeeded only after N attempts" message had no end-to-end coverage."""
+    _init_repo(tmp_path)
+    real_atomic_write_text = new.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(new, "atomic_write_text", flaky_atomic_write_text)
+
+    result = new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     """Round 4 observability audit, Finding 3: closes the class through

@@ -59,6 +59,32 @@ def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_pa
     assert target.read_bytes() == b"content"
 
 
+def test_atomic_write_raises_the_last_error_after_exhausting_all_retries(tmp_path, monkeypatch):
+    """Round 4 test-adequacy audit, Finding 8: no existing test forced ALL
+    RETRY_ATTEMPTS to fail -- only 2 of 3, succeeding on the 3rd. A
+    persistent PermissionError (outlasting the whole retry budget) must
+    propagate as the real error, not hang or swallow it, and the orphaned
+    temp file must still be cleaned up on every attempt along the way."""
+    from adrpy.core.atomic_write import RETRY_ATTEMPTS
+
+    target = tmp_path / "decision.md"
+    calls = {"n": 0}
+
+    def always_fails(*args, **kwargs):
+        calls["n"] += 1
+        raise PermissionError("persistent contention")
+
+    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", always_fails)
+    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(PermissionError):
+        atomic_write_bytes(target, b"content")
+
+    assert calls["n"] == RETRY_ATTEMPTS
+    assert list(tmp_path.glob("*.tmp")) == []  # no orphan left behind
+    assert not target.exists()
+
+
 def test_atomic_write_text_also_returns_the_attempt_count(tmp_path):
     target = tmp_path / "decision.md"
 
