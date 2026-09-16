@@ -3,7 +3,8 @@ import subprocess
 import sys
 import threading
 
-from adrpy.cli import init, new
+from adrpy.cli import config, init, new
+from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
 
 import pytest
@@ -190,6 +191,40 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
     # Nothing was written -- the original config survives untouched.
     on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"
+
+
+def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
+    """Round 6 stability re-run, Finding A-1: init's own bootstrap read
+    (used both to find the lock and, unrefreshed, handed straight to
+    the folderadr-change guard) was never refreshed inside the lock --
+    reproduced live in two variants, the worse one being that the guard
+    never scanned at all when the seed happened to carry the repo's
+    ORIGINAL folderadr, silently reverting a real concurrent change and
+    orphaning a live decision with zero warning. Both variants are
+    closed by the same fix: use this exact scenario (seed's folderadr ==
+    the stale bootstrap value, not the real current one)."""
+    init.run(["--path", str(tmp_path)])
+    stale_bootstrap = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
+    new.run(["--path", str(tmp_path), "--title", "Live decision"])
+    live_path = tmp_path / "doc" / "adrB" / "ADR001V01-live-decision.md"
+    original_content = live_path.read_text(encoding="utf-8")
+
+    monkeypatch.setattr(init, "load_repo_config", lambda path: stale_bootstrap)
+
+    seed = json.loads(init._default_config_text())  # seed's own folderadr == "doc/adr" (default, == stale value)
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+    on_disk_config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk_config["folderadr"] == "doc/adrB"  # never reverted
+    assert live_path.read_text(encoding="utf-8") == original_content  # never orphaned
 
 
 def test_init_refuses_when_config_already_exists_without_file(tmp_path):

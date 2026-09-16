@@ -5,8 +5,8 @@ import threading
 import time
 from pathlib import Path
 
-from adrpy.cli import init, migrate, new
-from adrpy.core.config import parse_repo_config
+from adrpy.cli import config, init, migrate, new
+from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lock import LockTimeoutError, acquire_repo_lock
@@ -38,6 +38,26 @@ def _write_legacy_file(tmp_path, filename, content):
     adr_dir.mkdir(parents=True, exist_ok=True)
     (adr_dir / filename).write_bytes(content.encode("utf-8"))
     return adr_dir / filename
+
+
+def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
+    """Round 6 stability re-run, root cause shared by 8 call sites:
+    migrate's own bootstrap config read can go stale if a concurrent
+    config edit changes folderadr before this call's own lock is
+    actually acquired -- it would then lock, scan, and write against a
+    directory the repository no longer uses."""
+    _init_repo_with_pattern(tmp_path)
+    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
+
+    monkeypatch.setattr(migrate, "load_repo_config", lambda path: stale_config)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
 
 
 def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):

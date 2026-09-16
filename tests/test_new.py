@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from adrpy.cli import init, new
-from adrpy.core.config import parse_repo_config
+from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 
 import pytest
@@ -35,6 +35,34 @@ def test_new_creates_first_decision(tmp_path):
     assert "|File title md|Use PostgreSQL|" in text
     assert "|Created|Proposed (2026-01-01)|" in text
     assert "|Revision||" in text  # fixture's lenrevision == 0
+
+
+def test_new_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
+    """Round 6 stability re-run, root cause shared by 8 call sites: the
+    lock's own location is derived from a config read taken before the
+    lock -- if a concurrent `config --folderadr` completes in the window
+    before this call's own lock is actually acquired, it locks (and
+    would write into) a directory the repository no longer uses.
+    Reproduced live: an orphaned decision, two processes locking two
+    different directories with zero exclusion between them. Simulates
+    the race by returning a stale config from the bootstrap read while
+    the file on disk already has the new value."""
+    init.run(["--path", str(tmp_path)])
+    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    from adrpy.cli import config as config_module
+
+    config_module.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
+
+    monkeypatch.setattr(new, "load_repo_config", lambda path: stale_config)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "Orphan me"])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+    assert not (tmp_path / "doc" / "adr" / "ADR001V01-orphan-me.md").exists()
+    assert list((tmp_path / "doc" / "adrB").glob("*.md")) == []
 
 
 def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):

@@ -19,6 +19,7 @@ from adrpy.core.lifecycle import (
     resolve_repo_and_target,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
@@ -114,6 +115,11 @@ def run(args):
         # it -- same freshness fix as approve/reject/undo/supersede.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call
+            # sites -- see approve.py's own comment.
+            config = verify_folderadr_unchanged_since_lock(
+                root / "adr-config.adrplus", config.folderadr, warnings=warnings
+            )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
             # Round 4 resilience audit, Finding 1: version never rewrites
             # its own source (only its BODY is carried into a newly

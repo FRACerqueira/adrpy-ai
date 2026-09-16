@@ -27,6 +27,7 @@ from adrpy.core.lifecycle import (
     scan_decisions,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
 )
 
 import json
@@ -574,6 +575,42 @@ def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
 
     assert len(warnings) == 1
     assert "escapes the repository boundary" in warnings[0]
+
+
+def test_verify_folderadr_unchanged_since_lock_returns_fresh_config_when_matching(tmp_path):
+    """Round 6 stability re-run, root cause shared by 8 call sites: the
+    lock's own location is derived from a config read taken before the
+    lock -- this helper re-reads fresh right after acquiring it and
+    confirms folderadr (what the lock's location was derived from)
+    didn't drift underneath. The happy path: nothing changed, the fresh
+    config is returned for the caller to use from then on."""
+    config_path = tmp_path / "adr-config.adrplus"
+    config_path.write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
+    original = load_repo_config(config_path)
+
+    result = verify_folderadr_unchanged_since_lock(config_path, original.folderadr)
+
+    assert result.folderadr == original.folderadr
+
+
+def test_verify_folderadr_unchanged_since_lock_raises_when_folderadr_changed(tmp_path):
+    """Round 6 stability re-run: reproduces the class live -- a concurrent
+    `config --folderadr` (or `init --seed`) completing between this call's
+    own pre-lock bootstrap read and the moment it acquires the lock means
+    the lock's own location is no longer the repository's real folderadr.
+    Must abort with a structured, mappable error instead of silently
+    scanning/writing against a directory the repository no longer uses."""
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data["folderadr"] = "doc/adrB"
+    config_path = tmp_path / "adr-config.adrplus"
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        verify_folderadr_unchanged_since_lock(config_path, "doc/adr", warnings=["accumulated"])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+    assert excinfo.value.warnings == ["accumulated"]
 
 
 def test_read_body_returns_empty_string_when_there_is_no_body(tmp_path):

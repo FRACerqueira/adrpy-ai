@@ -108,6 +108,36 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
         )
 
 
+def verify_folderadr_unchanged_since_lock(config_path, locked_folderadr, warnings=None):
+    """Round 6 stability re-run, root cause shared by 8 call sites: the
+    repository lock's own location is necessarily derived from a config
+    read taken BEFORE the lock (a chicken-and-egg no different from
+    init's own documented exemption -- you cannot look up where the lock
+    lives without already knowing folderadr). If folderadr changes in
+    the window between that read and the acquire, a command can lock,
+    scan, and write against a directory the repository no longer uses at
+    all. Reproduced live (round 6): an orphaned decision left under the
+    stale path, and two processes locking two different directories with
+    zero mutual exclusion between them -- the exact class ADR001 part 2
+    (freshness) exists to close, just never applied to folderadr itself.
+
+    Call this immediately after acquire_repo_lock returns, before doing
+    anything else that depends on folderadr -- and use the config this
+    returns from then on, not whatever was read before the lock: every
+    other field could have drifted too, not just folderadr."""
+    fresh_config = load_repo_config(config_path)
+    if fresh_config.folderadr != locked_folderadr:
+        raise CommandError(
+            "folderadr-changed-after-lock-acquired",
+            f"folderadr changed from '{locked_folderadr}' to '{fresh_config.folderadr}' while this call was "
+            "acquiring the repository lock, so the lock's own location is no longer current -- no write was "
+            "made. Retry.",
+            data={"locked_folderadr": locked_folderadr, "current_folderadr": fresh_config.folderadr},
+            warnings=warnings,
+        )
+    return fresh_config
+
+
 def next_number(decisions):
     """Mirrors AdrService.GetNextNumberFrom: 1 if none exist, else max+1."""
     if not decisions:

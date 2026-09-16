@@ -13,6 +13,32 @@ def _init_repo(tmp_path):
     return tmp_path
 
 
+def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
+    """Round 6 stability re-run: config's own comment claimed `current`
+    (fresh, inside the lock) and `folder` (this same lock's own
+    location) "both are the pre-edit state" -- that invariant didn't
+    actually hold. If a concurrent process changes folderadr between
+    this call's own bootstrap read (which decides the lock's location)
+    and the moment it acquires the lock, this call would lock, scan, and
+    validate against a directory the repository no longer uses.
+    Simulates the race by returning a stale config from the bootstrap
+    read while the file on disk already has the new value."""
+    tmp_path = _init_repo(tmp_path)
+    stale_bootstrap = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    monkeypatch.setattr(config, "load_repo_config", lambda path: stale_bootstrap)
+
+    data = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    data["folderadr"] = "doc/adrB"
+    (tmp_path / "adr-config.adrplus").write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--prefix", "XYZ"])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+
+
 def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
     tmp_path = _init_repo(tmp_path)
     before = load_repo_config(tmp_path / "adr-config.adrplus")

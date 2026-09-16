@@ -15,6 +15,7 @@ from adrpy.core.lifecycle import (
     read_target,
     resolve_repo_and_target,
     rewrite_status_field,
+    verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
@@ -63,6 +64,11 @@ def run(args):
         # comment). The read below now happens fresh, inside the lock.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call
+            # sites -- see approve.py's own comment.
+            config = verify_folderadr_unchanged_since_lock(
+                root / "adr-config.adrplus", config.folderadr, warnings=warnings
+            )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
             # Usability audit: a specific reason code instead of one collapsed

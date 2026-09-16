@@ -20,6 +20,7 @@ from adrpy.core.lifecycle import (
     parse_refdate,
     scan_decisions,
     validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
@@ -95,6 +96,15 @@ def run(args):
         # Milestone 4 but was never actually wired into any command.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call sites:
+            # `folder` above was resolved from a config read BEFORE this
+            # lock -- a concurrent config change could have moved
+            # folderadr in the window before the lock was actually
+            # acquired, in which case `folder` (and so this lock) no
+            # longer names the repository's real decisions folder.
+            # Re-reads fresh and aborts rather than scanning/writing
+            # against a directory nobody uses anymore.
+            config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
             decisions = scan_decisions(folder, config, warnings=warnings)
 
             existing = find_by_unique_title(title, config, decisions)

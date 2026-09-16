@@ -15,6 +15,7 @@ from adrpy.core.lifecycle import (
     rewrite_status_field,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
@@ -74,6 +75,17 @@ def run(args):
         # instead of before it.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call
+            # sites: `folder` above was resolved from a config read
+            # BEFORE this lock -- a concurrent config change could have
+            # moved folderadr in the window before the lock was
+            # actually acquired, in which case this lock no longer
+            # names the repository's real decisions folder. Re-reads
+            # fresh and aborts rather than operating against a
+            # directory nobody uses anymore.
+            config = verify_folderadr_unchanged_since_lock(
+                root / "adr-config.adrplus", config.folderadr, warnings=warnings
+            )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
             # Usability audit: a specific reason code instead of one collapsed

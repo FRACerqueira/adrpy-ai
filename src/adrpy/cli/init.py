@@ -17,7 +17,10 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.lifecycle import reject_folderadr_change_if_decisions_exist
+from adrpy.core.lifecycle import (
+    reject_folderadr_change_if_decisions_exist,
+    verify_folderadr_unchanged_since_lock,
+)
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
@@ -162,6 +165,17 @@ def run(args):
         with attach_warnings(warnings):
             with acquire_repo_lock(lock_folder) as lock:
                 warnings.extend(lock.warnings)
+                # Round 6 stability re-run, Finding A-1: `bootstrap_config`
+                # above is read BEFORE this lock, then was handed straight
+                # to the folderadr-change guard unrefreshed -- if a
+                # concurrent process already changed folderadr by the time
+                # this lock was acquired, the guard scanned the wrong
+                # (stale) folder, or even skipped scanning entirely when
+                # the seed happened to carry that same stale value. Reads
+                # fresh and aborts instead of trusting the pre-lock read.
+                bootstrap_config = verify_folderadr_unchanged_since_lock(
+                    config_path, bootstrap_config.folderadr, warnings=warnings
+                )
                 created = _validate_and_write(
                     target, config_path, config_text, config, warnings, lock, old_config=bootstrap_config
                 )

@@ -29,7 +29,7 @@ from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_fi
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
-from adrpy.core.lifecycle import read_header_lines_with_report
+from adrpy.core.lifecycle import read_header_lines_with_report, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
@@ -103,6 +103,9 @@ def run(args):
         # flow is now one critical section, same as the other 8 commands.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call
+            # sites -- see cli/approve.py's own comment.
+            config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
             entries = []  # (ParsedFileName, Path, HeaderParseResult)
             unreliable_files = []
             if folder.is_dir():

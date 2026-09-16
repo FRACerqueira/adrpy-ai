@@ -20,6 +20,7 @@ from adrpy.core.lifecycle import (
     scan_decisions,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import build_filename
@@ -107,6 +108,11 @@ def run(args):
         # live successors, only one referenced by the predecessor at all).
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
+            # Round 6 stability re-run, root cause shared by 8 call
+            # sites -- see approve.py's own comment.
+            config = verify_folderadr_unchanged_since_lock(
+                root / "adr-config.adrplus", config.folderadr, warnings=warnings
+            )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
             # Usability audit: a specific reason code instead of one collapsed

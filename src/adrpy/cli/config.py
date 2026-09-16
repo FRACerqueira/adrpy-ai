@@ -24,9 +24,12 @@ from pathlib import Path
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config, read_config_text
+from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
-from adrpy.core.lifecycle import reject_folderadr_change_if_decisions_exist
+from adrpy.core.lifecycle import (
+    reject_folderadr_change_if_decisions_exist,
+    verify_folderadr_unchanged_since_lock,
+)
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
@@ -217,7 +220,16 @@ def run(args):
     with attach_warnings(warnings):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            current = parse_repo_config(read_config_text(config_path))
+            # Round 6 stability re-run, Finding A-2: `folder` above (this
+            # lock's own location) was resolved from `bootstrap_config`,
+            # read BEFORE the lock -- the comment here used to claim
+            # `current` and `folder` "both are the pre-edit state," but
+            # nothing actually confirmed that. Re-reads fresh and aborts
+            # if folderadr already drifted, instead of trusting the
+            # assumption.
+            current = verify_folderadr_unchanged_since_lock(
+                config_path, bootstrap_config.folderadr, warnings=warnings
+            )
             merged = asdict(current)
             updated_fields = []
 

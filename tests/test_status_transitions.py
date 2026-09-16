@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from adrpy.__main__ import main
-from adrpy.cli import approve, init, new, reject, undo
+from adrpy.cli import approve, config, init, new, reject, undo
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
@@ -29,6 +29,41 @@ def _write_raw(path, config, **record_kwargs):
 
 
 # ---- approve ----
+
+
+def test_approve_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
+    """Round 6 stability re-run, root cause shared by 8 call sites
+    (representative of the 6 commands wired through
+    resolve_repo_and_target): approve's own pre-lock config read can go
+    stale if a concurrent config edit changes folderadr before this
+    call's own lock is actually acquired -- it would then lock, and
+    operate against, a directory the repository no longer uses.
+    Simulates the race by patching resolve_repo_and_target's own return
+    to report the stale folderadr while the target file genuinely lives
+    under the new one."""
+    init.run(["--path", str(tmp_path)])
+    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
+    new.run(["--path", str(tmp_path), "--title", "Live decision"])
+    adr_path = tmp_path / "doc" / "adrB" / "ADR001V01-live-decision.md"
+    original_content = adr_path.read_text(encoding="utf-8")
+
+    real_resolve = approve.resolve_repo_and_target
+
+    def stale_resolve(fileadr):
+        _config, root, path = real_resolve(fileadr)
+        return stale_config, root, path
+
+    monkeypatch.setattr(approve, "resolve_repo_and_target", stale_resolve)
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
+    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+    # The live decision under the real, current folder survives untouched.
+    assert adr_path.read_text(encoding="utf-8") == original_content
 
 
 def test_approve_happy_path(tmp_path):
