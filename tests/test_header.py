@@ -16,6 +16,13 @@ def test_build_header_matches_real_adrplus_output():
     """Captured byte-for-byte from a real `adrplus new` run (AdrPlus 1.0.0,
     Windows) against a disposable copy of this same fixture: `adrplus new
     --title "Fixture parity check" --domain "Testing" --refdate 2026-09-14`.
+
+    One deliberate divergence from that captured output: the real tool's
+    row 2 reads literally "Values Migrated " even for this non-migrated
+    file; adrpy-ai now omits the "Migrated" word when `migrated=False`
+    (decision-log: accepted-divergence--2026-09-16--header--migrated-word-
+    only-when-migrated.md) -- the word is never parsed by either tool, so
+    the real output was misleading, not information adrpy-ai had to match.
     """
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
@@ -31,7 +38,7 @@ def test_build_header_matches_real_adrplus_output():
 
     expected_lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
-        "|Adr-Plus Fields|Values Migrated |",
+        "|Adr-Plus Fields|Values|",
         "|--|--|",
         "|File title md|Fixture parity check|",
         "|Version|01|",
@@ -44,6 +51,28 @@ def test_build_header_matches_real_adrplus_output():
         "<!-- Do not remove this comment, lines and table (1-12) -->",
     ]
     assert header == os.linesep.join(expected_lines) + os.linesep
+
+
+def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
+    """Deliberate divergence from the real adrplus's own literal "Values
+    Migrated" column label -- confirmed via `parse_header` below (and the
+    real tool's own positional-only parsing) that the label text is never
+    read by either side, only the trailing `<!-- Migrated -->` HTML comment
+    is (see decision-log:
+    accepted-divergence--2026-09-16--header--migrated-word-only-when-migrated.md).
+    A non-migrated file's label no longer reads as if it had been."""
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Not migrated",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 9, 16),
+    )
+
+    header = build_header(config, record)
+
+    assert header.split(os.linesep)[1] == "|Adr-Plus Fields|Values|"
 
 
 def test_build_then_parse_round_trips_the_record():

@@ -46,13 +46,22 @@ def build_header(config, record, migrated=False):
     not from `config.headermigrated` -- this uses the repo config field
     instead, a simplification to revisit once the `migrate` command (Fase 7)
     actually needs to write this marker.
+
+    Deliberate divergence from the real tool: the "Migrated" word in the
+    Values column's own label is now conditional on `migrated`, unlike the
+    real tool's literal "Values Migrated" label on every file regardless
+    (decision-log: accepted-divergence--2026-09-16--header--migrated-word-
+    only-when-migrated.md) -- the word is never parsed by either side
+    (parse_header below only looks for the trailing HTML comment), so it
+    carried no information on a non-migrated file, only a misleading one.
     """
-    migrated_marker = f"<!-- {config.headermigrated} -->" if migrated else ""
+    values_label = f"{config.headertablevalues} {config.headermigrated}" if migrated else config.headertablevalues
+    migrated_marker = f" <!-- {config.headermigrated} -->" if migrated else ""
     disclaimer = f"<!-- {config.headerdisclaimer} (1-{HEADER_LINE_COUNT}) -->"
 
     lines = [
         disclaimer,
-        f"|Adr-Plus {config.headertablefields}|{config.headertablevalues} {config.headermigrated} {migrated_marker}|",
+        f"|Adr-Plus {config.headertablefields}|{values_label}{migrated_marker}|",
         "|--|--|",
         f"|{config.headertitlefile}|{record.title}|",
         (
