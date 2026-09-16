@@ -14,6 +14,7 @@ from adrpy.core.casing import unique_title_key
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
+from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within
 from adrpy.core.warnings import excluded_candidate_warning
@@ -122,15 +123,28 @@ def _read_header_bytes(path, count):
     split_real_lines) -- never the whole file. Reads in bounded chunks,
     growing only if the header genuinely doesn't fit in one (the config
     schema's own field-length limits keep a real header well under a
-    single chunk in practice)."""
-    with open(path, "rb") as handle:
-        buffer = handle.read(_HEADER_READ_CHUNK_SIZE)
-        while len(_REAL_NEWLINE_BYTES.findall(buffer)) < count:
-            more = handle.read(_HEADER_READ_CHUNK_SIZE)
-            if not more:
-                break
-            buffer += more
-    return buffer
+    single chunk in practice).
+
+    Round 5 stability re-run, Finding 4: this read (and every other
+    caller of this project's own documented Windows "pending delete"/
+    sharing-violation contention window) had no PermissionError
+    tolerance at all -- unlike the write side (atomic_write.py) and the
+    lock-file read side (core/lock.py's own _read_lock), which both
+    already retry it. Measured live at ~0.2% of reads under real
+    concurrent writers. Shares core/io_retry.py's loop rather than being
+    a third independent copy."""
+
+    def _open_and_read():
+        with open(path, "rb") as handle:
+            buffer = handle.read(_HEADER_READ_CHUNK_SIZE)
+            while len(_REAL_NEWLINE_BYTES.findall(buffer)) < count:
+                more = handle.read(_HEADER_READ_CHUNK_SIZE)
+                if not more:
+                    break
+                buffer += more
+            return buffer
+
+    return read_with_permission_retry(_open_and_read)
 
 
 def read_header_lines(path, count=HEADER_LINE_COUNT):
@@ -171,8 +185,12 @@ def read_lines_with_report(path):
     """Same as read_lines, but also reports whether the decode was lossy
     (observability audit: invalid UTF-8 bytes get silently replaced with
     U+FFFD -- permanently, the instant the file is next rewritten -- with
-    nothing telling the caller this happened)."""
-    raw_bytes = path.read_bytes()
+    nothing telling the caller this happened).
+
+    Round 5 stability re-run, Finding 4: same transient-PermissionError
+    tolerance as _read_header_bytes' own note -- this is read_target's
+    own primary read on every per-file command."""
+    raw_bytes = read_with_permission_retry(path.read_bytes)
     try:
         text = raw_bytes.decode("utf-8")
         encoding_repaired = False

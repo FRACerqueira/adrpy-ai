@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 
 from adrpy.core.errors import CommandError
+from adrpy.core.io_retry import read_with_permission_retry
 
 LOCK_FILE_NAME = ".adrpy.lock"
 ABANDON_AFTER_SECONDS = 30
@@ -85,19 +86,22 @@ def _read_lock(path):
     project's own documented contention window (round 4, resilience
     Finding 4) -- called both from the wait loop (every poll) and from
     the release path, so an intolerant read here could abort a wait that
-    should have simply retried, or raise out of a `finally` block."""
-    attempt = 0
-    while True:
-        try:
-            raw = path.read_text(encoding="utf-8")
-            break
-        except FileNotFoundError:
-            return None
-        except PermissionError:
-            attempt += 1
-            if attempt >= LOCK_IO_RETRY_ATTEMPTS:
-                raise
-            time.sleep(LOCK_IO_RETRY_DELAY_SECONDS)
+    should have simply retried, or raise out of a `finally` block.
+
+    Round 5 stability re-run, Finding 4, class closure: the retry loop
+    itself now lives in core/io_retry.py, shared with core/lifecycle.py's
+    own decision-file reads instead of being a second independent copy --
+    this call passes this module's own LOCK_IO_RETRY_* tuning explicitly,
+    so a future change to either site's numbers can't silently drift the
+    other."""
+    try:
+        raw = read_with_permission_retry(
+            lambda: path.read_text(encoding="utf-8"),
+            attempts=LOCK_IO_RETRY_ATTEMPTS,
+            delay=LOCK_IO_RETRY_DELAY_SECONDS,
+        )
+    except FileNotFoundError:
+        return None
     token, _, timestamp_text = raw.partition("\n")
     try:
         return token, float(timestamp_text)

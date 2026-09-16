@@ -339,6 +339,86 @@ def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tm
     assert "�" in lines[1]
 
 
+def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
+    """Round 5 stability re-run, Finding 4: this read had no
+    PermissionError tolerance at all, unlike the write side
+    (atomic_write.py) and the lock-file read side (core/lock.py's own
+    _read_lock), which both already retry this project's own documented
+    Windows "pending delete"/sharing-violation contention window --
+    measured live at ~0.2% of reads under real concurrent writers. Same
+    shared helper (core/io_retry.py) as _read_lock now uses, not a
+    fourth independent copy of the loop."""
+    target = tmp_path / "flaky.md"
+    header_lines = [f"line{i}" for i in range(12)]
+    target.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
+
+    import builtins
+
+    real_open = builtins.open
+    calls = {"count": 0}
+
+    def flaky_open(path, *args, **kwargs):
+        if str(path) == str(target) and "rb" in args:
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise PermissionError("Access is denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+
+    lines, encoding_repaired = read_header_lines_with_report(target, count=12)
+
+    assert lines == header_lines
+    assert encoding_repaired is False
+    assert calls["count"] == 3
+
+
+def test_read_header_lines_with_report_raises_when_the_permission_error_persists(tmp_path, monkeypatch):
+    target = tmp_path / "flaky.md"
+    target.write_text("line0\n", encoding="utf-8")
+
+    import builtins
+
+    real_open = builtins.open
+
+    def always_denied(path, *args, **kwargs):
+        if str(path) == str(target) and "rb" in args:
+            raise PermissionError("Access is denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", always_denied)
+
+    with pytest.raises(PermissionError):
+        read_header_lines_with_report(target, count=12)
+
+
+def test_read_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
+    """Same class as the header-read test above, for read_lines_with_report
+    (used by read_target's own primary read on every per-file command)."""
+    from adrpy.core.lifecycle import read_lines_with_report
+
+    target = tmp_path / "flaky.md"
+    target.write_text("body\n", encoding="utf-8")
+
+    real_read_bytes = Path.read_bytes
+    calls = {"count": 0}
+
+    def flaky_read_bytes(self, *args, **kwargs):
+        if self == target:
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise PermissionError("Access is denied")
+        return real_read_bytes(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
+
+    lines, encoding_repaired = read_lines_with_report(target)
+
+    assert lines == ["body"]
+    assert encoding_repaired is False
+    assert calls["count"] == 3
+
+
 def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tmp_path):
     """The bounded read stops once it recovers `count` real lines --
     content genuinely never read is never decoded, so corruption placed
