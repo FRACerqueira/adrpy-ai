@@ -262,6 +262,20 @@ def acquire_repo_lock(
     try:
         yield lock
     finally:
-        existing = _read_lock(path)
+        # Round 5 stability re-run, Finding 2: same class round 4 already
+        # closed for _unlink_with_retry just below -- any OSError escaping
+        # this `finally` block turns a fully successful write into a
+        # reported failure (and, since a `finally`-raised exception
+        # supersedes whatever was propagating from `try: yield lock`, can
+        # mask a real CommandError code as a generic io-error) -- and
+        # skips _unlink_with_retry entirely, leaking the lock file for the
+        # full ABANDON_AFTER_SECONDS window. _read_lock, called first here,
+        # was still exempt: best-effort like its neighbor -- if ownership
+        # can't even be confirmed, leave the file for a later reclaim
+        # rather than raising or guessing.
+        try:
+            existing = _read_lock(path)
+        except OSError:
+            existing = None
         if existing is not None and existing[0] == token:
             _unlink_with_retry(path)

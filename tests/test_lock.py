@@ -273,6 +273,48 @@ def test_read_lock_raises_when_the_permission_error_persists(tmp_path, monkeypat
         lock_module._read_lock(lock_path)
 
 
+def test_lock_finally_block_survives_a_read_failure_during_release(tmp_path, monkeypatch):
+    """Round 5 stability re-run, Finding 2: _read_lock, called first in
+    acquire_repo_lock's own `finally` block to confirm ownership before
+    unlinking, was only tolerant of a transient PermissionError up to its
+    own retry budget -- any OSError beyond that (or any other OSError
+    class, e.g. a genuine I/O failure) used to escape the `finally` block
+    raw. That turns a fully successful write into a reported failure and
+    skips _unlink_with_retry entirely, leaking the lock file for the full
+    ABANDON_AFTER_SECONDS window -- the exact class round 4 already closed
+    for _unlink_with_retry itself (see its own docstring), just missing
+    from its neighbor called first in this same block."""
+
+    def always_fails(path):
+        raise PermissionError("Access is denied")
+
+    monkeypatch.setattr(lock_module, "_read_lock", always_fails)
+
+    with acquire_repo_lock(tmp_path):
+        pass  # must not raise on exit despite the release-path read failing
+
+
+def test_lock_finally_block_does_not_mask_a_real_error_when_release_read_fails(tmp_path, monkeypatch):
+    """Companion to the test above: the sharper harm isn't just an
+    unrelated leak/crash -- a real CommandError raised from inside the
+    `with acquire_repo_lock(...)` body must still be the exception the
+    caller sees, not replaced by whatever _read_lock's own failure raises
+    from the `finally` block (Python's own finally-supersedes-try
+    semantics)."""
+    from adrpy.core.errors import CommandError
+
+    def always_fails(path):
+        raise OSError("simulated I/O failure")
+
+    monkeypatch.setattr(lock_module, "_read_lock", always_fails)
+
+    with pytest.raises(CommandError) as excinfo:
+        with acquire_repo_lock(tmp_path):
+            raise CommandError("already-accepted", "boom")
+
+    assert excinfo.value.code == "already-accepted"
+
+
 def test_repo_lock_verify_still_held_passes_while_this_process_still_owns_it(tmp_path):
     with acquire_repo_lock(tmp_path) as lock:
         lock.verify_still_held()  # must not raise
