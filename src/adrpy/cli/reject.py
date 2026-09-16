@@ -21,7 +21,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
@@ -151,13 +151,21 @@ def run(args):
                     # approve.py's own comment.
                     if pred_encoding_repaired:
                         warnings.append(encoding_repaired_warning(pred_path))
-                except OSError as error:
+                except (OSError, LockLostError) as error:
                     # Mechanism-correctness audit round 3 (resilience finding
                     # #1): by this point the primary write above has already
                     # succeeded for real -- `path` genuinely is Rejected on
                     # disk. Same partial-success shape as this command's own
                     # superseded-predecessor-not-found case, just for a real
                     # OSError instead of a missing predecessor.
+                    #
+                    # Round 5 stability re-run, Finding 3: LockLostError
+                    # used to bypass this handler entirely (only OSError
+                    # was caught), reporting a generic, dataless lock-lost
+                    # even though the primary write above already
+                    # committed for real. Reuses this command's own
+                    # existing code/data shape rather than inventing a
+                    # parallel one.
                     raise CommandError(
                         "reject-predecessor-write-failed",
                         f"{pred_path}: {error}",

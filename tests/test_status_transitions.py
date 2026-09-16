@@ -320,6 +320,43 @@ def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp
     assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
 
 
+def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the_predecessor_write(
+    tmp_path, monkeypatch
+):
+    """Round 5 stability re-run, Finding 3: same class as the OSError
+    sibling test above, but for LockLostError on this command's SECOND
+    write -- it used to bypass reject-predecessor-write-failed's handler
+    entirely (only OSError was caught there), reporting a generic,
+    dataless lock-lost even though the target was already, for real,
+    committed to Rejected."""
+    from adrpy.cli import supersede
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    successor_path = Path(result["created"])
+
+    from adrpy.cli import reject as reject_module
+
+    real_read = reject_module.read_lines_with_report
+
+    def steal_lock_then_read(*args, **kwargs):
+        lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
+        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        return real_read(*args, **kwargs)
+
+    monkeypatch.setattr(reject_module, "read_lines_with_report", steal_lock_then_read)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path)])
+
+    assert excinfo.value.code == "reject-predecessor-write-failed"
+    assert excinfo.value.data["file"] == str(successor_path)
+    assert excinfo.value.data["status"] == "Rejected"
+    assert excinfo.value.data["predecessor_file"] == str(adr_path)
+    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+
+
 def test_approve_rejects_refdate_before_create(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 

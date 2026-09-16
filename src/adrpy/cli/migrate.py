@@ -30,7 +30,7 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.lifecycle import read_header_lines_with_report
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
@@ -46,6 +46,9 @@ def describe():
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
             "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
             "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
+            "If the repository lock is lost partway through (a different process reclaimed it), the whole run "
+            "aborts immediately instead of continuing unprotected, with migration-lock-lost -- its own "
+            "`data.results` names only the candidates actually attempted before the loss; none after. "
             "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
             "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
             "can't be trusted for the already-tool-created-adrs-exist safety check or for candidate eligibility."
@@ -230,6 +233,23 @@ def run(args):
                     if warning:
                         warnings.append(warning)
                     results.append({"file": str(candidate_path), "status": "migrated", "error": None})
+                except LockLostError:
+                    # Round 5 stability re-run, Finding 3: distinct from
+                    # the per-file OSError/UnicodeError case just below --
+                    # losing the lock is a whole-operation event, not this
+                    # one candidate's own problem, so looping on would
+                    # just re-lose the same already-gone lock on every
+                    # remaining candidate and misreport each of them as
+                    # individually "failed" when none were ever attempted.
+                    # Stop outright and report exactly what was actually
+                    # done so far.
+                    raise CommandError(
+                        "migration-lock-lost",
+                        f"The repository lock was lost after {len(results)} of {len(candidates)} file(s) were "
+                        "processed; migration was aborted rather than continuing unprotected.",
+                        data={"results": results},
+                        warnings=warnings,
+                    )
                 except (OSError, UnicodeError) as error:
                     # UnicodeError (e.g. a UnicodeEncodeError from a title
                     # containing a lone surrogate) is not an OSError, but is

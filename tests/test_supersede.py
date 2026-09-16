@@ -1,3 +1,4 @@
+import time
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, supersede
@@ -45,6 +46,38 @@ def test_supersede_reveals_predecessor_already_superseded_when_successor_write_f
         raise OSError("simulated disk failure")
 
     monkeypatch.setattr(supersede_module, "atomic_write_text", flaky_write)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-successor-write-failed"
+    assert excinfo.value.data["predecessor"] == str(adr_path)
+    assert excinfo.value.data["predecessor_status"] == "Superseded"
+    # The predecessor really was mutated on disk despite the overall failure.
+    assert "|Superseded|Superseded" in adr_path.read_text(encoding="utf-8")
+
+
+def test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_before_the_successor_write(
+    tmp_path, monkeypatch
+):
+    """Round 5 stability re-run, Finding 3: same partial-mutation risk as
+    the OSError test above, but for LockLostError on this command's
+    SECOND write -- it used to bypass supersede-successor-write-failed's
+    handler entirely (only OSError was caught there), so a caller saw the
+    generic, dataless 'no write was made' lock-lost message even though
+    the predecessor was already, for real, committed to Superseded."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    real_build_header = supersede_module.build_header
+
+    def steal_lock_then_build(*args, **kwargs):
+        lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
+        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        return real_build_header(*args, **kwargs)
+
+    monkeypatch.setattr(supersede_module, "build_header", steal_lock_then_build)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])

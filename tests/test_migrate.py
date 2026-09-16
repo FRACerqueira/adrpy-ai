@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from adrpy.cli import init, migrate, new
@@ -383,6 +384,42 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
 
     assert result["migrated"]
     assert legacy_path in calls
+
+
+def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_loop(tmp_path, monkeypatch):
+    """Round 5 stability re-run, Finding 3: losing the lock between two
+    candidates used to raise straight out of the per-candidate loop,
+    discarding the `results` list describe() promises names every
+    candidate's own outcome. Distinct from a per-file OSError/
+    UnicodeError (which correctly keeps the loop going, one candidate at
+    a time): losing the lock is a whole-operation event, not a single
+    file's own problem, so it must stop the loop outright instead of
+    misreporting every untouched remaining candidate as individually
+    'failed'."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
+    _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
+
+    real_write = migrate.atomic_write_bytes
+    calls = {"n": 0}
+
+    def write_then_steal_lock(path, data):
+        attempts = real_write(path, data)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
+            lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        return attempts
+
+    monkeypatch.setattr(migrate, "atomic_write_bytes", write_then_steal_lock)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-lock-lost"
+    assert len(excinfo.value.data["results"]) == 1
+    assert excinfo.value.data["results"][0]["status"] == "migrated"
+    assert calls["n"] == 1  # the second candidate's write was never attempted
 
 
 def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):

@@ -21,7 +21,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_before,
     validate_refdate_not_in_future,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
@@ -179,13 +179,22 @@ def run(args):
                 # it never commits blindly either, on its own.
                 lock.verify_still_held()
                 attempts = atomic_write_text(successor_path, content)
-            except OSError as error:
+            except (OSError, LockLostError) as error:
                 # Mechanism-correctness audit round 3 (resilience finding
                 # #1), the worst instance found: by this point the
                 # predecessor has ALREADY been marked Superseded for real
                 # (the write above already succeeded) -- data names that
                 # partial mutation explicitly, so a caller doesn't have to
                 # infer an orphaned family state from a generic io-error.
+                #
+                # Round 5 stability re-run, Finding 3: LockLostError used
+                # to bypass this handler entirely (only OSError was
+                # caught), so a caller saw the generic, dataless "no write
+                # was made" lock-lost message even though the predecessor
+                # write above already committed for real -- same orphaned-
+                # family risk, just a different trigger. Reuses this
+                # command's own existing code/data shape rather than
+                # inventing a parallel one.
                 raise CommandError(
                     "supersede-successor-write-failed",
                     f"{successor_path}: {error}",
