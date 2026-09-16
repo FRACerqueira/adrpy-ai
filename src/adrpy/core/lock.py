@@ -117,10 +117,25 @@ def _try_create(path, token):
     behind, that file is unparseable, which is exactly the case
     `_reclaim_if_abandoned`'s mtime fallback below exists for -- but
     cleaning it up immediately here means a future reclaim isn't the only
-    thing standing between a crash and a permanent deadlock."""
+    thing standing between a crash and a permanent deadlock.
+
+    Round 6 stability re-run, corroborated (Finding A-3, upgraded to
+    Medium on independent corroboration -- real cross-process contention
+    reliably reproduces PermissionError on this exact os.open call, ~14%
+    collision rate under stress): this was the one lock-file creation
+    site with no tolerance at all for the same transient contention
+    window `_read_lock`/`_unlink_with_retry` already retry. A
+    PermissionError still persisting past the retry budget gets the
+    identical, already-safe treatment as FileExistsError below -- return
+    False and let the wait loop's own timeout handle it, rather than
+    escaping raw."""
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
+        fd = read_with_permission_retry(
+            lambda: os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY),
+            attempts=LOCK_IO_RETRY_ATTEMPTS,
+            delay=LOCK_IO_RETRY_DELAY_SECONDS,
+        )
+    except (FileExistsError, PermissionError):
         return False
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -149,7 +164,14 @@ def _reclaim_if_abandoned(path, abandon_after):
     to compare against `abandon_after` -- falls back to the file's own
     mtime, or such a lock could never be recognized as abandoned and the
     repository deadlocks permanently (round 4, resilience Finding 2,
-    reproduced)."""
+    reproduced).
+
+    Round 6 stability re-run: related gap found while corroborating
+    Finding A-3, same contention class -- both `path.stat()` calls below
+    now tolerate a transient PermissionError the same way `_read_lock`/
+    `_try_create` already do; previously only FileNotFoundError was
+    caught, so a persistent I/O failure here could escape this function
+    raw, out of `acquire_repo_lock`'s own wait loop entirely."""
     existing = _read_lock(path)
     if existing is not None:
         _, timestamp = existing
@@ -160,16 +182,24 @@ def _reclaim_if_abandoned(path, abandon_after):
         return _unlink_with_retry(path)
 
     try:
-        mtime = path.stat().st_mtime
-    except FileNotFoundError:
+        mtime = read_with_permission_retry(
+            path.stat, attempts=LOCK_IO_RETRY_ATTEMPTS, delay=LOCK_IO_RETRY_DELAY_SECONDS
+        ).st_mtime
+    except (FileNotFoundError, PermissionError):
         return False
     if time.time() - mtime <= abandon_after:
         return False
     try:
         # Same race-guard intent as the parsed-lock branch above: only
         # remove if it's still the exact same malformed file just observed.
-        still_malformed = _read_lock(path) is None and path.stat().st_mtime == mtime
-    except FileNotFoundError:
+        still_malformed = (
+            _read_lock(path) is None
+            and read_with_permission_retry(
+                path.stat, attempts=LOCK_IO_RETRY_ATTEMPTS, delay=LOCK_IO_RETRY_DELAY_SECONDS
+            ).st_mtime
+            == mtime
+        )
+    except (FileNotFoundError, PermissionError):
         return False
     if not still_malformed:
         return False

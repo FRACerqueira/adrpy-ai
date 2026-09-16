@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -229,6 +230,83 @@ def test_try_create_cleans_up_the_lock_file_when_the_write_fails(tmp_path, monke
     with pytest.raises(OSError):
         lock_module._try_create(lock_path, "some-token")
 
+    assert not lock_path.exists()
+
+
+def test_try_create_retries_a_transient_permission_error_on_open(tmp_path, monkeypatch):
+    """Round 6 stability re-run, corroborated (Finding A-3, upgraded to
+    Medium on independent corroboration -- real cross-process contention
+    reliably reproduces PermissionError on this exact os.open call,
+    ~14% collision rate under stress): this was the one lock-file
+    creation site with no tolerance at all for the same transient
+    contention window _read_lock/_unlink_with_retry already retry."""
+    lock_path = tmp_path / ".adrpy.lock"
+    real_open = lock_module.os.open
+    calls = {"count": 0}
+
+    def flaky_open(path, *args, **kwargs):
+        if path == lock_path:
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise PermissionError("Access is denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(lock_module.os, "open", flaky_open)
+
+    result = lock_module._try_create(lock_path, "some-token")
+
+    assert result is True
+    assert calls["count"] == 3
+    assert lock_path.read_text().startswith("some-token\n")
+
+
+def test_try_create_returns_false_when_the_permission_error_persists(tmp_path, monkeypatch):
+    """FileExistsError (genuine contention -- someone else already holds
+    the lock) already returns False, never raises, so the wait loop's
+    own timeout handles it -- a persistent PermissionError past the
+    retry budget now gets the identical, already-safe treatment instead
+    of escaping raw."""
+    lock_path = tmp_path / ".adrpy.lock"
+
+    def always_denied(path, *args, **kwargs):
+        if path == lock_path:
+            raise PermissionError("Access is denied")
+        raise AssertionError("unexpected os.open call")
+
+    monkeypatch.setattr(lock_module.os, "open", always_denied)
+
+    result = lock_module._try_create(lock_path, "some-token")
+
+    assert result is False
+    assert not lock_path.exists()
+
+
+def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp_path, monkeypatch):
+    """Round 6 stability re-run: related gap found during A-3's
+    corroboration, same contention class -- both path.stat() calls in
+    the malformed-lock-file fallback only tolerated FileNotFoundError,
+    not a transient PermissionError, which could escape this function
+    raw, out of acquire_repo_lock's own wait loop entirely."""
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_bytes(b"")  # malformed: 0 bytes, no parseable timestamp
+    old_time = time.time() - 60
+    os.utime(lock_path, (old_time, old_time))
+
+    real_stat = Path.stat
+    calls = {"count": 0}
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == lock_path:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError("Access is denied")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+
+    result = lock_module._reclaim_if_abandoned(lock_path, abandon_after=30)
+
+    assert result is True  # eventually reclaimed once the transient error clears
     assert not lock_path.exists()
 
 
