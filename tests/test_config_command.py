@@ -355,6 +355,45 @@ def test_config_describe_documents_the_real_domain_constraints():
     assert "true" in arguments["disableplugins"] and "false" in arguments["disableplugins"]
 
 
+def test_config_describe_does_not_falsely_claim_these_three_fields_are_settable_to_empty():
+    """Round 5 usability re-run, Finding 3: _field_description advertised
+    "may be empty" for migrationpattern/template/prefix, but every
+    optional flag goes through parse_flags, which structurally rejects
+    an empty string before it ever reaches the field -- this command can
+    never actually set any of the three to empty (only `init --seed`
+    can). The description must not claim otherwise without qualifying it."""
+    arguments = {argument["name"]: argument["description"] for argument in config.describe()["arguments"]}
+
+    for field in ("migrationpattern", "template", "prefix"):
+        assert "can't set it to an empty string here" in arguments[field]
+        assert "init --seed" in arguments[field]
+
+
+def test_config_describe_documents_the_forbidden_character_constraint():
+    """Round 5 usability re-run, Finding 4: these 16 fields all go
+    through reject_embedded_delimiter on top of their length bound, but
+    none of their descriptions mentioned it -- an agent following only
+    the stated domain (any string <= max length, non-empty) could still
+    hit config-field-contains-forbidden-character with no prior warning."""
+    from adrpy.core import config as config_schema
+
+    arguments = {argument["name"]: argument["description"] for argument in config.describe()["arguments"]}
+
+    forbidden_char_fields = config_schema._HEADER_LABEL_FIELDS_MAX_40 + config_schema._STATUS_LABEL_FIELDS + (
+        "headerdisclaimer",
+    )
+    for field in forbidden_char_fields:
+        assert "line-break-like character" in arguments[field]
+
+
+def test_config_describe_documents_the_asymmetric_read_write_json_shape():
+    """Round 5 usability re-run, Finding 2: a read result has a `config`
+    key; a write result never does (only `updated_fields`) -- a generic
+    wrapper that reads `data.config` unconditionally after any `config`
+    call would KeyError on a write. Undocumented before this."""
+    assert "`config` key" in config.describe()["description"]
+
+
 def test_field_description_fails_loudly_for_a_field_it_does_not_recognize():
     """Round 4 test-adequacy audit, Finding 10: _field_description's own
     fallback (`return f"New value for '{field}'."`) is unreachable today

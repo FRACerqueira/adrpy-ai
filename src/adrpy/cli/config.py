@@ -61,31 +61,58 @@ def _field_description(field):
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
             "cannot be empty, absolute, or escape the repository."
         )
+    # Round 5 usability re-run, Finding 3: "may be empty" describes the
+    # STORED value's own schema rule (no cannot-be-empty validation for
+    # these 3) -- it does NOT mean this flag can set it to empty. Every
+    # optional flag goes through parse_flags, which rejects an empty
+    # string outright before ever reaching the field; only `init --seed`
+    # (which bypasses parse_flags, reading an arbitrary JSON file) can
+    # actually persist an empty value here.
     if field == "migrationpattern":
         return (
             "Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' "
-            "(N##:##T##[V##:##][R##:##][P##:##]); may be empty."
+            "(N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it "
+            "to an empty string here (parse_flags rejects any empty optional value outright) -- use "
+            "`init --seed` for that."
         )
     if field == "template":
-        return "Default template content for a new decision's body; may be empty."
+        return (
+            "Default template content for a new decision's body; the stored value may be empty, but this "
+            "flag can't set it to an empty string here (parse_flags rejects any empty optional value "
+            "outright) -- use `init --seed` for that."
+        )
     if field == "prefix":
-        return f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; may be empty."
+        return (
+            f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; the stored value may be "
+            "empty, but this flag can't set it to an empty string here (parse_flags rejects any empty "
+            "optional value outright) -- use `init --seed` for that."
+        )
     if field == "separator":
         return f"One of {config_schema.VALID_SEPARATORS}."
     if field == "casetransform":
         return f"One of {config_schema.VALID_CASE_TRANSFORMS}."
+    # Round 5 usability re-run, Finding 4: these 16 fields (4 status
+    # labels + 11 header labels + headerdisclaimer) all go through
+    # reject_embedded_delimiter (core/config.py's own validator) on top
+    # of their length bound -- previously undocumented here, so an agent
+    # following only the stated domain (any string <= max length,
+    # non-empty) could still hit config-field-contains-forbidden-
+    # character with no prior warning.
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
-            "characters; cannot be empty."
+            "characters; cannot be empty, contain '|', or contain a line-break-like character."
         )
     if field == "headerdisclaimer":
         return (
             f"Header disclaimer text, max {config_schema.HEADER_DISCLAIMER_MAX_LENGTH} characters; "
-            "cannot be empty."
+            "cannot be empty, contain '|', or contain a line-break-like character."
         )
     if field in config_schema._HEADER_LABEL_FIELDS_MAX_40:
-        return f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty."
+        return (
+            f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
+            "contain '|', or contain a line-break-like character."
+        )
     if field in _INT_FIELD_BOUNDS:
         low, high = _INT_FIELD_BOUNDS[field]
         return f"Integer between {low} and {high} (inclusive)."
@@ -111,6 +138,10 @@ def describe():
             "so this is a subset of the raw file, not its full contents; do not round-trip it as "
             "`init --seed` input without adding `activeplugins` back. "
             "Omitted fields keep their current value; only the fields passed are updated. "
+            "The result's own JSON shape differs by mode: a pure read's result has a `config` key (the "
+            "current field values); a write's result never has that key at all, only `updated_fields` -- a "
+            "generic wrapper that reads `data.config` unconditionally after any `config` call will KeyError "
+            "on a write. "
             "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
             "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
             "names the count) rather than silently orphaning them at their old, still-real path. "
