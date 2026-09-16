@@ -24,10 +24,11 @@ from pathlib import Path
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
+from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError
+from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
-from adrpy.core.warnings import retry_warning
+from adrpy.core.warnings import attach_warnings, retry_warning
 
 _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
@@ -130,59 +131,93 @@ def run(args):
     if not config_path.is_file():
         raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
 
-    current = load_repo_config(config_path)
-    merged = asdict(current)
-    updated_fields = []
-
-    for field in _STRING_FIELDS:
-        if field in flags:
-            merged[field] = flags[field]
-            updated_fields.append(field)
-
-    for field in _INT_FIELDS:
-        if field in flags:
-            try:
-                merged[field] = int(flags[field])
-            except ValueError as error:
-                raise CommandError(
-                    "field-not-an-integer", f"--{field} must be an integer, got: {flags[field]}"
-                ) from error
-            updated_fields.append(field)
-
-    if "disableplugins" in flags:
-        text = flags["disableplugins"].strip().lower()
-        if text not in ("true", "false"):
-            raise CommandError(
-                "field-not-a-boolean", "--disableplugins must be 'true' or 'false'."
-            )
-        merged["disableplugins"] = text == "true"
-        updated_fields.append("disableplugins")
-
-    if not updated_fields:
+    # Which fields (if any) this call would touch is knowable from the
+    # flags alone, before reading the file at all -- a pure read (no
+    # field flags) never needs the repository lock below, matching
+    # explore's own precedent.
+    if not any(field in flags for field in _EDITABLE_FIELDS):
         # Usability audit A8 + a review of this command's own idempotency:
         # there was no way to read the current config through the JSON
         # contract at all, and calling this with no field flags -- the
         # natural way an agent would try to "just look" -- still rewrote
         # (and reformatted) the file as a side effect of what looks like a
         # read-only call. `activeplugins` stays excluded, same as a write.
-        current_fields = {field: merged[field] for field in _EDITABLE_FIELDS}
+        current = load_repo_config(config_path)
+        current_fields = {field: getattr(current, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
-    merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
-    new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+    # Round 4 second corroboration pass (audit-stability, 2/3 and 3/3,
+    # both independent): this command did a read-merge-write with no
+    # lock at all -- two concurrent calls editing DIFFERENT fields
+    # silently lost one of the two edits, contradicting this command's
+    # own documented contract above ("an omitted flag preserves the
+    # repo's current value, never resets it"). Now uses the same
+    # repository lock the other 8 write commands already use, scoped to
+    # folderadr -- resolved here from the pre-edit config just to know
+    # where the lock lives; the actual merge below re-reads fresh,
+    # inside the lock (ADR001's own freshness principle), so even a
+    # concurrent edit to folderadr itself is safe: whichever call writes
+    # second still merges its own field onto the other's already-
+    # committed change.
+    bootstrap_config = load_repo_config(config_path)
+    folder = resolve_within(target, bootstrap_config.folderadr)
+    # Unlike the other 8 commands (which only ever run after `init`
+    # already created this directory), nothing requires it to exist
+    # before `config` runs -- ensure it does, matching init's own
+    # precedent, or acquiring the lock inside it would raise a raw
+    # FileNotFoundError (core.lock._try_create only handles
+    # FileExistsError, not a missing parent directory).
+    folder.mkdir(parents=True, exist_ok=True)
 
-    # Fase 5: _is_relative_path only rejects an anchored escape ("C:\..",
-    # "\\server\.."); "../../evil" is still relative and passes that check,
-    # but resolves outside the repository -- validate before writing, the
-    # same order `init` already uses, so a hostile --folderadr can never
-    # get persisted and brick the repository (every subsequent command
-    # would refuse with path-outside-repository until hand-fixed).
-    resolve_within(target, new_config.folderadr)
-
-    attempts = atomic_write_text(config_path, merged_text)
     warnings = []
-    warning = retry_warning(attempts)
-    if warning:
-        warnings.append(warning)
+    with attach_warnings(warnings):
+        with acquire_repo_lock(folder) as lock:
+            warnings.extend(lock.warnings)
+            current = parse_repo_config(read_config_text(config_path))
+            merged = asdict(current)
+            updated_fields = []
+
+            for field in _STRING_FIELDS:
+                if field in flags:
+                    merged[field] = flags[field]
+                    updated_fields.append(field)
+
+            for field in _INT_FIELDS:
+                if field in flags:
+                    try:
+                        merged[field] = int(flags[field])
+                    except ValueError as error:
+                        raise CommandError(
+                            "field-not-an-integer", f"--{field} must be an integer, got: {flags[field]}"
+                        ) from error
+                    updated_fields.append(field)
+
+            if "disableplugins" in flags:
+                text = flags["disableplugins"].strip().lower()
+                if text not in ("true", "false"):
+                    raise CommandError(
+                        "field-not-a-boolean", "--disableplugins must be 'true' or 'false'."
+                    )
+                merged["disableplugins"] = text == "true"
+                updated_fields.append("disableplugins")
+
+            merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
+            new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+
+            # Fase 5: _is_relative_path only rejects an anchored escape ("C:\..",
+            # "\\server\.."); "../../evil" is still relative and passes that check,
+            # but resolves outside the repository -- validate before writing, the
+            # same order `init` already uses, so a hostile --folderadr can never
+            # get persisted and brick the repository (every subsequent command
+            # would refuse with path-outside-repository until hand-fixed).
+            resolve_within(target, new_config.folderadr)
+
+            # ADR001, part 3: guarantees this write never commits blindly
+            # if the lease was reclaimed.
+            lock.verify_still_held()
+            attempts = atomic_write_text(config_path, merged_text)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     return {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}

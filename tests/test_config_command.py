@@ -1,4 +1,5 @@
 import json
+import threading
 
 from adrpy.cli import config, init
 from adrpy.core.config import load_repo_config
@@ -24,6 +25,86 @@ def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
     assert after.folderadr == before.folderadr
     assert after.lenseq == before.lenseq
     assert after.activeplugins == before.activeplugins  # untouched, not exposed
+
+
+def test_concurrent_config_calls_on_different_fields_do_not_lose_an_update(tmp_path, monkeypatch):
+    """Round 4 second corroboration pass (audit-stability, 2/3 and 3/3,
+    both independent): config did a read-merge-write with no lock at all
+    -- two concurrent calls editing DIFFERENT fields silently lost one of
+    the two edits, contradicting this command's own documented contract
+    ("an omitted flag preserves the repo's current value, never resets
+    it"). Fixed with the same repository lock the other 8 write commands
+    already use (scoped to folderadr) -- the second caller simply waits,
+    then reads fresh once it acquires the lock, so BOTH edits survive
+    instead of either being lost or the second one failing outright."""
+    tmp_path = _init_repo(tmp_path)
+
+    from adrpy.cli import config as config_module
+
+    # Widens the read-merge-validate window so both calls are genuinely
+    # in flight at once -- with a real lock in place, correctness no
+    # longer depends on the exact interleaving (unlike the lock-less
+    # code this replaces), so a plain delay (not event-based
+    # choreography) is enough here.
+    real_parse_repo_config = config_module.parse_repo_config
+
+    def delayed_parse_repo_config(*args, **kwargs):
+        import time
+
+        time.sleep(0.05)
+        return real_parse_repo_config(*args, **kwargs)
+
+    monkeypatch.setattr(config_module, "parse_repo_config", delayed_parse_repo_config)
+
+    results = [None, None]
+    errors = [None, None]
+    barrier = threading.Barrier(2)
+
+    def call(index, args):
+        barrier.wait()
+        try:
+            results[index] = config.run(args)
+        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
+            errors[index] = error
+
+    threads = [
+        threading.Thread(target=call, args=(0, ["--path", str(tmp_path), "--prefix", "XYZ"])),
+        threading.Thread(target=call, args=(1, ["--path", str(tmp_path), "--lenseq", "5"])),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert errors == [None, None], f"expected both calls to succeed, got errors: {errors}"
+    assert results[0]["updated_fields"] == ["prefix"]
+    assert results[1]["updated_fields"] == ["lenseq"]
+
+    final = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert final.prefix == "XYZ"
+    assert final.lenseq == 5
+
+
+def test_config_creates_the_decisions_folder_if_missing_before_locking(tmp_path):
+    """The repository lock this command now acquires lives inside
+    folderadr -- unlike the other 8 write commands, which only ever run
+    after `init` already created that directory, nothing requires it to
+    exist before `config` runs (e.g. it was deleted, or folderadr was
+    just repointed at a fresh path). core.lock._try_create only handles
+    FileExistsError, not a FileNotFoundError from a missing parent --
+    ensures the directory exists first, matching init's own precedent
+    for this identical situation."""
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    import shutil
+
+    shutil.rmtree(adr_dir)
+    assert not adr_dir.is_dir()
+
+    result = config.run(["--path", str(tmp_path), "--prefix", "XYZ"])
+
+    assert result["updated_fields"] == ["prefix"]
+    assert adr_dir.is_dir()
 
 
 def test_config_updates_multiple_fields_at_once(tmp_path):
