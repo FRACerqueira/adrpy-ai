@@ -116,16 +116,13 @@ _HEADER_READ_CHUNK_SIZE = 4096
 _REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
 
 
-def read_header_lines(path, count=HEADER_LINE_COUNT):
-    """Performance backlog item: reads only enough of `path` to recover
-    the first `count` real lines (see split_real_lines) -- never the
-    whole file. Used wherever only the header is needed (family
-    membership checks), which previously read a candidate's entire body,
-    however large, just to look at its first 12 lines. Reads in bounded
-    chunks, growing only if the header genuinely doesn't fit in one
-    (the config schema's own field-length limits keep a real header well
-    under a single chunk in practice); tolerates invalid bytes the same
-    way read_lines does."""
+def _read_header_bytes(path, count):
+    """Shared by read_header_lines/read_header_lines_with_report: reads
+    only enough of `path` to recover the first `count` real lines (see
+    split_real_lines) -- never the whole file. Reads in bounded chunks,
+    growing only if the header genuinely doesn't fit in one (the config
+    schema's own field-length limits keep a real header well under a
+    single chunk in practice)."""
     with open(path, "rb") as handle:
         buffer = handle.read(_HEADER_READ_CHUNK_SIZE)
         while len(_REAL_NEWLINE_BYTES.findall(buffer)) < count:
@@ -133,8 +130,41 @@ def read_header_lines(path, count=HEADER_LINE_COUNT):
             if not more:
                 break
             buffer += more
-    text = buffer.decode("utf-8", errors="replace")
+    return buffer
+
+
+def read_header_lines(path, count=HEADER_LINE_COUNT):
+    """Performance backlog item: reads only enough of `path` to recover
+    the first `count` real lines -- never the whole file. Used wherever
+    only the header is needed (family membership checks), which
+    previously read a candidate's entire body, however large, just to
+    look at its first 12 lines. Tolerates invalid bytes the same way
+    read_lines does."""
+    text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
     return split_real_lines(text)[:count]
+
+
+def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
+    """Same bounded read as read_header_lines, but also reports whether
+    whatever was actually read needed a lossy decode (round 4
+    performance front, Finding D: a scan deciding only header-based
+    eligibility -- migrate's own scan phase -- only needs to know about
+    corruption within the header itself, since parse_header never looks
+    past line `count`; a corrupted byte in the body is irrelevant to
+    eligibility and passes through untouched in migrate's own write
+    phase either way, which copies raw bytes verbatim). For a small
+    file, the bounded read's own chunk boundary may still include some
+    body content in what it decodes -- that's a harmless side effect of
+    the chunk size, not a claim that corruption is ever checked
+    per-line; only content genuinely beyond the read is never seen."""
+    buffer = _read_header_bytes(path, count)
+    try:
+        text = buffer.decode("utf-8")
+        encoding_repaired = False
+    except UnicodeDecodeError:
+        text = buffer.decode("utf-8", errors="replace")
+        encoding_repaired = True
+    return split_real_lines(text)[:count], encoding_repaired
 
 
 def read_lines_with_report(path):

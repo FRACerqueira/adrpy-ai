@@ -52,16 +52,18 @@ def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path,
     _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
 
-    # Round 4 fix (migration-scan-unreliable-encoding): the scan-phase read
-    # now goes through read_lines_with_report, which reads bytes, not text.
-    real_read_bytes = Path.read_bytes
+    # Round 4 performance fix: the scan-phase read now goes through
+    # read_header_lines_with_report, a bounded read via a raw `open()`
+    # handle, not Path.read_bytes/read_text -- patch the function itself
+    # instead of the I/O primitive it happens to use internally.
+    real_read_header_lines_with_report = migrate.read_header_lines_with_report
 
-    def flaky_read_bytes(self, *args, **kwargs):
-        if self == bad_path:
+    def flaky_read_header_lines_with_report(path, *args, **kwargs):
+        if path == bad_path:
             raise OSError("simulated read failure")
-        return real_read_bytes(self, *args, **kwargs)
+        return real_read_header_lines_with_report(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
+    monkeypatch.setattr(migrate, "read_header_lines_with_report", flaky_read_header_lines_with_report)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -331,6 +333,34 @@ def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     result_data = migrate.run(["--path", str(tmp_path)])
 
     assert any("escapes the repository boundary" in w for w in result_data["warnings"])
+
+
+def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
+    """Round 4 performance front, Finding D: migrate's scan phase used to
+    read a candidate's ENTIRE content (read_lines_with_report) just to
+    parse its 12-line header and check its encoding -- the same class of
+    waste the round-1 performance fix already closed for family_members.
+    Now wired to core.lifecycle.read_header_lines_with_report, the
+    bounded equivalent."""
+    _init_repo_with_pattern(tmp_path)
+    legacy_path = _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
+
+    from adrpy.cli import migrate as migrate_module
+    from adrpy.core import lifecycle
+
+    calls = []
+    real = lifecycle.read_header_lines_with_report
+
+    def spy(path, *args, **kwargs):
+        calls.append(path)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(migrate_module, "read_header_lines_with_report", spy)
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"]
+    assert legacy_path in calls
 
 
 def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):

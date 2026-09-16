@@ -19,6 +19,7 @@ from adrpy.core.lifecycle import (
     load_target,
     next_number,
     read_header_lines,
+    read_header_lines_with_report,
     rewrite_status_field,
     scan_decisions,
     validate_refdate_not_before,
@@ -286,6 +287,59 @@ def test_read_header_lines_handles_a_file_shorter_than_the_header(tmp_path):
     lines = read_header_lines(target, count=12)
 
     assert lines == ["only", "two"]
+
+
+def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
+    """Round 4 performance front, Finding D: same bounded-read guarantee
+    as read_header_lines, now also used by migrate's own scan phase."""
+    header_lines = [f"line{i}" for i in range(12)]
+    huge_body = "x" * (5 * 1024 * 1024)
+    target = tmp_path / "big.md"
+    target.write_text("\n".join(header_lines) + "\n" + huge_body, encoding="utf-8")
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("read_header_lines_with_report must not read the whole file")
+
+    with patch.object(Path, "read_text", boom), patch.object(Path, "read_bytes", boom):
+        lines, encoding_repaired = read_header_lines_with_report(target, count=12)
+
+    assert lines == header_lines
+    assert encoding_repaired is False
+
+
+def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tmp_path):
+    target = tmp_path / "corrupt.md"
+    with open(target, "wb") as handle:
+        handle.write(b"line0\n")
+        handle.write(b"Invalid byte here: \xa4 end.\n")
+        handle.write("\n".join(f"line{i}" for i in range(2, 12)).encode("utf-8") + b"\n")
+
+    lines, encoding_repaired = read_header_lines_with_report(target, count=12)
+
+    assert encoding_repaired is True
+    assert "�" in lines[1]
+
+
+def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tmp_path):
+    """The bounded read stops once it recovers `count` real lines --
+    content genuinely never read is never decoded, so corruption placed
+    well past the first read chunk cannot be flagged. (A corrupted byte
+    immediately after the header, still inside the same first 4096-byte
+    chunk for a small file, WOULD still surface here -- an accepted,
+    harmless side effect of the chunk boundary, not a safety gap, since
+    migrate's write phase never decodes body bytes either way; they pass
+    through raw regardless of what this function reports.)"""
+    header_lines = [f"line{i}" for i in range(12)]
+    target = tmp_path / "body-corrupt.md"
+    with open(target, "wb") as handle:
+        handle.write(("\n".join(header_lines) + "\n").encode("utf-8"))
+        handle.write(b"x" * 8192)  # push well past the first read chunk
+        handle.write(b"\nInvalid byte far into the body: \xa4 end.\n")
+
+    lines, encoding_repaired = read_header_lines_with_report(target, count=12)
+
+    assert lines == header_lines
+    assert encoding_repaired is False
 
 
 def test_family_members_excludes_a_structurally_invalid_file(tmp_path):

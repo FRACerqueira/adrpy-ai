@@ -29,7 +29,7 @@ from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_fi
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
-from adrpy.core.lifecycle import read_lines_with_report
+from adrpy.core.lifecycle import read_header_lines_with_report
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
@@ -123,7 +123,14 @@ def run(args):
                         # detection every other read in this project already
                         # uses; entries with a lossy read are set aside below,
                         # never trusted for a safety-critical decision.
-                        lines, encoding_repaired = read_lines_with_report(candidate)
+                        #
+                        # Round 4 performance front, Finding D: reads only
+                        # the bounded header (parse_header never looks past
+                        # it, and the write loop below copies body bytes
+                        # through raw, untouched either way), not the whole
+                        # candidate -- same class the round-1 performance
+                        # fix already closed for family_members.
+                        lines, encoding_repaired = read_header_lines_with_report(candidate)
                     except OSError as error:
                         # Mechanism-correctness audit round 3 (resilience
                         # finding #2a): this scan-phase read used to run
