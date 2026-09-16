@@ -776,6 +776,47 @@ def test_undo_rejects_when_pending_sibling_exists(tmp_path):
     assert excinfo.value.code == "family-member-pending"
 
 
+def test_undo_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
+    """Round 5 test-adequacy re-run, Finding 1 (confirmed with the user):
+    superseded takes priority over pending, deliberately -- a superseded
+    member means the WHOLE family this decision belonged to has already
+    been replaced, which blocks it regardless of any other sibling's own
+    state. No existing test constructed a family with BOTH conditions
+    true at once; every existing test above exercised exactly one."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    superseded_sibling = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
+    _write_raw(
+        superseded_sibling,
+        config,
+        number=1,
+        title="First decision v2",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="ADR003V01-something.md",
+    )
+    pending_sibling = tmp_path / "doc" / "adr" / "ADR001V03-first-decision-v3.md"
+    _write_raw(
+        pending_sibling,
+        config,
+        number=1,
+        title="First decision v3",
+        version=3,
+        status_create="Proposed",
+        date_create=date(2026, 1, 3),
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
 def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
     """Legacy-scheme census audit: family_members applied neither
     is_structurally_valid nor counts_as_family_member -- it counted ANY

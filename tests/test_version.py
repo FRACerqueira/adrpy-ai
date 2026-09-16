@@ -232,6 +232,61 @@ def test_version_rejects_when_sibling_pending(tmp_path):
     assert excinfo.value.code == "family-member-pending"
 
 
+def test_version_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
+    """Round 5 test-adequacy re-run, Finding 1 (confirmed with the user):
+    superseded takes priority over pending, deliberately -- a superseded
+    member means the WHOLE family has already been replaced, which
+    blocks it regardless of any other sibling's own state. No existing
+    test constructed a family with BOTH conditions true at once."""
+    tmp_path, _ = _setup_accepted_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+
+    # Both siblings must stay BELOW the target's own version, or either one
+    # would itself become "the latest" and the not-latest-version check
+    # earlier in version.run() would fire first, never reaching the
+    # sibling checks this test actually targets.
+    superseded_sibling = adr_dir / "ADR001V01-use-postgre-sql.md"
+    superseded_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 2),
+        superseded_by_file="999",
+    )
+    atomic_write_text(superseded_sibling, build_header(config, superseded_record) + "# body")
+
+    pending_sibling = adr_dir / "ADR001V02-use-postgre-sql.md"
+    pending_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+    )
+    atomic_write_text(pending_sibling, build_header(config, pending_record) + "# body")
+
+    target_path = adr_dir / "ADR001V03-use-postgre-sql.md"
+    target_record = DecisionRecord(
+        number=1,
+        title="Use PostgreSQL",
+        version=3,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(target_path)])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
 def test_version_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     """Usability audit: not-latest-version must name WHICH version
     actually is the latest -- a fixed code can't carry that number, so
