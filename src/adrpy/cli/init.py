@@ -218,8 +218,14 @@ def _max_existing_numbers(target, config, warnings=None):
 
     max_number = max_version = max_revision = 0
     excluded = []
+    # Round 4 performance front: resolved once, not once per candidate --
+    # see is_within's own note.
+    try:
+        resolved_folder = folder.resolve()
+    except (OSError, ValueError):
+        resolved_folder = None
     for candidate in folder.rglob("*.md"):
-        if not is_within(folder, candidate):
+        if not is_within(folder, candidate, resolved_base=resolved_folder):
             excluded.append(candidate)
             continue
         found = parse_any_filename(candidate.name, config)

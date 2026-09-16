@@ -1,7 +1,46 @@
 import pytest
 
 from adrpy.core.errors import CommandError
-from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.security import is_within, reject_embedded_delimiter, resolve_within
+
+
+def test_is_within_accepts_a_candidate_inside_the_base_dir(tmp_path):
+    candidate = tmp_path / "ADR001V01-decision.md"
+    candidate.write_text("content", encoding="utf-8")
+
+    assert is_within(tmp_path, candidate) is True
+
+
+def test_is_within_rejects_a_candidate_that_escapes_the_base_dir(tmp_path, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("elsewhere")
+    candidate = outside / "ADR001V01-decision.md"
+    candidate.write_text("content", encoding="utf-8")
+
+    assert is_within(tmp_path, candidate) is False
+
+
+def test_is_within_returns_false_instead_of_raising_on_an_unresolvable_candidate():
+    """Round 4 test-adequacy audit, Finding 7: is_within's own except
+    (OSError, ValueError) fail-path (round 4 observability's own
+    documented mandate: "never raises, a scan should silently treat an
+    escaped candidate as outside the boundary") had zero direct coverage
+    -- only reached indirectly via test_lifecycle.py's Windows-junction
+    test, which never exercises this branch."""
+    assert is_within("some_base", "bad\x00path") is False
+
+
+def test_is_within_accepts_a_precomputed_resolved_base(tmp_path):
+    """Round 4 performance front: resolved_base lets a caller resolve the
+    base directory once outside a scan loop instead of once per
+    candidate -- must produce the exact same result as the default,
+    resolve-it-yourself path."""
+    candidate = tmp_path / "ADR001V01-decision.md"
+    candidate.write_text("content", encoding="utf-8")
+
+    assert is_within(tmp_path, candidate, resolved_base=tmp_path.resolve()) is True
+
+    outside_base = tmp_path / "not-actually-the-real-base"
+    assert is_within(tmp_path, candidate, resolved_base=outside_base) is False
 
 
 def test_resolve_within_accepts_nested_relative_path(tmp_path):

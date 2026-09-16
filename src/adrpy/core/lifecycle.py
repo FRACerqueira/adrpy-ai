@@ -57,10 +57,16 @@ def scan_decisions(folder, config, warnings=None):
     from "no such file" to every caller."""
     if not folder.is_dir():
         return []
+    # Round 4 performance front: resolved once, not once per candidate --
+    # see is_within's own note.
+    try:
+        resolved_folder = folder.resolve()
+    except (OSError, ValueError):
+        resolved_folder = None
     found = []
     excluded = []
     for candidate in folder.rglob("*.md"):
-        if not is_within(folder, candidate):
+        if not is_within(folder, candidate, resolved_base=resolved_folder):
             excluded.append(candidate)
             continue
         result = parse_any_filename(candidate.name, config)
