@@ -59,10 +59,13 @@ def describe():
             "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
             "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
             "can't be trusted for the already-tool-created-adrs-exist safety check above or for candidate "
-            "eligibility."
+            "eligibility. Its structurally identical sibling, migration-scan-failed (`data.unreadable_file` "
+            "names the one file), refuses the whole run the same way if a scanned file's header can't even "
+            "be read (permission denied or similar) -- same scan phase, same all-or-nothing semantics, a "
+            "real OSError instead of a lossy decode."
         ),
         "arguments": [
-            {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
+            {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
         ],
     }
 

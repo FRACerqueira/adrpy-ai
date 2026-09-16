@@ -40,15 +40,47 @@ def describe():
             "made either way; retry."
         ),
         "arguments": [
-            {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
-            {"name": "title", "type": "string", "required": True, "description": "Title of the new decision."},
-            {"name": "domain", "type": "string", "required": False, "description": "Optional domain header field."},
-            {"name": "scope", "type": "string", "required": False, "description": "Optional scope header field."},
+            {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
             {
-                "name": "refdate",
+                "name": "title",
+                "alias": "-t",
+                "type": "string",
+                "required": True,
+                "description": (
+                    "Title of the new decision. Cannot contain '|' or a line-break-like character "
+                    "(field-contains-forbidden-character)."
+                ),
+            },
+            {
+                "name": "domain",
+                "alias": "-d",
                 "type": "string",
                 "required": False,
-                "description": "Reference date (YYYY-MM-DD); defaults to today.",
+                "description": (
+                    "Optional domain header field. Cannot contain '|' or a line-break-like character "
+                    "(field-contains-forbidden-character)."
+                ),
+            },
+            {
+                "name": "scope",
+                "alias": "-s",
+                "type": "string",
+                "required": False,
+                "description": (
+                    "Optional scope header field. Cannot contain '|' or a line-break-like character "
+                    "(field-contains-forbidden-character)."
+                ),
+            },
+            {
+                "name": "refdate",
+                "alias": "-r",
+                "type": "string",
+                "required": False,
+                "description": (
+                    "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a brand "
+                    "new decision has no prior history to be before (refdate-invalid-format/"
+                    "refdate-in-future)."
+                ),
             },
         ],
     }

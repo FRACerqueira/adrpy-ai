@@ -48,30 +48,46 @@ def describe():
         "arguments": [
             {
                 "name": "file",
+                "alias": "-f",
                 "type": "string",
                 "required": True,
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
             },
             {
                 "name": "domain",
+                "alias": "-d",
                 "type": "string",
                 "required": False,
-                "description": "Domain for the new version; defaults to the latest version's own value.",
+                "description": (
+                    "Domain for the new version; defaults to the latest version's own value. Cannot contain "
+                    "'|' or a line-break-like character (field-contains-forbidden-character)."
+                ),
             },
             {
                 "name": "scope",
+                "alias": "-s",
                 "type": "string",
                 "required": False,
-                "description": "Scope for the new version; defaults to the latest version's own value.",
+                "description": (
+                    "Scope for the new version; defaults to the latest version's own value. Cannot contain "
+                    "'|' or a line-break-like character (field-contains-forbidden-character)."
+                ),
             },
             {
                 "name": "refdate",
+                "alias": "-r",
                 "type": "string",
                 "required": False,
-                "description": "Reference date (YYYY-MM-DD); defaults to today.",
+                "description": (
+                    "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before "
+                    "the LATEST family member's own last update date (or creation date, if never updated) "
+                    "-- not necessarily this file's own date, when branching off an older Rejected sibling "
+                    "(refdate-invalid-format/refdate-in-future/refdate-before-history)."
+                ),
             },
             {
                 "name": "empty",
+                "alias": "-e",
                 "type": "switch",
                 "required": False,
                 # Usability audit A2: this is presence-only (`--empty` with

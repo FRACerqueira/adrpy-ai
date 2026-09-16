@@ -227,6 +227,39 @@ def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, mon
     assert live_path.read_text(encoding="utf-8") == original_content  # never orphaned
 
 
+def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):
+    """Round 7 resilience audit, Finding 3 (retraction of this function's
+    own previous mkdir-AFTER-write order): the new folder is now created
+    BEFORE the config write commits -- a failure creating it aborts
+    cleanly with the original config untouched, instead of committing the
+    new folderadr first and leaving the repository pointing at a
+    directory that doesn't exist."""
+    init.run(["--path", str(tmp_path)])
+
+    seed = json.loads(init._default_config_text())
+    seed["folderadr"] = "newfolder"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    from pathlib import Path as PathType
+
+    real_mkdir = PathType.mkdir
+
+    def failing_mkdir(self, *args, **kwargs):
+        if self.name == "newfolder":
+            raise PermissionError("Access is denied (simulated)")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathType, "mkdir", failing_mkdir)
+
+    with pytest.raises(CommandError):
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["folderadr"] == "doc/adr"  # unchanged -- nothing committed
+    assert not (tmp_path / "newfolder").exists()
+
+
 def test_init_refuses_when_config_already_exists_without_file(tmp_path):
     init.run(["--path", str(tmp_path)])
 

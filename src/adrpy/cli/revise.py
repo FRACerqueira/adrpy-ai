@@ -54,15 +54,22 @@ def describe():
         "arguments": [
             {
                 "name": "file",
+                "alias": "-f",
                 "type": "string",
                 "required": True,
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
             },
             {
                 "name": "refdate",
+                "alias": "-r",
                 "type": "string",
                 "required": False,
-                "description": "Reference date (YYYY-MM-DD); defaults to today.",
+                "description": (
+                    "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before "
+                    "the LATEST family member's own last update date (or creation date, if never updated) "
+                    "-- not necessarily this file's own date, when branching off an older Rejected sibling "
+                    "(refdate-invalid-format/refdate-in-future/refdate-before-history)."
+                ),
             },
         ],
     }

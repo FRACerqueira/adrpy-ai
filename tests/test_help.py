@@ -51,6 +51,86 @@ def test_config_and_init_document_folderadr_change_scan_incomplete():
         assert "folderadr-change-scan-incomplete" in text, f"{name}'s describe() never mentions it"
 
 
+def test_new_supersede_and_version_document_the_forbidden_character_constraint():
+    """Round 7 usability audit, Finding 1 (Medium): reject_embedded_
+    delimiter (core/security.py) is enforced on title/domain/scope in
+    new, and domain/scope in supersede/version, but only config.py's own
+    field descriptions ever mentioned this constraint -- an asymmetry
+    the codebase's own comments draw the analogy for but never actually
+    documented on the live-command side."""
+    checks = {
+        "new": ("title", "domain", "scope"),
+        "supersede": ("domain", "scope"),
+        "version": ("domain", "scope"),
+    }
+    for name, fields in checks.items():
+        info = COMMANDS[name].describe()
+        by_name = {arg["name"]: arg.get("description", "") for arg in info.get("arguments", [])}
+        for field in fields:
+            assert "field-contains-forbidden-character" in by_name[field], (
+                f"{name}'s '{field}' argument never mentions the forbidden-character constraint"
+            )
+
+
+def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
+    """Round 7 usability audit, Finding 3 (Medium): --refdate's
+    description was byte-identical across 6 commands even though the
+    actual lower-bound rule differs -- new has none at all (a brand new
+    decision has no prior history), approve/reject/supersede bound
+    against the TARGET's own history, version/revise bound against the
+    LATEST family member's history instead (which can be a different
+    file than the one named in --file, when branching off an older
+    Rejected sibling)."""
+    with_lower_bound = ("approve", "reject", "supersede", "version", "revise")
+    for name in with_lower_bound:
+        refdate_arg = next(arg for arg in COMMANDS[name].describe()["arguments"] if arg["name"] == "refdate")
+        for code in ("refdate-invalid-format", "refdate-in-future", "refdate-before-history"):
+            assert code in refdate_arg["description"], f"{name}'s refdate description never mentions {code}"
+
+    new_refdate_arg = next(arg for arg in COMMANDS["new"].describe()["arguments"] if arg["name"] == "refdate")
+    assert "refdate-invalid-format" in new_refdate_arg["description"]
+    assert "refdate-in-future" in new_refdate_arg["description"]
+    # new has no lower-bound check at all -- the description must not
+    # claim a constraint it doesn't actually enforce.
+    assert "refdate-before-history" not in new_refdate_arg["description"]
+
+
+def test_short_flag_aliases_are_documented_in_describe():
+    """Round 7 usability audit, Finding 4 (Low): every command's real
+    parse_flags(aliases=...) accepts a short form (-p, -f, -t, ...), but
+    describe() never exposed it anywhere -- an agent relying solely on
+    describe()/help (the documented self-description channel for a non-
+    interactive caller) had no way to discover these forms exist. The
+    schema already tolerates non-standard argument metadata (help.py's
+    own "positional" key) -- "alias" follows the same convention."""
+    expected = {
+        "new": {"path": "-p", "title": "-t", "domain": "-d", "scope": "-s", "refdate": "-r"},
+        "approve": {"file": "-f", "refdate": "-r"},
+        "reject": {"file": "-f", "refdate": "-r"},
+        "undo": {"file": "-f"},
+        "supersede": {"file": "-f", "domain": "-d", "scope": "-s", "refdate": "-r"},
+        "version": {"file": "-f", "domain": "-d", "scope": "-s", "refdate": "-r", "empty": "-e"},
+        "revise": {"file": "-f", "refdate": "-r"},
+        "migrate": {"path": "-p"},
+        "init": {"path": "-p", "seed": "-s"},
+        "explore": {"path": "-p"},
+    }
+    for name, aliases in expected.items():
+        by_name = {arg["name"]: arg for arg in COMMANDS[name].describe()["arguments"]}
+        for field, alias in aliases.items():
+            assert by_name[field].get("alias") == alias, f"{name}'s '{field}' argument doesn't document '{alias}'"
+
+
+def test_migrate_documents_its_scan_failed_error_code():
+    """Round 7 usability audit, Finding 5 (Low): migrate's describe()
+    documented migration-scan-unreliable-encoding at length but never
+    its structurally identical sibling migration-scan-failed (same scan
+    loop, same phase, same all-or-nothing semantics for an OSError
+    instead of a lossy decode)."""
+    text = COMMANDS["migrate"].describe()["description"]
+    assert "migration-scan-failed" in text
+
+
 def test_every_per_file_command_documents_the_md_auto_suffix():
     """Round 5 usability re-run, Finding 7 (pre-existing, minor): every
     per-file command's `--file` silently gets '.md' appended when the

@@ -171,13 +171,27 @@ def _reclaim_if_abandoned(path, abandon_after):
     now tolerate a transient PermissionError the same way `_read_lock`/
     `_try_create` already do; previously only FileNotFoundError was
     caught, so a persistent I/O failure here could escape this function
-    raw, out of `acquire_repo_lock`'s own wait loop entirely."""
-    existing = _read_lock(path)
+    raw, out of `acquire_repo_lock`'s own wait loop entirely.
+
+    Round 7 resilience audit, Finding 2: the two `_read_lock` calls just
+    below had no equivalent tolerance for their own PERSISTENT
+    PermissionError (past `_read_lock`'s own retry budget, which re-
+    raises rather than swallowing it) -- inconsistent with the stat()
+    calls hardened above. Ownership can't be confirmed either way when
+    this happens; abstain (don't reclaim) rather than let it escape raw,
+    same default this whole module already uses elsewhere."""
+    try:
+        existing = _read_lock(path)
+    except PermissionError:
+        return False
     if existing is not None:
         _, timestamp = existing
         if time.time() - timestamp <= abandon_after:
             return False
-        if _read_lock(path) != existing:
+        try:
+            if _read_lock(path) != existing:
+                return False
+        except PermissionError:
             return False
         return _unlink_with_retry(path)
 

@@ -234,6 +234,47 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     assert "escapes the repository boundary" in payload["warnings"][0]
 
 
+def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
+    """Round 7 resilience audit, Finding 1 (High): _build_entry's own
+    raw_bytes = path.read_bytes() had no tolerance at all, transient or
+    persistent -- unlike every other decision-file read in this codebase
+    (read_header_lines, read_lines_with_report), which retries a
+    transient PermissionError via the shared io_retry helper. One
+    genuinely unreadable file (locked by an editor, backup tool, or
+    antivirus -- an ordinary occurrence in a folder of Markdown files
+    people also open by hand) used to kill the ENTIRE inventory with a
+    bare io-error, discarding every other, perfectly readable file too.
+    This is the same failure class round 6 already fixed for unreadable
+    *subdirectories* -- explore should be just as best-effort about a
+    single unreadable *file*."""
+    config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
+    _write_repo(
+        tmp_path,
+        _default_config_dict(),
+        {
+            "ADR001V01-readable.md": _decision_text(config_for_text, number=1, title="Readable", version=1),
+            "ADR002V01-locked.md": _decision_text(config_for_text, number=2, title="Locked", version=1),
+        },
+    )
+
+    from pathlib import Path as PathType
+
+    real_read_bytes = PathType.read_bytes
+
+    def flaky_read_bytes(self, *args, **kwargs):
+        if self.name == "ADR002V01-locked.md":
+            raise PermissionError("Access is denied")
+        return real_read_bytes(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathType, "read_bytes", flaky_read_bytes)
+
+    payload = explore.run(["--path", str(tmp_path)])
+
+    filenames = {entry["filename"] for entry in payload["decisions"]}
+    assert filenames == {"ADR001V01-readable.md"}
+    assert any("ADR002V01-locked.md" in w for w in payload["warnings"])
+
+
 def test_explore_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS

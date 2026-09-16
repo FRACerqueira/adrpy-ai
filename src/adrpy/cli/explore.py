@@ -15,6 +15,7 @@ from adrpy.core.atomic_write import split_real_lines
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import parse_header
+from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import excluded_candidate_warning
@@ -23,10 +24,16 @@ from adrpy.core.warnings import excluded_candidate_warning
 def describe():
     return {
         "name": "explore",
-        "description": "Lists every decision file in the repository, recognized or not.",
+        "description": (
+            "Lists every decision file in the repository, recognized or not, on a best-effort basis: "
+            "a file excluded for escaping the repository boundary, a subdirectory that could not be "
+            "scanned, or a single file that could not be read are all reported via `warnings` instead "
+            "of silently missing from `decisions` or failing the whole command."
+        ),
         "arguments": [
             {
                 "name": "path",
+                "alias": "-p",
                 "type": "string",
                 "required": True,
                 "description": "Repository root directory (must contain adr-config.adrplus).",
@@ -51,6 +58,7 @@ def run(args):
 
     entries = []
     excluded = []
+    unreadable_files = []
     unreadable = []
     if folder.is_dir():
         # Round 4 performance front: resolved once, not once per
@@ -63,7 +71,17 @@ def run(args):
             if not is_within(folder, candidate, resolved_base=resolved_folder):
                 excluded.append(candidate)
                 continue
-            entries.append(_build_entry(candidate, config))
+            # Round 7 resilience audit, Finding 1: a single persistently
+            # unreadable file (locked by an editor, backup tool, or
+            # antivirus -- ordinary in a folder of Markdown files people
+            # also open by hand) used to kill this ENTIRE inventory with
+            # a bare io-error, discarding every other, readable file
+            # too. Best-effort now, matching the unreadable-subdirectory
+            # handling just below.
+            try:
+                entries.append(_build_entry(candidate, config))
+            except OSError:
+                unreadable_files.append(candidate)
         # Round 6 resilience re-run, Finding B, class closure: rglob
         # above silently swallows an OSError from an unreadable
         # subdirectory -- see find_unreadable_subdirectories' own note.
@@ -101,6 +119,12 @@ def run(args):
             f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
             f"(permission denied or similar) -- this report may be missing decision files inside them: {names}."
         )
+    if unreadable_files:
+        names = ", ".join(path.name for path in unreadable_files)
+        warnings.append(
+            f"{len(unreadable_files)} file(s) could not be read (permission denied or similar) and are "
+            f"missing from this report: {names}."
+        )
     return {"decisions": entries, "warnings": warnings}
 
 
@@ -110,7 +134,12 @@ def _build_entry(path, config):
 
     # Fase 4: tolerate invalid bytes rather than raising, mirroring the
     # original's confirmed-live behavior (see the Fase 4 commit).
-    raw_bytes = path.read_bytes()
+    # Round 7 resilience audit, Finding 1: retries a transient
+    # PermissionError the same way every other decision-file read in
+    # this codebase already does (core/lifecycle.py's read_lines_with_
+    # report); a persistent failure still propagates, for run()'s own
+    # per-candidate try/except to catch and report as best-effort.
+    raw_bytes = read_with_permission_retry(path.read_bytes)
     try:
         text = raw_bytes.decode("utf-8")
         encoding_repaired = False

@@ -42,6 +42,7 @@ def describe():
         "arguments": [
             {
                 "name": "file",
+                "alias": "-f",
                 "type": "string",
                 "required": True,
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",

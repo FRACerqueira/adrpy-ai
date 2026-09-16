@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from adrpy.__main__ import main
-from adrpy.cli import approve, config, init, new, reject, undo
+from adrpy.cli import approve, config, init, new, reject, supersede, undo, version
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
@@ -611,7 +611,7 @@ def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp
         date_update=date(2026, 1, 1),
         status_change="Superseded",
         date_change=date(2026, 1, 3),
-        superseded_by_file="ADR002V01-successor--001.md",
+        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see mark_superseded's docstring
     )
     with open(predecessor_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
@@ -650,7 +650,7 @@ def test_reject_undoes_predecessor_supersede_status(tmp_path):
         date_update=date(2026, 1, 1),
         status_change="Superseded",
         date_change=date(2026, 1, 3),
-        superseded_by_file="ADR002V01-successor--001.md",
+        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see mark_superseded's docstring
     )
     successor_path = adr_dir / "ADR002V01-successor--001.md"
     _write_raw(
@@ -668,6 +668,34 @@ def test_reject_undoes_predecessor_supersede_status(tmp_path):
     assert result["undone_predecessor"] == str(predecessor_path)
     predecessor_text = predecessor_path.read_text(encoding="utf-8")
     assert "|Superseded||" in predecessor_text
+
+
+def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_member(tmp_path):
+    """Round 7 stability audit, Finding 2 (HIGH): reject picked the
+    predecessor to revert via latest_in_family (highest version/revision)
+    instead of matching the family member whose own superseded_by_file
+    actually names this successor. Reachable without any concurrency and
+    without Finding 1's bug: a family that already has more than one
+    member (e.g. from an earlier `version` bump) where the SUPERSEDED
+    member isn't the latest one already selects the wrong file -- reject
+    would revert the untouched latest member and leave the real
+    predecessor permanently, silently Superseded."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-01"])
+    version.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    v02_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision.md"
+    approve.run(["--file", str(v02_path), "--refdate", "2026-01-03"])
+
+    # Supersede the OLDER member (V01), not the latest (V02).
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
+    successor_path = Path(result["created"])
+
+    reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    v01_text = adr_path.read_text(encoding="utf-8")
+    v02_text = v02_path.read_text(encoding="utf-8")
+    assert "|Superseded||" in v01_text, "V01 (the real predecessor) should have been un-superseded"
+    assert "|Superseded|Superseded" not in v02_text, "V02 was never superseded and must stay untouched"
 
 
 # ---- undo ----

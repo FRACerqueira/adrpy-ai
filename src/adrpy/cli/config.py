@@ -285,6 +285,21 @@ def run(args):
                 folder, current.folderadr, new_config.folderadr, current, warnings=warnings
             )
 
+            # Round 7 resilience audit, Finding 3 (retraction of round 5's
+            # own mkdir-AFTER-write precedent below): creating the new
+            # folder here, BEFORE the config commits, means a failure
+            # creating it aborts cleanly with nothing yet written -- the
+            # previous order committed folderadr to disk first, so a
+            # failure creating the folder left the repository pointing at
+            # a directory that didn't exist, with no `data` naming that
+            # already-committed change, and every subsequent command
+            # failing with a generic io-error until someone noticed and
+            # retried. mkdir is otherwise harmless if the write below
+            # still somehow fails afterward -- an unused empty folder, not
+            # a real cost.
+            new_folder = resolve_within(target, new_config.folderadr)
+            new_folder.mkdir(parents=True, exist_ok=True)
+
             # ADR001, part 3: guarantees this write never commits blindly
             # if the lease was reclaimed.
             lock.verify_still_held()
@@ -292,14 +307,5 @@ def run(args):
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
-
-            # Round 5 stability re-run, Finding 5: the check above proves
-            # this is safe (nothing existing to orphan) -- but nobody
-            # created the NEW folder until now, so the very next command
-            # to run would fail acquiring its own lock with a raw
-            # FileNotFoundError. Matches init's own mkdir-after-write
-            # precedent.
-            new_folder = resolve_within(target, new_config.folderadr)
-            new_folder.mkdir(parents=True, exist_ok=True)
 
     return {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}

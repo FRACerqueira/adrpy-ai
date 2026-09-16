@@ -63,12 +63,14 @@ def describe():
         "arguments": [
             {
                 "name": "path",
+                "alias": "-p",
                 "type": "string",
                 "required": True,
                 "description": "Target repository root directory (must already exist).",
             },
             {
                 "name": "seed",
+                "alias": "-s",
                 "type": "string",
                 "required": False,
                 # Usability backlog item B2: named `seed`, not `file` --
@@ -231,18 +233,6 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         )
 
     created = []
-    if lock is not None:
-        # ADR001, part 3: guarantees this write never commits blindly if
-        # the lease was reclaimed.
-        lock.verify_still_held()
-    # atomic_write_text normalizes to this host's line separator (Fase 2:
-    # the real terminator is host-OS-dependent, not fixed) -- config_text
-    # is otherwise written verbatim, never re-serialized from `config`.
-    attempts = atomic_write_text(config_path, config_text)
-    warning = retry_warning(attempts)
-    if warning:
-        warnings.append(warning)
-    created.append(str(config_path))
 
     # config.folderadr is already validated as relative (Fase 3), but a
     # "../.." traversal is still relative -- resolve_within is real path
@@ -257,8 +247,31 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     # here want the exact same end state, so there's no conflicting
     # content to lose -- exist_ok=True closes it outright rather than
     # just reporting it better.
+    #
+    # Round 7 resilience audit, Finding 3 (retraction of this function's
+    # own previous mkdir-AFTER-write order): moved ahead of the config
+    # commit below -- a failure creating this folder now aborts cleanly
+    # with nothing yet written, instead of leaving config committed to a
+    # folderadr whose directory doesn't exist, and every subsequent
+    # command failing with a generic io-error until someone noticed.
     folder_already_existed = folder_adr.is_dir()
     folder_adr.mkdir(parents=True, exist_ok=True)
+
+    if lock is not None:
+        # ADR001, part 3: guarantees this write never commits blindly if
+        # the lease was reclaimed.
+        lock.verify_still_held()
+    # atomic_write_text normalizes to this host's line separator (Fase 2:
+    # the real terminator is host-OS-dependent, not fixed) -- config_text
+    # is otherwise written verbatim, never re-serialized from `config`.
+    attempts = atomic_write_text(config_path, config_text)
+    warning = retry_warning(attempts)
+    if warning:
+        warnings.append(warning)
+    # `created`'s own reported order (config, then folder) is unchanged
+    # from before this fix -- only the underlying filesystem operations
+    # above were reordered, not what callers see reported.
+    created.append(str(config_path))
     if not folder_already_existed:
         created.append(str(folder_adr))
 

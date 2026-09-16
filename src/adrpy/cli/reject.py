@@ -12,7 +12,6 @@ from adrpy.core.lifecycle import (
     family_members,
     has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
-    latest_in_family,
     parse_refdate,
     read_lines_with_report,
     read_target,
@@ -55,15 +54,21 @@ def describe():
         "arguments": [
             {
                 "name": "file",
+                "alias": "-f",
                 "type": "string",
                 "required": True,
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
             },
             {
                 "name": "refdate",
+                "alias": "-r",
                 "type": "string",
                 "required": False,
-                "description": "Reference date (YYYY-MM-DD); defaults to today.",
+                "description": (
+                    "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before "
+                    "this decision's own creation date (refdate-invalid-format/refdate-in-future/"
+                    "refdate-before-history)."
+                ),
             },
         ],
     }
@@ -131,7 +136,24 @@ def run(args):
             undone_predecessor = None
             if filename_info.superseded_from is not None:
                 pred_members = family_members(folder, config, filename_info.superseded_from, warnings=warnings)
-                predecessor = latest_in_family(folder, config, filename_info.superseded_from, members=pred_members)
+                # Round 7 stability audit, Finding 2: latest_in_family picks
+                # whichever sibling has the highest (version, revision) --
+                # not necessarily the one this successor actually came from.
+                # Reachable whenever the predecessor's family has more than
+                # one member (e.g. an earlier `version` bump) and the
+                # superseded member isn't the latest. Match the specific
+                # member this successor's own number was stamped onto
+                # instead (mark_superseded's own superseded_by_file, a bare
+                # zero-padded sequence number, never a filename).
+                successor_ref = f"{filename_info.number:0{config.lenseq}d}"
+                predecessor = next(
+                    (
+                        member
+                        for member in pred_members
+                        if member[1].status_change == "Superseded" and member[1].superseded_by_file == successor_ref
+                    ),
+                    None,
+                )
                 if predecessor is None:
                     # Mechanism-correctness audit round 2 (findings #3/#4): by this
                     # point the primary write above has already succeeded for

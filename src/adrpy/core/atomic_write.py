@@ -128,12 +128,19 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     class of problem (core/lock.py): a transient OSError here no longer
     fails the caller's entire command over best-effort housekeeping
     unrelated to what it was actually asked to do -- left in place for a
-    later cleanup pass instead, and reported via `warnings` when given."""
+    later cleanup pass instead, and reported via `warnings` when given.
+
+    Round 7 stability audit, Low finding: uses rglob, not glob -- every
+    other scan in this codebase (scan_decisions, migrate, explore, init's
+    own numbering) already covers subfolders under folderadr; a non-
+    recursive scan here left an orphan inside a subfolder unfound and
+    unreported (a housekeeping leak, not a correctness issue -- temp
+    files never collide by name and are never read by anything)."""
     directory = Path(directory)
     now = time.time()
     removed = []
     skipped = []
-    for candidate in directory.glob("*.tmp"):
+    for candidate in directory.rglob("*.tmp"):
         try:
             age = now - candidate.stat().st_mtime
         except OSError:

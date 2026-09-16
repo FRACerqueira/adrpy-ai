@@ -180,6 +180,26 @@ def test_cleanup_removes_only_old_temp_files(tmp_path):
     assert fresh_temp.exists()
 
 
+def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
+    """Round 7 stability audit, Low finding: every other scan in this
+    codebase (scan_decisions, migrate, explore, init's own numbering) uses
+    rglob to also cover subfolders under folderadr; this one used a
+    non-recursive glob, so an orphan left inside a subfolder was never
+    found or reported -- a housekeeping leak, not a correctness issue
+    (temp files never collide by name and are never read by anything)."""
+    subfolder = tmp_path / "nested"
+    subfolder.mkdir()
+    old_temp = subfolder / "old.tmp"
+    old_temp.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(old_temp, (old_time, old_time))
+
+    removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30)
+
+    assert removed == [old_temp]
+    assert not old_temp.exists()
+
+
 def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be_removed(tmp_path, monkeypatch):
     """Round 6 resilience re-run, Finding B-3: this best-effort
     housekeeping call runs BEFORE the repository lock in every one of

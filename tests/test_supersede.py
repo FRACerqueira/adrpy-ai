@@ -1,7 +1,7 @@
 import time
 from datetime import date, timedelta
 
-from adrpy.cli import approve, init, new, supersede
+from adrpy.cli import approve, init, new, supersede, version
 from adrpy.core.errors import CommandError
 
 import pytest
@@ -148,6 +148,33 @@ def test_supersede_can_override_scope_and_domain(tmp_path):
     text = successor_path.read_text(encoding="utf-8")
     assert "|Domain|Platform|" in text
     assert "|Scope|Infra|" in text
+
+
+def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tmp_path):
+    """Round 7 stability audit, Finding 1 (HIGH): supersede had no family-
+    wide guard at all -- unlike version/revise, which both check
+    has_superseded_sibling/has_pending_sibling before writing. Two
+    different members of the SAME family could each be independently
+    superseded, producing two live successors and two Superseded
+    predecessors: exactly the corruption shape ADR001's own Decision
+    Drivers name as HIGH-severity reproduced corruption, and the
+    freshness fix (round 6) does not close it -- freshness only protects
+    the same-file race, not a second, different family member."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    # A second Accepted family member is a normal shape (version bumps
+    # never retroactively touch the earlier member's own status text).
+    version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+    v02_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
+    approve.run(["--file", str(v02_path), "--refdate", "2026-01-04"])
+
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(v02_path), "--refdate", "2026-01-06"])
+
+    assert excinfo.value.code == "family-member-superseded"
+    # No second successor was ever created.
+    assert not (tmp_path / "doc" / "adr" / "ADR003V01-use-postgre-sql.md").exists()
 
 
 def test_supersede_rejects_not_yet_accepted(tmp_path):

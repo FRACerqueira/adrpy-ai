@@ -11,6 +11,9 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    family_members,
+    has_pending_sibling,
+    has_superseded_sibling,
     ineligibility_reason_for_supersede,
     mark_superseded,
     next_number,
@@ -41,6 +44,9 @@ def describe():
         "name": "supersede",
         "description": (
             "Marks an Accepted decision as Superseded and creates its successor. "
+            "Refuses with family-member-superseded if another member of the same family has "
+            "already been superseded, or family-member-pending if another member is still "
+            "unresolved (Proposed) -- no write is made either way. "
             "This is two writes in sequence, not one: a failure creating the successor "
             "(supersede-successor-write-failed) means success=false even though the predecessor "
             "was already committed to Superseded -- that code's own `data.predecessor`/"
@@ -54,27 +60,41 @@ def describe():
         "arguments": [
             {
                 "name": "file",
+                "alias": "-f",
                 "type": "string",
                 "required": True,
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
             },
             {
                 "name": "domain",
+                "alias": "-d",
                 "type": "string",
                 "required": False,
-                "description": "Domain for the successor; defaults to the predecessor's own value.",
+                "description": (
+                    "Domain for the successor; defaults to the predecessor's own value. Cannot contain '|' "
+                    "or a line-break-like character (field-contains-forbidden-character)."
+                ),
             },
             {
                 "name": "scope",
+                "alias": "-s",
                 "type": "string",
                 "required": False,
-                "description": "Scope for the successor; defaults to the predecessor's own value.",
+                "description": (
+                    "Scope for the successor; defaults to the predecessor's own value. Cannot contain '|' "
+                    "or a line-break-like character (field-contains-forbidden-character)."
+                ),
             },
             {
                 "name": "refdate",
+                "alias": "-r",
                 "type": "string",
                 "required": False,
-                "description": "Reference date (YYYY-MM-DD); defaults to today.",
+                "description": (
+                    "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before "
+                    "the predecessor's own last update date (or creation date, if never updated) "
+                    "(refdate-invalid-format/refdate-in-future/refdate-before-history)."
+                ),
             },
         ],
     }
@@ -122,6 +142,25 @@ def run(args):
             reason = ineligibility_reason_for_supersede(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+
+            # Round 7 stability audit, Finding 1: unlike version/revise,
+            # supersede never consulted the rest of the family before
+            # writing -- two different members of the same family could
+            # each be independently superseded, producing two live
+            # successors. Same guard version.py/revise.py already use.
+            members = family_members(folder, config, filename_info.number, warnings=warnings)
+            if has_superseded_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-superseded",
+                    "A sibling decision in this family has already been superseded.",
+                    warnings=warnings,
+                )
+            if has_pending_sibling(folder, config, filename_info.number, members=members):
+                raise CommandError(
+                    "family-member-pending",
+                    "Another decision in this family is still unresolved (Proposed).",
+                    warnings=warnings,
+                )
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)

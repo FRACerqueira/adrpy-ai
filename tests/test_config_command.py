@@ -197,6 +197,34 @@ def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
     assert (tmp_path / "decisions").is_dir()
 
 
+def test_config_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):
+    """Round 7 resilience audit, Finding 3 (retraction of the previous
+    mkdir-AFTER-write order): the new folder is now created BEFORE the
+    config write commits -- a failure creating it aborts cleanly with
+    folderadr still pointing at the OLD, still-real directory, instead of
+    committing the change first and leaving the repository pointing at a
+    directory that doesn't exist."""
+    tmp_path = _init_repo(tmp_path)
+
+    from pathlib import Path as PathType
+
+    real_mkdir = PathType.mkdir
+
+    def failing_mkdir(self, *args, **kwargs):
+        if self.name == "newfolder":
+            raise PermissionError("Access is denied (simulated)")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathType, "mkdir", failing_mkdir)
+
+    with pytest.raises(CommandError):
+        config.run(["--path", str(tmp_path), "--folderadr", "newfolder"])
+
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.folderadr == "doc/adr"  # unchanged -- nothing committed
+    assert not (tmp_path / "newfolder").exists()
+
+
 def test_config_omitted_fields_keep_current_value(tmp_path):
     tmp_path = _init_repo(tmp_path)
     config.run(["--path", str(tmp_path), "--prefix", "DOC"])

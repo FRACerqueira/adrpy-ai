@@ -310,6 +310,30 @@ def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp
     assert not lock_path.exists()
 
 
+def test_reclaim_if_abandoned_returns_false_when_read_lock_itself_persistently_fails(tmp_path, monkeypatch):
+    """Round 7 resilience audit, Finding 2 (Medium): _reclaim_if_abandoned's
+    own _read_lock() calls (parsed-lock branch) had no tolerance at all for
+    a PERSISTENT PermissionError -- unlike its sibling path.stat() calls in
+    the malformed-lock-file fallback, hardened in round 6. A persistent
+    failure here used to escape raw out of acquire_repo_lock's wait loop,
+    losing the purpose-built repository-locked/lock-lost reporting this
+    mechanism exists to guarantee. Ownership can't be confirmed either way
+    -- the safe default is to abstain (don't reclaim), same as every other
+    persistent-failure case in this module."""
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_text(f"stale-token\n{time.time() - 999}")
+
+    def always_denied(path):
+        raise PermissionError("Access is denied")
+
+    monkeypatch.setattr(lock_module, "_read_lock", always_denied)
+
+    result = lock_module._reclaim_if_abandoned(lock_path, abandon_after=1)
+
+    assert result is False
+    assert lock_path.exists()
+
+
 def test_read_lock_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """Resilience audit round 4, Finding 4: _read_lock had no
     PermissionError tolerance at all, unlike _unlink_with_retry/
