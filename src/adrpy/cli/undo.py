@@ -37,7 +37,12 @@ def describe():
             "in both cases no write was made."
         ),
         "arguments": [
-            {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
+            {
+                "name": "file",
+                "type": "string",
+                "required": True,
+                "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
+            },
         ],
     }
 

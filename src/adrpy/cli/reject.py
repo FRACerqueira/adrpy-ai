@@ -50,7 +50,12 @@ def describe():
             "before the FIRST write) -- in both of those cases no write was made at all."
         ),
         "arguments": [
-            {"name": "file", "type": "string", "required": True, "description": "Path to the decision file."},
+            {
+                "name": "file",
+                "type": "string",
+                "required": True,
+                "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
+            },
             {
                 "name": "refdate",
                 "type": "string",

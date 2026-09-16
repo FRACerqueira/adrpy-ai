@@ -6,6 +6,7 @@ from adrpy.core.registry import COMMANDS
 
 
 _LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init")
+_PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revise")
 
 
 def test_every_locked_command_documents_repository_locked():
@@ -22,6 +23,17 @@ def test_every_locked_command_documents_repository_locked():
         info = COMMANDS[name].describe()
         text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
         assert "repository-locked" in text, f"{name}'s describe() never mentions repository-locked"
+
+
+def test_every_per_file_command_documents_the_md_auto_suffix():
+    """Round 5 usability re-run, Finding 7 (pre-existing, minor): every
+    per-file command's `--file` silently gets '.md' appended when the
+    given path has no extension (resolve_repo_and_target's own doing) --
+    none of their describe()'s ever mentioned it."""
+    for name in _PER_FILE_COMMANDS:
+        info = COMMANDS[name].describe()
+        file_arg = next(arg for arg in info["arguments"] if arg["name"] == "file")
+        assert ".md" in file_arg["description"], f"{name}'s --file description never mentions the .md suffix"
 
 
 def test_help_lists_commands(capsys):

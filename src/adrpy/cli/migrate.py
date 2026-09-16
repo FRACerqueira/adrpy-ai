@@ -51,9 +51,14 @@ def describe():
             "`data.results` names only the candidates actually attempted before the loss; none after. "
             "May instead fail with repository-locked if the lock could not be acquired in time before any "
             "file is touched. "
+            "This is a one-time, largely irreversible operation for repositories with only manually-created "
+            "decisions: refuses the ENTIRE run with already-tool-created-adrs-exist -- no file is touched -- if "
+            "even ONE scanned file already has a valid, non-migrated header (i.e. this repository has decisions "
+            "this tool itself already created). "
             "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
             "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
-            "can't be trusted for the already-tool-created-adrs-exist safety check or for candidate eligibility."
+            "can't be trusted for the already-tool-created-adrs-exist safety check above or for candidate "
+            "eligibility."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
