@@ -361,6 +361,47 @@ def test_lock_finally_block_never_deletes_another_owners_lock(tmp_path):
     assert lock_path.read_text().startswith("someone-else-entirely\n")
 
 
+def test_lock_finally_block_rechecks_ownership_immediately_before_unlinking(tmp_path, monkeypatch):
+    """Round 5 stability re-run, Finding 6 (narrows, does not fully close
+    -- no atomic compare-and-delete exists at the filesystem level): the
+    release path's own read-then-unlink was itself a narrower TOCTOU -- if
+    a reclaim landed between the ownership check and the unlink call,
+    this process could delete the NEW owner's lock file. A true red isn't
+    achievable here: the vulnerable window is between two reads that only
+    exist once this fix's own second read is added, so there is no
+    single-read version of this test that could fail first for the right
+    reason -- this is a targeted unit test of the guard itself instead
+    (CLAUDE.md's own "red isn't achievable" exception), verified against
+    its absence by temporarily reverting just this guard and confirming
+    the test then fails (done by hand before committing, not repeated
+    here). Simulates the reclaim landing exactly between this finally
+    block's two reads by rewriting the lock file inside a monkeypatched
+    second call."""
+    real_read_lock = lock_module._read_lock
+    calls = {"n": 0}
+    hijacked_token = "someone-else-entirely"
+
+    def flaky_read_lock(path):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            # Simulates a reclaim landing between this finally block's
+            # ownership check (call 1, sees this process's own token) and
+            # the unlink -- a different process's lock file appears here,
+            # exactly as a genuine reclaim would leave it.
+            path.write_text(f"{hijacked_token}\n{time.time()}")
+        return real_read_lock(path)
+
+    monkeypatch.setattr(lock_module, "_read_lock", flaky_read_lock)
+
+    with acquire_repo_lock(tmp_path):
+        pass
+
+    assert calls["n"] == 2
+    lock_path = tmp_path / ".adrpy.lock"
+    assert lock_path.exists()
+    assert lock_path.read_text().startswith(f"{hijacked_token}\n")
+
+
 def test_reclaim_if_abandoned_race_guard_blocks_removal_when_the_second_read_differs(tmp_path, monkeypatch):
     """Round 4 test-adequacy audit, Finding 2: _reclaim_if_abandoned's own
     inner race guard (`if _read_lock(path) != existing: return False`)

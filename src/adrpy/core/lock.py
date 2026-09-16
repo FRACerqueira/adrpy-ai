@@ -282,4 +282,17 @@ def acquire_repo_lock(
         except OSError:
             existing = None
         if existing is not None and existing[0] == token:
-            _unlink_with_retry(path)
+            # Round 5 stability re-run, Finding 6 (narrows, does not fully
+            # close -- no atomic compare-and-delete exists at the
+            # filesystem level): re-read immediately before unlinking,
+            # the same inner race-guard shape _reclaim_if_abandoned
+            # already uses for its own removal decision. If a reclaim
+            # lands in exactly this narrower window (between the
+            # ownership check above and the unlink), abstain instead of
+            # deleting the new owner's lock file.
+            try:
+                recheck = _read_lock(path)
+            except OSError:
+                recheck = None
+            if recheck == existing:
+                _unlink_with_retry(path)
