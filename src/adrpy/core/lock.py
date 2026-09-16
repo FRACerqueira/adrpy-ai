@@ -192,7 +192,25 @@ class RepoLock:
         self.warnings = warnings
 
     def verify_still_held(self):
-        existing = _read_lock(self._path)
+        try:
+            existing = _read_lock(self._path)
+        except OSError as error:
+            # Round 6 stability/resilience re-run (2 independent fronts,
+            # cross-corroborated): a persistent I/O failure reading the
+            # lock file here used to re-raise as a bare OSError -- in
+            # migrate's per-candidate loop specifically, that meant it
+            # was caught by the per-file except clause and misreported
+            # as THAT candidate's own write failure, even though the
+            # candidate was never touched, and the loop kept going,
+            # repeating the same misclassification for every remaining
+            # candidate. Ownership can't be confirmed either way here --
+            # treat it exactly as protectively as a genuine loss, under
+            # the same LockLostError contract every caller already
+            # handles correctly (no new wiring needed anywhere).
+            raise LockLostError(
+                f"The repository lock at {self._path} could not be confirmed (a read failure, not "
+                f"necessarily a reclaim -- {error}) -- no write was made."
+            ) from error
         if existing is None or existing[0] != self._token:
             # No `warnings=` here deliberately: every caller raises this
             # from inside its own attach_warnings(warnings)-wrapped region,

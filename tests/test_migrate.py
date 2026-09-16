@@ -60,6 +60,45 @@ def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monke
     assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
 
 
+def test_migrate_reports_lock_lost_not_a_per_candidate_failure_when_the_lock_read_itself_fails(tmp_path, monkeypatch):
+    """Round 6 stability/resilience re-run (2 independent fronts, cross-
+    corroborated, no shared context): a persistent I/O failure reading
+    the lock file during verify_still_held() used to escape as a bare
+    PermissionError, which -- being an OSError but not a LockLostError
+    -- fell through migrate's own `except LockLostError` clause into the
+    per-candidate `except (OSError, UnicodeError)`, misreporting a
+    candidate that was never touched as individually "failed", then
+    repeating the same misclassification for every remaining candidate.
+    Fixed at the source (RepoLock.verify_still_held itself): this is now
+    a clean migration-lock-lost, matching the command's own documented
+    contract, and the loop stops immediately instead of repeating the
+    misclassification."""
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
+    _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
+
+    from adrpy.core import lock as lock_module
+
+    real_read_lock = lock_module._read_lock
+    calls = {"n": 0}
+
+    def flaky_read_lock(path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise PermissionError("Access is denied")
+        return real_read_lock(path)
+
+    monkeypatch.setattr(lock_module, "_read_lock", flaky_read_lock)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-lock-lost"
+    # Aborted on the very first candidate's own recheck -- no candidate was
+    # ever attempted (results is empty), not one falsely marked "failed".
+    assert excinfo.value.data["results"] == []
+
+
 def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):
     """Mechanism-correctness audit round 3 (resilience finding #2a): the
     initial directory scan's own read (building `entries`, used to decide

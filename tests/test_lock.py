@@ -320,6 +320,32 @@ def test_repo_lock_verify_still_held_passes_while_this_process_still_owns_it(tmp
         lock.verify_still_held()  # must not raise
 
 
+def test_repo_lock_verify_still_held_raises_lock_lost_when_the_read_itself_fails(tmp_path, monkeypatch):
+    """Round 6 stability/resilience re-run (2 independent fronts, cross-
+    corroborated -- same defect found by both, no shared context): a
+    persistent I/O failure reading the lock file during this check used
+    to re-raise as a bare PermissionError -- in migrate's per-candidate
+    loop specifically, that meant it was caught by the per-file except
+    clause and misreported as THAT candidate's own write failure, even
+    though the candidate was never touched, and the loop kept going,
+    repeating the same misclassification for every remaining candidate.
+    Ownership can't be confirmed either way here -- treat it exactly as
+    protectively as a genuine loss, under the same LockLostError
+    contract every caller already handles correctly."""
+    from adrpy.core.lock import LockLostError
+
+    with acquire_repo_lock(tmp_path) as lock:
+
+        def always_denied(path):
+            raise PermissionError("Access is denied")
+
+        monkeypatch.setattr(lock_module, "_read_lock", always_denied)
+
+        with pytest.raises(LockLostError) as excinfo:
+            lock.verify_still_held()
+        assert excinfo.value.code == "lock-lost"
+
+
 def test_repo_lock_verify_still_held_raises_lock_lost_when_the_token_changed(tmp_path):
     """Round 4 ADR001, part 3: a different process reclaiming the lock
     file mid-critical-section (simulated here directly, matching a real
