@@ -3,7 +3,7 @@ import subprocess
 import sys
 import threading
 
-from adrpy.cli import init
+from adrpy.cli import init, new
 from adrpy.core.errors import CommandError, UsageError
 
 import pytest
@@ -165,6 +165,31 @@ def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(t
     # init ran (definitively) second, and --seed's own contract is a full
     # overwrite -- its raw content is what should survive, not a torn mix.
     assert final["prefix"] == "SEED"
+
+
+def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path):
+    """Round 5 stability re-run, Finding 5 (confirmed with the user):
+    same class as config.py's own --folderadr guard -- --seed changing
+    folderadr on an already-existing repository can orphan existing
+    decisions exactly the same way. Distinct from config-already-exists
+    (which --seed is meant to bypass): this is about the FOLDER, not the
+    config file's own existence."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    seed = json.loads(init._default_config_text())
+    seed["folderadr"] = "decisions"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
+    # Nothing was written -- the original config survives untouched.
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["folderadr"] == "doc/adr"
 
 
 def test_init_refuses_when_config_already_exists_without_file(tmp_path):

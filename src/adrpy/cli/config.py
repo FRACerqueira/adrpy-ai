@@ -26,6 +26,7 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError
+from adrpy.core.lifecycle import reject_folderadr_change_if_decisions_exist
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.security import resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
@@ -109,7 +110,10 @@ def describe():
             "the plugin system is out of scope for now (see the `init` command's own note) -- "
             "so this is a subset of the raw file, not its full contents; do not round-trip it as "
             "`init --seed` input without adding `activeplugins` back. "
-            "Omitted fields keep their current value; only the fields passed are updated."
+            "Omitted fields keep their current value; only the fields passed are updated. "
+            "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
+            "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
+            "names the count) rather than silently orphaning them at their old, still-real path."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -218,6 +222,19 @@ def run(args):
             # would refuse with path-outside-repository until hand-fixed).
             resolve_within(target, new_config.folderadr)
 
+            # Round 5 stability re-run, Finding 5 (confirmed with the
+            # user): a folderadr change is only valid when the OLD folder
+            # has no recognized decisions yet -- otherwise every existing
+            # decision becomes invisible at its old, still-real path, and
+            # a command running before vs. after this write would lock
+            # two different directories that never exclude each other.
+            # Checked against `current` (fresh, inside the lock) and
+            # `folder` (this same lock's own location) -- both are the
+            # pre-edit state.
+            reject_folderadr_change_if_decisions_exist(
+                folder, current.folderadr, new_config.folderadr, current, warnings=warnings
+            )
+
             # ADR001, part 3: guarantees this write never commits blindly
             # if the lease was reclaimed.
             lock.verify_still_held()
@@ -225,5 +242,14 @@ def run(args):
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
+
+            # Round 5 stability re-run, Finding 5: the check above proves
+            # this is safe (nothing existing to orphan) -- but nobody
+            # created the NEW folder until now, so the very next command
+            # to run would fail acquiring its own lock with a raw
+            # FileNotFoundError. Matches init's own mkdir-after-write
+            # precedent.
+            new_folder = resolve_within(target, new_config.folderadr)
+            new_folder.mkdir(parents=True, exist_ok=True)
 
     return {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}

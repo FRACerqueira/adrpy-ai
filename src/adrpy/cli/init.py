@@ -17,6 +17,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.lifecycle import reject_folderadr_change_if_decisions_exist
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import is_within, resolve_within
@@ -78,7 +79,10 @@ def describe():
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the built-in default. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
-                    "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given."
+                    "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. "
+                    "If the seed's own folderadr differs from the current one AND the OLD folder already has "
+                    "recognized decisions, fails with folderadr-change-blocked-by-existing-decisions instead "
+                    "of silently orphaning them (same rule as the `config` command's own --folderadr guard)."
                 ),
             },
             {
@@ -155,14 +159,29 @@ def run(args):
         with attach_warnings(warnings):
             with acquire_repo_lock(lock_folder) as lock:
                 warnings.extend(lock.warnings)
-                created = _validate_and_write(target, config_path, config_text, config, warnings, lock)
+                created = _validate_and_write(
+                    target, config_path, config_text, config, warnings, lock, old_config=bootstrap_config
+                )
         return {"created": created, "warnings": warnings}
 
     created = _validate_and_write(target, config_path, config_text, config, warnings, lock=None)
     return {"created": created, "warnings": warnings}
 
 
-def _validate_and_write(target, config_path, config_text, config, warnings, lock):
+def _validate_and_write(target, config_path, config_text, config, warnings, lock, old_config=None):
+    if old_config is not None:
+        # Round 5 stability re-run, Finding 5 (confirmed with the user):
+        # same class as config.py's own --folderadr guard -- --seed
+        # changing folderadr on an already-existing repository is exactly
+        # as capable of orphaning existing decisions as `config` is.
+        # `old_config` is None on the genuinely-fresh-bootstrap path
+        # (nothing existing to orphan there, and no "old" repo to compare
+        # against).
+        old_folder = resolve_within(target, old_config.folderadr)
+        reject_folderadr_change_if_decisions_exist(
+            old_folder, old_config.folderadr, config.folderadr, old_config, warnings=warnings
+        )
+
     # Round 4 observability audit, Finding 3: same as scan_decisions/
     # explore/migrate -- an is_within-excluded candidate used to be
     # dropped with zero signal, even from the very numbers these three

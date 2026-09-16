@@ -81,6 +81,33 @@ def scan_decisions(folder, config, warnings=None):
     return found
 
 
+def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_folderadr, old_config, warnings=None):
+    """Round 5 stability re-run, Finding 5: changing `folderadr` on a
+    repository that already has recognized decisions makes every one of
+    them invisible at its old, still-real path -- an orphaned-data risk
+    no amount of "also create the new folder" can fix on its own, and a
+    split-lock-scope race no test could reliably reproduce (two commands
+    straddling the change would lock different directories, never
+    excluding each other). Confirmed with the user: a folderadr change is
+    only ever valid when the OLD folder has no recognized decisions yet --
+    otherwise this raises a structured, mappable error instead of the
+    silent data-loss/race the original finding described.
+
+    Scans against `old_config` (never the new one): the existing files
+    were written under the OLD naming rules, not the new ones."""
+    if new_folderadr == old_folderadr:
+        return
+    existing = scan_decisions(old_folder, old_config, warnings=warnings)
+    if existing:
+        raise CommandError(
+            "folderadr-change-blocked-by-existing-decisions",
+            f"Cannot change folderadr from '{old_folderadr}' to '{new_folderadr}': "
+            f"{len(existing)} existing decision(s) under '{old_folderadr}' would become invisible.",
+            data={"folderadr": old_folderadr, "existing_decisions": len(existing)},
+            warnings=warnings,
+        )
+
+
 def next_number(decisions):
     """Mirrors AdrService.GetNextNumberFrom: 1 if none exist, else max+1."""
     if not decisions:

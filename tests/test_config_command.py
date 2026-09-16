@@ -1,7 +1,7 @@
 import json
 import threading
 
-from adrpy.cli import config, init
+from adrpy.cli import config, init, new
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
 
@@ -136,6 +136,39 @@ def test_config_updates_multiple_fields_at_once(tmp_path):
     assert after.folderadr == "decisions"
     assert after.separator == "_"
     assert after.lenseq == 4
+
+
+def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path):
+    """Round 5 stability re-run, Finding 5 (confirmed with the user): a
+    folderadr change is only valid when the OLD folder has no recognized
+    decisions yet -- otherwise every existing decision becomes invisible
+    at its old, still-real path, with nothing telling the caller. A
+    structured, mappable error instead of a silent orphaning."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    before = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
+
+    assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.folderadr == before.folderadr  # nothing was written
+
+
+def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
+    """Companion to the rejection test above: an empty (or missing)
+    decisions folder is exactly the case ADR001's own exemption for init
+    already covers -- nothing to orphan, so the change must still go
+    through, and the new folder must exist afterward for the next
+    command to lock."""
+    tmp_path = _init_repo(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
+
+    assert result["updated_fields"] == ["folderadr"]
+    assert (tmp_path / "decisions").is_dir()
 
 
 def test_config_omitted_fields_keep_current_value(tmp_path):
