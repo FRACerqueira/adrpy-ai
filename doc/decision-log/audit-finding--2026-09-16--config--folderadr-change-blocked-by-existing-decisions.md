@@ -1,5 +1,7 @@
 # Changing folderadr is now blocked while decisions still exist under the old path
 
+**Front:** Stability (round 5 re-run), Finding 5 | **Severity:** High
+
 Round 5 stability re-run, Finding 5: letting `folderadr` change freely made every existing decision invisible at its old, still-real path, and split the repository lock across two directories that would never exclude each other for any pair of commands straddling the change. Confirmed with the user: a `folderadr` change is now only valid when the OLD folder has no recognized decisions yet; otherwise it fails with a structured `folderadr-change-blocked-by-existing-decisions` (`data.existing_decisions` names the count) instead of silently orphaning them. Applied to both `config --folderadr` and `init --seed` (the same risk exists on that path too, per the "close the class, not the instance" rule -- `core/lifecycle.reject_folderadr_change_if_decisions_exist`, shared by both). `config.py` also gained the previously-missing piece of this same finding: nothing created the NEW folder after an allowed change, matching `init`'s own mkdir-after-write precedent.
 
 **Alternatives considered before this fix, for the record:** always auto-create the new folder without any gate (rejected -- doesn't address the orphaning or the split-lock-scope risk, only the missing-directory symptom); move the lock's own location out of `folderadr` entirely to a fixed path (rejected -- larger architectural change, not pursued since the gate above closes the actual reported risk without it).

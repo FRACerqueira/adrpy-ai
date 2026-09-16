@@ -1,5 +1,7 @@
 # Second corroboration pass confirms and fixes migrate/config's missing lock; narrows the config fix
 
+**Front:** Stability (round 4, second corroboration pass -- 2 independent instances) | **Severity:** High
+
 ADR001's own "Negative Consequences" section flagged the `migrate`/`config`/`init` lock gaps as single-audit-instance findings needing a second, independent pass before being treated as confirmed. Two independent `audit-stability` instances were run against exactly that scope, given only the code and the general question ("is this command safe under concurrency"), not the original pass's own hypothesis or reasoning, so as not to bias a fresh look. Both independently reproduced real, empirical defects in `migrate` and `config` (2 of 2 agreement on every core finding).
 
 **`migrate`** (HIGH, reproduced by both): held no lock at all. Worst reproduced scenario: a concurrent `migrate` re-reading a file's current bytes after a legitimate `approve` write (a command correctly following ADR001, its own `verify_still_held()` passing honestly) silently erased that write, burying it as opaque body content under a second, blank header -- defeating ADR001's own mutual-exclusion guarantee for a command that did everything right. Fixed: wrapped in the same `acquire_repo_lock` as the other 7 commands, with `verify_still_held()` checked before every per-candidate write, not just once.

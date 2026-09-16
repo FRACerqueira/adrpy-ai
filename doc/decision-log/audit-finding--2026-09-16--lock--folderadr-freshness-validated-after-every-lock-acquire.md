@@ -1,5 +1,7 @@
 # folderadr is now revalidated immediately after every lock acquire, in all 9 write commands
 
+**Front:** Stability (round 6 re-run), root cause | **Severity:** High
+
 Round 6 stability re-run, root cause shared by all 9 write commands (reopened tracker item #3, which round 5's `folderadr-change-blocked-by-existing-decisions` policy only partly closed): every command's lock location is derived from a config read taken BEFORE the lock -- necessary, since you can't find the lock without already knowing `folderadr`, the same chicken-and-egg `init`'s own exemption already documents. Nothing re-checked that `folderadr` hadn't drifted by the time the lock was actually acquired.
 
 Reproduced live, twice: `init --seed`'s own folderadr-change guard could scan the wrong directory, or skip scanning entirely (when the seed's own folderadr happened to match the stale bootstrap value), silently reverting a real concurrent change and orphaning a live decision with zero warning; `new` could write into a directory that stopped being the repository's real folderadr, locking against nobody -- two processes, two directories, zero mutual exclusion between them.

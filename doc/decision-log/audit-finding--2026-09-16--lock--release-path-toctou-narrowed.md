@@ -1,5 +1,7 @@
 # The lock release path's own read-then-unlink TOCTOU was narrowed
 
+**Front:** Stability (round 5 re-run), Finding 6 | **Severity:** Low
+
 Round 5 stability re-run, Finding 6: `acquire_repo_lock`'s `finally` block read the lock once to confirm ownership, then unlinked -- if a reclaim landed in that window (only possible past the 30s abandon window), this process could delete the NEW owner's lock file. `_reclaim_if_abandoned` already documented and guarded against the equivalent window for its own removal decision (`if _read_lock(path) != existing: return False`); the release path's own equivalent check was missing.
 
 Fixed: re-reads immediately before the unlink, aborting if anything changed since the first read -- same guard shape as `_reclaim_if_abandoned`'s own inner check.
