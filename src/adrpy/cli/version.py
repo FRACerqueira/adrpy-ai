@@ -100,7 +100,7 @@ def run(args):
     warnings = []
     with attach_warnings(warnings):
         if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder))
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
 

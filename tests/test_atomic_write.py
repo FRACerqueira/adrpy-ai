@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -177,6 +178,44 @@ def test_cleanup_removes_only_old_temp_files(tmp_path):
     assert removed == [old_temp]
     assert not old_temp.exists()
     assert fresh_temp.exists()
+
+
+def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be_removed(tmp_path, monkeypatch):
+    """Round 6 resilience re-run, Finding B-3: this best-effort
+    housekeeping call runs BEFORE the repository lock in every one of
+    the 8 commands that use it -- a concurrent process's own in-flight
+    write could plausibly hold a temp file open (or have already
+    removed it) at the exact moment this scan reaches it. A transient
+    OSError here used to propagate raw, failing the caller's entire
+    command over best-effort cleanup unrelated to what it was actually
+    asked to do. Now best-effort per candidate, matching
+    _unlink_with_retry's own established philosophy for this exact
+    class of problem -- reported as a warning instead, when the caller
+    opts in."""
+    old_temp = tmp_path / "old.tmp"
+    old_temp.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(old_temp, (old_time, old_time))
+
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, *args, **kwargs):
+        if self == old_temp:
+            raise PermissionError(13, "Access is denied", str(old_temp))
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+
+    warnings = []
+    removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30, warnings=warnings)
+
+    assert removed == []  # never raised, just didn't count it as removed
+    assert old_temp.exists()  # left in place for a later cleanup pass
+    assert len(warnings) == 1
+    assert "old.tmp" in warnings[0]
+
+    # Backward compatible: no warnings= at all (the default) never raises either.
+    assert cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30) == []
 
 
 @pytest.mark.parametrize(

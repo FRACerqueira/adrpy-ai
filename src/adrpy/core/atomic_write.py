@@ -112,21 +112,43 @@ def atomic_write_bytes(path, content_bytes):
     raise last_error
 
 
-def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS):
+def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
     """Removes leftover `*.tmp` files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed
     process, a full disk) once older than `max_age_seconds`. Returns the
     paths removed, so the caller can warn about it (Fase 4: "com aviso
-    quando algo é de fato removido")."""
+    quando algo é de fato removido").
+
+    Round 6 resilience re-run, Finding B-3: this runs BEFORE the
+    repository lock in every one of the 8 commands that call it -- a
+    concurrent process's own in-flight write could plausibly hold a temp
+    file open (or have already removed it) at the exact moment this scan
+    reaches it. Best-effort per candidate now, matching
+    `_unlink_with_retry`'s own established philosophy for this exact
+    class of problem (core/lock.py): a transient OSError here no longer
+    fails the caller's entire command over best-effort housekeeping
+    unrelated to what it was actually asked to do -- left in place for a
+    later cleanup pass instead, and reported via `warnings` when given."""
     directory = Path(directory)
     now = time.time()
     removed = []
+    skipped = []
     for candidate in directory.glob("*.tmp"):
         try:
             age = now - candidate.stat().st_mtime
-        except FileNotFoundError:
+        except OSError:
+            skipped.append(candidate)
             continue
         if age > max_age_seconds:
-            candidate.unlink(missing_ok=True)
-            removed.append(candidate)
+            try:
+                candidate.unlink(missing_ok=True)
+                removed.append(candidate)
+            except OSError:
+                skipped.append(candidate)
+    if warnings is not None and skipped:
+        names = ", ".join(path.name for path in skipped)
+        warnings.append(
+            f"{len(skipped)} orphaned temp file(s) could not be checked/removed (permission denied or "
+            f"similar), left for a later cleanup pass: {names}."
+        )
     return removed
