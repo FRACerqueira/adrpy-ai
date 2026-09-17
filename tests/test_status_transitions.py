@@ -698,6 +698,73 @@ def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_membe
     assert "|Superseded|Superseded" not in v02_text, "V02 was never superseded and must stay untouched"
 
 
+def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_superseded(tmp_path):
+    """Round 8 test-adequacy audit, Finding 4: round 7's fix reverts the
+    predecessor by matching its own superseded_by_file back-reference,
+    not merely "a Superseded sibling" -- but every existing test only
+    ever has ONE Superseded member in the family at the point reject
+    runs, so "the only Superseded sibling" and "the sibling whose own
+    back-reference names this successor" were indistinguishable. This
+    constructs a family with TWO independently-Superseded members (hand-
+    written via _write_raw, bypassing supersede's own family guard by
+    design -- proving the SELECTION logic itself, not reachable through
+    the normal command flow) pointing to two DIFFERENT successors, and
+    confirms rejecting one successor reverts the matching predecessor,
+    not just whichever Superseded sibling scan_decisions happens to
+    return first."""
+    tmp_path, _ = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    v01_path = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        v01_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="002",  # points at ADR002, NOT this test's successor (ADR003)
+    )
+    v02_path = adr_dir / "ADR001V02-first-decision.md"
+    _write_raw(
+        v02_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 2),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+        status_change="Superseded",
+        date_change=date(2026, 1, 4),
+        superseded_by_file="003",  # the REAL predecessor of this test's successor (ADR003)
+    )
+    successor_path = adr_dir / "ADR003V01-successor--001.md"
+    _write_raw(
+        successor_path,
+        cfg,
+        number=3,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 4),
+        superseded=1,
+    )
+
+    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert result["undone_predecessor"] == str(v02_path)
+    assert "|Superseded||" in v02_path.read_text(encoding="utf-8"), "V02 (the real predecessor) should be un-superseded"
+    assert "|Superseded|Superseded" in v01_path.read_text(encoding="utf-8"), "V01 must stay untouched"
+
+
 # ---- undo ----
 
 

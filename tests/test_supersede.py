@@ -178,6 +178,26 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
     assert not (tmp_path / "doc" / "adr" / "ADR003V01-use-postgre-sql.md").exists()
 
 
+def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_path):
+    """Round 8 test-adequacy audit, Finding 1 (HIGH): round 7's fix added
+    TWO co-equal guards to supersede in the same commit --
+    has_superseded_sibling (covered by the test above) and
+    has_pending_sibling -- but only the first ever got a test. Deleting
+    the has_pending_sibling block entirely left the full suite green,
+    meaning a future refactor or merge conflict could silently drop this
+    guard with nothing to catch it."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    # V02 stays Proposed (never approved) -- an unresolved sibling.
+    version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.code == "family-member-pending"
+    # No write was made at all.
+    assert not (tmp_path / "doc" / "adr" / "ADR002V01-use-postgre-sql--001.md").exists()
+
+
 def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """Round 8 stability audit, class closure: an unreadable subdirectory
     must never let this command silently treat a hidden, higher-numbered
