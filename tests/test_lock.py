@@ -334,6 +334,38 @@ def test_reclaim_if_abandoned_returns_false_when_read_lock_itself_persistently_f
     assert lock_path.exists()
 
 
+def test_reclaim_if_abandoned_returns_false_when_only_the_second_read_lock_call_persistently_fails(tmp_path, monkeypatch):
+    """Round 8 test-adequacy audit, Finding 2 (Medium): the test above
+    blanket-replaces _read_lock, so the FIRST call (line 175) fails and
+    the function returns False immediately -- the SECOND call site's own
+    `except PermissionError` (the recheck-before-unlink, line ~191-195)
+    is never actually reached by that test or any other. This lets the
+    first call succeed normally (a genuinely abandoned lock, past
+    abandon_after) and fails only the second, proving that specific
+    except clause is both reachable and correctly wired, not dead code
+    shadowed by the first call's own handling."""
+    lock_path = tmp_path / ".adrpy.lock"
+    stale_timestamp = time.time() - 999
+    lock_path.write_text(f"stale-token\n{stale_timestamp}")
+
+    real_read_lock = lock_module._read_lock
+    calls = {"count": 0}
+
+    def flaky_read_lock(path):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return real_read_lock(path)
+        raise PermissionError("Access is denied")
+
+    monkeypatch.setattr(lock_module, "_read_lock", flaky_read_lock)
+
+    result = lock_module._reclaim_if_abandoned(lock_path, abandon_after=1)
+
+    assert result is False
+    assert calls["count"] == 2
+    assert lock_path.exists()  # abstained -- never reached _unlink_with_retry
+
+
 def test_read_lock_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """Resilience audit round 4, Finding 4: _read_lock had no
     PermissionError tolerance at all, unlike _unlink_with_retry/
