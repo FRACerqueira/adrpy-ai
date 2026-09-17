@@ -275,6 +275,44 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
     assert any("ADR002V01-locked.md" in w for w in payload["warnings"])
 
 
+def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_file(tmp_path, monkeypatch):
+    """Round 8 test-adequacy audit, Finding 3: round 7's fix does TWO
+    things -- retries a TRANSIENT PermissionError, and treats a
+    PERSISTENT one as a skippable, warned file. The round 7 test above
+    only proves the second half; this proves the first: a file that
+    fails twice then succeeds must appear normally in `decisions`, with
+    no warning at all, not be silently skipped."""
+    config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
+    _write_repo(
+        tmp_path,
+        _default_config_dict(),
+        {
+            "ADR001V01-flaky.md": _decision_text(config_for_text, number=1, title="Flaky", version=1),
+        },
+    )
+
+    from pathlib import Path as PathType
+
+    real_read_bytes = PathType.read_bytes
+    calls = {"count": 0}
+
+    def flaky_read_bytes(self, *args, **kwargs):
+        if self.name == "ADR001V01-flaky.md":
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise PermissionError("Access is denied")
+        return real_read_bytes(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathType, "read_bytes", flaky_read_bytes)
+
+    payload = explore.run(["--path", str(tmp_path)])
+
+    filenames = {entry["filename"] for entry in payload["decisions"]}
+    assert filenames == {"ADR001V01-flaky.md"}
+    assert payload["warnings"] == []
+    assert calls["count"] == 3
+
+
 def test_explore_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
