@@ -29,6 +29,7 @@ from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_fi
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
+from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.lifecycle import read_header_lines_with_report, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
@@ -263,7 +264,17 @@ def run(args):
                     # reading, so it never appears in the migrated result --
                     # pass it through here and it lands stranded in the middle
                     # of the file, after the new header.
-                    raw_bytes = candidate_path.read_bytes()
+                    #
+                    # Round 8 resilience audit, Finding 2: retries a
+                    # transient PermissionError the same way this
+                    # command's own SCAN-phase read of this exact file
+                    # already does (read_header_lines_with_report, a few
+                    # dozen lines above) -- without this, a transient
+                    # blip here permanently misclassified the candidate
+                    # as "failed" in a one-time, largely irreversible
+                    # operation, instead of retrying like its sibling
+                    # read of the same file already would.
+                    raw_bytes = read_with_permission_retry(candidate_path.read_bytes)
                     if raw_bytes.startswith(b"\xef\xbb\xbf"):
                         raw_bytes = raw_bytes[3:]
                     record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)

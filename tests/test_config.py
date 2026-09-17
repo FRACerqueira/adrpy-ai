@@ -1,7 +1,9 @@
 import json
+from pathlib import Path
 
 import pytest
 
+from adrpy.core import config as config_module
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 
@@ -498,3 +500,35 @@ def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
         load_repo_config(config_path)
 
     assert excinfo.value.code == "config-invalid-encoding"
+
+
+def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeypatch):
+    """Round 8 resilience audit, Finding 1 (Medium): read_config_text had
+    no PermissionError tolerance at all, unlike every other read in this
+    codebase (core/lock.py's _read_lock, core/lifecycle.py's
+    read_lines_with_report, cli/explore.py's _build_entry) -- this read
+    goes through the identical atomic_write_text -> os.replace mechanism
+    those retries exist to absorb, and it runs at the start of every
+    single command. Reproduced empirically by the audit pass: a stress
+    probe (1 writer thread, 2 reader threads, real atomic_write_text)
+    measured ~0.23% of reads hitting this window -- matching the ~0.2%
+    rate already measured and retried for the sibling case in
+    lifecycle.py."""
+    config_path = tmp_path / "adr-config.adrplus"
+    config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
+
+    real_read_text = config_module.Path.read_text
+    calls = {"count": 0}
+
+    def flaky_read_text(self, *args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] < 3:
+            raise PermissionError("Access is denied")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(config_module.Path, "read_text", flaky_read_text)
+
+    config = load_repo_config(config_path)
+
+    assert config.folderadr == "doc/adr"
+    assert calls["count"] == 3

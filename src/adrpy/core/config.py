@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from adrpy.core.errors import CommandError
+from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_migration_pattern
 from adrpy.core.security import reject_embedded_delimiter
 
@@ -155,9 +156,18 @@ def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must
     become a structured CommandError, not a raw UnicodeDecodeError with
-    empty stdout (resilience audit R3)."""
+    empty stdout (resilience audit R3).
+
+    Round 8 resilience audit, Finding 1: retries a transient
+    PermissionError the same way every other read in this codebase
+    already does (core/lock.py's _read_lock, core/lifecycle.py's
+    read_lines_with_report, cli/explore.py's _build_entry) -- this read
+    goes through the identical atomic_write_text -> os.replace mechanism
+    those retries exist to absorb, and it runs for every single command
+    (resolve_repo_and_target's own initial config load), most of it
+    BEFORE any lock or attach_warnings safety net is entered."""
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return read_with_permission_retry(lambda: Path(path).read_text(encoding="utf-8"))
     except UnicodeDecodeError as error:
         raise CommandError("config-invalid-encoding", f"{path}: {error}") from error
 

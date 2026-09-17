@@ -241,6 +241,36 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
     assert "<!-- Migrated -->" in Path(processed[2]).read_text(encoding="utf-8")
 
 
+def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path, monkeypatch):
+    """Round 8 resilience audit, Finding 2 (Medium): the write-phase read
+    of a candidate's own bytes had no retry tolerance, unlike this
+    command's own SCAN-phase read of the exact same file a few dozen
+    lines earlier (read_header_lines_with_report, already retried).
+    Without the fix, a transient blip here permanently misclassifies the
+    candidate as "failed" instead of retrying transparently like its
+    sibling read already would -- in a one-time, largely irreversible
+    operation."""
+    _init_repo_with_pattern(tmp_path)
+    target = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    real_read_bytes = Path.read_bytes
+    calls = {"count": 0}
+
+    def flaky_read_bytes(self, *args, **kwargs):
+        if self.name == target.name:
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise PermissionError("Access is denied")
+        return real_read_bytes(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(target)]
+    assert calls["count"] == 3
+
+
 def test_migrate_happy_path_preserves_original_content(tmp_path):
     _init_repo_with_pattern(tmp_path)
     legacy_path = _write_legacy_file(
