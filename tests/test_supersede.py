@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import date, timedelta
 
@@ -103,7 +104,7 @@ def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists
 
     real_scan_decisions = supersede_module.scan_decisions
 
-    def scan_without_colliding_file(folder, config, warnings=None):
+    def scan_without_colliding_file(folder, config, warnings=None, **kwargs):
         return [entry for entry in real_scan_decisions(folder, config) if entry[2].name != colliding_path.name]
 
     monkeypatch.setattr(supersede_module, "scan_decisions", scan_without_colliding_file)
@@ -175,6 +176,63 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
     assert excinfo.value.code == "family-member-superseded"
     # No second successor was ever created.
     assert not (tmp_path / "doc" / "adr" / "ADR003V01-use-postgre-sql.md").exists()
+
+
+def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, class closure: an unreadable subdirectory
+    must never let this command silently treat a hidden, higher-numbered
+    decision (or a hidden family member) as "not found". supersede's own
+    family_members() call (feeding has_superseded_sibling/has_pending_
+    sibling) reads the SAME folder earlier than the successor-number
+    scan and is strict too, so it's the one that actually fires first
+    here -- both checks exist because family_members succeeding doesn't
+    guarantee the later, separate scan_decisions call for the successor
+    number will too (a directory could become unreadable in between,
+    inside the same lock); this test exercises whichever fires, both are
+    "*-scan-incomplete"-shaped and both mean no write was made."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code in ("family-scan-incomplete", "supersede-successor-scan-incomplete")
+    assert not (adr_dir / "ADR002V01-use-postgre-sql--001.md").exists()
+
+
+def test_supersede_successor_number_scan_wires_its_own_incomplete_code(tmp_path, monkeypatch):
+    """Precise companion to the test above: family_members() reads the
+    SAME folder earlier and always fires first for a genuinely unreadable
+    subdirectory, which could make the later, independent
+    supersede-successor-scan-incomplete path look unreachable/dead.
+    Proves it isn't -- patches only supersede.py's own direct
+    scan_decisions call (family_members uses lifecycle.py's own
+    reference, untouched here), confirming this command really does wire
+    its own incomplete_code into that second, independent scan."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    def failing_scan_decisions(folder, config, warnings=None, **kwargs):
+        raise CommandError(kwargs.get("incomplete_code", "scan-incomplete"), "simulated incomplete scan", warnings=warnings)
+
+    monkeypatch.setattr(supersede_module, "scan_decisions", failing_scan_decisions)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-successor-scan-incomplete"
 
 
 def test_supersede_rejects_not_yet_accepted(tmp_path):

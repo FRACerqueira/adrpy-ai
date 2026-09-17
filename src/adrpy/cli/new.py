@@ -37,7 +37,9 @@ def describe():
             "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
             "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry."
+            "made either way; retry. May also fail with new-scan-incomplete if a subdirectory under the "
+            "decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and "
+            "next-number allocation can't be trusted from an incomplete scan; no write was made."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -139,7 +141,15 @@ def run(args):
             # Re-reads fresh and aborts rather than scanning/writing
             # against a directory nobody uses anymore.
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
-            decisions = scan_decisions(folder, config, warnings=warnings)
+            # Round 8 stability audit, class closure: strict -- this scan
+            # feeds both title-uniqueness (find_by_unique_title, below)
+            # and next-number allocation, both real safety decisions. An
+            # unreadable subdirectory hiding an existing title or a
+            # higher number must never be silently treated as "not
+            # found" the way explore's own best-effort listing can.
+            decisions = scan_decisions(
+                folder, config, warnings=warnings, strict=True, incomplete_code="new-scan-incomplete"
+            )
 
             existing = find_by_unique_title(title, config, decisions)
             if existing is not None:

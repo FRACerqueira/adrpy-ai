@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -38,6 +39,35 @@ def _write_legacy_file(tmp_path, filename, content):
     adr_dir.mkdir(parents=True, exist_ok=True)
     (adr_dir / filename).write_bytes(content.encode("utf-8"))
     return adr_dir / filename
+
+
+def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, class closure: unlike an unreadable FILE
+    (migration-scan-failed, already fail-closed), an unreadable
+    subdirectory used to only warn -- but this scan feeds
+    already-tool-created-adrs-exist, a real safety decision (a hidden
+    already-migrated file inside it could make that check silently
+    answer "no" when the true answer is "yes"). Same fail-closed
+    treatment as its file-level sibling now."""
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001T01.md", "Legacy content\n")
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-scan-incomplete"
 
 
 def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):

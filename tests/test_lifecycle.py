@@ -582,6 +582,64 @@ def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkey
     assert str(blocked) in warnings[0]
 
 
+def test_scan_decisions_fails_closed_when_strict_and_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, class closure: round 6's own fix only
+    ever warned here, which round 8 found lets a hidden family member
+    (in an unreadable subdirectory) silently defeat safety decisions
+    built on top of this scan (family guards, next-number allocation),
+    reproducing round 7's "two live successors" corruption with no
+    concurrency needed at all. `strict=True` fails closed instead, for
+    callers that need a trustworthy result rather than a best-effort
+    listing."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        scan_decisions(adr_dir, config, strict=True, incomplete_code="probe-scan-incomplete")
+
+    assert excinfo.value.code == "probe-scan-incomplete"
+    assert str(blocked) in excinfo.value.data["unreadable"][0]
+
+
+def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, Finding 1, reproduced directly at the
+    source: family_members feeds has_superseded_sibling/has_pending_
+    sibling/latest_in_family in every per-file command's own family
+    guard -- a hidden Superseded/Pending sibling inside an unreadable
+    subdirectory must never be silently treated as "no such member"."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        family_members(adr_dir, config, 1)
+
+    assert excinfo.value.code == "family-scan-incomplete"
+
+
 def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
     """Round 6 resilience re-run, Finding B: unlike scan_decisions'
     own generic callers (a warning is enough there -- nothing unsafe

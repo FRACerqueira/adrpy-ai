@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -225,6 +226,36 @@ def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, mon
     on_disk_config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
     assert on_disk_config["folderadr"] == "doc/adrB"  # never reverted
     assert live_path.read_text(encoding="utf-8") == original_content  # never orphaned
+
+
+def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, class closure: _max_existing_numbers
+    feeds a real safety decision (lenseq/lenversion/lenrevision must fit
+    every EXISTING number) -- a hidden, higher-numbered decision inside
+    an unreadable subdirectory must never be silently under-reported."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    seed = json.loads(init._default_config_text())
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "init-existing-numbers-scan-incomplete"
 
 
 def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):

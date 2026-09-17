@@ -94,7 +94,10 @@ def describe():
                     "repository-locked, lock-lost (see this command's own top-level description), or "
                     "folderadr-changed-after-lock-acquired (a concurrent config change moved folderadr while "
                     "this call was acquiring the lock -- retry) -- never on a genuinely fresh path, which "
-                    "takes no lock at all."
+                    "takes no lock at all. May also fail with init-existing-numbers-scan-incomplete if a "
+                    "subdirectory under the decisions folder could not be scanned (permission denied or "
+                    "similar) -- the existing max number/version/revision, which lenseq/lenversion/"
+                    "lenrevision must fit, can't be trusted from an incomplete scan."
                 ),
             },
             {
@@ -336,18 +339,26 @@ def _max_existing_numbers(target, config, warnings=None):
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)
+    # Round 6 resilience re-run, Finding B, class closure: rglob above
+    # silently swallows an OSError from an unreadable subdirectory -- see
+    # find_unreadable_subdirectories' own note.
+    #
+    # Round 8 stability audit, class closure: fails closed instead of
+    # warning -- this feeds a real safety decision (lenseq/lenversion/
+    # lenrevision must fit every EXISTING number), so an under-reported
+    # max must never be silently trusted the way explore's own best-
+    # effort listing can.
+    unreadable = find_unreadable_subdirectories(folder)
+    if unreadable:
+        raise CommandError(
+            "init-existing-numbers-scan-incomplete",
+            f"Cannot safely determine existing decision numbers: {len(unreadable)} subdirectory/"
+            "subdirectories could not be scanned (permission denied or similar).",
+            data={"folder": str(folder), "unreadable": unreadable},
+            warnings=warnings,
+        )
     if warnings is not None:
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
-        # Round 6 resilience re-run, Finding B, class closure: rglob
-        # above silently swallows an OSError from an unreadable
-        # subdirectory -- see find_unreadable_subdirectories' own note.
-        unreadable = find_unreadable_subdirectories(folder)
-        if unreadable:
-            names = ", ".join(unreadable)
-            warnings.append(
-                f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
-                f"(permission denied or similar) -- this scan may be missing decision files inside them: {names}."
-            )
     return max_number, max_version, max_revision

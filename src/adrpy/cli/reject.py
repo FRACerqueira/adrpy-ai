@@ -49,7 +49,10 @@ def describe():
             "lock-lost). May instead fail with repository-locked (lock never acquired) or lock-lost (lost "
             "before the FIRST write) -- in both of those cases no write was made at all. May also fail with "
             "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
-            "this call was acquiring the lock -- no write was made either way; retry."
+            "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
+            "family-scan-incomplete if a subdirectory under the decisions folder could not be scanned "
+            "(permission denied or similar) -- family membership can't be trusted from an incomplete scan; "
+            "no write was made."
         ),
         "arguments": [
             {

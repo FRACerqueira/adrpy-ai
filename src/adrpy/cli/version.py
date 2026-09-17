@@ -43,7 +43,9 @@ def describe():
             "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
             "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry."
+            "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
+            "decisions folder could not be scanned (permission denied or similar) -- family membership "
+            "can't be trusted from an incomplete scan; no write was made."
         ),
         "arguments": [
             {

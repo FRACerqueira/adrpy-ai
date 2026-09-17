@@ -95,6 +95,17 @@ def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
     assert "refdate-before-history" not in new_refdate_arg["description"]
 
 
+def test_every_family_member_command_documents_family_scan_incomplete():
+    """Round 8 stability audit, class closure: family_members() (used by
+    every per-file command's own family guard) now fails closed on an
+    unreadable subdirectory instead of merely warning -- documented on
+    all 6 commands that call it."""
+    for name in _PER_FILE_COMMANDS:
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "family-scan-incomplete" in text, f"{name}'s describe() never mentions family-scan-incomplete"
+
+
 def test_short_flag_aliases_are_documented_in_describe():
     """Round 7 usability audit, Finding 4 (Low): every command's real
     parse_flags(aliases=...) accepts a short form (-p, -f, -t, ...), but

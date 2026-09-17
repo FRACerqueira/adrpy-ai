@@ -254,6 +254,33 @@ def test_new_rejects_path_traversal_via_title(tmp_path):
     assert not (tmp_path.parent.parent / "outside.md").exists()
 
 
+def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 8 stability audit, class closure: this scan feeds both
+    title-uniqueness (find_by_unique_title) and next-number allocation
+    -- a hidden decision inside an unreadable subdirectory must never be
+    silently treated as "not found", or a duplicate title/number could
+    be created."""
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "Some decision"])
+
+    assert excinfo.value.code == "new-scan-incomplete"
+    assert not (adr_dir / "ADR001V01-some-decision.md").exists()
+
+
 def test_new_target_directory_not_found(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path / "missing"), "--title", "X"])

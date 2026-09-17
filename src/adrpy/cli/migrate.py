@@ -62,7 +62,10 @@ def describe():
             "eligibility. Its structurally identical sibling, migration-scan-failed (`data.unreadable_file` "
             "names the one file), refuses the whole run the same way if a scanned file's header can't even "
             "be read (permission denied or similar) -- same scan phase, same all-or-nothing semantics, a "
-            "real OSError instead of a lossy decode."
+            "real OSError instead of a lossy decode. Also refuses with migration-scan-incomplete "
+            "(`data.unreadable` names the subdirectories) if a subdirectory under the decisions folder "
+            "couldn't be scanned at all -- a hidden already-migrated file inside it could make the "
+            "already-tool-created-adrs-exist check above silently answer 'no' when the true answer is 'yes'."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -177,13 +180,24 @@ def run(args):
                 # rglob above silently swallows an OSError from an
                 # unreadable subdirectory -- see
                 # find_unreadable_subdirectories' own note.
+                #
+                # Round 8 stability audit, class closure: fails closed
+                # instead of warning -- unlike explore's own best-effort
+                # listing, this scan feeds already-tool-created-adrs-
+                # exist below, a real safety decision (a hidden already-
+                # migrated file could make that check silently answer
+                # "no" when the true answer is "yes"). Same fail-closed
+                # treatment this command already gives an unreadable
+                # FILE (migration-scan-failed) -- a directory it can't
+                # enter is the identical risk, just one level up.
                 unreadable_dirs = find_unreadable_subdirectories(folder)
                 if unreadable_dirs:
-                    names = ", ".join(unreadable_dirs)
-                    warnings.append(
-                        f"{len(unreadable_dirs)} subdirectory/subdirectories under {folder} could not be "
-                        f"scanned (permission denied or similar) -- this scan may be missing decision "
-                        f"files inside them: {names}."
+                    raise CommandError(
+                        "migration-scan-incomplete",
+                        f"Cannot safely scan for existing decisions: {len(unreadable_dirs)} subdirectory/"
+                        "subdirectories could not be scanned (permission denied or similar).",
+                        data={"folder": str(folder), "unreadable": unreadable_dirs},
+                        warnings=warnings,
                     )
 
             if not entries:

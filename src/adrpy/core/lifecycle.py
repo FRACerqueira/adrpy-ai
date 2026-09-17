@@ -46,7 +46,7 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-def scan_decisions(folder, config, warnings=None):
+def scan_decisions(folder, config, warnings=None, *, strict=False, incomplete_code=None):
     """Recognizes BOTH naming schemes (Fase 6 checklist) -- every command
     that resolves "next number" or "does this title already exist" must
     consider legacy files too. Returns a list of (scheme, ParsedFileName,
@@ -55,7 +55,21 @@ def scan_decisions(folder, config, warnings=None):
     When `warnings` is given, reports (round 4 observability audit,
     Finding 3) any candidate is_within excluded because its real path
     escapes `folder`'s boundary -- previously silent, indistinguishable
-    from "no such file" to every caller."""
+    from "no such file" to every caller.
+
+    Round 8 stability audit, class closure: `strict=True` (with a
+    caller-supplied `incomplete_code`) fails closed instead of merely
+    warning when an unreadable subdirectory makes this scan untrustworthy
+    -- round 6's own fix only ever warned here, which round 8 found lets
+    a hidden family member (in an unreadable subdirectory) silently
+    defeat `family_members`'s own safety guards and `next_number`'s
+    allocation, reproducing round 7's "two live successors" corruption
+    with no concurrency needed at all. Callers feeding a real safety
+    decision from this result (family membership, next-number
+    allocation, title uniqueness) must opt into `strict`; callers only
+    reporting (explore, a generic listing) keep the existing warn-only
+    behavior -- nothing unsafe happens from an under-reported inventory
+    there."""
     if not folder.is_dir():
         return []
     # Round 4 performance front: resolved once, not once per candidate --
@@ -74,14 +88,24 @@ def scan_decisions(folder, config, warnings=None):
         if result is not None:
             scheme, parsed = result
             found.append((scheme, parsed, candidate))
+    # Round 6 resilience re-run, Finding B, class closure: rglob (used
+    # above) silently swallows an OSError from an unreadable subdirectory
+    # -- see find_unreadable_subdirectories' own note. Only computed when
+    # actually needed (strict, or warnings collected) -- same laziness as
+    # before this fix.
+    unreadable = find_unreadable_subdirectories(folder) if (strict or warnings is not None) else []
+    if unreadable and strict:
+        raise CommandError(
+            incomplete_code,
+            f"Cannot safely scan {folder}: {len(unreadable)} subdirectory/subdirectories could not be "
+            "scanned (permission denied or similar).",
+            data={"folder": str(folder), "unreadable": unreadable},
+            warnings=warnings,
+        )
     if warnings is not None:
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
-        # Round 6 resilience re-run, Finding B, class closure: rglob
-        # (used above) silently swallows an OSError from an unreadable
-        # subdirectory -- see find_unreadable_subdirectories' own note.
-        unreadable = find_unreadable_subdirectories(folder)
         if unreadable:
             names = ", ".join(unreadable)
             warnings.append(
@@ -371,9 +395,17 @@ def family_members(folder, config, number, warnings=None):
     misjudge it as a genuine pending/latest member.
 
     `warnings`, when given, is forwarded to scan_decisions -- see its own
-    note (round 4 observability audit, Finding 3)."""
+    note (round 4 observability audit, Finding 3).
+
+    Round 8 stability audit: scans strict -- every consumer of family
+    membership (has_superseded_sibling, has_pending_sibling,
+    latest_in_family, and so every per-file command's own family guard)
+    is a safety decision; an incomplete scan here is never safe to treat
+    as "no such member" the way explore's own best-effort listing can."""
     members = []
-    for _, parsed, path in scan_decisions(folder, config, warnings=warnings):
+    for _, parsed, path in scan_decisions(
+        folder, config, warnings=warnings, strict=True, incomplete_code="family-scan-incomplete"
+    ):
         if parsed.number != number:
             continue
         # Performance backlog item: only the header (12 lines) decides
