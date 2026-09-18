@@ -17,6 +17,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
     verify_folderadr_unchanged_since_lock,
@@ -53,6 +54,10 @@ def describe():
         "name": "init",
         "description": (
             "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
+            "With no --seed and no --language, seeds from the install-level config (see the "
+            "installconfig command; ADR002V01) if one has been set up on this machine, or from the "
+            "built-in default otherwise -- the install-level config not existing is the normal state "
+            "for any installation that has never run installconfig, not an error. "
             "Not safe to call concurrently on a FRESH --path with no config yet (deliberately, see "
             "doc/adr/ADR001V01-...): two simultaneous first-time calls can silently overwrite one "
             "another's config, both reporting success -- callers must ensure at most one first-time "
@@ -110,7 +115,11 @@ def describe():
                 "required": False,
                 "description": (
                     f"Built-in default language pack for header/status labels and the default template "
-                    f"(one of {SUPPORTED_LANGUAGES}); cannot be combined with --seed. Defaults to en-us."
+                    f"(one of {SUPPORTED_LANGUAGES}); cannot be combined with --seed, and cannot be used "
+                    "when an install-level config exists on this machine (both --seed and the "
+                    "install-level config are full content sources; the caller must pick one explicitly "
+                    "rather than have one silently win) -- fails with usage-error either way. Defaults to "
+                    "en-us when neither --seed nor an install-level config apply."
                 ),
             },
         ],
@@ -131,6 +140,21 @@ def run(args):
 
     if seed_arg is not None and language_arg is not None:
         raise UsageError("--language cannot be combined with --seed.")
+
+    # ADR002V01: an install-level config, when present, is an implicit
+    # seed -- the same reason --seed and --language are already mutually
+    # exclusive above applies here too (both are full content sources;
+    # the caller must pick one explicitly rather than have one silently
+    # win). Read once, before --seed is even checked below, so the same
+    # value is reused for both this check and the config-text selection
+    # further down -- never read twice.
+    install_config_text = None if seed_arg is not None else read_install_config_text()
+
+    if language_arg is not None and install_config_text is not None:
+        raise UsageError(
+            "--language cannot be used when an install-level config exists on this machine "
+            "(see the installconfig command); use --seed explicitly instead if you want to override it."
+        )
 
     if not target.is_dir():
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
@@ -155,6 +179,8 @@ def run(args):
         config_text = read_config_text(seed_path)
     elif language_arg is not None:
         config_text = _default_config_text_for_language(language_arg)
+    elif install_config_text is not None:
+        config_text = install_config_text
     else:
         config_text = _default_config_text()
 

@@ -10,25 +10,28 @@ comment below) of a leading UTF-8 BOM, which is discarded rather than
 carried through -- "preserved verbatim" refers to the body's own line
 endings and bytes otherwise, not literally its every byte.
 
-Known simplification, tracked as deferred (decision-log:
-deferred--2026-09-15--migrate--no-install-level-fallback-for-migrationpattern.md):
-the real tool falls back to an install-level shared default
-`migrationpattern` when the repo's own is empty (`config --migrate` sets
-that shared default, independent of any single repo) -- confirmed
-against MigrateCommandHandler.cs:97-105. adrpy-ai has no install-level
-config module at all (the `config` command that exists edits the repo's
-own adr-config.adrplus directly, not a separate install-level layer) --
-for now the repo's own `migrationpattern` must already be set; revisit
-once that module exists.
+If the repository's own `migrationpattern` is empty, falls back to the
+install-level config's own `migrationpattern` (see the `installconfig`
+command; ADR002V01) when one is set there, and persists the found value
+back into this repository's own `adr-config.adrplus` as part of the same
+locked write -- matching the real tool's own behavior, confirmed against
+MigrateCommandHandler.cs:97-105. The fallback lookup and persist-back
+happen AFTER the repository lock is acquired and the config is re-read
+fresh (ADR001's freshness principle), not from the pre-lock read, so a
+concurrent direct edit of the repo's own migrationpattern is never
+silently overwritten by a stale fallback decision.
 """
 
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_bytes, cleanup_orphaned_temp_files
-from adrpy.core.config import load_repo_config
+from adrpy.core.atomic_write import atomic_write_bytes, atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
+from adrpy.core.install_config import read_install_config_text
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.lifecycle import read_header_lines_with_report, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
@@ -42,8 +45,13 @@ def describe():
         "name": "migrate",
         "description": (
             "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
-            "Requires the repository's migrationpattern to already be set (see the `config` command); "
-            "fails with migration-pattern-not-configured otherwise -- true for any freshly-init'd repository. "
+            "Requires the repository's migrationpattern to be set, either directly (see the `config` "
+            "command) or via the install-level config's own fallback (see the `installconfig` command); "
+            "fails with migration-pattern-not-configured only when both are empty -- true for any "
+            "freshly-init'd repository with no install-level config set up either. "
+            "When the fallback supplies the value, it is also persisted back into this repository's own "
+            "adr-config.adrplus as part of the same locked write, so subsequent commands see it directly "
+            "without consulting the install-level config again. "
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
             "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
             "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
@@ -86,12 +94,6 @@ def run(args):
         raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
     config = load_repo_config(config_path)
 
-    if not config.migrationpattern:
-        raise CommandError(
-            "migration-pattern-not-configured",
-            "adr-config.adrplus has no migrationpattern configured.",
-        )
-
     folder = resolve_within(target, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
@@ -114,6 +116,39 @@ def run(args):
             # Round 6 stability re-run, root cause shared by 8 call
             # sites -- see cli/approve.py's own comment.
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
+
+            # ADR002V01: the fallback decision and its persist-back write
+            # both happen HERE, on the fresh post-lock config, never on
+            # the pre-lock read above -- ADR001's freshness principle,
+            # same as every other write this command (and every other
+            # mutating command) already follows. A concurrent direct
+            # `config --migrationpattern` edit racing this call is always
+            # seen fresh: if it lands first, this read already has a
+            # non-empty value and no fallback is even considered.
+            if not config.migrationpattern:
+                fallback_text = read_install_config_text()
+                fallback_pattern = parse_repo_config(fallback_text).migrationpattern if fallback_text else ""
+                if not fallback_pattern:
+                    raise CommandError(
+                        "migration-pattern-not-configured",
+                        "adr-config.adrplus has no migrationpattern configured, and the install-level "
+                        "config (see installconfig) has none either.",
+                        warnings=warnings,
+                    )
+                # Persists the found value back into the repo's own
+                # config, matching MigrateCommandHandler.cs:97-105 --
+                # covered by the same lock as the rest of this critical
+                # section, not a separate write outside it.
+                merged = asdict(config)
+                merged["migrationpattern"] = fallback_pattern
+                merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
+                config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+                lock.verify_still_held()
+                attempts = atomic_write_text(config_path, merged_text)
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
+
             entries = []  # (ParsedFileName, Path, HeaderParseResult)
             unreliable_files = []
             if folder.is_dir():

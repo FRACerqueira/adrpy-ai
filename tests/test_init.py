@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 from adrpy.cli import config, init, new
 from adrpy.core.config import load_repo_config
@@ -518,6 +519,40 @@ def test_init_rejects_unsupported_language(tmp_path):
         init.run(["--path", str(tmp_path), "--language", "klingon"])
 
     assert excinfo.value.code == "init-language-not-supported"
+
+
+def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypatch):
+    # tests/fixtures/adr-config.adrplus differs from the built-in default
+    # in activeplugins (["AdrIndexer"] vs []) -- a distinguishing field
+    # that proves this content was actually used, not a coincidence.
+    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
+
+    result = init.run(["--path", str(tmp_path)])
+
+    config_path = tmp_path / "adr-config.adrplus"
+    assert config_path.read_text(encoding="utf-8") == install_text
+    assert load_repo_config(config_path).activeplugins == ["AdrIndexer"]
+    assert result["created"][0] == str(config_path)
+
+
+def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkeypatch):
+    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
+
+    with pytest.raises(UsageError):
+        init.run(["--path", str(tmp_path), "--language", "pt-br"])
+
+
+def test_init_seed_does_not_consult_install_level_config(tmp_path, monkeypatch):
+    def _fail_if_called():
+        raise AssertionError("install-level config must not be consulted when --seed is given")
+
+    monkeypatch.setattr(init, "read_install_config_text", _fail_if_called)
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(_default_config_text(), encoding="utf-8")
+
+    init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
 
 @pytest.mark.parametrize("language", init.SUPPORTED_LANGUAGES)

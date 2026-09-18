@@ -358,6 +358,8 @@ def test_migrate_multiple_files(tmp_path):
 
 
 def test_migrate_rejects_when_pattern_not_configured(tmp_path):
+    # No install-level config either (conftest.py's autouse fixture
+    # forces this deterministically -- see its own docstring).
     init.run(["--path", str(tmp_path)])  # default config has empty migrationpattern
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
 
@@ -365,6 +367,33 @@ def test_migrate_rejects_when_pattern_not_configured(tmp_path):
         migrate.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "migration-pattern-not-configured"
+
+
+def test_migrate_falls_back_to_install_level_pattern_and_persists_it(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    fallback_text = json.dumps(_seed_config_with_pattern("N00:04T04"))
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: fallback_text)
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(tmp_path / "doc" / "adr" / "0001First.md")]
+    persisted = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert persisted.migrationpattern == "N00:04T04"
+
+
+def test_migrate_prefers_repository_pattern_over_install_level_fallback(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="N00:04T04")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    def _fail_if_called():
+        raise AssertionError("install-level config must not be consulted when the repo's own pattern is set")
+
+    monkeypatch.setattr(migrate, "read_install_config_text", _fail_if_called)
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(tmp_path / "doc" / "adr" / "0001First.md")]
 
 
 def test_migrate_rejects_when_tool_created_adr_already_exists(tmp_path):
