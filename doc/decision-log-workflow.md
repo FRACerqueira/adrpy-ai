@@ -55,7 +55,7 @@ actually an ADR in disguise.
 
 ```mermaid
 graph TD
-    NAME["Name the file:<br/>{classification}--{ISO date}--{scope}--{slug}.md"] --> STRUCT{"Which classification<br/>did step 2 pick?"}
+    NAME["Name the file:<br/>{ISO date}--{classification}--{scope}--{slug}.md"] --> STRUCT{"Which classification<br/>did step 2 pick?"}
     STRUCT -->|"audit-finding<br/>or doc-drift"| LINE1["Add the structured line:<br/>Front | Severity | Resolution | Round"]
     STRUCT -->|deferred| LINE2["Add the structured line:<br/>Reopen-when: {condition}"]
     STRUCT -->|"anything else"| WRITE
