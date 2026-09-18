@@ -1,0 +1,9 @@
+# Confirmed: migrate's persist-back write stays eager (before eligibility checks), not deferred
+
+Closes the open design question left by `2026-09-18--audit-finding--migrate--no-file-is-touched-claim-was-false-after-persist-back.md` (that entry's own doc fix -- scoping "no file is touched" to decision files -- stands; this resolves the design question it deliberately left open, with no code change).
+
+**Considered:** deferring the fallback `migrationpattern` persist-back write until after the scan/eligibility checks succeed, so a refused run genuinely touches nothing (not even `adr-config.adrplus`).
+
+**Decision, confirmed by the project owner: keep the current, eager timing.** The deciding factor is specific to this codebase's own architecture, not fidelity to the original tool alone: `config.migrationpattern` recognition (`core/naming.py`'s `parse_any_filename`) is shared by `core/lifecycle.py`'s `scan_decisions` -- the same helper `new`/`approve`/`reject`/`undo`/`supersede`/`version`/`revise` use for their own numbering and family-membership logic -- and by `init.py`/`explore.py` directly. `migrate` never renames a file; a migrated file keeps its legacy-scheme name permanently, so every future scan by any of those commands depends on `config.migrationpattern` being correctly set for the life of the repository, not just for the duration of one `migrate` call. Deferring the persist-back would leave that recognition broken for every other command run in the window between a fallback being discovered and `migrate` finally succeeding (e.g. while retrying past an unrelated per-file failure) -- a real sequence-number-collision risk if `new` (or any of the others) runs against the repo in that window, not merely a cosmetic "refused run left a side effect" concern.
+
+**No reopening condition named** -- this is a risk-accepted architectural trade-off, not a deferred item with a concrete future trigger.
