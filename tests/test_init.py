@@ -194,6 +194,39 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
     assert on_disk["folderadr"] == "doc/adr"
 
 
+def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 3: folderadr-change-scan-
+    incomplete was only ever tested at the core/lifecycle level, never
+    through this real CLI command (init's own --seed path shares the
+    same guard as config's own --folderadr)."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    seed = json.loads(init._default_config_text())
+    seed["folderadr"] = "decisions"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderadr-change-scan-incomplete"
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["folderadr"] == "doc/adr"  # nothing was written
+
+
 def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
     """Round 6 stability re-run, Finding A-1: init's own bootstrap read
     (used both to find the lock and, unrefreshed, handed straight to

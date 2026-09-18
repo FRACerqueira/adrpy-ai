@@ -638,6 +638,11 @@ def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path,
         family_members(adr_dir, config, 1)
 
     assert excinfo.value.code == "family-scan-incomplete"
+    # Round 9 test-adequacy audit, Finding 4: this assertion used to stop
+    # at the code alone, unlike its sibling tests right above/below --
+    # a mutation corrupting the unreadable list's own contents (while
+    # keeping the code correct) would have slipped through here.
+    assert str(blocked) in excinfo.value.data["unreadable"][0]
 
 
 def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):

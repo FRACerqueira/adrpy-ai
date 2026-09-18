@@ -203,13 +203,19 @@ def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
     must never let this command silently treat a hidden, higher-numbered
     decision (or a hidden family member) as "not found". supersede's own
     family_members() call (feeding has_superseded_sibling/has_pending_
-    sibling) reads the SAME folder earlier than the successor-number
-    scan and is strict too, so it's the one that actually fires first
-    here -- both checks exist because family_members succeeding doesn't
-    guarantee the later, separate scan_decisions call for the successor
-    number will too (a directory could become unreadable in between,
-    inside the same lock); this test exercises whichever fires, both are
-    "*-scan-incomplete"-shaped and both mean no write was made."""
+    sibling) reads the SAME folder earlier IN THIS COMMAND'S OWN CONTROL
+    FLOW than the successor-number scan, and is strict too -- given a
+    genuinely unreadable subdirectory (as opposed to one that becomes
+    unreadable only in the narrow window between the two scans), it
+    deterministically fires first every time. The separate, independent
+    wiring of the later successor-number scan's own incomplete_code is
+    proven on its own terms by the companion test right below (round 9
+    test-adequacy audit, Finding 2: this test's own assertion used to
+    accept either code, which meant it couldn't tell "the guard the
+    docstring says fires" from "a different guard happened to also
+    fire" -- and so didn't notice when a mutation disabled family_
+    members' own strict scan, since supersede's second, independent scan
+    coincidentally covered for it)."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -227,7 +233,7 @@ def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code in ("family-scan-incomplete", "supersede-successor-scan-incomplete")
+    assert excinfo.value.code == "family-scan-incomplete"
     assert not (adr_dir / "ADR002V01-use-postgre-sql--001.md").exists()
 
 

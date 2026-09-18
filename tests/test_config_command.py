@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 
 from adrpy.cli import config, init, new
@@ -179,6 +180,34 @@ def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path
 
     assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.folderadr == before.folderadr  # nothing was written
+
+
+def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 3: folderadr-change-scan-
+    incomplete (reject_folderadr_change_if_decisions_exist's own fail-
+    closed path) was only ever tested at the core/lifecycle level, never
+    through this real CLI command."""
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+    before = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
+
+    assert excinfo.value.code == "folderadr-change-scan-incomplete"
     after = load_repo_config(tmp_path / "adr-config.adrplus")
     assert after.folderadr == before.folderadr  # nothing was written
 

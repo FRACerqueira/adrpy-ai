@@ -174,3 +174,30 @@ def test_find_unreadable_subdirectories_reports_a_subdirectory_os_walk_cannot_en
 
     assert len(result) == 1
     assert str(blocked) in result[0]
+
+
+def test_find_unreadable_subdirectories_reports_all_of_several_blocked_at_once(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 5: every prior test here (and
+    every caller's own fail-closed test) only ever blocks ONE
+    subdirectory -- the accumulation behavior (does the list actually
+    grow past one entry, not just fire once) was never exercised."""
+    blocked_a = tmp_path / "restricted-a"
+    blocked_a.mkdir()
+    blocked_b = tmp_path / "restricted-b"
+    blocked_b.mkdir()
+
+    real_scandir = os.scandir
+    blocked_paths = {os.path.abspath(blocked_a), os.path.abspath(blocked_b)}
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) in blocked_paths:
+            raise PermissionError(13, "Access is denied", str(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    result = find_unreadable_subdirectories(tmp_path)
+
+    assert len(result) == 2
+    assert any(str(blocked_a) in entry for entry in result)
+    assert any(str(blocked_b) in entry for entry in result)
