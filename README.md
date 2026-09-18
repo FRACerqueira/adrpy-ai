@@ -143,8 +143,9 @@ This project records its own architectural decisions as it makes them:
 - [`doc/architecture.md`](doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the concurrency model, configuration layering, and the decision lifecycle, with diagrams.
 - [`doc/adr/`](doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
 - [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the reference tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
+- [`doc/decision-log-workflow.md`](doc/decision-log-workflow.md) — the step-by-step workflow (with a diagram) for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
 
-If you're evaluating this project's engineering rigor rather than just its feature set, those two folders are the primary evidence, not this README.
+If you're evaluating this project's engineering rigor rather than just its feature set, `doc/adr/` and `doc/decision-log/` are the primary evidence, not this README.
 
 ## Contributing
 

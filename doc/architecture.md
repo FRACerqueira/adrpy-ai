@@ -243,6 +243,8 @@ anywhere a caller could see it.
 - [`doc/decision-log/`](decision-log/INDEX.md) -- confirmed divergences
   from the reference tool, audit findings, and deferred/accepted
   trade-offs that did not rise to a full ADR.
+- [`doc/decision-log-workflow.md`](decision-log-workflow.md) -- how to
+  decide between an ADR and a decision-log entry, and how to write either.
 - [README's own "Relationship to AdrPlus"](../README.md#relationship-to-adrplus)
   -- what this project shares with, and deliberately does not share with,
   its reference tool.

@@ -62,9 +62,11 @@ Pull requests that add behavior with no corresponding test, or that fix a bug wi
 This project records two different kinds of durable record, and dogfoods its own tool to write the first kind:
 
 - **[`doc/adr/`](doc/adr/)** — formal Architecture Decision Records for genuinely architectural choices (a new dependency, a structural or cross-cutting design decision). Written using `adrpy` itself.
-- **[`doc/decision-log/`](doc/decision-log/INDEX.md)** — a lighter-weight log for audit findings, confirmed divergences from the original AdrPlus behavior, deferred work with a named reopening condition, and accepted trade-offs. `INDEX.md` is generated (`scripts/generate_decision_log_index.py`), never hand-edited; individual entries are also never edited after being written — a correction is a new entry, not an edit to the old one.
+- **[`doc/decision-log/`](doc/decision-log/INDEX.md)** — a lighter-weight log for audit findings, confirmed divergences from the reference tool's behavior, deferred work with a named reopening condition, and accepted trade-offs. `INDEX.md` is generated (`scripts/generate_decision_log_index.py`), never hand-edited; individual entries are also never edited after being written — a correction is a new entry, not an edit to the old one.
 
-If your pull request makes a real architectural choice or a deliberate divergence from AdrPlus's own confirmed behavior, please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
+See **[Writing a decision-log entry](doc/decision-log-workflow.md)** for the full step-by-step workflow, including which of the two this is for a given change and a diagram of the classification decision tree.
+
+If your pull request makes a real architectural choice or a deliberate divergence from the reference tool's own confirmed behavior, please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
 
 ## Commit Messages
 
@@ -84,4 +86,4 @@ Open an issue with: what you ran, what you expected, what actually happened (inc
 
 ## Requesting Features
 
-Open an issue describing the use case, not just the feature — this project ports AdrPlus's own behavior deliberately and selectively (see [Relationship to AdrPlus](README.md#relationship-to-adrplus)), so understanding *why* you need something helps decide whether it belongs here or is better left out.
+Open an issue describing the use case, not just the feature — this project ports the reference tool's own behavior deliberately and selectively (see [Relationship to AdrPlus](README.md#relationship-to-adrplus)), so understanding *why* you need something helps decide whether it belongs here or is better left out.
