@@ -5,7 +5,7 @@ import pytest
 
 from adrpy.cli import installconfig
 from adrpy.core.config import parse_repo_config
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, UsageError
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
 
@@ -93,15 +93,16 @@ def test_seed_rejects_a_missing_file(tmp_path):
     assert excinfo.value.code == "config-file-not-found"
 
 
-def test_seed_does_not_merge_with_field_flags(tmp_path):
-    """--seed replaces wholesale -- confirms a field flag passed alongside
-    --seed is simply ignored (parse_flags accepts it since it's a
-    declared optional flag), not silently applied on top, matching
-    init --seed's own precedent of ignoring co-passed field content."""
-    installconfig.run(["--seed", FIXTURE_PATH, "--prefix", "ZZZ"])
+def test_seed_combined_with_a_field_flag_raises_usage_error(tmp_path):
+    """Decision-log: 2026-09-18--audit-finding--install-config--seed-
+    plus-field-flag-misreports-updated-fields.md, resolved 2026-09-18 --
+    used to silently ignore the field flag while still reporting it as
+    applied; now errors instead, matching init's own --seed+--language
+    precedent, rather than a combination whose flag is quietly dropped."""
+    with pytest.raises(UsageError):
+        installconfig.run(["--seed", FIXTURE_PATH, "--prefix", "ZZZ"])
 
-    read_back = installconfig.run([])
-    assert read_back["config"]["prefix"] == "ADR"  # the fixture's own value, not "ZZZ"
+    assert not installconfig.resolve_install_config_path().exists()  # nothing written either
 
 
 def test_invalid_field_value_is_rejected(tmp_path):

@@ -51,7 +51,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import _BOOL_FIELDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config, read_config_text
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import resolve_install_config_path
 from adrpy.core.warnings import retry_warning
 
@@ -178,10 +178,9 @@ def describe():
                     "merging individual field flags -- same semantics as `init --seed`. The install-level "
                     "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
                     "this also covers importing one from a real AdrPlus installation's own template file "
-                    "directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed is "
-                    "silently ignored, not applied and not an error -- unlike `init`, which raises for its "
-                    "own incompatible flag combination (--seed with --language); still reported in "
-                    "`updated_fields` since --seed makes every field this call's own regardless."
+                    "directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
+                    "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "
+                    "combination (--seed with --language)."
                 ),
             },
             *[
@@ -203,6 +202,18 @@ def run(args):
     target = resolve_install_config_path()
 
     if seed_arg is not None:
+        # Decision-log: 2026-09-18--audit-finding--install-config--seed-
+        # plus-field-flag-misreports-updated-fields.md -- a co-passed
+        # field flag used to be silently ignored while still appearing
+        # in updated_fields as if applied. Now errors instead, matching
+        # init's own precedent for its incompatible flag combination
+        # (--seed + --language).
+        conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
+        if conflicting:
+            raise UsageError(
+                f"--seed cannot be combined with field flags ({', '.join(conflicting)}); "
+                "pass one or the other."
+            )
         seed_path = Path(seed_arg)
         if not seed_path.is_file():
             raise CommandError("config-file-not-found", f"File not found: {seed_arg}")
