@@ -21,7 +21,7 @@ _FRONT_SEVERITY_RE = re.compile(
 
 
 def _parse_entry(path):
-    classification, date, scope, _slug = path.stem.split("--", 3)
+    date, classification, scope, _slug = path.stem.split("--", 3)
     lines = path.read_text(encoding="utf-8").splitlines()
     heading = lines[0].lstrip("#").strip()
     front, severity, resolution = "", "", ""
@@ -57,8 +57,12 @@ def generate():
         "",
         "## How entries are named",
         "",
-        "Every file follows `{classification}--{ISO date}--{scope}--{slug}.md`:",
+        "Every file follows `{ISO date}--{classification}--{scope}--{slug}.md` "
+        "(date first so a raw directory listing already sorts chronologically, "
+        "matching this generated index's own sort order):",
         "",
+        "- **date** -- ISO date the entry was written, not necessarily when the "
+        "underlying event happened.",
         "- **classification** -- a closed vocabulary: `audit-finding` (a bug found "
         "and fixed, or a review pass's closure claim), `retraction` (a prior verdict "
         "or decision that didn't hold), `doc-drift` (a durable doc describing "
@@ -69,8 +73,6 @@ def generate():
         "(a known gap left unfixed on purpose, no reopening condition), "
         "`investigation` (a suspicion checked and found not to hold), or "
         "`process-exception` (a one-off deviation from standing process).",
-        "- **date** -- ISO date the entry was written, not necessarily when the "
-        "underlying event happened.",
         "- **scope** -- the module/command/concern the entry is about, reusing the "
         "project's own vocabulary (e.g. `lock`, `config`, `cli`).",
         "- **slug** -- a few kebab-case words identifying this specific entry; what "
