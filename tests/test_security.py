@@ -101,6 +101,34 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_junction(tmp_path
     assert excinfo.value.code == "path-outside-repository"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks -- see the Windows junction test above.")
+def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp_path):
+    """POSIX-side counterpart to the Windows junction test above -- same
+    invariant (resolve_within's own docstring claim of following real
+    symlinks), a different real filesystem construct. Closes the gap
+    named in decision-log: 2026-09-18--deferred--security--posix-
+    symlink-escape-coverage-for-resolve-within.md -- no equivalent test
+    constructed a real symlink on a POSIX host before this one. Written
+    on a Windows host (this repository's own dev machine at the time)
+    where it cannot be run -- creating a real Windows symlink here
+    requires Developer Mode or admin privileges neither present in this
+    environment (confirmed: os.symlink raised WinError 1314, "a required
+    privilege is not held by the client"), so red/green for this
+    specific test still needs to run on a real POSIX host or CI; it is
+    at least confirmed to skip cleanly rather than error on this one."""
+    base = tmp_path / "repo"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = base / "linked"
+    link.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(CommandError) as excinfo:
+        resolve_within(base, "linked/escaped.md")
+
+    assert excinfo.value.code == "path-outside-repository"
+
+
 def test_resolve_within_rejects_absolute_path_outside_repo(tmp_path, tmp_path_factory):
     other = tmp_path_factory.mktemp("elsewhere")
 
