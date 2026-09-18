@@ -566,6 +566,24 @@ def test_init_accepts_every_supported_language(tmp_path, language):
     assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
 
 
+def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(tmp_path, tmp_path_factory):
+    """Pre-existing quirk found during a round-11 usability pass (not
+    introduced by ADR002V01, neither resource file was touched this
+    session): default_repo_config.json's own `template` field used CRLF
+    line endings while every one of the 11 language packs (including
+    en-us.json, "Defaults to en-us" per init's own describe()) used bare
+    LF -- so a bare `init` and an explicit `init --language en-us`
+    produced the same prose but byte-different adr-config.adrplus files."""
+    bare_dir = tmp_path_factory.mktemp("bare")
+    lang_dir = tmp_path_factory.mktemp("lang")
+    init.run(["--path", str(bare_dir)])
+    init.run(["--path", str(lang_dir), "--language", "en-us"])
+
+    bare_template = json.loads((bare_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
+    lang_template = json.loads((lang_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
+    assert bare_template == lang_template
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_init_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     """Round 4 observability audit, Finding 3: init's own pre-existing-
