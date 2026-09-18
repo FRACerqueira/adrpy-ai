@@ -95,25 +95,27 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 
 | Command | Purpose |
 |---|---|
-| `init` | Initializes an ADR repository: writes `adr-config.adrplus` and creates the decisions folder. |
-| `new` | Creates a new decision, status `Proposed`. |
-| `approve` | Marks a `Proposed` decision `Accepted`. |
-| `reject` | Marks a `Proposed` decision `Rejected`. |
-| `undo` | Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`. |
-| `supersede` | Marks an `Accepted` decision `Superseded` and creates its successor. |
-| `version` | Creates a new major version of an `Accepted`/`Rejected` decision. |
-| `revise` | Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision. |
-| `migrate` | Adds an adrpy-compliant header to existing, hand-written decision files. |
-| `explore` | Lists every decision file in the repository, on a best-effort basis. |
-| `config` | Reads or updates an existing repository's own `adr-config.adrplus`. |
-| `installconfig` | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
-| `help` | Lists every command, or describes one of them in full. |
+| [`init`](doc/commands/init.md) | Initializes an ADR repository: writes `adr-config.adrplus` and creates the decisions folder. |
+| [`new`](doc/commands/new.md) | Creates a new decision, status `Proposed`. |
+| [`approve`](doc/commands/approve.md) | Marks a `Proposed` decision `Accepted`. |
+| [`reject`](doc/commands/reject.md) | Marks a `Proposed` decision `Rejected`. |
+| [`undo`](doc/commands/undo.md) | Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`. |
+| [`supersede`](doc/commands/supersede.md) | Marks an `Accepted` decision `Superseded` and creates its successor. |
+| [`version`](doc/commands/version.md) | Creates a new major version of an `Accepted`/`Rejected` decision. |
+| [`revise`](doc/commands/revise.md) | Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision. |
+| [`migrate`](doc/commands/migrate.md) | Adds an adrpy-compliant header to existing, hand-written decision files. |
+| [`explore`](doc/commands/explore.md) | Lists every decision file in the repository, on a best-effort basis. |
+| [`config`](doc/commands/config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
+| [`installconfig`](doc/commands/installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
+| [`help`](doc/commands/help.md) | Lists every command, or describes one of them in full. |
 
 Every command's full argument list, types, and every failure code it can return is available at any time via:
 
 ```bash
 adrpy help <command>
 ```
+
+...or as a prose reference page under [`doc/commands/`](doc/commands/README.md), one per command, generated directly from the same `describe()` contract.
 
 ## Using adrpy-ai with AI Coding Agents
 
