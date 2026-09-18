@@ -1,5 +1,7 @@
 # Sync/plugins extensibility is out of scope for this migration
 
+**Reopen-when:** a second real Python consumer of this extensibility need appears
+
 AdrPlus's plugin system (`activeplugins`/`disableplugins` config fields,
 the `IAdrPlugin` interface, the bundled `AdrIndexer` reference plugin,
 the `plugins` and `sync` commands) was not ported to adrpy-ai. The two

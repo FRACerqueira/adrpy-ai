@@ -13,24 +13,32 @@ from pathlib import Path
 
 DECISION_LOG_DIR = Path(__file__).resolve().parent.parent / "doc" / "decision-log"
 INDEX_PATH = DECISION_LOG_DIR / "INDEX.md"
+# CYCLES.md is the one deliberate hand-written exception (see the
+# decision-log skill's "Cycles" section) -- not an entry, never parsed.
+_NON_ENTRY_FILES = {INDEX_PATH.name, "CYCLES.md"}
 
 _FRONT_SEVERITY_RE = re.compile(
     r"^\*\*Front:\*\*\s*(.+?)\s*\|\s*\*\*Severity:\*\*\s*(.+?)"
     r"(?:\s*\|\s*\*\*Resolution:\*\*\s*(.+?))?"
     r"(?:\s*\|\s*\*\*Round:\*\*\s*(.+?))?\s*$"
 )
+_REOPEN_WHEN_RE = re.compile(r"^\*\*Reopen-when:\*\*\s*(.+?)\s*$")
 
 
 def _parse_entry(path):
     date, classification, scope, _slug = path.stem.split("--", 3)
     lines = path.read_text(encoding="utf-8").splitlines()
     heading = lines[0].lstrip("#").strip()
-    front, severity, resolution, round_ = "", "", "", ""
+    front, severity, resolution, round_, reopen_when = "", "", "", "", ""
     for line in lines[1:5]:
         match = _FRONT_SEVERITY_RE.match(line)
         if match:
             front, severity = match.group(1), match.group(2)
             resolution, round_ = match.group(3) or "", match.group(4) or ""
+            break
+        match = _REOPEN_WHEN_RE.match(line)
+        if match:
+            reopen_when = match.group(1)
             break
     return {
         "path": path.name,
@@ -42,6 +50,7 @@ def _parse_entry(path):
         "severity": severity,
         "resolution": resolution,
         "round": round_,
+        "reopen_when": reopen_when,
     }
 
 
@@ -49,7 +58,7 @@ def generate():
     entries = [
         _parse_entry(path)
         for path in sorted(DECISION_LOG_DIR.glob("*.md"))
-        if path.name != INDEX_PATH.name
+        if path.name not in _NON_ENTRY_FILES
     ]
     entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"]))
 
@@ -97,21 +106,25 @@ def generate():
         "and chosen by the project owner before implementation), or `Retraction` "
         "(reverses a previously confirmed decision that didn't hold).",
         "- **Round** -- a single, project-wide, ever-increasing integer identifying "
-        "the pre-release-audit round this entry belongs to. Never resets; adrpy-ai "
-        "is local-project-only for now (not yet part of the shared decision-log "
-        "skill). A human-friendly **Cycle** name grouping a range of rounds, when "
-        "one is warranted, lives separately in `doc/decision-log/CYCLES.md` -- never "
+        "the pre-release-audit round this entry belongs to. Never resets. A "
+        "human-friendly **Cycle** name grouping a range of rounds, when one is "
+        "warranted, lives separately in `doc/decision-log/CYCLES.md` -- never "
         "repeated on individual entries, and only ever assigned in hindsight once a "
         "cycle's own boundary is visible (see that file for the naming rule).",
         "",
-        "| Date | Classification | Scope | Front | Severity | Resolution | Round | Summary | File |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "`deferred` entries carry their own, different structured line instead -- "
+        "`**Reopen-when:** ...` -- the reopening condition every `deferred` entry "
+        "already has to name, structured so it can be checked mechanically without "
+        "re-reading each entry's own prose.",
+        "",
+        "| Date | Classification | Scope | Front | Severity | Resolution | Round | Reopen-when | Summary | File |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for entry in entries:
         lines.append(
             f"| {entry['date']} | {entry['classification']} | {entry['scope']} "
             f"| {entry['front']} | {entry['severity']} | {entry['resolution']} | {entry['round']} "
-            f"| {entry['summary']} | [{entry['path']}]({entry['path']}) |"
+            f"| {entry['reopen_when']} | {entry['summary']} | [{entry['path']}]({entry['path']}) |"
         )
     lines.append("")
 

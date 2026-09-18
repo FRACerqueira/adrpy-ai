@@ -1,5 +1,7 @@
 # migrate refuses immediately when migrationpattern is empty, with no install-level fallback
 
+**Reopen-when:** an install-level/app-config module exists in adrpy-ai
+
 Confirmed against `MigrateCommandHandler.cs:97-105`: when the repo's own
 `migrationpattern` is empty, the real adrplus first tries an
 install-level shared default (`config --migrate --file <json>`) before
