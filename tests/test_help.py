@@ -95,6 +95,18 @@ def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
     assert "refdate-before-history" not in new_refdate_arg["description"]
 
 
+def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
+    """Round 9 usability audit, Finding 2 (Medium): init-existing-numbers-
+    scan-incomplete used to be documented only inside the --seed
+    argument's own description, in the same breath as codes that really
+    are scoped to the already-existing-repository path -- but this one
+    fires on a genuinely fresh `init` too (no --seed needed) if a
+    decisions folder with an unreadable subdirectory already exists.
+    Moved to the top-level description, which every path shares."""
+    info = COMMANDS["init"].describe()
+    assert "init-existing-numbers-scan-incomplete" in info["description"]
+
+
 def test_every_family_member_command_documents_family_scan_incomplete():
     """Round 8 stability audit, class closure: family_members() (used by
     every per-file command's own family guard) now fails closed on an

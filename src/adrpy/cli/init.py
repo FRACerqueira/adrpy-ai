@@ -58,7 +58,13 @@ def describe():
             "another's config, both reporting success -- callers must ensure at most one first-time "
             "init runs per fresh repository path at a time. --seed overwriting an ALREADY-existing "
             "repository's config is, by contrast, protected by the same repository lock every other "
-            "write command uses (round 5 stability re-run, Finding 1)."
+            "write command uses (round 5 stability re-run, Finding 1). May fail with "
+            "init-existing-numbers-scan-incomplete if a subdirectory under the decisions folder could not "
+            "be scanned (permission denied or similar) -- the existing max number/version/revision, which "
+            "lenseq/lenversion/lenrevision must fit, can't be trusted from an incomplete scan. Unlike "
+            "every other failure documented on the --seed argument below, this one is NOT scoped to the "
+            "already-existing-repository path -- it can also fire on a genuinely fresh `init` if a "
+            "decisions folder with an unreadable subdirectory already exists under the target path."
         ),
         "arguments": [
             {
@@ -94,10 +100,8 @@ def describe():
                     "repository-locked, lock-lost (see this command's own top-level description), or "
                     "folderadr-changed-after-lock-acquired (a concurrent config change moved folderadr while "
                     "this call was acquiring the lock -- retry) -- never on a genuinely fresh path, which "
-                    "takes no lock at all. May also fail with init-existing-numbers-scan-incomplete if a "
-                    "subdirectory under the decisions folder could not be scanned (permission denied or "
-                    "similar) -- the existing max number/version/revision, which lenseq/lenversion/"
-                    "lenrevision must fit, can't be trusted from an incomplete scan."
+                    "takes no lock at all. See this command's own top-level description for "
+                    "init-existing-numbers-scan-incomplete, which is NOT scoped to this --seed path either."
                 ),
             },
             {

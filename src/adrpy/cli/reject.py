@@ -42,17 +42,18 @@ def describe():
             "(created by `supersede`), also reverts the predecessor's Superseded status -- the "
             "result's `undone_predecessor` names that file when this happens, or is null otherwise. "
             "This is two writes in sequence, not one: a failure reverting the predecessor "
-            "(superseded-predecessor-not-found, reject-predecessor-write-failed) means success=false "
-            "even though this decision's OWN status was already committed to Rejected -- that code's "
-            "own `data.file`/`data.status` names the file already mutated despite the overall failure "
-            "(a lock lost before this SECOND write also surfaces reject-predecessor-write-failed, not "
-            "lock-lost). May instead fail with repository-locked (lock never acquired) or lock-lost (lost "
-            "before the FIRST write) -- in both of those cases no write was made at all. May also fail with "
-            "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
-            "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
-            "family-scan-incomplete if a subdirectory under the decisions folder could not be scanned "
-            "(permission denied or similar) -- family membership can't be trusted from an incomplete scan; "
-            "no write was made."
+            "(superseded-predecessor-not-found, reject-predecessor-write-failed, or -- if the scan for the "
+            "predecessor's own family hits an unreadable subdirectory -- family-scan-incomplete) means "
+            "success=false even though this decision's OWN status was already committed to Rejected -- "
+            "each of those three codes' own `data.file`/`data.status` names the file already mutated "
+            "despite the overall failure (a lock lost before this SECOND write also surfaces "
+            "reject-predecessor-write-failed, not lock-lost). May instead fail with repository-locked "
+            "(lock never acquired) or lock-lost (lost before the FIRST write) -- in both of those cases no "
+            "write was made at all. May also fail with folderadr-changed-after-lock-acquired if a "
+            "concurrent config change moved folderadr while this call was acquiring the lock -- no write "
+            "was made either way; retry. May also fail with family-scan-incomplete BEFORE the first write "
+            "(this decision's own family scan, unrelated to the predecessor lookup above) if a "
+            "subdirectory under the decisions folder could not be scanned -- no write made in that case."
         ),
         "arguments": [
             {
@@ -138,7 +139,27 @@ def run(args):
 
             undone_predecessor = None
             if filename_info.superseded_from is not None:
-                pred_members = family_members(folder, config, filename_info.superseded_from, warnings=warnings)
+                try:
+                    pred_members = family_members(
+                        folder, config, filename_info.superseded_from, warnings=warnings
+                    )
+                except CommandError as error:
+                    # Round 9 usability audit, Finding 1: this scan runs
+                    # AFTER the primary write above already committed --
+                    # unlike every other family_members call in this
+                    # codebase, all of which run before their command's
+                    # own first write. family_members' own
+                    # family-scan-incomplete carries no `data.file`/
+                    # `data.status`, unlike this command's other two
+                    # second-phase codes -- re-raise with that same
+                    # partial-success shape instead of leaving the
+                    # caller to infer it from `warnings` alone.
+                    raise CommandError(
+                        error.code,
+                        str(error),
+                        data={"file": str(path), "status": "Rejected"},
+                        warnings=warnings,
+                    ) from error
                 # Round 7 stability audit, Finding 2: latest_in_family picks
                 # whichever sibling has the highest (version, revision) --
                 # not necessarily the one this successor actually came from.

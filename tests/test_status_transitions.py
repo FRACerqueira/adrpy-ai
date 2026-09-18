@@ -765,6 +765,75 @@ def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_su
     assert "|Superseded|Superseded" in v01_path.read_text(encoding="utf-8"), "V01 must stay untouched"
 
 
+def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_incomplete(tmp_path, monkeypatch):
+    """Round 9 usability audit, Finding 1 (HIGH): the predecessor-family
+    scan runs AFTER the primary write (marking this file Rejected) has
+    already committed -- unlike every other family_members call in this
+    codebase, which all run before their command's own first write. The
+    bare family-scan-incomplete family_members raises carries no
+    data.file/data.status, unlike this command's other two second-phase
+    codes -- reject now re-raises it with that same partial-success
+    shape instead of leaving the caller to infer it from `warnings`
+    alone."""
+    tmp_path, _ = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    predecessor_path = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        predecessor_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="002",
+    )
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path,
+        cfg,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 3),
+    )
+
+    from adrpy.cli import reject as reject_module
+
+    real_family_members = reject_module.family_members
+    calls = {"count": 0}
+
+    def flaky_family_members(folder, config, number, warnings=None):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return real_family_members(folder, config, number, warnings=warnings)
+        raise CommandError(
+            "family-scan-incomplete",
+            "Cannot safely scan: 1 subdirectory could not be scanned.",
+            data={"folder": str(folder), "unreadable": [str(folder / "restricted")]},
+            warnings=warnings,
+        )
+
+    monkeypatch.setattr(reject_module, "family_members", flaky_family_members)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.data["file"] == str(successor_path)
+    assert excinfo.value.data["status"] == "Rejected"
+    # The primary write really did commit despite the overall failure.
+    assert "Rejected (2026-01-04)" in successor_path.read_text(encoding="utf-8")
+    assert calls["count"] == 2
+
+
 # ---- undo ----
 
 
