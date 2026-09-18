@@ -140,6 +140,7 @@ adrpy-ai is a Python re-implementation of [AdrPlus](https://github.com/FRACerque
 
 This project records its own architectural decisions as it makes them:
 
+- [`doc/architecture.md`](doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the concurrency model, configuration layering, and the decision lifecycle, with diagrams.
 - [`doc/adr/`](doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
 - [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the reference tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
 
