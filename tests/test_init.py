@@ -544,6 +544,37 @@ def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkey
         init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
 
+def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
+    """Round 11 stability pass, Low finding: the install-level config
+    read used to run unconditionally before target.is_dir() -- a
+    corrupted per-user file masked the real, relevant error with an
+    unrelated schema-validation failure."""
+
+    def _raise_corrupted():
+        raise CommandError("config-invalid-json", "simulated corruption")
+
+    monkeypatch.setattr(init, "read_install_config_text", _raise_corrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path / "does-not-exist")])
+
+    assert excinfo.value.code == "target-directory-not-found"
+
+
+def test_config_already_exists_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
+    init.run(["--path", str(tmp_path)])
+
+    def _raise_corrupted():
+        raise CommandError("config-invalid-json", "simulated corruption")
+
+    monkeypatch.setattr(init, "read_install_config_text", _raise_corrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "config-already-exists"
+
+
 def test_init_seed_does_not_consult_install_level_config(tmp_path, monkeypatch):
     def _fail_if_called():
         raise AssertionError("install-level config must not be consulted when --seed is given")

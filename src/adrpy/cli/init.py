@@ -93,7 +93,8 @@ def describe():
                 # confirmed with the user (decision-log: accepted-
                 # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
                 "description": (
-                    "Path to a config JSON to seed the repository with, instead of the built-in default. "
+                    "Path to a config JSON to seed the repository with, instead of the install-level "
+                    "config (see the installconfig command) or the built-in default. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
                     "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. "
                     "If the seed's own folderadr differs from the current one AND the OLD folder already has "
@@ -141,21 +142,6 @@ def run(args):
     if seed_arg is not None and language_arg is not None:
         raise UsageError("--language cannot be combined with --seed.")
 
-    # ADR002V01: an install-level config, when present, is an implicit
-    # seed -- the same reason --seed and --language are already mutually
-    # exclusive above applies here too (both are full content sources;
-    # the caller must pick one explicitly rather than have one silently
-    # win). Read once, before --seed is even checked below, so the same
-    # value is reused for both this check and the config-text selection
-    # further down -- never read twice.
-    install_config_text = None if seed_arg is not None else read_install_config_text()
-
-    if language_arg is not None and install_config_text is not None:
-        raise UsageError(
-            "--language cannot be used when an install-level config exists on this machine "
-            "(see the installconfig command); use --seed explicitly instead if you want to override it."
-        )
-
     if not target.is_dir():
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
 
@@ -171,6 +157,25 @@ def run(args):
     # prompt when no --seed is given to bypass it.
     if config_already_existed and seed_arg is None:
         raise CommandError("config-already-exists", f"Configuration file already exists at: {config_path}")
+
+    # ADR002V01: an install-level config, when present, is an implicit
+    # seed -- the same reason --seed and --language are already mutually
+    # exclusive above applies here too (both are full content sources;
+    # the caller must pick one explicitly rather than have one silently
+    # win). Deliberately read here, not earlier: round 11 stability pass
+    # -- this is real file I/O plus schema validation against a file the
+    # caller never named, and on every path above this point it's either
+    # unreachable (seed_arg given, forces None below regardless) or would
+    # have already raised for an unrelated reason -- a corrupted
+    # install-level config must never mask target-directory-not-found or
+    # config-already-exists with an unrelated schema error.
+    install_config_text = None if seed_arg is not None else read_install_config_text()
+
+    if language_arg is not None and install_config_text is not None:
+        raise UsageError(
+            "--language cannot be used when an install-level config exists on this machine "
+            "(see the installconfig command); use --seed explicitly instead if you want to override it."
+        )
 
     if seed_arg is not None:
         seed_path = Path(seed_arg)
