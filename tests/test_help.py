@@ -63,7 +63,7 @@ def test_new_supersede_and_version_document_the_forbidden_character_constraint()
         "new": ("title", "domain", "scope"),
         "supersede": ("domain", "scope"),
         "version": ("domain", "scope"),
-        "log": ("scope", "summary"),
+        "log": ("summary",),
     }
     for name, fields in checks.items():
         info = COMMANDS[name].describe()

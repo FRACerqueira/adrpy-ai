@@ -16,13 +16,20 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.decision_log import (
     CLASSIFICATIONS,
     DEFERRED_CLASSIFICATION,
+    RESOLUTIONS,
+    SEVERITIES,
     STRUCTURED_CLASSIFICATIONS,
     build_entry_content,
     build_filename,
     decision_log_dir_for,
-    next_round,
+    max_existing_round,
+    parse_round,
     regenerate_index,
     validate_classification,
+    validate_resolution,
+    validate_round_not_regressing,
+    validate_scope,
+    validate_severity,
     validate_slug,
 )
 from adrpy.core.errors import CommandError, UsageError
@@ -43,19 +50,28 @@ def describe():
             "recording that is not itself an architectural decision (see doc/decision-log-workflow.md for "
             "when to use this instead of an ADR). Owns only the mechanical part of the record -- classification, "
             "scope, slug, summary, and body are all required arguments, since this command never decides what "
-            "to log, only how to write it down once that's already been decided. May fail with "
-            "log-classification-invalid if --classification is not one of the closed set named on that "
-            "argument below, or log-slug-invalid if --slug is not valid kebab-case. May fail with "
+            "to log, only how to write it down once that's already been decided. Result shape: {\"created\": "
+            "<path written>, \"round\": <int for audit-finding/doc-drift, else null>, \"warnings\": [...]}. May "
+            "fail with log-classification-invalid if --classification is not one of the closed set named on "
+            "that argument below, log-slug-invalid if --slug is not valid kebab-case, or log-scope-invalid if "
+            "--scope is not valid kebab-case (scope becomes a literal segment of the entry's own filename, so "
+            "'/', '\\\\', and an embedded '--' are rejected, not just cosmetically discouraged). May fail with "
             "repository-locked if the repository lock could not be acquired in time, or lock-lost if it was "
             "acquired but reclaimed before the write could commit -- in both cases no write was made. May also "
             "fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr "
             "while this call was acquiring the lock -- no write was made either way; retry. May also fail with "
-            "log-entry-already-exists if an entry with the same date/classification/scope/slug already exists "
-            "-- no write was made; this is a signal the new entry is a likely duplicate or should be a "
-            "retraction of the existing one, not an accident to silently rename around. May also fail with "
-            "log-index-regeneration-failed if the entry itself was written successfully but regenerating "
-            "INDEX.md failed afterward (e.g. a permission error) -- `data.file` names the entry that was "
-            "already committed to disk despite the overall failure."
+            "log-entry-already-exists (data.file: the bare filename) if an entry with the same "
+            "date/classification/scope/slug already exists -- no write was made; this is a signal the new "
+            "entry is a likely duplicate or should be a retraction of the existing one, not an accident to "
+            "silently rename around. An existing file in the decision-log directory that doesn't match the "
+            "expected naming shape refuses to be guessed past, but WHEN this surfaces depends on "
+            "--classification: for audit-finding/doc-drift, the directory is scanned for Round allocation "
+            "before any write, so this fails cleanly as log-directory-contains-unrecognized-file with nothing "
+            "written; for every other classification, the directory is only scanned during index regeneration, "
+            "AFTER the entry write already committed, so this surfaces as log-index-regeneration-failed instead "
+            "(same as any other index-regeneration failure, e.g. a permission error) -- data.file (the full "
+            "path, unlike log-entry-already-exists' bare filename above) names the entry that was already "
+            "committed to disk despite the overall failure; the offending file's own name is in the detail text."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -64,7 +80,12 @@ def describe():
                 "alias": "-c",
                 "type": "string",
                 "required": True,
-                "description": f"One of: {', '.join(CLASSIFICATIONS)}.",
+                "description": (
+                    f"One of: {', '.join(CLASSIFICATIONS)}. audit-finding/doc-drift additionally require "
+                    "--front/--severity/--resolution (and accept optional --round); deferred additionally "
+                    "requires --reopenwhen; every other value accepts none of those four flags (usage-error "
+                    "if any are passed)."
+                ),
             },
             {
                 "name": "scope",
@@ -73,7 +94,8 @@ def describe():
                 "required": True,
                 "description": (
                     "The module/command/concern this entry is about, reusing the project's own vocabulary. "
-                    "Cannot contain '|' or a line-break-like character (field-contains-forbidden-character)."
+                    "Valid kebab-case only -- lowercase letters/digits, single hyphens, no '/', '\\', or "
+                    "embedded '--' (log-scope-invalid); becomes a literal segment of the entry's own filename."
                 ),
             },
             {
@@ -117,25 +139,42 @@ def describe():
                 "required": False,
                 "description": (
                     "Required together with --severity/--resolution, only when --classification is "
-                    "audit-finding or doc-drift; usage-error otherwise. Which review angle found this."
+                    "audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot "
+                    "contain '|' or a line-break-like character (field-contains-forbidden-character)."
                 ),
             },
             {
                 "name": "severity",
                 "type": "string",
                 "required": False,
-                "description": "One of: Low, Medium, High. Required together with --front/--resolution for audit-finding/doc-drift.",
+                "description": (
+                    f"One of: {', '.join(SEVERITIES)} (log-severity-invalid otherwise). Required together with "
+                    "--front/--resolution for audit-finding/doc-drift."
+                ),
             },
             {
                 "name": "resolution",
                 "type": "string",
                 "required": False,
                 "description": (
-                    "One of: Direct, Escalated, Retraction. Required together with --front/--severity for "
-                    "audit-finding/doc-drift. --round is never a flag -- this command computes it "
-                    "automatically (highest existing Round across audit-finding/doc-drift entries, plus one), "
-                    "the same class of allocation as an ADR's own next_number, so it can never be typed wrong "
-                    "or reused by mistake."
+                    f"One of: {', '.join(RESOLUTIONS)} (log-resolution-invalid otherwise). Required together "
+                    "with --front/--severity for audit-finding/doc-drift."
+                ),
+            },
+            {
+                "name": "round",
+                "type": "integer",
+                "required": False,
+                "description": (
+                    "Only valid when --classification is audit-finding or doc-drift; usage-error otherwise. "
+                    "Optional even then: omit it to auto-assign the next round (highest existing Round across "
+                    "audit-finding/doc-drift entries, plus one) -- the safe default when starting a new round. "
+                    "Pass it explicitly to REUSE a round already in progress (the common case: a second finding "
+                    "in the same round), which auto-assignment can never do on its own. Must be a positive "
+                    "integer (log-round-invalid) not lower than the highest Round already recorded "
+                    "(log-round-too-low) -- Round never decreases. When omitted, the result's own `warnings` "
+                    "names the round that was auto-assigned, so an accidental new-round-instead-of-reuse is "
+                    "visible immediately instead of discovered later."
                 ),
             },
             {
@@ -144,7 +183,8 @@ def describe():
                 "required": False,
                 "description": (
                     "Required, and only valid, when --classification is deferred; usage-error otherwise. The "
-                    "concrete, checkable condition that reopens this deferred item."
+                    "concrete, checkable condition that reopens this deferred item. Cannot contain '|' or a "
+                    "line-break-like character (field-contains-forbidden-character)."
                 ),
             },
         ],
@@ -155,7 +195,7 @@ def run(args):
     flags = parse_flags(
         args,
         required=("path", "classification", "scope", "slug", "summary", "body"),
-        optional=("refdate",) + _STRUCTURED_FIELDS + ("reopenwhen",),
+        optional=("refdate",) + _STRUCTURED_FIELDS + ("round", "reopenwhen"),
         aliases={"p": "path", "c": "classification", "s": "scope", "r": "refdate"},
     )
     target = Path(flags["path"])
@@ -166,11 +206,12 @@ def run(args):
     body = flags["body"]
 
     validate_classification(classification)
+    validate_scope(scope)
     validate_slug(slug)
-    reject_embedded_delimiter(scope, "scope")
     reject_embedded_delimiter(summary, "summary")
 
     provided_structured = [name for name in _STRUCTURED_FIELDS if name in flags]
+    provided_round = "round" in flags
     provided_reopenwhen = "reopenwhen" in flags
 
     if classification in STRUCTURED_CLASSIFICATIONS:
@@ -181,6 +222,11 @@ def run(args):
             )
         if provided_reopenwhen:
             raise UsageError(f"--reopenwhen is not valid when --classification is '{classification}'.")
+        validate_severity(flags["severity"])
+        validate_resolution(flags["resolution"])
+        for name in ("front", "severity", "resolution"):
+            reject_embedded_delimiter(flags[name], name)
+        explicit_round = parse_round(flags["round"]) if provided_round else None
     elif classification == DEFERRED_CLASSIFICATION:
         if not provided_reopenwhen:
             raise UsageError("--reopenwhen required when --classification is 'deferred'.")
@@ -189,12 +235,20 @@ def run(args):
                 f"--{'/--'.join(provided_structured)} not valid when --classification is 'deferred' "
                 "(only --reopenwhen applies)."
             )
-    elif provided_structured or provided_reopenwhen:
-        offending = provided_structured + (["reopenwhen"] if provided_reopenwhen else [])
-        raise UsageError(
-            f"--{'/--'.join(offending)} only valid when --classification is audit-finding/doc-drift "
-            f"(--front/--severity/--resolution) or deferred (--reopenwhen), not '{classification}'."
+        if provided_round:
+            raise UsageError("--round is not valid when --classification is 'deferred'.")
+        reject_embedded_delimiter(flags["reopenwhen"], "reopenwhen")
+        explicit_round = None
+    else:
+        offending = provided_structured + (["round"] if provided_round else []) + (
+            ["reopenwhen"] if provided_reopenwhen else []
         )
+        if offending:
+            raise UsageError(
+                f"--{'/--'.join(offending)} only valid when --classification is audit-finding/doc-drift "
+                f"(--front/--severity/--resolution/--round) or deferred (--reopenwhen), not '{classification}'."
+            )
+        explicit_round = None
 
     if not target.is_dir():
         raise CommandError("target-directory-not-found", f"Directory does not exist: {flags['path']}")
@@ -220,7 +274,24 @@ def run(args):
             folder = resolve_within(target, config.folderadr)
             log_dir = decision_log_dir_for(folder)
 
-            round_ = next_round(log_dir) if classification in STRUCTURED_CLASSIFICATIONS else None
+            round_ = None
+            if classification in STRUCTURED_CLASSIFICATIONS:
+                current_max = max_existing_round(log_dir)
+                if explicit_round is not None:
+                    validate_round_not_regressing(explicit_round, current_max)
+                    round_ = explicit_round
+                else:
+                    round_ = current_max + 1
+                    if current_max:
+                        warnings.append(
+                            f"Round {round_} was auto-assigned (no --round given). If this entry should "
+                            f"share the round already in progress, retry with --round {current_max} explicitly."
+                        )
+                    else:
+                        warnings.append(
+                            f"Round {round_} was auto-assigned (no --round given, and no prior round exists "
+                            "yet)."
+                        )
 
             filename = build_filename(refdate, classification, scope, slug)
             file_path = log_dir / filename
@@ -258,11 +329,15 @@ def run(args):
                 # for the same reason as the entry write above.
                 lock.verify_still_held()
                 regenerate_index(log_dir)
-            except (OSError, LockLostError) as error:
+            except (OSError, LockLostError, CommandError) as error:
                 # The entry above is already committed to disk for real --
                 # `data.file` names that partial success explicitly, the
                 # same shape reject/supersede already use for their own
-                # second-write failures.
+                # second-write failures. CommandError here is always
+                # log-directory-contains-unrecognized-file (the only one
+                # regenerate_index itself can raise) -- its own detail
+                # text already names the offending file, so it isn't
+                # duplicated into `data` alongside the entry's own path.
                 raise CommandError(
                     "log-index-regeneration-failed",
                     f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",

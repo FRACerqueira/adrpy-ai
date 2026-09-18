@@ -60,20 +60,36 @@ It owns everything mechanical in one call: constructing the filename,
 formatting the classification-specific structured line, writing the
 entry, and regenerating `INDEX.md` -- and refuses outright
 (`log-entry-already-exists`) instead of silently overwriting if the
-exact same date/classification/scope/slug already exists. `--round` is
-never a flag; `adrpy log` computes it itself (highest existing `Round`
-across `audit-finding`/`doc-drift` entries, plus one) so it can never be
-typed wrong or reused by mistake.
+exact same date/classification/scope/slug already exists.
+
+`--round` (audit-finding/doc-drift only) is optional: **omit it to start
+a new round** (highest existing `Round` plus one -- the safe default),
+or **pass it explicitly to reuse a round already in progress** (the
+common case: a second finding in the same round -- `Round` is genuinely
+meant to repeat across several entries, per `INDEX.md`'s own header).
+`adrpy log` cannot know on its own whether a given call is a continuation
+or a fresh start -- that context only exists on your side -- so when
+`--round` is omitted, the result's own `warnings` always names the round
+that was auto-assigned, visible immediately instead of discovered later
+if it was actually meant to be a continuation. Passing a `--round` lower
+than the highest one already recorded is rejected (`log-round-too-low`)
+-- `Round` never decreases.
 
 ```bash
 # Most classifications: no structured line
 adrpy log --path . --classification scope-note --scope lock --slug clarify-timeout-behavior \
   --summary "Clarify what happens on timeout" --body "The full explanation goes here."
 
-# audit-finding / doc-drift: --front/--severity/--resolution required together
+# audit-finding / doc-drift: --front/--severity/--resolution required together;
+# --round omitted here starts a new round (and warns with the number it picked)
 adrpy log --path . --classification audit-finding --scope lock --slug retry-loop-off-by-one \
   --summary "Retry loop stopped one attempt short" --body "Details of the fix." \
   --front "test-adequacy audit" --severity Medium --resolution Direct
+
+# A second finding in that SAME round: pass --round explicitly to reuse it
+adrpy log --path . --classification audit-finding --scope config --slug off-by-one-here-too \
+  --summary "The same off-by-one, in a second module" --body "Details of the fix." \
+  --front "test-adequacy audit" --severity Low --resolution Direct --round 12
 
 # deferred: --reopenwhen required instead
 adrpy log --path . --classification deferred --scope security --slug posix-symlink-coverage \

@@ -1,6 +1,7 @@
 from adrpy.cli import init, log
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.lock import LockLostError
 
 import pytest
 
@@ -204,7 +205,10 @@ def test_log_rejects_a_deferred_entry_missing_reopenwhen(tmp_path):
         )
 
 
-def test_log_rejects_forbidden_character_in_scope_or_summary(tmp_path):
+def test_log_rejects_a_non_kebab_case_scope(tmp_path):
+    """scope becomes a literal filename segment -- '|' (and '/', '\\',
+    a double-hyphen) is rejected by the same kebab-case check as slug,
+    not merely by the generic forbidden-delimiter check summary uses."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -214,7 +218,11 @@ def test_log_rejects_forbidden_character_in_scope_or_summary(tmp_path):
                 "--summary", "x", "--body", "x",
             ]
         )
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "log-scope-invalid"
+
+
+def test_log_rejects_forbidden_character_in_summary(tmp_path):
+    _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
         log.run(
@@ -304,3 +312,315 @@ def test_log_rejects_a_future_refdate(tmp_path):
         )
 
     assert excinfo.value.code == "refdate-in-future"
+
+
+def test_log_reports_lock_lost_the_same_way_as_an_oserror_during_index_regeneration(tmp_path, monkeypatch):
+    """The exact regression class this codebase already hit once, in
+    supersede.py (tests/test_supersede.py's own
+    test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_before_the_successor_write):
+    an `except OSError` alone silently bypasses the partial-success
+    handler for a LockLostError on this same second write. Confirms the
+    handler's `except (OSError, LockLostError)` tuple actually covers
+    both, not just the one exercised by the sibling OSError test above."""
+    _init_repo(tmp_path)
+
+    def flaky_regenerate_index(_log_dir):
+        raise LockLostError("simulated lock loss")
+
+    monkeypatch.setattr(log, "regenerate_index", flaky_regenerate_index)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
+            ]
+        )
+
+    assert excinfo.value.code == "log-index-regeneration-failed"
+    created = tmp_path / "doc" / "decision-log" / "2026-09-18--scope-note--lock--x.md"
+    assert excinfo.value.data == {"file": str(created)}
+    assert created.exists()
+
+
+def test_log_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
+    """retry_warning's own "succeeded only after N attempts" message had
+    no end-to-end coverage for this command -- every sibling write
+    command has this test; log was the only one missing it."""
+    _init_repo(tmp_path)
+    real_atomic_write_text = log.atomic_write_text
+
+    def flaky_atomic_write_text(*args, **kwargs):
+        real_atomic_write_text(*args, **kwargs)
+        return 3
+
+    monkeypatch.setattr(log, "atomic_write_text", flaky_atomic_write_text)
+
+    result = log.run(
+        [
+            "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+            "--summary", "x", "--body", "x",
+        ]
+    )
+
+    assert any("3 attempts" in w for w in result["warnings"])
+
+
+def test_log_warns_when_round_is_auto_assigned_with_no_prior_round(tmp_path):
+    _init_repo(tmp_path)
+
+    result = log.run(
+        [
+            "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+            "--summary", "x", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+        ]
+    )
+
+    assert result["round"] == 1
+    assert len(result["warnings"]) == 1
+    assert "auto-assigned" in result["warnings"][0]
+    assert "no prior round exists" in result["warnings"][0]
+
+
+def test_log_warns_and_suggests_reuse_when_round_is_auto_assigned_with_a_prior_round_open(tmp_path):
+    _init_repo(tmp_path)
+    log.run(
+        [
+            "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "first",
+            "--summary", "First", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+            "--round", "1",
+        ]
+    )
+
+    result = log.run(
+        [
+            "--path", str(tmp_path), "--classification", "doc-drift", "--scope", "config", "--slug", "second",
+            "--summary", "Second", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+        ]
+    )
+
+    assert result["round"] == 2
+    assert len(result["warnings"]) == 1
+    assert "Round 2 was auto-assigned" in result["warnings"][0]
+    assert "--round 1" in result["warnings"][0]
+
+
+def test_log_accepts_an_explicit_round_with_no_warning_and_no_increment(tmp_path):
+    _init_repo(tmp_path)
+    log.run(
+        [
+            "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "first",
+            "--summary", "First", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+            "--round", "1",
+        ]
+    )
+
+    result = log.run(
+        [
+            "--path", str(tmp_path), "--classification", "doc-drift", "--scope", "config", "--slug", "second",
+            "--summary", "Second", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+            "--round", "1",
+        ]
+    )
+
+    assert result["round"] == 1
+    assert result["warnings"] == []
+
+
+def test_log_rejects_an_explicit_round_lower_than_the_current_max(tmp_path):
+    _init_repo(tmp_path)
+    log.run(
+        [
+            "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "first",
+            "--summary", "First", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+            "--round", "5",
+        ]
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "doc-drift", "--scope", "config", "--slug", "second",
+                "--summary", "Second", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+                "--round", "3",
+            ]
+        )
+
+    assert excinfo.value.code == "log-round-too-low"
+    assert excinfo.value.data == {"round": 3, "current_max": 5}
+
+
+def test_log_rejects_a_non_positive_integer_round(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+                "--round", "0",
+            ]
+        )
+
+    assert excinfo.value.code == "log-round-invalid"
+
+
+def test_log_rejects_round_on_a_classification_that_does_not_use_it(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError):
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--round", "1",
+            ]
+        )
+
+
+def test_log_rejects_round_on_deferred(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError):
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "deferred", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--reopenwhen", "x", "--round", "1",
+            ]
+        )
+
+
+def test_log_rejects_severity_not_in_the_closed_set(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "x", "--severity", "Critical", "--resolution", "Direct",
+            ]
+        )
+
+    assert excinfo.value.code == "log-severity-invalid"
+
+
+def test_log_rejects_resolution_not_in_the_closed_set(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Maybe",
+            ]
+        )
+
+    assert excinfo.value.code == "log-resolution-invalid"
+
+
+def test_log_rejects_forbidden_character_in_front(tmp_path):
+    """front/severity/resolution are all embedded directly into the
+    entry's own '|'-delimited structured line and into INDEX.md's own
+    '|'-delimited table row -- but severity/resolution are also
+    constrained to a closed set (tested separately above), which already
+    excludes '|' by construction. front is the one free-text field of
+    the three, so it's the one this specific check is actually reachable
+    through."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x",
+                "--front", "bad|front", "--severity", "Low", "--resolution", "Direct",
+            ]
+        )
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_log_rejects_forbidden_character_in_reopenwhen(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "deferred", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--reopenwhen", "bad|reopenwhen",
+            ]
+        )
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_log_reports_target_directory_not_found():
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", "does-not-exist-anywhere", "--classification", "scope-note", "--scope", "lock",
+                "--slug", "x", "--summary", "x", "--body", "x",
+            ]
+        )
+
+    assert excinfo.value.code == "target-directory-not-found"
+
+
+def test_log_reports_config_not_found(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x",
+            ]
+        )
+
+    assert excinfo.value.code == "config-not-found"
+
+
+def test_log_fails_before_any_write_on_an_unrecognized_file_for_a_structured_classification(tmp_path):
+    """audit-finding/doc-drift scan the directory for max_existing_round
+    BEFORE writing anything -- an unrecognized file there is caught at
+    that point, cleanly, with no entry ever written."""
+    _init_repo(tmp_path)
+    log_dir = tmp_path / "doc" / "decision-log"
+    log_dir.mkdir(parents=True)
+    (log_dir / "not-a-real-entry-name.md").write_text("nothing useful\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "x", "--severity", "Low", "--resolution", "Direct",
+            ]
+        )
+
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+    assert not any(p.name.endswith("--lock--x.md") for p in log_dir.glob("*.md"))
+
+
+def test_log_reports_the_entry_already_written_when_an_unrecognized_file_blocks_index_regeneration(tmp_path):
+    """For a non-structured classification, the directory is only ever
+    scanned during index regeneration -- AFTER the entry write already
+    committed. An unrecognized file there is still caught, but as a
+    log-index-regeneration-failed partial success (same shape as the
+    OSError/LockLostError cases), not a clean pre-write refusal -- this
+    is genuinely different from the structured-classification case
+    above, not an inconsistency to paper over."""
+    _init_repo(tmp_path)
+    log_dir = tmp_path / "doc" / "decision-log"
+    log_dir.mkdir(parents=True)
+    (log_dir / "not-a-real-entry-name.md").write_text("nothing useful\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
+            ]
+        )
+
+    assert excinfo.value.code == "log-index-regeneration-failed"
+    created = log_dir / "2026-09-18--scope-note--lock--x.md"
+    assert excinfo.value.data == {"file": str(created)}
+    assert created.exists()  # the entry write itself really did succeed
+    assert "not-a-real-entry-name.md" in excinfo.value.detail  # the underlying cause is still named
