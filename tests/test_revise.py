@@ -43,7 +43,7 @@ def _setup_accepted_repo_with_revisions(tmp_path):
 
 
 def test_revise_still_fails_safely_when_lenrevision_races_to_zero_after_the_pre_lock_read(tmp_path, monkeypatch):
-    """Round 7 stability audit: investigated and ruled out, not a live bug
+    """Investigated and ruled out, not a live bug
     -- kept as a permanent regression test per this project's own rule
     that a checked hypothesis becomes a test. revise's early eligibility
     gate (`if config.lenrevision == 0`) reads config BEFORE the lock,
@@ -85,7 +85,7 @@ def test_revise_still_fails_safely_when_lenrevision_races_to_zero_after_the_pre_
 
 
 def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 1 (HIGH): see version's own
+    """See version's own
     equivalent test."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
@@ -109,7 +109,7 @@ def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
 
 
 def test_revise_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    """Same class as
     version's own test: revise never rewrites its own source either."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     with open(adr_path, "ab") as handle:
@@ -138,7 +138,7 @@ def test_revise_happy_path(tmp_path):
 
 
 def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""
     from adrpy.cli import revise as revise_module
 
@@ -205,7 +205,7 @@ def test_revise_rejects_when_not_accepted_or_rejected(tmp_path):
 
 
 def test_revise_rejects_when_sibling_superseded(tmp_path):
-    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    """Family-member-superseded
     is raised by hand at 8 call sites across 5 command files; revise's
     own had zero coverage. Target is R02 (latest, Accepted); a lower,
     non-latest sibling R01 carries status_change=Superseded."""
@@ -283,8 +283,7 @@ def test_revise_rejects_when_sibling_pending(tmp_path):
 
 
 def test_revise_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Round 5 test-adequacy re-run, Finding 1 (confirmed with the user):
-    superseded takes priority over pending, deliberately -- a superseded
+    """Superseded takes priority over pending, deliberately -- a superseded
     member means the WHOLE family has already been replaced, which
     blocks it regardless of any other sibling's own state. No existing
     test constructed a family with BOTH conditions true at once."""
@@ -341,7 +340,7 @@ def test_revise_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
 
 
 def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
-    """Usability audit: not-latest-version must name WHICH revision
+    """not-latest-version must name WHICH revision
     actually is the latest -- see `version`'s own equivalent test."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
@@ -358,12 +357,13 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
 
 
 def test_revise_branching_from_immediate_predecessor_of_a_rejected_latest_collides(tmp_path):
-    """Confirmed against a real `adrplus revise` run: revise's new revision
+    """Confirmed against a real run of the reference tool's own `revise`
+    command: revise's new revision
     number is always TARGET.revision+1 (never latest.revision+1, unlike
     `version`'s always-fresh latest.version+1) -- so branching off the
     revision immediately before a rejected latest recomputes that exact
     same (now-rejected-but-still-on-disk) filename and collides. This is
-    the real tool's own behavior, not a bug in this port: the branch-off
+    the reference tool's own behavior, not a bug in this port: the branch-off
     exception is only usable when the recomputed number doesn't already
     exist (e.g. branching from further back, or after the intervening
     files are otherwise gone)."""
@@ -427,7 +427,7 @@ def test_revise_rejects_refdate_in_future(tmp_path):
 
 
 def test_revise_rejects_path_traversal_via_header_title(tmp_path):
-    """Security audit F1: same class as version's own finding -- revise's
+    """Same class as version's own finding -- revise's
     new record's title also comes straight from the target's already-
     parsed header cell (never delimiter-checked on read)."""
     config_file = tmp_path / "seed-config.json"
@@ -464,7 +464,7 @@ def test_revise_end_to_end_through_main(tmp_path):
 
 
 def test_revise_describe_documents_the_lenrevision_precondition():
-    """Usability audit A9: revise fails with revision-not-configured on
+    """Revise fails with revision-not-configured on
     any freshly-init'd repository (100% of the time, not an edge case) --
     describe() never said so, so an agent only discovered this by trial
     and error."""

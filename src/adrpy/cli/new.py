@@ -1,9 +1,9 @@
-"""`new` command: creates a new decision with status Proposed (harness
-Fase 7, item 2). Ported from NewAdrCommandHandler.cs. `--open` (launches an
-external editor via the app-level `comandopenadr` setting) is permanently
-not implemented -- confirmed with the user as a deliberate divergence, not
-a gap to fill later: adrpy-ai is args-in/JSON-out for a non-interactive
-caller, with no session to hand an opened editor back to (decision-log:
+"""`new` command: creates a new decision with status Proposed. `--open`
+(would launch an external editor via an app-level setting) is permanently
+not implemented --
+a deliberate divergence, not a gap to fill later: adrpy-ai is
+args-in/JSON-out for a non-interactive caller, with no session to hand
+an opened editor back to (decision-log:
 accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 """
 
@@ -124,15 +124,12 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Concurrency audit (critical): the whole scan -> decide-next-number ->
-        # write sequence is the critical section -- two calls that both scan
-        # before either writes will otherwise compute the identical "next"
-        # number (reproduced live, 10/10 times, with two concurrent `new`
-        # calls). core/lock.py existed and was tested in isolation since
-        # Milestone 4 but was never actually wired into any command.
+        # The whole scan -> decide-next-number -> write sequence is the
+        # critical section -- two calls that both scan before either writes
+        # will otherwise compute the identical "next" number (reproduced
+        # live, 10/10 times, with two concurrent `new` calls).
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call sites:
             # `folder` above was resolved from a config read BEFORE this
             # lock -- a concurrent config change could have moved
             # folderadr in the window before the lock was actually
@@ -141,12 +138,12 @@ def run(args):
             # Re-reads fresh and aborts rather than scanning/writing
             # against a directory nobody uses anymore.
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
-            # Round 8 stability audit, class closure: strict -- this scan
-            # feeds both title-uniqueness (find_by_unique_title, below)
-            # and next-number allocation, both real safety decisions. An
-            # unreadable subdirectory hiding an existing title or a
-            # higher number must never be silently treated as "not
-            # found" the way explore's own best-effort listing can.
+            # strict=True: this scan feeds both title-uniqueness
+            # (find_by_unique_title, below) and next-number allocation,
+            # both real safety decisions. An unreadable subdirectory hiding
+            # an existing title or a higher number must never be silently
+            # treated as "not found" the way explore's own best-effort
+            # listing can.
             decisions = scan_decisions(
                 folder, config, warnings=warnings, strict=True, incomplete_code="new-scan-incomplete"
             )
@@ -190,7 +187,7 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: the canonical keyword, not the repo's configured
-    # label -- `explore` reports status_create the same way for the same
-    # file, and the two must agree even when statusnew is customized.
+    # The canonical keyword, not the repo's configured label -- `explore`
+    # reports status_create the same way for the same file, and the two
+    # must agree even when statusnew is customized.
     return {"created": str(file_path), "status": "Proposed", "warnings": warnings}

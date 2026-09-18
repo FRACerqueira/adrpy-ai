@@ -17,7 +17,7 @@ def test_succeeds_immediately_when_the_read_never_fails():
 
 
 def test_retries_a_transient_permission_error_and_then_succeeds():
-    """Round 8 test-adequacy audit, Finding 5: nothing anywhere proved
+    """Nothing anywhere proved
     this shared helper's own contract directly -- every exercise of it
     was indirect, through one specific caller's own test."""
     calls = {"count": 0}

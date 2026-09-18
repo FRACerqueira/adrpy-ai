@@ -1,5 +1,4 @@
-"""Adversarial-input safety checks (harness Fase 5, closed alongside Fase 4,
-not after)."""
+"""Adversarial-input safety checks."""
 
 import os
 from pathlib import Path
@@ -36,7 +35,7 @@ def is_within(base_dir, candidate, *, resolved_base=None):
     boundary, not fail the whole scan over it.
 
     `resolved_base`, when given, is used instead of re-resolving
-    `base_dir` (round 4 performance front: measured re-resolving the
+    `base_dir` (measured re-resolving the
     same, unchanging base directory on every candidate as 91% of
     scan_decisions's own total time in a loop scanning N candidates
     against the same folder). Optional and backward compatible -- omit
@@ -49,8 +48,7 @@ def is_within(base_dir, candidate, *, resolved_base=None):
 
 
 def find_unreadable_subdirectories(folder):
-    """Round 6 resilience re-run, Finding B, class closure: `Path.rglob`
-    (CPython's own pathlib implementation) silently swallows any
+    """`Path.rglob` (CPython's own pathlib implementation) silently swallows any
     `OSError` raised while walking a subtree -- a subfolder that becomes
     unreadable mid-scan (an ordinary ACL choice for a team-restricted
     area, something `core/lock.py`'s own module docstring already

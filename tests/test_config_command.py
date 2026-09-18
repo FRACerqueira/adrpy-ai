@@ -15,7 +15,7 @@ def _init_repo(tmp_path):
 
 
 def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Round 6 stability re-run: config's own comment claimed `current`
+    """Config's own comment claimed `current`
     (fresh, inside the lock) and `folder` (this same lock's own
     location) "both are the pre-edit state" -- that invariant didn't
     actually hold. If a concurrent process changes folderadr between
@@ -55,7 +55,7 @@ def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
 
 
 def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""
     tmp_path = _init_repo(tmp_path)
     real_atomic_write_text = config.atomic_write_text
@@ -72,9 +72,8 @@ def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(t
 
 
 def test_concurrent_config_calls_on_different_fields_do_not_lose_an_update(tmp_path, monkeypatch):
-    """Round 4 second corroboration pass (audit-stability, 2/3 and 3/3,
-    both independent): config did a read-merge-write with no lock at all
-    -- two concurrent calls editing DIFFERENT fields silently lost one of
+    """config used to do a read-merge-write with no lock at all -- two
+    concurrent calls editing DIFFERENT fields silently lost one of
     the two edits, contradicting this command's own documented contract
     ("an omitted flag preserves the repo's current value, never resets
     it"). Fixed with the same repository lock the other 8 write commands
@@ -166,7 +165,7 @@ def test_config_updates_multiple_fields_at_once(tmp_path):
 
 
 def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path):
-    """Round 5 stability re-run, Finding 5 (confirmed with the user): a
+    """A
     folderadr change is only valid when the OLD folder has no recognized
     decisions yet -- otherwise every existing decision becomes invisible
     at its old, still-real path, with nothing telling the caller. A
@@ -185,7 +184,7 @@ def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path
 
 
 def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 3: folderadr-change-scan-
+    """Folderadr-change-scan-
     incomplete (reject_folderadr_change_if_decisions_exist's own fail-
     closed path) was only ever tested at the core/lifecycle level, never
     through this real CLI command."""
@@ -227,8 +226,7 @@ def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
 
 
 def test_config_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):
-    """Round 7 resilience audit, Finding 3 (retraction of the previous
-    mkdir-AFTER-write order): the new folder is now created BEFORE the
+    """The new folder is created BEFORE the
     config write commits -- a failure creating it aborts cleanly with
     folderadr still pointing at the OLD, still-real directory, instead of
     committing the change first and leaving the repository pointing at a
@@ -286,7 +284,7 @@ def test_config_rejects_invalid_disableplugins_value(tmp_path):
 
 @pytest.mark.parametrize("value", ["True", "TRUE", " true ", "False", " FALSE "])
 def test_config_normalizes_non_canonical_disableplugins_input(tmp_path, value):
-    """Round 4 test-adequacy audit, Finding 9: --disableplugins's own
+    """--disableplugins's own
     `.strip().lower()` normalization had no test with non-canonical input
     (only exactly "true"/"false"/"maybe")."""
     tmp_path = _init_repo(tmp_path)
@@ -326,7 +324,7 @@ def test_config_rejects_invalid_merged_value_leaves_file_untouched(tmp_path):
 
 
 def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
-    """Security audit F7: '../../evil' passes the schema-level relative-
+    """'../../evil' passes the schema-level relative-
     path check (it has no drive/leading slash) but still escapes the
     repository once resolved -- unlike `init`, which validates this
     before writing, `config` wrote it straight to disk, silently
@@ -343,8 +341,8 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
 
 
 def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp_path):
-    """Usability audit A8 + achado #16 (config.py review): there was no
-    way to read the current config through the JSON contract at all (an
+    """There was no way to read the current config through the JSON
+    contract at all (an
     agent needed to know, e.g., whether lenrevision > 0 before calling
     revise, or the current migrationpattern before calling migrate), and
     `config --path X` with no field flags still rewrote (and reformatted)
@@ -392,7 +390,7 @@ def test_config_end_to_end_through_main(tmp_path):
 
 
 def test_config_describe_declares_correct_field_types():
-    """Usability audit M1: every editable field was declared "string" in
+    """Every editable field was declared "string" in
     describe(), including the 3 integer fields and the boolean --
     indistinguishable from a real string field until an agent hit
     field-not-an-integer/field-not-a-boolean by trial and error."""
@@ -406,7 +404,7 @@ def test_config_describe_declares_correct_field_types():
 
 
 def test_config_describe_documents_the_real_domain_constraints():
-    """Usability audit M2: every field's description was the tautological
+    """Every field's description was the tautological
     "New value for '<field>'." -- an agent could only discover a field's
     real domain (separator ∈ {-,_,.}, lenseq ∈ [3,6], prefix max 5
     ASCII letters, ...) by deliberately triggering the corresponding
@@ -439,7 +437,7 @@ def test_config_describe_documents_the_real_domain_constraints():
 
 
 def test_config_describe_does_not_falsely_claim_these_three_fields_are_settable_to_empty():
-    """Round 5 usability re-run, Finding 3: _field_description advertised
+    """_field_description advertised
     "may be empty" for migrationpattern/template/prefix, but every
     optional flag goes through parse_flags, which structurally rejects
     an empty string before it ever reaches the field -- this command can
@@ -453,7 +451,7 @@ def test_config_describe_does_not_falsely_claim_these_three_fields_are_settable_
 
 
 def test_config_describe_documents_the_forbidden_character_constraint():
-    """Round 5 usability re-run, Finding 4: these 16 fields all go
+    """These 16 fields all go
     through reject_embedded_delimiter on top of their length bound, but
     none of their descriptions mentioned it -- an agent following only
     the stated domain (any string <= max length, non-empty) could still
@@ -470,7 +468,7 @@ def test_config_describe_documents_the_forbidden_character_constraint():
 
 
 def test_config_describe_documents_the_asymmetric_read_write_json_shape():
-    """Round 5 usability re-run, Finding 2: a read result has a `config`
+    """A read result has a `config`
     key; a write result never does (only `updated_fields`) -- a generic
     wrapper that reads `data.config` unconditionally after any `config`
     call would KeyError on a write. Undocumented before this."""
@@ -478,7 +476,7 @@ def test_config_describe_documents_the_asymmetric_read_write_json_shape():
 
 
 def test_field_description_fails_loudly_for_a_field_it_does_not_recognize():
-    """Round 4 test-adequacy audit, Finding 10: _field_description's own
+    """_field_description's own
     fallback (`return f"New value for '{field}'."`) is unreachable today
     -- every one of the 26 fields in _EDITABLE_FIELDS hits a specific
     branch above it (confirmed by test_config_describe_documents_the_

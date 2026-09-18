@@ -7,7 +7,7 @@
 
 adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, plus migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool.
 
-A Python companion to [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
+A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
 
 ## Table of Contents
 
@@ -132,14 +132,14 @@ A repository's own settings (ADR numbering, naming scheme, header labels, status
 
 ## Relationship to AdrPlus
 
-adrpy-ai is a Python re-implementation of [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), by the same author. It is not a fork and does not share a codebase with it — command behavior was verified directly against the original's own source where fidelity mattered, and every deliberate difference (a missing feature, a changed default, a divergent error shape) is recorded in this repository's own [decision log](doc/decision-log/INDEX.md), not left undocumented. Two concrete, intentional differences worth knowing up front: adrpy-ai has no interactive wizard (everything is flag-driven), and AdrPlus's plugin system is not ported (out of scope for this project; see the decision log for why).
+adrpy-ai is a Python re-implementation of [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), by the same author. It is not a fork and does not share a codebase with it — command behavior was verified directly against the reference tool's own source where fidelity mattered, and every deliberate difference (a missing feature, a changed default, a divergent error shape) is recorded in this repository's own [decision log](doc/decision-log/INDEX.md), not left undocumented. Two concrete, intentional differences worth knowing up front: adrpy-ai has no interactive wizard (everything is flag-driven), and AdrPlus's plugin system is not ported (out of scope for this project; see the decision log for why).
 
 ## Architecture and Design Decisions
 
 This project records its own architectural decisions as it makes them:
 
 - [`doc/adr/`](doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
-- [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the original tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
+- [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the reference tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
 
 If you're evaluating this project's engineering rigor rather than just its feature set, those two folders are the primary evidence, not this README.
 

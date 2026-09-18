@@ -38,7 +38,7 @@ def test_new_creates_first_decision(tmp_path):
 
 
 def test_new_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Round 6 stability re-run, root cause shared by 8 call sites: the
+    """The
     lock's own location is derived from a config read taken before the
     lock -- if a concurrent `config --folderadr` completes in the window
     before this call's own lock is actually acquired, it locks (and
@@ -66,7 +66,7 @@ def test_new_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypat
 
 
 def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""
     _init_repo(tmp_path)
     real_atomic_write_text = new.atomic_write_text
@@ -84,7 +84,7 @@ def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Round 4 observability audit, Finding 3: closes the class through
+    """Closes the class through
     one representative write command -- new calls scan_decisions
     directly (for next_number/title-uniqueness), the same mechanism
     scan_decisions/family_members/explore/migrate/init's own tests
@@ -136,7 +136,7 @@ def test_new_rejects_duplicate_title(tmp_path):
         new.run(["--path", str(tmp_path), "--title", "use postgre sql"])
 
     assert excinfo.value.code == "title-already-exists"
-    # Usability audit round 3: the colliding filename was only ever in
+    # The colliding filename was only ever in
     # `detail` (stderr, free text), never in `data`.
     assert excinfo.value.data == {"existing_file": "ADR001V01-use-postgre-sql.md"}
 
@@ -195,9 +195,8 @@ def test_new_rejects_embedded_delimiter_in_title(tmp_path):
 
 
 def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path):
-    """Observability + resilience audits (2 independent fronts, same
-    finding): cleanup_orphaned_temp_files existed and was tested in
-    isolation since Milestone 4, but no command ever called it -- a
+    """cleanup_orphaned_temp_files existed and was tested in
+    isolation, but no command ever called it -- a
     process killed between the temp write and os.replace left the orphan
     behind forever, no cleanup, no warning."""
     _init_repo(tmp_path)
@@ -214,7 +213,7 @@ def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path
 
 
 def test_new_reports_a_reclaimed_stale_lock_as_a_warning(tmp_path):
-    """Observability audit, end-to-end: acquire_repo_lock's own reclaim
+    """acquire_repo_lock's own reclaim
     report (test_lock.py) must actually reach a real command's result,
     not just the lock module in isolation."""
     from adrpy.core.lock import LOCK_FILE_NAME
@@ -238,7 +237,7 @@ def test_new_reports_no_warnings_on_a_clean_run(tmp_path):
 
 
 def test_new_rejects_path_traversal_via_title(tmp_path):
-    """Security audit F1: build_filename embeds the (case-transformed)
+    """build_filename embeds the (case-transformed)
     title verbatim into the filename, and case transforms don't touch '/'
     or '..' -- confirmed live, a hostile --title escaped the repository
     entirely (e.g. 5 levels of "../" landed a file next to the sandbox
@@ -255,7 +254,7 @@ def test_new_rejects_path_traversal_via_title(tmp_path):
 
 
 def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, class closure: this scan feeds both
+    """This scan feeds both
     title-uniqueness (find_by_unique_title) and next-number allocation
     -- a hidden decision inside an unreadable subdirectory must never be
     silently treated as "not found", or a duplicate title/number could
@@ -308,7 +307,7 @@ def test_new_end_to_end_through_main(tmp_path):
 
 
 def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """Fidelity audit F10: real adrplus's -p/-t/-d/-s/-r; end-to-end
+    """The reference tool's -p/-t/-d/-s/-r; end-to-end
     through main(), not just parse_flags in isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS

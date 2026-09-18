@@ -1,8 +1,8 @@
-"""`reject` command: marks a Proposed decision as Rejected (harness Fase 7,
-item 4). Ported from RejectCommandHandler.cs. When the rejected decision
-was itself a successor (its filename carries a supersede suffix), the
-predecessor's Superseded status is undone too -- the attempted supersession
-failed along with the successor.
+"""`reject` command: marks a Proposed decision as Rejected. When the
+rejected decision was itself a successor
+(its filename carries a supersede suffix), the predecessor's Superseded
+status is undone too -- the attempted supersession failed along with the
+successor.
 """
 
 from adrpy.core.args import parse_flags
@@ -89,27 +89,26 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): reject held no lock at
-        # all (stability audit Finding 1, reproduced -- see approve.py's
-        # own comment). The read below now happens fresh, inside the lock.
+        # ADR001's coverage requirement (doc/adr/ADR001V01-...): the read
+        # below happens fresh, inside the lock, never from a pre-lock read.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the pre-lock
+            # read and lock acquisition -- operating against a stale folder
+            # would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-rejection.
+            # A specific reason code, not one collapsed not-eligible-for-
+            # rejection, so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_approve_or_reject(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # Performance backlog item's own pattern applied here too:
-            # pre-fetching members is also how the scan's own warnings=
-            # (round 4 observability audit, Finding 3) reach this command.
+            # Pre-fetching members here is also how the scan's own warnings
+            # (an excluded is_within candidate) reach this command.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
@@ -129,8 +128,8 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
-            # Round 4 resilience audit, Finding 1: only true once the write
-            # above has actually happened -- see approve.py's own comment.
+            # Accurate only because the write above already succeeded --
+            # the warning claims the file was rewritten.
             if encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
@@ -144,39 +143,32 @@ def run(args):
                         folder, config, filename_info.superseded_from, warnings=warnings
                     )
                 except CommandError as error:
-                    # Round 9 usability audit, Finding 1: this scan runs
-                    # AFTER the primary write above already committed --
-                    # unlike every other family_members call in this
-                    # codebase, all of which run before their command's
+                    # This scan runs AFTER the primary write above already
+                    # committed -- unlike every other family_members call in
+                    # this codebase, all of which run before their command's
                     # own first write. family_members' own
                     # family-scan-incomplete carries no `data.file`/
                     # `data.status`, unlike this command's other two
                     # second-phase codes -- re-raise with that same
-                    # partial-success shape instead of leaving the
-                    # caller to infer it from `warnings` alone.
-                    #
-                    # Round 10 stability audit, Finding 1: the original
-                    # error's own `data` (family-scan-incomplete's
-                    # `folder`/`unreadable`, naming exactly which
-                    # subdirectories couldn't be scanned) used to be
-                    # discarded wholesale here -- merged in now instead,
-                    # so this second-phase failure keeps both diagnostic
-                    # payloads, not just this command's own.
+                    # partial-success shape, merging in the original error's
+                    # own `data` (`folder`/`unreadable`) rather than
+                    # discarding it, so this second-phase failure keeps both
+                    # diagnostic payloads, not just this command's own.
                     raise CommandError(
                         error.code,
                         str(error),
                         data={**(error.data or {}), "file": str(path), "status": "Rejected"},
                         warnings=warnings,
                     ) from error
-                # Round 7 stability audit, Finding 2: latest_in_family picks
-                # whichever sibling has the highest (version, revision) --
-                # not necessarily the one this successor actually came from.
-                # Reachable whenever the predecessor's family has more than
-                # one member (e.g. an earlier `version` bump) and the
-                # superseded member isn't the latest. Match the specific
-                # member this successor's own number was stamped onto
-                # instead (mark_superseded's own superseded_by_file, a bare
-                # zero-padded sequence number, never a filename).
+                # latest_in_family picks whichever sibling has the highest
+                # (version, revision) -- not necessarily the one this
+                # successor actually came from. Reachable whenever the
+                # predecessor's family has more than one member (e.g. an
+                # earlier `version` bump) and the superseded member isn't
+                # the latest. Match the specific member this successor's
+                # own number was stamped onto instead (mark_superseded's own
+                # superseded_by_file, a bare zero-padded sequence number,
+                # never a filename).
                 successor_ref = f"{filename_info.number:0{config.lenseq}d}"
                 predecessor = next(
                     (
@@ -187,12 +179,12 @@ def run(args):
                     None,
                 )
                 if predecessor is None:
-                    # Mechanism-correctness audit round 2 (findings #3/#4): by this
-                    # point the primary write above has already succeeded for
-                    # real -- `path` genuinely is Rejected on disk. `data` names
-                    # that partial success explicitly, so a caller doesn't have to
-                    # infer it from `warnings` alone (there may be none) or
-                    # discover it only by re-reading the file itself.
+                    # By this point the primary write above has already
+                    # succeeded for real -- `path` genuinely is Rejected on
+                    # disk. `data` names that partial success explicitly, so
+                    # a caller doesn't have to infer it from `warnings`
+                    # alone (there may be none) or discover it only by
+                    # re-reading the file itself.
                     raise CommandError(
                         "superseded-predecessor-not-found",
                         f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
@@ -216,26 +208,19 @@ def run(args):
                         status=None,
                         refdate=None,
                     )
-                    # Round 4 resilience audit, Finding 1: only true once
-                    # this second write has actually happened -- see
-                    # approve.py's own comment.
+                    # Accurate only because this second write already
+                    # succeeded.
                     if pred_encoding_repaired:
                         warnings.append(encoding_repaired_warning(pred_path))
                 except (OSError, LockLostError) as error:
-                    # Mechanism-correctness audit round 3 (resilience finding
-                    # #1): by this point the primary write above has already
+                    # By this point the primary write above has already
                     # succeeded for real -- `path` genuinely is Rejected on
                     # disk. Same partial-success shape as this command's own
                     # superseded-predecessor-not-found case, just for a real
-                    # OSError instead of a missing predecessor.
-                    #
-                    # Round 5 stability re-run, Finding 3: LockLostError
-                    # used to bypass this handler entirely (only OSError
-                    # was caught), reporting a generic, dataless lock-lost
-                    # even though the primary write above already
-                    # committed for real. Reuses this command's own
-                    # existing code/data shape rather than inventing a
-                    # parallel one.
+                    # OSError or a LockLostError (both caught here, not just
+                    # OSError, so a lock lost on this second write also
+                    # reports that partial success instead of a generic,
+                    # dataless lock-lost).
                     raise CommandError(
                         "reject-predecessor-write-failed",
                         f"{pred_path}: {error}",
@@ -247,5 +232,5 @@ def run(args):
                     warnings.append(warning)
                 undone_predecessor = str(pred_path)
 
-    # Usability audit M4: canonical keyword, not the repo's configured label.
+    # Canonical keyword, not the repo's configured status label.
     return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}

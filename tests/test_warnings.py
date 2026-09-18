@@ -37,7 +37,7 @@ def test_attach_warnings_is_a_noop_when_the_error_already_carries_the_same_list(
 
 
 def test_attach_warnings_merges_a_distinct_warnings_list_in_order():
-    """Previously-zero-coverage branch (test-adequacy audit round 3): the
+    """Previously zero-coverage branch: the
     only production path that reaches here is a LockTimeoutError carrying
     its own reclaim warning, but the merge logic itself is independent of
     that -- any CommandError arriving with its OWN, distinct warnings list
@@ -51,7 +51,7 @@ def test_attach_warnings_merges_a_distinct_warnings_list_in_order():
 
 
 def test_attach_warnings_converts_a_bare_oserror_into_a_command_error():
-    """Mechanism-correctness audit round 3 (resilience finding #1): a real
+    """A real
     OSError from a write (permission denied, full disk, a PermissionError
     outlasting atomic_write's retry budget) used to bypass this mechanism
     entirely -- attach_warnings only caught CommandError -- propagating
@@ -95,7 +95,7 @@ def test_encoding_repaired_warning_names_the_path():
 
 
 def test_excluded_candidate_warning_is_none_when_nothing_excluded():
-    """Round 5 test-adequacy re-run, Finding 3: this helper (used by
+    """This helper (used by
     scan_decisions/family_members/explore/init/migrate) had zero direct
     unit tests before this -- only ever exercised indirectly, and every
     one of those indirect call sites happened to use exactly one excluded

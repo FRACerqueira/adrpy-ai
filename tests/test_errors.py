@@ -2,7 +2,7 @@ from adrpy.core.errors import CommandError, UsageError
 
 
 def test_command_error_defaults_detail_data_and_warnings_to_none():
-    """Round 4 test-adequacy audit, Finding 10: CommandError.__init__ had
+    """CommandError.__init__ had
     no direct unit test of its own -- every use in the suite is
     incidental to testing something else (a specific command's own
     behavior), never the constructor's own defaulting/fallback logic."""
@@ -42,8 +42,8 @@ def test_command_error_is_an_exception_and_carries_its_own_str_as_the_message():
 
 
 def test_usage_error_is_a_distinct_exception_type():
-    """Kept as a separate type from CommandError (harness Fase 0): the two
-    map to different fixed exit codes (2 vs 1) -- confirms it's raisable/
+    """Kept as a separate type from CommandError: the two map to
+    different fixed exit codes (2 vs 1) -- confirms it's raisable/
     catchable on its own and isn't accidentally a CommandError subclass."""
     assert issubclass(UsageError, Exception)
     assert not issubclass(UsageError, CommandError)

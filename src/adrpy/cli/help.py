@@ -10,13 +10,12 @@ def describe():
                 "name": "command",
                 "type": "string",
                 "required": False,
-                # Usability audit A3: every other command's arguments are
-                # `--flag value`, parsed by parse_flags -- this one alone
-                # is positional (`help <command>`, no `--`), matching the
-                # real tool's own `adrplus help [command]` syntax. Without
-                # this flag an agent generalizing from the other 11
-                # commands would reasonably (and wrongly) try
-                # `help --command X`.
+                # Every other command's arguments are `--flag value`,
+                # parsed by parse_flags -- this one alone is positional
+                # (`help <command>`, no `--`), a deliberate choice matching
+                # the reference tool's own equivalent command. Without this
+                # note an agent generalizing from the other commands would
+                # reasonably (and wrongly) try `help --command X`.
                 "positional": True,
                 "description": "Name of the command to describe.",
             },
@@ -35,8 +34,8 @@ def run(args):
             raise CommandError("unknown-command", f"No such command: {name}")
         return {"commands": [command.describe()], "warnings": []}
 
-    # Usability audit round 3 (finding #5): same reasoning as explore's
-    # own "warnings" key -- present unconditionally across every other
-    # command's result, even when empty, so a generic wrapper doesn't
-    # need a special case for the two read-only commands.
+    # Same reasoning as explore's own "warnings" key -- present
+    # unconditionally across every other command's result, even when
+    # empty, so a generic wrapper doesn't need a special case for the two
+    # read-only commands.
     return {"commands": [command.describe() for command in COMMANDS.values()], "warnings": []}

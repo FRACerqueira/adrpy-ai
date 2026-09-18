@@ -1,14 +1,12 @@
 """`config` command: updates fields of an existing repository's own
-`adr-config.adrplus` directly (harness Fase 7, item 8 -- reinterpreted per
-a confirmed project decision, not a port of ConfigCommandHandler.cs).
+`adr-config.adrplus` directly.
 
-Deliberate divergence from the original, escalated and confirmed with the
-user: the real `config --repository/--application/--template/--migrate`
-never edit an existing repo's own file -- only the interactive wizard (or
-`init --file`, which overwrites everything) does. adrpy-ai has no wizard
-(Fase 0), so this command exists instead: one flag per config field,
-merge/update semantics -- an omitted flag preserves the repo's current
-value, never resets it.
+Deliberate, confirmed divergence from the reference tool: its own `config
+--repository/--application/--template/--migrate` never edit an existing
+repo's own file -- only the interactive wizard (or `init --file`, which
+overwrites everything) does. adrpy-ai has no wizard, so this command
+exists instead: one flag per config field, merge/update semantics -- an
+omitted flag preserves the repo's current value, never resets it.
 
 `activeplugins` is deliberately not exposed here -- the plugin system is
 out of scope for now (confirmed decision). `disableplugins` IS exposed
@@ -54,7 +52,7 @@ _INT_FIELD_BOUNDS = {
 
 
 def _field_description(field):
-    """Usability audit M2: cites the same constants core/config.py's own
+    """Cites the same constants core/config.py's own
     validator enforces (never a hand-copied number), so a field's real
     domain is discoverable via `help config` instead of only by
     deliberately triggering the matching config-*-invalid/-too-long
@@ -64,9 +62,9 @@ def _field_description(field):
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
             "cannot be empty, absolute, or escape the repository."
         )
-    # Round 5 usability re-run, Finding 3: "may be empty" describes the
-    # STORED value's own schema rule (no cannot-be-empty validation for
-    # these 3) -- it does NOT mean this flag can set it to empty. Every
+    # "may be empty" describes the STORED value's own schema rule (no
+    # cannot-be-empty validation for these 3) -- it does NOT mean this
+    # flag can set it to empty. Every
     # optional flag goes through parse_flags, which rejects an empty
     # string outright before ever reaching the field; only `init --seed`
     # (which bypasses parse_flags, reading an arbitrary JSON file) can
@@ -94,13 +92,12 @@ def _field_description(field):
         return f"One of {config_schema.VALID_SEPARATORS}."
     if field == "casetransform":
         return f"One of {config_schema.VALID_CASE_TRANSFORMS}."
-    # Round 5 usability re-run, Finding 4: these 16 fields (4 status
-    # labels + 11 header labels + headerdisclaimer) all go through
-    # reject_embedded_delimiter (core/config.py's own validator) on top
-    # of their length bound -- previously undocumented here, so an agent
-    # following only the stated domain (any string <= max length,
-    # non-empty) could still hit config-field-contains-forbidden-
-    # character with no prior warning.
+    # These 16 fields (4 status labels + 11 header labels +
+    # headerdisclaimer) all go through reject_embedded_delimiter
+    # (core/config.py's own validator) on top of their length bound -- an
+    # agent following only the stated domain (any string <= max length,
+    # non-empty) could otherwise still hit
+    # config-field-contains-forbidden-character with no prior warning.
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
@@ -121,12 +118,11 @@ def _field_description(field):
         return f"Integer between {low} and {high} (inclusive)."
     if field == "disableplugins":
         return "'true' or 'false'."
-    # Round 4 test-adequacy audit, Finding 10: unreachable today -- every
-    # field in _EDITABLE_FIELDS hits a branch above. A silent, generic
-    # fallback here would reintroduce the exact usability regression M2
-    # already fixed (a tautological "New value for '<field>'." an agent
-    # can't learn anything from) the moment a new field is ever added to
-    # _EDITABLE_FIELDS without a matching branch -- fail loudly instead.
+    # Unreachable today -- every field in _EDITABLE_FIELDS hits a branch
+    # above. A silent, generic fallback here (a tautological "New value
+    # for '<field>'." an agent can't learn anything from) would return
+    # the moment a new field is ever added to _EDITABLE_FIELDS without a
+    # matching branch -- fail loudly instead.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
@@ -187,8 +183,7 @@ def run(args):
     # field flags) never needs the repository lock below, matching
     # explore's own precedent.
     if not any(field in flags for field in _EDITABLE_FIELDS):
-        # Usability audit A8 + a review of this command's own idempotency:
-        # there was no way to read the current config through the JSON
+        # There was no way to read the current config through the JSON
         # contract at all, and calling this with no field flags -- the
         # natural way an agent would try to "just look" -- still rewrote
         # (and reformatted) the file as a side effect of what looks like a
@@ -197,9 +192,8 @@ def run(args):
         current_fields = {field: getattr(current, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
-    # Round 4 second corroboration pass (audit-stability, 2/3 and 3/3,
-    # both independent): this command did a read-merge-write with no
-    # lock at all -- two concurrent calls editing DIFFERENT fields
+    # This command used to do a read-merge-write with no lock at all --
+    # two concurrent calls editing DIFFERENT fields
     # silently lost one of the two edits, contradicting this command's
     # own documented contract above ("an omitted flag preserves the
     # repo's current value, never resets it"). Now uses the same
@@ -224,13 +218,10 @@ def run(args):
     with attach_warnings(warnings):
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, Finding A-2: `folder` above (this
-            # lock's own location) was resolved from `bootstrap_config`,
-            # read BEFORE the lock -- the comment here used to claim
-            # `current` and `folder` "both are the pre-edit state," but
-            # nothing actually confirmed that. Re-reads fresh and aborts
-            # if folderadr already drifted, instead of trusting the
-            # assumption.
+            # `folder` above (this lock's own location) was resolved from
+            # `bootstrap_config`, read BEFORE the lock. Re-reads fresh and
+            # aborts if folderadr already drifted in that window, instead
+            # of trusting the pre-lock read.
             current = verify_folderadr_unchanged_since_lock(
                 config_path, bootstrap_config.folderadr, warnings=warnings
             )
@@ -264,7 +255,7 @@ def run(args):
             merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
             new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
 
-            # Fase 5: _is_relative_path only rejects an anchored escape ("C:\..",
+            # _is_relative_path only rejects an anchored escape ("C:\..",
             # "\\server\.."); "../../evil" is still relative and passes that check,
             # but resolves outside the repository -- validate before writing, the
             # same order `init` already uses, so a hostile --folderadr can never
@@ -272,9 +263,8 @@ def run(args):
             # would refuse with path-outside-repository until hand-fixed).
             resolve_within(target, new_config.folderadr)
 
-            # Round 5 stability re-run, Finding 5 (confirmed with the
-            # user): a folderadr change is only valid when the OLD folder
-            # has no recognized decisions yet -- otherwise every existing
+            # A folderadr change is only valid when the OLD folder has no
+            # recognized decisions yet -- otherwise every existing
             # decision becomes invisible at its old, still-real path, and
             # a command running before vs. after this write would lock
             # two different directories that never exclude each other.
@@ -285,16 +275,14 @@ def run(args):
                 folder, current.folderadr, new_config.folderadr, current, warnings=warnings
             )
 
-            # Round 7 resilience audit, Finding 3 (retraction of round 5's
-            # own mkdir-AFTER-write precedent below): creating the new
-            # folder here, BEFORE the config commits, means a failure
-            # creating it aborts cleanly with nothing yet written -- the
-            # previous order committed folderadr to disk first, so a
-            # failure creating the folder left the repository pointing at
-            # a directory that didn't exist, with no `data` naming that
-            # already-committed change, and every subsequent command
-            # failing with a generic io-error until someone noticed and
-            # retried. mkdir is otherwise harmless if the write below
+            # Creating the new folder here, BEFORE the config commits,
+            # means a failure creating it aborts cleanly with nothing yet
+            # written -- committing folderadr to disk first instead would
+            # leave the repository pointing at a directory that didn't
+            # exist, with no `data` naming that already-committed change,
+            # and every subsequent command failing with a generic io-error
+            # until someone noticed and retried. mkdir is otherwise
+            # harmless if the write below
             # still somehow fails afterward -- an unused empty folder, not
             # a real cost.
             new_folder = resolve_within(target, new_config.folderadr)

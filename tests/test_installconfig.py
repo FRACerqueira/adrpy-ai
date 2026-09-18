@@ -69,7 +69,7 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
 
 
 def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
-    """Round 11 test-adequacy pass: zero coverage existed for a --seed
+    """Zero coverage existed for a --seed
     file that exists and is readable but fails schema validation --
     mutation-confirmed that removing installconfig.py's own
     `parse_repo_config(seed_text)` validate-before-write call left every

@@ -25,17 +25,15 @@ def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     assert config_path.read_text(encoding="utf-8") == _default_config_text()
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
-    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # No test pinned the exact
     # empty-list value on a genuine happy path, only that the key exists.
     assert result["warnings"] == []
 
 
 def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
-    """Round 4 second corroboration pass (audit-stability instance 2,
-    verified live before this fix -- instance 2's own claim that this
-    escapes as a generic `internal-error` was checked and found
-    imprecise: it's actually a clean `io-error`, since FileExistsError is
-    an OSError subclass __main__.py already catches). Distinct from the
+    """Verified live: this escapes as a clean `io-error`, not a generic
+    `internal-error`, since FileExistsError is an OSError subclass
+    __main__.py already catches. Distinct from the
     already-accepted config-already-exists race (doc/adr/ADR001V01-...'s
     own addendum): that race has genuinely conflicting content between
     two calls; this one doesn't -- both processes want the exact same
@@ -68,7 +66,7 @@ def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_fold
 
 
 def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""
     real_atomic_write_text = init.atomic_write_text
 
@@ -84,7 +82,7 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 
 
 def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(tmp_path, monkeypatch):
-    """Round 5 stability re-run, Finding 1 (HIGH): `init --seed` on a
+    """`init --seed` on a
     repository that already has a config -- a documented overwrite, not a
     fresh bootstrap -- used to write completely unlocked. A concurrent
     `config` edit already committed under lock protection
@@ -171,8 +169,7 @@ def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(t
 
 
 def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path):
-    """Round 5 stability re-run, Finding 5 (confirmed with the user):
-    same class as config.py's own --folderadr guard -- --seed changing
+    """Same class as config.py's own --folderadr guard -- --seed changing
     folderadr on an already-existing repository can orphan existing
     decisions exactly the same way. Distinct from config-already-exists
     (which --seed is meant to bypass): this is about the FOLDER, not the
@@ -196,7 +193,7 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
 
 
 def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 3: folderadr-change-scan-
+    """Folderadr-change-scan-
     incomplete was only ever tested at the core/lifecycle level, never
     through this real CLI command (init's own --seed path shares the
     same guard as config's own --folderadr)."""
@@ -229,7 +226,7 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
 
 
 def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Round 6 stability re-run, Finding A-1: init's own bootstrap read
+    """Init's own bootstrap read
     (used both to find the lock and, unrefreshed, handed straight to
     the folderadr-change guard) was never refreshed inside the lock --
     reproduced live in two variants, the worse one being that the guard
@@ -263,7 +260,7 @@ def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, mon
 
 
 def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, class closure: _max_existing_numbers
+    """_max_existing_numbers
     feeds a real safety decision (lenseq/lenversion/lenrevision must fit
     every EXISTING number) -- a hidden, higher-numbered decision inside
     an unreadable subdirectory must never be silently under-reported."""
@@ -293,9 +290,8 @@ def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
 
 
 def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):
-    """Round 7 resilience audit, Finding 3 (retraction of this function's
-    own previous mkdir-AFTER-write order): the new folder is now created
-    BEFORE the config write commits -- a failure creating it aborts
+    """The new folder is created BEFORE the config write commits -- a
+    failure creating it aborts
     cleanly with the original config untouched, instead of committing the
     new folderadr first and leaving the repository pointing at a
     directory that doesn't exist."""
@@ -340,7 +336,7 @@ def test_init_with_seed_overwrites_using_custom_config(tmp_path):
     mutate"; here it meant "a config JSON to seed the repo with", a
     naming collision an agent generalizing across commands could
     reasonably get wrong. Confirmed with the user as a deliberate
-    divergence from the real tool's own `-f/--file` naming (decision-log:
+    divergence from the reference tool's own `-f/--file` naming (decision-log:
     accepted-divergence--2026-09-15--init--file-flag-renamed-to-seed.md)."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "decisions"
@@ -420,7 +416,7 @@ def test_init_rejects_digit_overflow_against_existing_decisions(tmp_path):
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "lenseq-too-small-for-existing-decisions"
-    # Usability audit round 3: the real number was only ever in `detail`
+    # The real number was only ever in `detail`
     # (stderr, free text) -- an agent automating "bump lenseq until it
     # fits" would have had to parse that text instead of reading `data`.
     assert excinfo.value.data == {"max_number": 1234, "lenseq": 3}
@@ -481,8 +477,8 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
 
 
 def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
-    """Resilience audit R3, second call site of the same class: init's own
-    --seed read used a bare read_text(encoding="utf-8") too."""
+    """A second call site of the same class: init's own --seed read used
+    a bare read_text(encoding="utf-8") too."""
     file_path = tmp_path / "custom-config.json"
     file_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
@@ -493,13 +489,12 @@ def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
 
 
 def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
-    """The real adrplus's `language` app setting (adrplus.json) doesn't
-    just affect interactive UI text -- it also picks the DEFAULT header/
-    status labels and template content baked into a newly init'd repo
-    (AdrPlusRepoConfig.cs's own field initializers read from a per-
-    culture .resx; the default template file is swapped for a per-
-    culture variant). Extracted verbatim from AdrSource's own resources,
-    never hand-translated."""
+    """The reference tool's own `language` app setting doesn't just affect
+    interactive UI text -- it also picks the DEFAULT header/status labels
+    and template content baked into a newly init'd repo (read from a
+    per-culture resource file; the default template file is swapped for
+    a per-culture variant). Extracted verbatim from the reference tool's
+    own resources, never hand-translated."""
     result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
     config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
@@ -545,7 +540,7 @@ def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkey
 
 
 def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
-    """Round 11 stability pass, Low finding: the install-level config
+    """The install-level config
     read used to run unconditionally before target.is_dir() -- a
     corrupted per-user file masked the real, relevant error with an
     unrelated schema-validation failure."""
@@ -617,7 +612,7 @@ def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(t
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_init_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Round 4 observability audit, Finding 3: init's own pre-existing-
+    """Init's own pre-existing-
     decisions scan (_max_existing_numbers) used to drop an is_within-
     excluded candidate with zero signal, same as scan_decisions/explore."""
     adr_dir = tmp_path / "doc" / "adr"

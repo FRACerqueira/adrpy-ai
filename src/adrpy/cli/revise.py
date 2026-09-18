@@ -1,10 +1,9 @@
 """`revise` command: creates a new revision (minor change) of an
-Accepted/Rejected decision (harness Fase 7, item 6). Ported from
-ReviseCommandHandler.cs. Unlike `version`, revise has no --scope/--domain
-and no --empty -- it always carries the source's content forward, and its
-scope/domain come from the TARGET file's own header (not the latest
-member's), a genuine difference confirmed against the original. --open is
-permanently not implemented (see `new.py`'s note).
+Accepted/Rejected decision. Unlike `version`, revise has no --scope/
+--domain and no --empty -- it always carries the source's content
+forward, and its scope/domain come from the TARGET file's own header,
+not the latest member's. --open is permanently not implemented (see
+`new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags
@@ -94,28 +93,26 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Concurrency audit (critical): same reasoning as `version`'s own
-        # comment -- family-state read and write must be one critical section.
-        #
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): the target's own header is
-        # now read fresh, inside the lock, instead of via load_target before
-        # it -- same freshness fix as approve/reject/undo/supersede/version.
+        # Same reasoning as `version`'s own comment -- the family-state read
+        # and write must be one critical section, and the target's own
+        # header is read fresh, inside the lock, instead of via
+        # load_target before it.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the pre-lock
+            # read and lock acquisition -- operating against a stale folder
+            # would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
-            # Round 4 resilience audit, Finding 1: revise never rewrites
-            # its own source either -- see version.py's own comment.
+            # revise never rewrites its own source either -- see version.py's
+            # own comment for why this fires right away, not after a write.
             if encoding_repaired:
                 warnings.append(encoding_repaired_source_warning(path))
 
-            # Performance backlog item: one scan, shared by all three checks
-            # below -- each used to call family_members (and so
-            # scan_decisions) on its own (3 scans per invocation).
+            # One scan shared by all three checks below, avoiding a
+            # duplicate scan_decisions call each.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
@@ -139,8 +136,8 @@ def run(args):
                     filename_info.revision or 0
                 )
                 if not allowed:
-                    # Usability audit: names the actual latest member as
-                    # structured data -- see `version`'s own comment.
+                    # Names the actual latest member as structured data --
+                    # see `version`'s own comment.
                     raise CommandError(
                         "not-latest-version",
                         "This decision is not the latest version/revision in its family.",
@@ -153,8 +150,8 @@ def run(args):
                         warnings=warnings,
                     )
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-revision.
+            # A specific reason code, not one collapsed not-eligible-for-
+            # revision, so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_version_or_revise(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
@@ -207,5 +204,5 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: canonical keyword, not the repo's configured label.
+    # Canonical keyword, not the repo's configured status label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

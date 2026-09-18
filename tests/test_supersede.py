@@ -30,7 +30,7 @@ def _setup_accepted_repo(tmp_path):
 
 
 def test_supersede_reveals_predecessor_already_superseded_when_successor_write_fails(tmp_path, monkeypatch):
-    """Mechanism-correctness audit round 3 (resilience finding #1), the
+    """Mechanism-correctness audit (resilience finding #1), the
     worst instance found: supersede marks the predecessor Superseded
     (mark_superseded, a real committed write) BEFORE writing the
     successor. If only the successor write fails with a real OSError, the
@@ -61,7 +61,7 @@ def test_supersede_reveals_predecessor_already_superseded_when_successor_write_f
 def test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_before_the_successor_write(
     tmp_path, monkeypatch
 ):
-    """Round 5 stability re-run, Finding 3: same partial-mutation risk as
+    """Same partial-mutation risk as
     the OSError test above, but for LockLostError on this command's
     SECOND write -- it used to bypass supersede-successor-write-failed's
     handler entirely (only OSError was caught there), so a caller saw the
@@ -131,9 +131,8 @@ def test_supersede_happy_path(tmp_path):
 
     successor_text = successor_path.read_text(encoding="utf-8")
     # Title comes from the predecessor's FILENAME segment (already
-    # case-transformed), not its header's prose title -- confirmed via a
-    # real adrplus supersede run (SupersedeCommandHandler uses
-    # AdrFileNameComponents.Title, not Header.Title).
+    # case-transformed), not its header's prose title -- confirmed
+    # against the reference tool's own live `supersede` run.
     assert "|File title md|use-postgre-sql|" in successor_text
     assert "|Domain|Backend|" in successor_text  # scope/domain inherited
     assert "|Scope|Data|" in successor_text
@@ -152,14 +151,14 @@ def test_supersede_can_override_scope_and_domain(tmp_path):
 
 
 def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tmp_path):
-    """Round 7 stability audit, Finding 1 (HIGH): supersede had no family-
+    """Supersede had no family-
     wide guard at all -- unlike version/revise, which both check
     has_superseded_sibling/has_pending_sibling before writing. Two
     different members of the SAME family could each be independently
     superseded, producing two live successors and two Superseded
     predecessors: exactly the corruption shape ADR001's own Decision
     Drivers name as HIGH-severity reproduced corruption, and the
-    freshness fix (round 6) does not close it -- freshness only protects
+    freshness fix does not close it -- freshness only protects
     the same-file race, not a second, different family member."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     # A second Accepted family member is a normal shape (version bumps
@@ -179,7 +178,7 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
 
 
 def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_path):
-    """Round 8 test-adequacy audit, Finding 1 (HIGH): round 7's fix added
+    """Added
     TWO co-equal guards to supersede in the same commit --
     has_superseded_sibling (covered by the test above) and
     has_pending_sibling -- but only the first ever got a test. Deleting
@@ -199,7 +198,7 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_pat
 
 
 def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, class closure: an unreadable subdirectory
+    """An unreadable subdirectory
     must never let this command silently treat a hidden, higher-numbered
     decision (or a hidden family member) as "not found". supersede's own
     family_members() call (feeding has_superseded_sibling/has_pending_
@@ -209,13 +208,7 @@ def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
     unreadable only in the narrow window between the two scans), it
     deterministically fires first every time. The separate, independent
     wiring of the later successor-number scan's own incomplete_code is
-    proven on its own terms by the companion test right below (round 9
-    test-adequacy audit, Finding 2: this test's own assertion used to
-    accept either code, which meant it couldn't tell "the guard the
-    docstring says fires" from "a different guard happened to also
-    fire" -- and so didn't notice when a mutation disabled family_
-    members' own strict scan, since supersede's second, independent scan
-    coincidentally covered for it)."""
+    proven on its own terms by the companion test right below ."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -312,7 +305,7 @@ def test_supersede_rejects_embedded_delimiter_in_scope(tmp_path):
 
 
 def test_supersede_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    """encoding_repaired_
     warning claims "the file has been rewritten... bytes are now lost" --
     false whenever the command fails before ever reaching its own write
     (mark_superseded, here blocked by the target still being Proposed)."""
@@ -343,7 +336,7 @@ def test_supersede_claims_the_rewrite_once_it_actually_happens(tmp_path):
 def test_supersede_reports_a_retry_warning_when_the_successor_write_needed_several_attempts(
     tmp_path, monkeypatch
 ):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
     supersede.py imports and calls atomic_write_text directly for the
     SUCCESSOR write (unlike the predecessor's own mark_superseded write,

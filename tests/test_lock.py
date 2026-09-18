@@ -57,17 +57,17 @@ def test_lock_times_out_on_a_fresh_lock_still_held(tmp_path):
 
 
 def test_lock_reports_when_a_stale_lock_was_reclaimed(tmp_path):
-    """Observability audit: reclaiming a stale lock (a possibly-crashed or
+    """Reclaiming a stale lock (a possibly-crashed or
     genuinely-slow process) happened completely silently -- nothing
-    anywhere reported that it occurred, even though the harness (Fase 4)
-    explicitly calls for a warning naming the two possible causes."""
+    anywhere reported that it occurred, even though a warning naming the
+    two possible causes is required."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text(f"stale-token\n{time.time() - 999}")
 
     with acquire_repo_lock(tmp_path, abandon_after=1, wait_ceiling=2, poll_interval=0.05) as lock:
         pass
 
-    # Test-adequacy audit round 4, Finding 3: this used to check only a
+    # This used to check only a
     # "stale" substring -- lock.py has TWO warning strings containing it
     # (this success-path one, and the timeout-path one below), so a
     # substring-only check couldn't actually tell them apart.
@@ -85,9 +85,8 @@ def test_lock_reports_no_warnings_when_acquired_cleanly(tmp_path):
 
 
 def test_lock_timeout_is_a_command_error(tmp_path):
-    """Resilience audit R4: LockTimeoutError was a bare Exception, so once
-    the lock is actually wired into a command (see the concurrency audit's
-    critical finding), a genuine timeout would fall through __main__'s
+    """LockTimeoutError was a bare Exception, so once the lock is
+    actually wired into a command, a genuine timeout would fall through __main__'s
     catch-all as a raw internal-error instead of a real, named failure
     code an agent could recognize and retry on."""
     from adrpy.core.errors import CommandError
@@ -103,7 +102,7 @@ def test_lock_timeout_is_a_command_error(tmp_path):
 
 
 def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
-    """Mechanism-correctness audit round 2: reclaiming a stale lock is a
+    """Reclaiming a stale lock is a
     real side effect, even when this process still can't acquire the lock
     before its own wait_ceiling expires (here: the ceiling is already
     exhausted by the time the reclaim itself finishes, on the very first
@@ -113,11 +112,9 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
     same class of bug as a command's own warnings being dropped on an
     unrelated later failure.
 
-    Test-adequacy audit round 3 raised this same concern but the fix
+    This same concern but the fix
     landed as a substring check on two distinct phrases ("timing out"/
-    "stale"), not a true exact pin as its own docstring claimed -- round
-    4's test-adequacy audit caught the drift between that claim and the
-    actual assertion. Now genuinely exact: lock.py has TWO warning
+    "stale"), not a true exact pin. Now genuinely exact: lock.py has TWO warning
     strings containing "stale" (this one, and the reclaim-then-SUCCEEDED
     one on acquire_repo_lock's success path), so only a full-string
     match can tell them apart with certainty."""
@@ -135,7 +132,7 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
 
 
 def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
-    """Resilience audit round 4, Finding 2, reproduced: a lock file left
+    """A lock file left
     partially written (0 bytes, or otherwise unparseable) by a process
     killed between os.open and a successful close used to be permanently
     unreclaimable -- _read_lock returns None for anything that doesn't
@@ -156,8 +153,7 @@ def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
 
 
 def test_reclaim_if_abandoned_returns_false_when_the_unlink_itself_fails(tmp_path, monkeypatch):
-    """Resilience/observability audit round 4, Finding 1a: _reclaim_if_
-    abandoned used to unconditionally return True regardless of whether
+    """_reclaim_if_abandoned used to unconditionally return True regardless of whether
     the unlink actually succeeded, producing a false "reclaimed" claim
     (and a false stale-lock warning) even when the stale lock file was
     still physically on disk afterward."""
@@ -184,7 +180,7 @@ def test_unlink_with_retry_returns_true_on_success(tmp_path):
 
 
 def test_unlink_with_retry_swallows_a_persistent_non_permission_oserror(tmp_path, monkeypatch):
-    """Observability audit round 4, Finding 1: _unlink_with_retry only
+    """_unlink_with_retry only
     retried/swallowed PermissionError and had no return value at all, so
     a caller (e.g. the release path in acquire_repo_lock's `finally`)
     could never tell whether the file was actually removed -- and any
@@ -204,8 +200,7 @@ def test_unlink_with_retry_swallows_a_persistent_non_permission_oserror(tmp_path
 
 
 def test_try_create_cleans_up_the_lock_file_when_the_write_fails(tmp_path, monkeypatch):
-    """Resilience audit round 4, Finding 2: unlike atomic_write_bytes
-    (hardened for this exact class in round 1), _try_create left the
+    """Unlike atomic_write_bytes, _try_create used to leave the
     just-created (empty) lock file behind on any OSError during the
     write -- the direct mechanism behind the malformed/unreclaimable
     lock file covered above."""
@@ -234,12 +229,11 @@ def test_try_create_cleans_up_the_lock_file_when_the_write_fails(tmp_path, monke
 
 
 def test_try_create_retries_a_transient_permission_error_on_open(tmp_path, monkeypatch):
-    """Round 6 stability re-run, corroborated (Finding A-3, upgraded to
-    Medium on independent corroboration -- real cross-process contention
-    reliably reproduces PermissionError on this exact os.open call,
-    ~14% collision rate under stress): this was the one lock-file
-    creation site with no tolerance at all for the same transient
-    contention window _read_lock/_unlink_with_retry already retry."""
+    """Real cross-process contention reliably reproduces PermissionError
+    on this exact os.open call (~14% collision rate under stress,
+    empirically measured) -- this was the one lock-file creation site
+    with no tolerance at all for the same transient contention window
+    _read_lock/_unlink_with_retry already retry."""
     lock_path = tmp_path / ".adrpy.lock"
     real_open = lock_module.os.open
     calls = {"count": 0}
@@ -282,7 +276,7 @@ def test_try_create_returns_false_when_the_permission_error_persists(tmp_path, m
 
 
 def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp_path, monkeypatch):
-    """Round 6 stability re-run: related gap found during A-3's
+    """Related gap found during A-3's
     corroboration, same contention class -- both path.stat() calls in
     the malformed-lock-file fallback only tolerated FileNotFoundError,
     not a transient PermissionError, which could escape this function
@@ -311,10 +305,10 @@ def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp
 
 
 def test_reclaim_if_abandoned_returns_false_when_read_lock_itself_persistently_fails(tmp_path, monkeypatch):
-    """Round 7 resilience audit, Finding 2 (Medium): _reclaim_if_abandoned's
+    """_reclaim_if_abandoned's
     own _read_lock() calls (parsed-lock branch) had no tolerance at all for
     a PERSISTENT PermissionError -- unlike its sibling path.stat() calls in
-    the malformed-lock-file fallback, hardened in round 6. A persistent
+    the malformed-lock-file fallback. A persistent
     failure here used to escape raw out of acquire_repo_lock's wait loop,
     losing the purpose-built repository-locked/lock-lost reporting this
     mechanism exists to guarantee. Ownership can't be confirmed either way
@@ -335,7 +329,7 @@ def test_reclaim_if_abandoned_returns_false_when_read_lock_itself_persistently_f
 
 
 def test_reclaim_if_abandoned_returns_false_when_only_the_second_read_lock_call_persistently_fails(tmp_path, monkeypatch):
-    """Round 8 test-adequacy audit, Finding 2 (Medium): the test above
+    """The test above
     blanket-replaces _read_lock, so the FIRST call (line 175) fails and
     the function returns False immediately -- the SECOND call site's own
     `except PermissionError` (the recheck-before-unlink, line ~191-195)
@@ -367,7 +361,7 @@ def test_reclaim_if_abandoned_returns_false_when_only_the_second_read_lock_call_
 
 
 def test_read_lock_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """Resilience audit round 4, Finding 4: _read_lock had no
+    """_read_lock had no
     PermissionError tolerance at all, unlike _unlink_with_retry/
     atomic_write_bytes in this same project, which both document this as
     a confirmed, recurring condition under heavy concurrent lock churn --
@@ -408,14 +402,14 @@ def test_read_lock_raises_when_the_permission_error_persists(tmp_path, monkeypat
 
 
 def test_lock_finally_block_survives_a_read_failure_during_release(tmp_path, monkeypatch):
-    """Round 5 stability re-run, Finding 2: _read_lock, called first in
+    """_read_lock, called first in
     acquire_repo_lock's own `finally` block to confirm ownership before
     unlinking, was only tolerant of a transient PermissionError up to its
     own retry budget -- any OSError beyond that (or any other OSError
     class, e.g. a genuine I/O failure) used to escape the `finally` block
     raw. That turns a fully successful write into a reported failure and
     skips _unlink_with_retry entirely, leaking the lock file for the full
-    ABANDON_AFTER_SECONDS window -- the exact class round 4 already closed
+    ABANDON_AFTER_SECONDS window -- the exact class Already closed
     for _unlink_with_retry itself (see its own docstring), just missing
     from its neighbor called first in this same block."""
 
@@ -455,9 +449,7 @@ def test_repo_lock_verify_still_held_passes_while_this_process_still_owns_it(tmp
 
 
 def test_repo_lock_verify_still_held_raises_lock_lost_when_the_read_itself_fails(tmp_path, monkeypatch):
-    """Round 6 stability/resilience re-run (2 independent fronts, cross-
-    corroborated -- same defect found by both, no shared context): a
-    persistent I/O failure reading the lock file during this check used
+    """A persistent I/O failure reading the lock file during this check used
     to re-raise as a bare PermissionError -- in migrate's per-candidate
     loop specifically, that meant it was caught by the per-file except
     clause and misreported as THAT candidate's own write failure, even
@@ -481,7 +473,7 @@ def test_repo_lock_verify_still_held_raises_lock_lost_when_the_read_itself_fails
 
 
 def test_repo_lock_verify_still_held_raises_lock_lost_when_the_token_changed(tmp_path):
-    """Round 4 ADR001, part 3: a different process reclaiming the lock
+    """A different process reclaiming the lock
     file mid-critical-section (simulated here directly, matching a real
     reclaim's own effect) must be detected before the caller's next write
     -- LockLostError, not a silent pass."""
@@ -504,7 +496,7 @@ def test_repo_lock_verify_still_held_raises_lock_lost_when_the_file_is_gone(tmp_
 
 
 def test_lock_finally_block_never_deletes_another_owners_lock(tmp_path):
-    """Round 4 test-adequacy audit, Finding 1: acquire_repo_lock's own
+    """acquire_repo_lock's own
     `finally` block only unlinks the lock file if the on-disk token still
     matches this call's own -- this is what stops a process from deleting
     a lock that was reclaimed-as-abandoned and then re-acquired by
@@ -522,8 +514,7 @@ def test_lock_finally_block_never_deletes_another_owners_lock(tmp_path):
 
 
 def test_lock_finally_block_rechecks_ownership_immediately_before_unlinking(tmp_path, monkeypatch):
-    """Round 5 stability re-run, Finding 6 (narrows, does not fully close
-    -- no atomic compare-and-delete exists at the filesystem level): the
+    """No atomic compare-and-delete exists at the filesystem level): the
     release path's own read-then-unlink was itself a narrower TOCTOU -- if
     a reclaim landed between the ownership check and the unlink call,
     this process could delete the NEW owner's lock file. A true red isn't
@@ -563,7 +554,7 @@ def test_lock_finally_block_rechecks_ownership_immediately_before_unlinking(tmp_
 
 
 def test_reclaim_if_abandoned_race_guard_blocks_removal_when_the_second_read_differs(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 2: _reclaim_if_abandoned's own
+    """_reclaim_if_abandoned's own
     inner race guard (`if _read_lock(path) != existing: return False`)
     re-reads the lock a second time after confirming it's abandoned, and
     only removes it if that second read still matches the first --
@@ -595,7 +586,7 @@ def test_reclaim_if_abandoned_race_guard_blocks_removal_when_the_second_read_dif
 
 
 def test_wait_ceiling_uses_monotonic_clock_not_wall_clock(tmp_path, monkeypatch):
-    """Resilience audit R5: the wait-deadline used time.time(), so a
+    """The wait-deadline used time.time(), so a
     stalled/backward-jumping wall clock (NTP correction) made the deadline
     check `time.time() >= deadline` never trip -- acquire_repo_lock would
     wait far past its own wait_ceiling for a lock genuinely still held.

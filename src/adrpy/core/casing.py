@@ -1,9 +1,8 @@
-"""String case transforms (harness Fase 7): ported from
-StringCaseExtensions.cs, used both to build a filename's title segment and
-to compute the case-insensitive-ish key `new`/`version`/`supersede` use to
-detect a duplicate title (AdrFileNameComponents.CreateUniqueTitle applies
-ToPascalCase() *on top of* the repo's configured case-transform, giving a
-comparison key independent of casetransform)."""
+"""String case transforms, used both to build a filename's title segment
+and to compute the case-insensitive-ish key `new`/`version`/`supersede`
+use to detect a duplicate title (PascalCase applied *on top of* the
+repo's configured case-transform, giving a comparison key independent of
+casetransform)."""
 
 import re
 
@@ -58,8 +57,6 @@ def to_case(text, case_format):
 
 
 def unique_title_key(title, config):
-    """Mirrors AdrService.GetFileByUniqueTitleFrom:
-    `CreateUniqueTitle(title.ToCase(config.CaseTransform))` -- the repo's
-    configured case-transform, then PascalCase again on top, as the
-    canonical comparison key regardless of casetransform."""
+    """The repo's configured case-transform, then PascalCase again on
+    top, as the canonical comparison key regardless of casetransform."""
     return to_pascal_case(to_case(title, config.casetransform))

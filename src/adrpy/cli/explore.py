@@ -1,11 +1,10 @@
-"""`explore` command: read-only inventory of every decision file (harness
-Fase 7, item 3). Declares (Fase 6 checklist): recognizes BOTH naming
-schemes via `parse_any_filename` -- a file matching neither still appears
-in the report, never dropped silently. A distinct mechanism, is_within
-(core/security.py), CAN still exclude a candidate whose real path
-escapes the repository boundary (e.g. a symlink/junction) -- that
-exclusion is reported via `warnings` instead (round 4 observability
-audit, Finding 3), not silently either.
+"""`explore` command: read-only inventory of every decision file.
+Recognizes BOTH naming schemes via `parse_any_filename` -- a file
+matching neither still appears in the report, never dropped silently. A
+distinct mechanism, is_within (core/security.py), CAN still exclude a
+candidate whose real path escapes the repository boundary (e.g. a
+symlink/junction) -- that exclusion is reported via `warnings` instead,
+not silently either.
 """
 
 from pathlib import Path
@@ -61,8 +60,7 @@ def run(args):
     unreadable_files = []
     unreadable = []
     if folder.is_dir():
-        # Round 4 performance front: resolved once, not once per
-        # candidate -- see is_within's own note.
+        # Resolved once, not once per candidate -- see is_within's own note.
         try:
             resolved_folder = folder.resolve()
         except (OSError, ValueError):
@@ -71,25 +69,19 @@ def run(args):
             if not is_within(folder, candidate, resolved_base=resolved_folder):
                 excluded.append(candidate)
                 continue
-            # Round 7 resilience audit, Finding 1: a single persistently
-            # unreadable file (locked by an editor, backup tool, or
-            # antivirus -- ordinary in a folder of Markdown files people
-            # also open by hand) used to kill this ENTIRE inventory with
-            # a bare io-error, discarding every other, readable file
-            # too. Best-effort now, matching the unreadable-subdirectory
-            # handling just below.
+            # Best-effort: a single persistently unreadable file (locked by
+            # an editor, backup tool, or antivirus -- ordinary in a folder
+            # of Markdown files people also open by hand) is reported here
+            # rather than killing this entire inventory, matching the
+            # unreadable-subdirectory handling just below.
             try:
                 entries.append(_build_entry(candidate, config))
             except OSError:
                 unreadable_files.append(candidate)
-        # Round 6 resilience re-run, Finding B, class closure: rglob
-        # above silently swallows an OSError from an unreadable
+        # rglob above silently swallows an OSError from an unreadable
         # subdirectory -- see find_unreadable_subdirectories' own note.
         unreadable = find_unreadable_subdirectories(folder)
 
-    # Mirrors AdrService.ReadAllAdr's real sort order:
-    # OrderByDescending(IsValid).ThenBy(IsMigrated).ThenByDescending(Number)
-    # .ThenByDescending(Version).ThenByDescending(Revision ?? 0)
     entries.sort(
         key=lambda entry: (
             -int(entry["header"]["is_valid"]),
@@ -100,15 +92,13 @@ def run(args):
         )
     )
 
-    # Usability audit round 3 (finding #5): every mutating command's
-    # result carries "warnings" unconditionally, even when empty (see
-    # config's own read-mode) -- explore never generates one from a write
-    # (it's read-only), but omitting the key entirely broke a generic
-    # wrapper that assumed `data["warnings"]` always exists across all
-    # commands. Round 4 observability audit, Finding 3: explore's own
-    # docstring promises no file is ever dropped silently from this
-    # report -- is_within's exclusion is a second, distinct mechanism
-    # that promise didn't cover; reported here now.
+    # Every mutating command's result carries "warnings" unconditionally,
+    # even when empty (see config's own read-mode) -- explore never
+    # generates one from a write (it's read-only), but omitting the key
+    # entirely breaks a generic wrapper that assumes `data["warnings"]`
+    # always exists across all commands. is_within's own exclusion is
+    # reported here too, since explore's own docstring promises no file is
+    # ever dropped silently from this report.
     warnings = []
     warning = excluded_candidate_warning(excluded)
     if warning:
@@ -132,13 +122,12 @@ def _build_entry(path, config):
     found = parse_any_filename(path.name, config)
     scheme, parsed = found if found else (None, None)
 
-    # Fase 4: tolerate invalid bytes rather than raising, mirroring the
-    # original's confirmed-live behavior (see the Fase 4 commit).
-    # Round 7 resilience audit, Finding 1: retries a transient
-    # PermissionError the same way every other decision-file read in
-    # this codebase already does (core/lifecycle.py's read_lines_with_
-    # report); a persistent failure still propagates, for run()'s own
-    # per-candidate try/except to catch and report as best-effort.
+    # Tolerates invalid bytes rather than raising. Retries a transient
+    # PermissionError the same way every other decision-file read in this
+    # codebase already does
+    # (core/lifecycle.py's read_lines_with_report); a persistent failure
+    # still propagates, for run()'s own per-candidate try/except to catch
+    # and report as best-effort.
     raw_bytes = read_with_permission_retry(path.read_bytes)
     try:
         text = raw_bytes.decode("utf-8")
@@ -168,9 +157,9 @@ def _build_entry(path, config):
             "status_change": header.status_change,
             "date_change": header.date_change.isoformat() if header.date_change else None,
             "superseded_by_file": header.superseded_by_file,
-            # Observability audit: tells the caller this specific file's
-            # bytes were lossy-decoded (Fase 4 tolerance) -- explore is a
-            # read-only report, the natural place for this visibility.
+            # Tells the caller this specific file's bytes were
+            # lossy-decoded -- explore is a read-only report, the natural
+            # place for this visibility.
             "encoding_repaired": encoding_repaired,
         },
     }

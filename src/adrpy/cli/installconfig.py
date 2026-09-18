@@ -1,8 +1,8 @@
 """`installconfig` command: reads or updates the per-user install-level
-config (harness-independent, ADR002V01 -- not a port of anything in the
-original AdrPlus, which stores its own equivalent relative to its own
-install directory instead; see the ADR for why that storage location was
-not mirrored here).
+config (ADR002V01 -- not a port of anything in the reference tool,
+which stores its own equivalent relative to its own install directory
+instead; see the ADR for why that storage location was not mirrored
+here).
 
 Unlike every other command, this one takes no `--path` -- it always
 operates on the one, fixed, per-user location `core/install_config.py`
@@ -14,9 +14,9 @@ convention to locate it). One flag per schema field (mirroring
 `config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
 schema is byte-compatible with a repository's own adr-config.adrplus
-(ADR002V01), `--seed` pointed directly at a real AdrPlus installation's
-own template file already covers importing from it; no separate
-cross-tool flag, and no knowledge of the real tool's own install-
+(ADR002V01), `--seed` pointed directly at a real installation of the
+reference tool's own template file already covers importing from it; no separate
+cross-tool flag, and no knowledge of the reference tool's own install-
 directory layout, is added for that.
 
 `activeplugins` is deliberately not exposed here either, same as
@@ -29,9 +29,9 @@ the shared repository state ADR001's lock rule is scoped to (ADR002V01).
 A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
 a single human/agent doing one-time setup, not the routine concurrent
-workload the repository lock exists to protect. Round 11 stability
-pass: confirmed the worst case really is a lost update, never
-corruption (a merge-write always merges onto a fully-committed prior
+workload the repository lock exists to protect. Confirmed the worst
+case really is a lost update, never corruption (a merge-write always
+merges onto a fully-committed prior
 state, and atomic_write_text's own os.replace-based commit means a
 concurrent reader never observes a partial file) -- but the blast
 radius of a lost update can be larger than "one field": a `--seed`
@@ -133,9 +133,9 @@ def _field_description(field):
     if field == "disableplugins":
         return "'true' or 'false'."
     # Same fail-loud guard as config.py's own _field_description, and for
-    # the same reason (round 4 test-adequacy audit, Finding 10): a newly
-    # added schema field with no matching branch here must be caught
-    # immediately, not silently fall through to a tautological message.
+    # the same reason: a newly added schema field with no matching branch
+    # here must be caught immediately, not silently fall through to a
+    # tautological message.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
@@ -177,8 +177,8 @@ def describe():
                     "Path to a config JSON to replace the install-level config with wholesale, instead of "
                     "merging individual field flags -- same semantics as `init --seed`. The install-level "
                     "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
-                    "this also covers importing one from a real AdrPlus installation's own template file "
-                    "directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
+                    "this also covers importing one from a real installation of the reference tool's own "
+                    "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
                     "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "
                     "combination (--seed with --language)."
                 ),

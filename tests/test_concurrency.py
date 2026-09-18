@@ -1,16 +1,15 @@
-"""Regression for the Milestone 8 concurrency audit's critical finding:
-core/lock.py existed, was tested in isolation, and was never actually used
-by any of the commands that decide "what's the next number" -- new,
-version, revise, supersede all scan the directory and pick a number with
-no critical section around it. Reproduced live by the audit 10/10 times
-with two concurrent `new` calls landing on the identical sequence number
-(different titles, so different filenames -- the actual defect is the
-DUPLICATE NUMBER, not a filename collision).
+"""Regression: core/lock.py existed, was tested in isolation, and was
+never actually used by any of the commands that decide "what's the next
+number" -- new, version, revise, supersede all scan the directory and
+pick a number with no critical section around it. Reproduced live 10/10
+times with two concurrent `new` calls landing on the identical sequence
+number (different titles, so different filenames -- the actual defect is
+the DUPLICATE NUMBER, not a filename collision).
 
 new and supersede both derive their number from a repo-wide next_number()
 scan, which is where the collision is directly observable and reproducible
-here. version/revise are wrapped in the same lock for the same reason (the
-audit named all four sharing this critical-section gap), but each derives
+here. version/revise are wrapped in the same lock for the same reason (all
+four share this critical-section gap), but each derives
 its number from its own target file rather than a repo-wide scan, so
 there's no equally clean two-thread collision to construct for them --
 core/test_lock.py's own stress test already covers the lock mechanism
@@ -117,7 +116,7 @@ def test_concurrent_supersede_calls_never_collide_on_the_same_successor_number(t
 
 
 def test_concurrent_approve_and_reject_on_the_same_file_do_not_both_succeed(tmp_path, monkeypatch):
-    """Round 4 stability audit, Finding 1, reproduced: approve/reject held
+    """Approve/reject held
     no repository lock at all, so two concurrent calls on the same
     Proposed file each independently read-decided-wrote and both reported
     success with mutually exclusive final statuses -- a lost update, with
@@ -155,7 +154,7 @@ def test_concurrent_approve_and_reject_on_the_same_file_do_not_both_succeed(tmp_
 
 
 def test_concurrent_supersede_calls_on_the_same_predecessor_do_not_both_succeed(tmp_path, monkeypatch):
-    """Round 4 stability audit, Finding 2, reproduced: supersede captured
+    """Supersede captured
     the predecessor's header/lines via load_target BEFORE acquiring the
     lock, so two concurrent supersede calls on the SAME predecessor each
     wrote it from their own stale, pre-lock snapshot -- both successors
@@ -196,7 +195,7 @@ def test_concurrent_supersede_calls_on_the_same_predecessor_do_not_both_succeed(
 
 
 def test_pre_commit_lock_recheck_aborts_the_write_if_the_lock_was_stolen(tmp_path, monkeypatch):
-    """Round 4 ADR001, part 3 (pre-commit ownership recheck): no bounded-
+    """No bounded-
     lease lock without heartbeat can prevent a legitimately slow holder's
     lock from being reclaimed by another process mid-critical-section --
     but the write that follows must never commit blindly once that's

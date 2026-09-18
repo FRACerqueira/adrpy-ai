@@ -25,12 +25,12 @@ def main(argv=None):
     except CommandError as error:
         return emit_failure(error.code, error.detail, error.data, error.warnings)
     except OSError as error:
-        # Fidelity/resilience/usability audits (independently, 3 fronts):
-        # any OSError not already translated into a CommandError by the
+        # Any OSError not already translated into a CommandError by the
         # command itself (a permission failure, a full disk, a missing
-        # parent directory) used to propagate as a raw traceback with
-        # EMPTY stdout -- breaking the JSON contract this whole project
-        # exists to provide, at exactly the moment an agent needs it most.
+        # parent directory) would otherwise propagate as a raw traceback
+        # with EMPTY stdout -- breaking the JSON contract this whole
+        # project exists to provide, at exactly the moment an agent needs
+        # it most.
         return emit_failure("io-error", str(error))
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see above
         return emit_failure("internal-error", str(error))

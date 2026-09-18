@@ -1,8 +1,7 @@
-"""`init` command: initializes an ADR repository (harness Fase 7, item 1).
+"""`init` command: initializes an ADR repository.
 
-Ported from InitCommandHandler.cs. Plugin-baseline discovery/writing
-(`WriteActivePluginsBaselineAsync` in the original) is intentionally not
-implemented -- the plugin system is out of scope for now (decision-log:
+Plugin-baseline discovery/writing is intentionally not implemented -- the
+plugin system is out of scope for now (decision-log:
 deferred--2026-09-15--plugins--sync-and-plugins-out-of-scope.md): this
 command never touches `activeplugins` beyond what the supplied or
 default config already contains (confirmed true even with --language's
@@ -27,13 +26,9 @@ from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, retry_warning
 
-# Matches adrplus.json's own documented `language` values verbatim.
-# Confirmed against AdrPlusRepoConfig.cs's field initializers: `language`
-# in the real tool doesn't just affect interactive UI text -- it also
-# selects the DEFAULT header/status labels (from a per-culture .resx) and
-# the default template content (a per-culture template file) baked into
-# a newly init'd repo. Each pack below was extracted verbatim from
-# AdrSource's own resources, never hand-translated.
+# `language` doesn't just affect interactive UI text -- it also selects
+# the DEFAULT header/status labels and the default template content
+# baked into a newly init'd repo.
 SUPPORTED_LANGUAGES = (
     "en-us",
     "pt-br",
@@ -63,7 +58,7 @@ def describe():
             "another's config, both reporting success -- callers must ensure at most one first-time "
             "init runs per fresh repository path at a time. --seed overwriting an ALREADY-existing "
             "repository's config is, by contrast, protected by the same repository lock every other "
-            "write command uses (round 5 stability re-run, Finding 1). May fail with "
+            "write command uses. May fail with "
             "init-existing-numbers-scan-incomplete if a subdirectory under the decisions folder could not "
             "be scanned (permission denied or similar) -- the existing max number/version/revision, which "
             "lenseq/lenversion/lenrevision must fit, can't be trusted from an incomplete scan. Unlike "
@@ -84,13 +79,12 @@ def describe():
                 "alias": "-s",
                 "type": "string",
                 "required": False,
-                # Usability backlog item B2: named `seed`, not `file` --
-                # every other command's `--file` means "the decision file
-                # to mutate"; this alone meant "a config JSON to seed the
-                # repo with", a naming collision an agent generalizing
-                # across commands could reasonably get wrong. Deliberate
-                # divergence from the real tool's own `-f/--file` naming,
-                # confirmed with the user (decision-log: accepted-
+                # Named `seed`, not `file` -- every other command's
+                # `--file` means "the decision file to mutate"; this alone
+                # meant "a config JSON to seed the repo with", a naming
+                # collision an agent generalizing across commands could
+                # reasonably get wrong. Deliberate divergence from the real
+                # tool's own `-f/--file` naming (decision-log: accepted-
                 # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the install-level "
@@ -146,15 +140,14 @@ def run(args):
         raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
 
     config_path = target / "adr-config.adrplus"
-    # Captured before any write below: round 5 stability re-run, Finding 1
-    # -- this is what decides whether the write path below is live shared
-    # state (needs a lock) or a genuine fresh bootstrap (nothing to race
-    # against yet).
+    # Captured before any write below -- this is what decides whether the
+    # write path below is live shared state (needs a lock) or a genuine
+    # fresh bootstrap (nothing to race against yet).
     config_already_existed = config_path.exists()
 
-    # Non-interactive by design (Fase 0: no wizard, no prompt to fall back
-    # on) -- refuse cleanly instead of the original's confirm-or-refuse
-    # prompt when no --seed is given to bypass it.
+    # Non-interactive by design (no wizard, no prompt to fall back on) --
+    # refuse cleanly instead of the reference tool's confirm-or-refuse prompt
+    # when no --seed is given to bypass it.
     if config_already_existed and seed_arg is None:
         raise CommandError("config-already-exists", f"Configuration file already exists at: {config_path}")
 
@@ -162,13 +155,13 @@ def run(args):
     # seed -- the same reason --seed and --language are already mutually
     # exclusive above applies here too (both are full content sources;
     # the caller must pick one explicitly rather than have one silently
-    # win). Deliberately read here, not earlier: round 11 stability pass
-    # -- this is real file I/O plus schema validation against a file the
-    # caller never named, and on every path above this point it's either
-    # unreachable (seed_arg given, forces None below regardless) or would
-    # have already raised for an unrelated reason -- a corrupted
-    # install-level config must never mask target-directory-not-found or
-    # config-already-exists with an unrelated schema error.
+    # win). Deliberately read here, not earlier: this is real file I/O
+    # plus schema validation against a file the caller never named, and on
+    # every path above this point it's either unreachable (seed_arg given,
+    # forces None below regardless) or would have already raised for an
+    # unrelated reason -- a corrupted install-level config must never mask
+    # target-directory-not-found or config-already-exists with an
+    # unrelated schema error.
     install_config_text = None if seed_arg is not None else read_install_config_text()
 
     if language_arg is not None and install_config_text is not None:
@@ -193,9 +186,9 @@ def run(args):
     warnings = []
 
     if config_already_existed:
-        # Round 5 stability re-run, Finding 1 (HIGH): --seed overwriting an
-        # ALREADY-existing repository is live shared state, not bootstrap
-        # -- ADR001's exemption for init only covers the truly-fresh-path
+        # --seed overwriting an ALREADY-existing repository is live shared
+        # state, not bootstrap -- ADR001's exemption for init only covers
+        # the truly-fresh-path
         # case, where the decisions folder doesn't exist yet to even
         # locate a lock in. Here it already does (every prior init created
         # it), so lock it exactly like config.py's own bootstrap-then-lock
@@ -209,14 +202,13 @@ def run(args):
         with attach_warnings(warnings):
             with acquire_repo_lock(lock_folder) as lock:
                 warnings.extend(lock.warnings)
-                # Round 6 stability re-run, Finding A-1: `bootstrap_config`
-                # above is read BEFORE this lock, then was handed straight
-                # to the folderadr-change guard unrefreshed -- if a
+                # `bootstrap_config` above is read BEFORE this lock -- if a
                 # concurrent process already changed folderadr by the time
-                # this lock was acquired, the guard scanned the wrong
-                # (stale) folder, or even skipped scanning entirely when
-                # the seed happened to carry that same stale value. Reads
-                # fresh and aborts instead of trusting the pre-lock read.
+                # this lock was acquired, handing it straight to the
+                # folderadr-change guard unrefreshed would scan the wrong
+                # (stale) folder, or skip scanning entirely when the seed
+                # happened to carry that same stale value. Reads fresh and
+                # aborts instead of trusting the pre-lock read.
                 bootstrap_config = verify_folderadr_unchanged_since_lock(
                     config_path, bootstrap_config.folderadr, warnings=warnings
                 )
@@ -231,8 +223,7 @@ def run(args):
 
 def _validate_and_write(target, config_path, config_text, config, warnings, lock, old_config=None):
     if old_config is not None:
-        # Round 5 stability re-run, Finding 5 (confirmed with the user):
-        # same class as config.py's own --folderadr guard -- --seed
+        # Same class as config.py's own --folderadr guard -- --seed
         # changing folderadr on an already-existing repository is exactly
         # as capable of orphaning existing decisions as `config` is.
         # `old_config` is None on the genuinely-fresh-bootstrap path
@@ -243,10 +234,9 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
             old_folder, old_config.folderadr, config.folderadr, old_config, warnings=warnings
         )
 
-    # Round 4 observability audit, Finding 3: same as scan_decisions/
-    # explore/migrate -- an is_within-excluded candidate used to be
-    # dropped with zero signal, even from the very numbers these three
-    # checks are about to gate a fresh init on.
+    # Same as scan_decisions/explore/migrate -- an is_within-excluded
+    # candidate is reported, not dropped with zero signal, since these are
+    # the very numbers these three checks are about to gate a fresh init on.
     max_number, max_version, max_revision = _max_existing_numbers(target, config, warnings=warnings)
     if len(str(max_number)) > config.lenseq:
         raise CommandError(
@@ -272,26 +262,22 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
 
     created = []
 
-    # config.folderadr is already validated as relative (Fase 3), but a
-    # "../.." traversal is still relative -- resolve_within is real path
-    # resolution, the actual containment guard (Fase 5).
+    # config.folderadr is already validated as relative, but a "../.."
+    # traversal is still relative -- resolve_within is real path
+    # resolution, the actual containment guard.
     folder_adr = resolve_within(target, config.folderadr)
-    # Round 4 second corroboration pass: check-then-create was a real
-    # TOCTOU -- a concurrent process creating this same directory between
-    # the check and the mkdir() call raised a raw FileExistsError (a
-    # clean io-error via __main__'s own OSError safety net, not a crash,
-    # but a generic code for a benign race: unlike the config-already-
+    # check-then-create is a real TOCTOU -- a concurrent process creating
+    # this same directory between the check and the mkdir() call would
+    # otherwise raise a raw FileExistsError. Unlike the config-already-
     # exists race this project already accepts as risk, both processes
     # here want the exact same end state, so there's no conflicting
-    # content to lose -- exist_ok=True closes it outright rather than
-    # just reporting it better.
+    # content to lose -- exist_ok=True closes it outright.
     #
-    # Round 7 resilience audit, Finding 3 (retraction of this function's
-    # own previous mkdir-AFTER-write order): moved ahead of the config
-    # commit below -- a failure creating this folder now aborts cleanly
-    # with nothing yet written, instead of leaving config committed to a
-    # folderadr whose directory doesn't exist, and every subsequent
-    # command failing with a generic io-error until someone noticed.
+    # Creating the folder here, ahead of the config commit below, means a
+    # failure creating it aborts cleanly with nothing yet written, instead
+    # of leaving config committed to a folderadr whose directory doesn't
+    # exist, with every subsequent command failing with a generic
+    # io-error until someone noticed.
     folder_already_existed = folder_adr.is_dir()
     folder_adr.mkdir(parents=True, exist_ok=True)
 
@@ -299,16 +285,15 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         # ADR001, part 3: guarantees this write never commits blindly if
         # the lease was reclaimed.
         lock.verify_still_held()
-    # atomic_write_text normalizes to this host's line separator (Fase 2:
-    # the real terminator is host-OS-dependent, not fixed) -- config_text
-    # is otherwise written verbatim, never re-serialized from `config`.
+    # atomic_write_text normalizes to this host's line separator (the real
+    # terminator is host-OS-dependent, not fixed) -- config_text is
+    # otherwise written verbatim, never re-serialized from `config`.
     attempts = atomic_write_text(config_path, config_text)
     warning = retry_warning(attempts)
     if warning:
         warnings.append(warning)
-    # `created`'s own reported order (config, then folder) is unchanged
-    # from before this fix -- only the underlying filesystem operations
-    # above were reordered, not what callers see reported.
+    # This list's own order (config, then folder) does not follow the
+    # filesystem operations above, which create the folder first.
     created.append(str(config_path))
     if not folder_already_existed:
         created.append(str(folder_adr))
@@ -335,30 +320,27 @@ def _default_config_text_for_language(language):
     """Merges a language pack's ~17 fields (labels/status/template) onto
     the built-in default -- everything else (folderadr, separator,
     lenseq/lenversion/lenrevision, casetransform, migrationpattern) is
-    language-independent in the real tool too (AdrPlusRepoConfig.cs's own
-    field initializers), so it keeps the same built-in default regardless
-    of --language."""
+    language-independent, so it keeps the same built-in default
+    regardless of --language."""
     base = json.loads(_default_config_text())
     base.update(_load_language_pack(language))
     return json.dumps(base, indent=2, ensure_ascii=False)
 
 
 def _max_existing_numbers(target, config, warnings=None):
-    """Recognizes both naming schemes (Fase 6 checklist) -- a legacy file's
-    number must count too, or a shrunk lenseq could silently stop fitting
-    it without this check ever noticing.
+    """Recognizes both naming schemes -- a legacy file's number must count
+    too, or a shrunk lenseq could silently stop fitting it without this
+    check ever noticing.
 
-    `warnings`, when given, reports (round 4 observability audit, Finding
-    3) any candidate is_within excluded -- same convention as
-    scan_decisions/explore/migrate."""
+    `warnings`, when given, reports any candidate is_within excluded --
+    same convention as scan_decisions/explore/migrate."""
     folder = resolve_within(target, config.folderadr)
     if not folder.is_dir():
         return 0, 0, 0
 
     max_number = max_version = max_revision = 0
     excluded = []
-    # Round 4 performance front: resolved once, not once per candidate --
-    # see is_within's own note.
+    # Resolved once, not once per candidate -- see is_within's own note.
     try:
         resolved_folder = folder.resolve()
     except (OSError, ValueError):
@@ -374,15 +356,12 @@ def _max_existing_numbers(target, config, warnings=None):
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)
-    # Round 6 resilience re-run, Finding B, class closure: rglob above
-    # silently swallows an OSError from an unreadable subdirectory -- see
-    # find_unreadable_subdirectories' own note.
-    #
-    # Round 8 stability audit, class closure: fails closed instead of
-    # warning -- this feeds a real safety decision (lenseq/lenversion/
-    # lenrevision must fit every EXISTING number), so an under-reported
-    # max must never be silently trusted the way explore's own best-
-    # effort listing can.
+    # rglob above silently swallows an OSError from an unreadable
+    # subdirectory -- see find_unreadable_subdirectories' own note.
+    # Fails closed instead of warning -- this feeds a real safety decision
+    # (lenseq/lenversion/lenrevision must fit every EXISTING number), so an
+    # under-reported max must never be silently trusted the way explore's
+    # own best-effort listing can.
     unreadable = find_unreadable_subdirectories(folder)
     if unreadable:
         raise CommandError(

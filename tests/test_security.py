@@ -24,17 +24,15 @@ def test_is_within_rejects_a_candidate_that_escapes_the_base_dir(tmp_path, tmp_p
 
 
 def test_is_within_returns_false_instead_of_raising_on_an_unresolvable_candidate():
-    """Round 4 test-adequacy audit, Finding 7: is_within's own except
-    (OSError, ValueError) fail-path (round 4 observability's own
-    documented mandate: "never raises, a scan should silently treat an
-    escaped candidate as outside the boundary") had zero direct coverage
+    """is_within's own except
+    (OSError, ValueError) fail-path had zero direct coverage
     -- only reached indirectly via test_lifecycle.py's Windows-junction
     test, which never exercises this branch."""
     assert is_within("some_base", "bad\x00path") is False
 
 
 def test_is_within_accepts_a_precomputed_resolved_base(tmp_path):
-    """Round 4 performance front: resolved_base lets a caller resolve the
+    """resolved_base lets a caller resolve the
     base directory once outside a scan loop instead of once per
     candidate -- must produce the exact same result as the default,
     resolve-it-yourself path."""
@@ -64,7 +62,7 @@ def test_resolve_within_rejects_path_traversal_escape(tmp_path):
 
 
 def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
-    """Security audit F5: a NUL byte in folderadr raised a raw ValueError
+    """A NUL byte in folderadr raised a raw ValueError
     (\"embedded null character in path\") with empty stdout instead of a
     structured CommandError -- same JSON-contract violation as the other
     audit fronts' unhandled-exception findings, just a different trigger."""
@@ -76,7 +74,7 @@ def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_resolve_within_rejects_a_path_that_escapes_via_a_real_junction(tmp_path):
-    """Round 4 test-adequacy audit, Finding 9: resolve_within's own
+    """resolve_within's own
     docstring claims it follows real symlinks when resolving ("real path
     resolution (following `..` and symlinks)") -- no existing test
     constructed an actual symlink/junction against this function
@@ -156,7 +154,7 @@ def test_reject_embedded_delimiter_accepts_clean_value():
     ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
 )
 def test_reject_embedded_delimiter_rejects_unicode_line_separators(char):
-    """Security audit F4: these aren't real line terminators (confirmed
+    """These aren't real line terminators (confirmed
     live, see atomic_write.split_real_lines), so they no longer corrupt
     the file's line structure -- but they must still be rejected outright
     for a single-line header cell, the same as '|'/newline: a title
@@ -178,7 +176,7 @@ def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine
 
 
 def test_find_unreadable_subdirectories_reports_a_subdirectory_os_walk_cannot_enter(tmp_path, monkeypatch):
-    """Round 6 resilience re-run, Finding B: `Path.rglob` (used by every
+    """`Path.rglob` (used by every
     scan in this project) silently swallows an `OSError` raised while
     walking a subtree -- a subfolder that becomes unreadable mid-scan
     makes it return fewer results, or none, with no exception and no
@@ -205,7 +203,7 @@ def test_find_unreadable_subdirectories_reports_a_subdirectory_os_walk_cannot_en
 
 
 def test_find_unreadable_subdirectories_reports_all_of_several_blocked_at_once(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 5: every prior test here (and
+    """Every prior test here (and
     every caller's own fail-closed test) only ever blocks ONE
     subdirectory -- the accumulation behavior (does the list actually
     grow past one entry, not just fire once) was never exercised."""

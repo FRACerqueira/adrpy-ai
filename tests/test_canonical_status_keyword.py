@@ -1,4 +1,4 @@
-"""Usability audit M4: every status-mutating command returned the
+"""Every status-mutating command returned the
 REPOSITORY'S OWN CONFIGURED LABEL (config.statusnew/statusacc/...) as
 "status" in its JSON result, while `explore` -- reporting on the exact
 same file -- always returns the canonical internal keyword
@@ -47,7 +47,7 @@ def test_new_returns_the_canonical_keyword_not_the_configured_label(tmp_path):
     result = new.run(["--path", str(tmp_path), "--title", "Some decision"])
 
     assert result["status"] == "Proposed"
-    # Round 4 test-adequacy audit, Finding 6: _canonical_status was defined
+    # _canonical_status was defined
     # but never called -- every test here compared only against a
     # hardcoded literal, never cross-checking against explore's own
     # independent read, which is the whole point this module's own

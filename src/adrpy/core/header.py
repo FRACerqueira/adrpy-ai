@@ -1,6 +1,5 @@
-"""Decision-file header: byte-for-byte replica of the real format written by
-`AdrRecord.GetHeader` and read by `AdrService.ParseAdrHeaderAndContentAsync`
-(harness Fase 3). The header is always exactly 12 lines, addressed
+"""Decision-file header: byte-for-byte replica of the reference tool's own
+format. The header is always exactly 12 lines, addressed
 positionally -- the row *label* text is never inspected on read, only its
 position and the surrounding pipe characters.
 """
@@ -21,8 +20,8 @@ _STATUS_CONFIG_FIELD = {
 
 @dataclass
 class DecisionRecord:
-    """Mirrors AdrRecord: one record feeds both the filename
-    (core.naming.build_filename) and the header (build_header below)."""
+    """One record feeds both the filename (core.naming.build_filename)
+    and the header (build_header below)."""
 
     number: int
     title: str
@@ -41,15 +40,15 @@ class DecisionRecord:
 
 
 def build_header(config, record, migrated=False):
-    """Mirrors AdrRecord.GetHeader. NOTE: the real tool sources the literal
+    """NOTE: the reference tool sources the literal
     "<!-- Migrated -->" marker text from its own UI-language resource string,
     not from `config.headermigrated` -- this uses the repo config field
-    instead, a simplification to revisit once the `migrate` command (Fase 7)
-    actually needs to write this marker.
+    instead, a simplification adopted when the `migrate` command was
+    first built to write this marker.
 
-    Deliberate divergence from the real tool: the "Migrated" word in the
-    Values column's own label is now conditional on `migrated`, unlike the
-    real tool's literal "Values Migrated" label on every file regardless
+    Deliberate divergence from the reference tool: the "Migrated" word in the
+    Values column's own label is now conditional on `migrated`, unlike its
+    literal "Values Migrated" label on every file regardless
     (decision-log: accepted-divergence--2026-09-16--header--migrated-word-
     only-when-migrated.md) -- the word is never parsed by either side
     (parse_header below only looks for the trailing HTML comment), so it
@@ -123,7 +122,6 @@ class HeaderParseResult:
 
 
 def parse_header(lines, config):
-    """Mirrors AdrService.ParseAdrHeaderAndContentAsync's header parsing."""
     result = HeaderParseResult()
 
     if len(lines) == 0:
@@ -272,9 +270,8 @@ def _parse_status_cell(text, config):
 
 
 def counts_as_family_member(header):
-    """Looser test used when scanning the ADR folder to resolve sequence and
-    version membership -- mirrors AdrService.cs's
-    `aux.Header.IsValid || aux.Header.IsMigrated`: a migrated file with a
-    still-blank Version/Revision/Created/Changed counts as a member of its
-    family even though it fails the strict structural check above."""
+    """Looser test used when scanning the ADR folder to resolve sequence
+    and version membership: a migrated file with a still-blank
+    Version/Revision/Created/Changed counts as a member of its family
+    even though it fails the strict structural check above."""
     return header.is_valid or header.is_migrated

@@ -119,7 +119,7 @@ def test_legacy_scheme_is_not_recognized_when_migrationpattern_is_empty():
 
 
 def test_parses_legacy_filename_with_version_revision_and_prefix_segments():
-    """Round 4 test-adequacy audit, Finding 6: every existing
+    """Every existing
     parse_legacy_filename test used only the N/T segments (the
     MigrationGuide.md pattern example) -- the V/R/P segment-extraction
     guards (length/isdigit checks) had zero coverage. Pattern below:
@@ -231,9 +231,9 @@ def test_build_filename_includes_revision_when_configured():
 
 
 def test_parse_any_filename_recognizes_a_file_built_under_a_different_lenseq():
-    """Round 5 stability re-run, Finding 7 (negative result, recorded per
-    the project's own "a hypothesis that gets investigated and doesn't
-    hold becomes a permanent test" rule): every write command bootstraps
+    """A negative result, recorded per the project's own "a hypothesis
+    that gets investigated and doesn't hold becomes a permanent test"
+    rule: every write command bootstraps
     config BEFORE acquiring the repository lock (necessary -- the lock's
     own location is derived from folderadr), so a concurrent `config`
     edit to lenseq between that read and the write could, in theory, let

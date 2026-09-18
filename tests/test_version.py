@@ -32,8 +32,7 @@ def _setup_accepted_repo(tmp_path):
 
 
 def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 1 (HIGH): round 8's own
-    decision log claims this command "inherit[s] [the family_members
+    """Decision log claims this command "inherit[s] [the family_members
     fail-closed fix] for free" -- but nothing end-to-end proved that.
     Demonstrated: wrapping this command's own family_members call in
     try/except CommandError left the full suite green with no test
@@ -79,7 +78,7 @@ def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
         version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "lenversion-too-small-for-new-version"
-    # Usability audit round 3: the real number was only ever in `detail`
+    # The real number was only ever in `detail`
     # (stderr, free text).
     assert excinfo.value.data == {"new_version": 100, "lenversion": 2}
 
@@ -97,7 +96,7 @@ def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(t
 
 
 def test_version_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    """encoding_repaired_
     warning unconditionally claimed "the file has been rewritten... bytes
     are now lost" -- always false here, since version never rewrites its
     own source (only its BODY is carried into a newly created file)."""
@@ -128,13 +127,13 @@ def test_version_happy_path(tmp_path):
     assert "|Scope|Data|" in text
     assert "|Created|Proposed (2026-01-05)|" in text
     assert "# body" not in text  # body carried forward from the source (template, not literal marker)
-    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # No test pinned the exact
     # empty-list value on a genuine happy path, only that the key exists.
     assert result["warnings"] == []
 
 
 def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage."""
     from adrpy.cli import version as version_module
 
@@ -188,7 +187,7 @@ def test_version_rejects_when_not_accepted_or_rejected(tmp_path):
 
 
 def test_version_rejects_when_sibling_superseded(tmp_path):
-    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    """Family-member-superseded
     is raised by hand at 8 call sites across 5 command files; version's
     own had zero coverage. Target is V02 (latest, Accepted); a lower,
     non-latest sibling V01 carries status_change=Superseded."""
@@ -262,8 +261,7 @@ def test_version_rejects_when_sibling_pending(tmp_path):
 
 
 def test_version_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Round 5 test-adequacy re-run, Finding 1 (confirmed with the user):
-    superseded takes priority over pending, deliberately -- a superseded
+    """Superseded takes priority over pending, deliberately -- a superseded
     member means the WHOLE family has already been replaced, which
     blocks it regardless of any other sibling's own state. No existing
     test constructed a family with BOTH conditions true at once."""
@@ -317,7 +315,7 @@ def test_version_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
 
 
 def test_version_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
-    """Usability audit: not-latest-version must name WHICH version
+    """not-latest-version must name WHICH version
     actually is the latest -- a fixed code can't carry that number, so
     it travels as structured `data` on the CommandError instead."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
@@ -394,7 +392,7 @@ def test_version_rejects_embedded_delimiter(tmp_path):
 
 
 def test_version_rejects_path_traversal_via_header_title(tmp_path):
-    """Security audit F1: unlike --title on `new`, version/revise/supersede
+    """Unlike --title on `new`, version/revise/supersede
     source the new record's title from the target's already-parsed header
     cell (never delimiter-checked on read) -- a crafted header title
     reaches build_filename the exact same way a hostile --title does.
@@ -442,7 +440,7 @@ def test_version_end_to_end_through_main(tmp_path):
 
 
 def test_version_describe_declares_empty_as_a_presence_only_switch():
-    """Usability audit A2: --empty is presence-only (confirmed live,
+    """--empty is presence-only (confirmed live,
     `--empty true` fails with "Unknown argument") -- must not be declared
     "boolean", which implies accepting an explicit value like
     `config --disableplugins true/false` does."""

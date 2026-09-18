@@ -1,6 +1,4 @@
-"""`approve` command: marks a Proposed decision as Accepted (harness Fase 7,
-item 4). Ported from ApproveCommandHandler.cs.
-"""
+"""`approve` command: marks a Proposed decision as Accepted."""
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
@@ -77,37 +75,33 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): approve held no lock at
-        # all -- two concurrent approve/reject calls on the same file both
-        # read-decided-wrote independently and both reported success with
-        # mutually exclusive final statuses (stability audit Finding 1,
-        # reproduced). The read below now happens fresh, inside the lock,
-        # instead of before it.
+        # ADR001's coverage requirement (doc/adr/ADR001V01-...): without this
+        # lock, concurrent approve/reject calls on the same file each
+        # read-decide-write independently, both reporting success with
+        # mutually exclusive final statuses. The read below happens fresh,
+        # inside the lock, instead of before it.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites: `folder` above was resolved from a config read
-            # BEFORE this lock -- a concurrent config change could have
-            # moved folderadr in the window before the lock was
-            # actually acquired, in which case this lock no longer
-            # names the repository's real decisions folder. Re-reads
-            # fresh and aborts rather than operating against a
-            # directory nobody uses anymore.
+            # `folder` above was resolved from a config read BEFORE this
+            # lock -- a concurrent config change could have moved folderadr
+            # in the window before the lock was actually acquired, in which
+            # case this lock no longer names the repository's real decisions
+            # folder. Re-reads fresh and aborts rather than operating
+            # against a directory nobody uses anymore.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-approval -- already-accepted/already-rejected/
-            # already-superseded each call for a different recovery action.
+            # A specific reason code, not one collapsed not-eligible-for-
+            # approval -- already-accepted/already-rejected/already-
+            # superseded each call for a different recovery action.
             reason = ineligibility_reason_for_approve_or_reject(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # Performance backlog item's own pattern applied here too:
-            # pre-fetching members is also how the scan's own warnings=
-            # (round 4 observability audit, Finding 3) reach this command.
+            # Pre-fetching members here is also how the scan's own warnings
+            # (an excluded is_within candidate) reach this command.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
@@ -129,16 +123,16 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
             )
-            # Round 4 resilience audit, Finding 1: encoding_repaired_warning
-            # claims "the file has been rewritten... bytes are now lost" --
-            # only true once the write above has actually happened, not at
-            # read time (an eligibility check could still have failed first).
+            # encoding_repaired_warning claims "the file has been rewritten
+            # ... bytes are now lost" -- only true once the write above has
+            # actually happened, not at read time (an eligibility check
+            # could still have failed first).
             if encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: canonical keyword, matching explore's own
-    # status_create/status_update -- not the repo's configured label.
+    # Canonical keyword, matching explore's own status_create/status_update
+    # -- not the repo's configured status label.
     return {"file": str(path), "status": "Accepted", "warnings": warnings}

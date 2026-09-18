@@ -1,7 +1,6 @@
-"""`undo` command: reverts a decision's update status back to blank
-(harness Fase 7, item 4). Ported from UndoStatusCommandHandler.cs. No
---refdate -- the original clears the "Changed" row entirely rather than
-recording a new transition.
+"""`undo` command: reverts a decision's update status back to blank. No
+--refdate -- clears the "Changed" row entirely rather than recording a
+new transition.
 """
 
 from adrpy.core.args import parse_flags
@@ -64,26 +63,26 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): undo held no lock at all
-        # (stability audit Finding 1, reproduced -- see approve.py's own
-        # comment). The read below now happens fresh, inside the lock.
+        # ADR001's freshness principle (doc/adr/ADR001V01-...): the read
+        # below happens fresh, inside the lock, never from a pre-lock read.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the pre-lock
+            # read and lock acquisition -- operating against a stale folder
+            # would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-undo.
+            # A specific reason code, not one collapsed not-eligible-for-undo,
+            # so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_undo(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # Performance backlog item: one scan, shared by both checks below --
-            # each used to call family_members (and so scan_decisions) on its own.
+            # One scan shared by both checks below, avoiding a duplicate
+            # scan_decisions call each.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
@@ -102,13 +101,13 @@ def run(args):
             _record, _content, attempts = rewrite_status_field(
                 path, config, lines, header, filename_info, field="update", status=None, refdate=None
             )
-            # Round 4 resilience audit, Finding 1: only true once the write
-            # above has actually happened -- see approve.py's own comment.
+            # Accurate only because the write above already succeeded --
+            # the warning claims the file was rewritten.
             if encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: canonical keyword, not the repo's configured label.
+    # Canonical keyword, not the repo's configured status label.
     return {"file": str(path), "status": "Proposed", "warnings": warnings}

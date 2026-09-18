@@ -1,8 +1,8 @@
-"""Repository configuration schema (harness Fase 3): the single source of
-truth for a repo's `adr-config.adrplus`, byte-compatible with AdrPlus's own
-schema (AdrPlusRepoConfig.cs / ValidateConfig.ValidateRepoStructure) -- no
-field is ever added to it. Always read live from disk, never cached across
-invocations, so the two tools never see a stale copy of each other's writes.
+"""Repository configuration schema: the single source of
+truth for a repo's `adr-config.adrplus`, byte-compatible with AdrPlus's
+own schema -- no field is ever added to it. Always read live from disk,
+never cached across invocations, so the two tools never see a stale copy
+of each other's writes.
 """
 
 import json
@@ -18,27 +18,23 @@ from adrpy.core.security import reject_embedded_delimiter
 VALID_SEPARATORS = ("-", "_", ".")
 VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
 
-# Upper bounds are a deliberate divergence from the original, not fidelity:
-# AdrPlus's real non-interactive validator (ValidateConfig.
-# ValidateConfigRepoFieldValues) has no maximum at all for these three
-# fields -- only its interactive `config --wizard` slider limits them
-# (lenseq 3-5, lenversion 2-3, lenrevision 0-3, see PromptConsole.cs's
-# PromptEditFieldLenSeq/Revision/Version), and hand-editing the config file
-# (or `config --repository --file`) bypasses that slider entirely even in
-# the original. Without a wizard here, nothing else would ever guard these
-# values, so this project adds them explicitly -- confirmed with the user,
-# who chose slightly wider bounds than the wizard's own.
+# Upper bounds are a deliberate divergence, not fidelity: the reference
+# tool's own non-interactive validator has no maximum at all for
+# these three fields -- only its interactive config wizard's own slider
+# limits them (lenseq 3-5, lenversion 2-3, lenrevision 0-3), and
+# hand-editing the config file bypasses that slider entirely even there.
+# Without a wizard here, nothing else would ever guard these values, so
+# this project adds them explicitly -- confirmed with the user, who chose
+# slightly wider bounds than the wizard's own.
 LENSEQ_MIN, LENSEQ_MAX = 3, 6
 LENVERSION_MIN, LENVERSION_MAX = 2, 4
 LENREVISION_MIN, LENREVISION_MAX = 0, 3
 
-# Every bound below comes from the wizard too (PromptConsole.cs), not from
-# ValidateConfig.cs -- same reasoning as above, ported per the same
-# decision. `prefix`'s charset restriction is also a real correctness
-# requirement here, not just cosmetic: core/naming.py's filename parser
-# assumes the prefix segment is letters-only to tell it apart from the
-# digit run that follows (PromptEditFieldPrefix: AcceptInput restricts
-# typed characters to ASCII letters).
+# Every bound below comes from the same wizard, same reasoning as above.
+# `prefix`'s charset restriction is also a real correctness requirement
+# here, not just cosmetic: core/naming.py's filename parser assumes the
+# prefix segment is letters-only to tell it apart from the digit run that
+# follows.
 PREFIX_MAX_LENGTH = 5
 _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 
@@ -110,7 +106,7 @@ _LIST_FIELDS = ("activeplugins",)
 ALL_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS + _LIST_FIELDS
 
 # migrationpattern and template have no "cannot be empty" rule of their own;
-# every other string field does (ValidateConfigRepoFieldValues in the C#).
+# every other string field does.
 _NON_EMPTY_STRING_FIELDS = tuple(
     name for name in _STRING_FIELDS if name not in ("migrationpattern", "template", "prefix")
 )
@@ -156,10 +152,10 @@ def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must
     become a structured CommandError, not a raw UnicodeDecodeError with
-    empty stdout (resilience audit R3).
+    empty stdout.
 
-    Round 8 resilience audit, Finding 1: retries a transient
-    PermissionError the same way every other read in this codebase
+    Retries a transient PermissionError the same way every other read in
+    this codebase
     already does (core/lock.py's _read_lock, core/lifecycle.py's
     read_lines_with_report, cli/explore.py's _build_entry) -- this read
     goes through the identical atomic_write_text -> os.replace mechanism
@@ -271,9 +267,9 @@ def parse_repo_config(text):
 
     # Every one of these lands verbatim in a fixed-position header-table
     # cell (build_header/status rows) -- a hostile config that embeds '|'
-    # or a line-break-like character here can forge an extra row (Fase 5:
-    # confirmed live end-to-end, a forged Accepted status bypassed the
-    # approval workflow entirely). Same check already used for live
+    # or a line-break-like character here can forge an extra row (confirmed
+    # live end-to-end: a forged Accepted status bypassed the approval
+    # workflow entirely). Same check already used for live
     # command arguments (title/scope/domain); a config-specific code keeps
     # it consistent with every other config-* validation error.
     for name in _HEADER_LABEL_FIELDS_MAX_40 + (_STATUS_LABEL_FIELDS + ("headerdisclaimer",)):
@@ -282,11 +278,9 @@ def parse_repo_config(text):
         except CommandError as error:
             raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 
-    # Fidelity audit F2: confirmed against ValidateConfig.cs:494-506 (a
-    # real, pre-1.0.0 check, not part of the 1.0.2 refdate additions) --
-    # the real tool validates a non-empty migrationpattern with
-    # PatternParser.ParseMigratePattern and rejects anything that doesn't
-    # match the N##:##T##[V##:##][R##:##][P##:##] shape.
+    # The reference tool validates a non-empty migrationpattern the same way,
+    # rejecting anything that doesn't match the
+    # N##:##T##[V##:##][R##:##][P##:##] shape.
     migrationpattern = lowered["migrationpattern"]
     if migrationpattern and parse_migration_pattern(migrationpattern) is None:
         raise CommandError(

@@ -32,9 +32,9 @@ def _write_raw(path, config, **record_kwargs):
 
 
 def test_approve_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Round 6 stability re-run, root cause shared by 8 call sites
-    (representative of the 6 commands wired through
-    resolve_repo_and_target): approve's own pre-lock config read can go
+    """Root cause shared by 8 call sites (representative of the 6
+    commands wired through resolve_repo_and_target): approve's own
+    pre-lock config read can go
     stale if a concurrent config edit changes folderadr before this
     call's own lock is actually acquired -- it would then lock, and
     operate against, a directory the repository no longer uses.
@@ -78,8 +78,7 @@ def test_approve_happy_path(tmp_path):
 
 
 def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 1 (HIGH): round 8's own
-    decision log claims approve/reject/undo/version/revise "inherit [the
+    """Decision log claims approve/reject/undo/version/revise "inherit [the
     family_members fail-closed fix] for free" from family_members' own
     strict=True -- but nothing end-to-end proved that for THIS command.
     Demonstrated: wrapping this command's own family_members call in
@@ -117,7 +116,7 @@ def test_approve_rejects_already_approved(tmp_path):
 
 
 def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
-    """Audit round 2 regression, confirmed live at the CLI level: a
+    """Audit A
     hand-edited/corrupted file whose "Changed" cell holds the "Proposed"
     label text (structurally valid, so header.is_valid stays True) was
     silently accepted by `approve` -- ineligibility_reason_for_approve_or_
@@ -138,7 +137,7 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
 
 
 def test_approve_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced: encoding_repaired_
+    """encoding_repaired_
     warning claims "the file has been rewritten... bytes are now lost" --
     false whenever the command fails before ever reaching its own write.
     Confirmed live: approve on an already-Accepted, encoding-corrupted
@@ -168,7 +167,7 @@ def test_approve_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage
     proving it actually reaches a command's own result (only approve.py's
     encoding-repair warning, and new.py's happy path, were ever checked
@@ -193,7 +192,7 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
-    """Mechanism-correctness audit round 2 (findings #3/#4): a warning
+    """A warning
     already recorded earlier in the same run (here, an orphaned temp-file
     cleanup, which runs before the lock/eligibility check either way) used
     to be silently discarded the moment the command went on to fail for an
@@ -201,7 +200,7 @@ def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_pa
     in the failure response revealed that the cleanup had already happened
     for real.
 
-    Round 4 note (resilience audit Finding 1): this used to use an
+    This used to use an
     encoding-repair warning for the same purpose, but that warning is now
     only ever appended after the write it describes genuinely happens --
     `already-accepted` fails before any write, so it's no longer a valid
@@ -229,7 +228,7 @@ def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
     from approve.py) while `warnings` already has entries in scope --
     textually unrelated to the sites already patched, but the same bug.
 
-    Round 4 note (resilience audit Finding 1): uses an orphaned temp-file
+    Uses an orphaned temp-file
     cleanup instead of an encoding-repair warning for the same reason as
     the test above -- refdate-before-history also fails before any write."""
     _, adr_path = _setup_repo(tmp_path)  # created with refdate 2026-01-01
@@ -268,8 +267,7 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
 
 
 def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
-    """Mechanism-correctness audit round 2 (findings #3/#4), the most
-    serious instance: reject's primary write (marking THIS file Rejected)
+    """Reject's primary write (marking THIS file Rejected)
     already succeeds before it discovers the predecessor it's supposed to
     un-supersede doesn't exist. The previous failure response revealed
     nothing about the mutation that had already happened for real."""
@@ -298,7 +296,7 @@ def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
 
 
 def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path):
-    """Test-adequacy audit round 3: no existing test had more than one
+    """No existing test had more than one
     warning accumulated simultaneously before a later failure -- which
     quietly weakens every `assert excinfo.value.warnings` check elsewhere
     (they'd still pass even with a duplicated warning or the wrong
@@ -306,7 +304,7 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
     temp-file cleanup AND an encoding repair) surviving together to a
     later, unrelated CommandError, and checks both content and order.
 
-    Round 4 note (resilience audit Finding 1): previously used `approve`
+    Previously used `approve`
     failing on family-member-superseded, a failure that happens BEFORE
     any write -- encoding_repaired_warning now only fires once the write
     it describes has actually happened (this test's own point predates
@@ -349,7 +347,7 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
 
 
 def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):
-    """Mechanism-correctness audit round 3 (resilience finding #1): same
+    """Same
     partial-mutation class as test_reject_reveals_partial_success_when_
     predecessor_is_missing, but for a real OSError instead of a missing
     predecessor -- the target's own write to Rejected already succeeded
@@ -387,7 +385,7 @@ def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp
 def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the_predecessor_write(
     tmp_path, monkeypatch
 ):
-    """Round 5 stability re-run, Finding 3: same class as the OSError
+    """Same class as the OSError
     sibling test above, but for LockLostError on this command's SECOND
     write -- it used to bypass reject-predecessor-write-failed's handler
     entirely (only OSError was caught there), reporting a generic,
@@ -428,7 +426,7 @@ def test_approve_rejects_refdate_before_create(tmp_path):
         approve.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
 
     assert excinfo.value.code == "refdate-before-history"
-    # Test-adequacy audit round 3: the real "nothing accumulated" value a
+    # The real "nothing accumulated" value a
     # command ever produces is `[]` (every command initializes `warnings
     # = []` before any raise site), never `None` -- confirms
     # attach_warnings' merge produces that exact value here, not just
@@ -461,7 +459,7 @@ def test_approve_rejects_when_sibling_superseded(tmp_path):
         status_change="Superseded",
         date_change=date(2026, 1, 2),
         superseded_by_file="ADR002V01-something.md",  # required: a Superseded row with
-        # no ": <file>" suffix is itself unparseable, in the real tool too
+        # no ": <file>" suffix is itself unparseable, in the reference tool too
     )
 
     with pytest.raises(CommandError) as excinfo:
@@ -471,10 +469,10 @@ def test_approve_rejects_when_sibling_superseded(tmp_path):
 
 
 def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
-    """Regression for the resilience audit's R1 finding: a body containing
+    """A body containing
     a Unicode line-separator character that is NOT a real line terminator
     (form feed, NEL, LINE SEPARATOR, ...) must survive a status rewrite
-    byte-for-byte. Confirmed live against the real adrplus: none of these
+    byte-for-byte. Confirmed live against the reference tool: none of these
     is treated as a line break there, so the body's line count and content
     are unchanged by `approve`."""
     tmp_path, adr_path = _setup_repo(tmp_path)
@@ -493,11 +491,11 @@ def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
 
 
 def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_path):
-    """Not a bug: confirmed live against the real adrplus (approve on a
+    """Not a bug: confirmed live against the reference tool (approve on a
     body containing raw invalid UTF-8 bytes) that it ALSO replaces them
     with U+FFFD on rewrite, byte-for-byte identical to this port. Recorded
     as a permanent test so this doesn't get re-investigated as a suspected
-    data-loss bug -- tolerating invalid bytes on read (Fase 4) was already
+    data-loss bug -- tolerating invalid bytes on read Was already
     confirmed fidelity; this confirms the read-then-rewrite round trip is
     too, not an extra liberty this port took on its own."""
     tmp_path, adr_path = _setup_repo(tmp_path)
@@ -509,7 +507,7 @@ def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_p
     body_bytes = adr_path.read_bytes()
     assert b"\xa4\xe9\xe8" not in body_bytes
     assert "Invalid UTF-8 marker: ��� end.".encode("utf-8") in body_bytes
-    # Observability audit, end-to-end: load_target's own encoding_repaired
+    # load_target's own encoding_repaired
     # report (test_lifecycle.py) must actually reach a real command's
     # result, not just the lifecycle module in isolation.
     assert any("invalid utf-8" in warning.lower() for warning in result["warnings"])
@@ -539,7 +537,7 @@ def test_reject_happy_path(tmp_path):
 
 
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 1 (HIGH): see approve's own
+    """See approve's own
     equivalent test -- this is reject's OWN family scan (its own family,
     not the predecessor lookup covered by the round-9 usability fix
     above), which runs before any write."""
@@ -575,7 +573,7 @@ def test_reject_rejects_already_resolved(tmp_path):
 
 
 def test_reject_rejects_when_sibling_superseded(tmp_path):
-    """Round 4 test-adequacy audit, Finding 2: family-member-superseded
+    """Family-member-superseded
     is raised by hand at 8 separate call sites across 5 command files;
     only approve's own was tested. reject's own raise site (reject.py)
     had zero coverage."""
@@ -602,7 +600,7 @@ def test_reject_rejects_when_sibling_superseded(tmp_path):
 
 
 def test_reject_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    """Same class as
     approve's own test."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
@@ -628,7 +626,7 @@ def test_reject_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_reject_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4 -- same class as approve's
+    """Same class as approve's
     own test."""
     from adrpy.core import lifecycle
 
@@ -726,11 +724,12 @@ def test_reject_undoes_predecessor_supersede_status(tmp_path):
 
 
 def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_member(tmp_path):
-    """Round 7 stability audit, Finding 2 (HIGH): reject picked the
+    """Reject picked the
     predecessor to revert via latest_in_family (highest version/revision)
     instead of matching the family member whose own superseded_by_file
     actually names this successor. Reachable without any concurrency and
-    without Finding 1's bug: a family that already has more than one
+    without the back-reference-matching bug covered separately below: a
+    family that already has more than one
     member (e.g. from an earlier `version` bump) where the SUPERSEDED
     member isn't the latest one already selects the wrong file -- reject
     would revert the untouched latest member and leave the real
@@ -754,7 +753,7 @@ def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_membe
 
 
 def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_superseded(tmp_path):
-    """Round 8 test-adequacy audit, Finding 4: round 7's fix reverts the
+    """Reverts the
     predecessor by matching its own superseded_by_file back-reference,
     not merely "a Superseded sibling" -- but every existing test only
     ever has ONE Superseded member in the family at the point reject
@@ -821,7 +820,7 @@ def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_su
 
 
 def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_incomplete(tmp_path, monkeypatch):
-    """Round 9 usability audit, Finding 1 (HIGH): the predecessor-family
+    """The predecessor-family
     scan runs AFTER the primary write (marking this file Rejected) has
     already committed -- unlike every other family_members call in this
     codebase, which all run before their command's own first write. The
@@ -884,7 +883,7 @@ def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_inco
     assert excinfo.value.code == "family-scan-incomplete"
     assert excinfo.value.data["file"] == str(successor_path)
     assert excinfo.value.data["status"] == "Rejected"
-    # Round 10 stability audit, Finding 1: the original error's own data
+    # The original error's own data
     # (which subdirectories couldn't be scanned) must survive the
     # re-raise too, not just this command's own file/status.
     assert excinfo.value.data["folder"] == str(adr_dir)
@@ -909,7 +908,7 @@ def test_undo_happy_path(tmp_path):
 
 
 def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 9 test-adequacy audit, Finding 1 (HIGH): see approve's own
+    """See approve's own
     equivalent test."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
@@ -934,7 +933,7 @@ def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypat
 
 
 def test_undo_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Round 4 resilience audit, Finding 1, reproduced -- same class as
+    """Same class as
     approve's own test."""
     _, adr_path = _setup_repo(tmp_path)
     with open(adr_path, "ab") as handle:
@@ -960,7 +959,7 @@ def test_undo_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_undo_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4 -- same class as approve's
+    """Same class as approve's
     own test."""
     from adrpy.core import lifecycle
 
@@ -1013,7 +1012,7 @@ def test_undo_rejects_when_still_proposed(tmp_path):
 
 
 def test_undo_rejects_when_sibling_superseded(tmp_path):
-    """Round 4 test-adequacy audit, Finding 2: undo's own
+    """Undo's own
     family-member-superseded raise site had zero coverage (only its
     sibling family-member-pending check, below, was tested)."""
     tmp_path, adr_path = _setup_repo(tmp_path)
@@ -1061,8 +1060,7 @@ def test_undo_rejects_when_pending_sibling_exists(tmp_path):
 
 
 def test_undo_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Round 5 test-adequacy re-run, Finding 1 (confirmed with the user):
-    superseded takes priority over pending, deliberately -- a superseded
+    """Superseded takes priority over pending, deliberately -- a superseded
     member means the WHOLE family this decision belonged to has already
     been replaced, which blocks it regardless of any other sibling's own
     state. No existing test constructed a family with BOTH conditions
@@ -1102,7 +1100,7 @@ def test_undo_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
 
 
 def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
-    """Legacy-scheme census audit: family_members applied neither
+    """family_members applied neither
     is_structurally_valid nor counts_as_family_member -- it counted ANY
     filename-matching sibling as a family member, even one whose header
     doesn't parse at all (a hand-written legacy file nobody has run
@@ -1110,7 +1108,7 @@ def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
     (`status_update is None and not is_migrated`) then falsely fired for
     it, blocking undo/version/revise on the *current-scheme* family member
     during the entire window between "legacy file exists" and "migrate
-    has run" -- a window the harness explicitly says must work."""
+    has run" -- a window that must work correctly."""
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["migrationpattern"] = "N00:04T04"
     config_file = tmp_path / "seed-config.json"
@@ -1143,7 +1141,7 @@ def test_status_transitions_end_to_end_through_main(tmp_path):
 
 
 def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """Fidelity audit F10: real adrplus's -f/-r; end-to-end through
+    """The reference tool's -f/-r; end-to-end through
     main(), not just parse_flags in isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS

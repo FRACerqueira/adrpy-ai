@@ -42,7 +42,7 @@ def _write_legacy_file(tmp_path, filename, content):
 
 
 def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, class closure: unlike an unreadable FILE
+    """Unlike an unreadable FILE
     (migration-scan-failed, already fail-closed), an unreadable
     subdirectory used to only warn -- but this scan feeds
     already-tool-created-adrs-exist, a real safety decision (a hidden
@@ -71,8 +71,7 @@ def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
 
 def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Round 6 stability re-run, root cause shared by 8 call sites:
-    migrate's own bootstrap config read can go stale if a concurrent
+    """Migrate's own bootstrap config read can go stale if a concurrent
     config edit changes folderadr before this call's own lock is
     actually acquired -- it would then lock, scan, and write against a
     directory the repository no longer uses."""
@@ -91,8 +90,7 @@ def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monke
 
 
 def test_migrate_reports_lock_lost_not_a_per_candidate_failure_when_the_lock_read_itself_fails(tmp_path, monkeypatch):
-    """Round 6 stability/resilience re-run (2 independent fronts, cross-
-    corroborated, no shared context): a persistent I/O failure reading
+    """A persistent I/O failure reading
     the lock file during verify_still_held() used to escape as a bare
     PermissionError, which -- being an OSError but not a LockLostError
     -- fell through migrate's own `except LockLostError` clause into the
@@ -130,7 +128,7 @@ def test_migrate_reports_lock_lost_not_a_per_candidate_failure_when_the_lock_rea
 
 
 def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):
-    """Mechanism-correctness audit round 3 (resilience finding #2a): the
+    """The
     initial directory scan's own read (building `entries`, used to decide
     eligibility) ran outside the per-candidate try/except entirely -- an
     OSError there (permission denied, a locked file, a network-drive
@@ -142,7 +140,7 @@ def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path,
     _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
 
-    # Round 4 performance fix: the scan-phase read now goes through
+    # The scan-phase read now goes through
     # read_header_lines_with_report, a bounded read via a raw `open()`
     # handle, not Path.read_bytes/read_text -- patch the function itself
     # instead of the I/O primitive it happens to use internally.
@@ -163,7 +161,7 @@ def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path,
 
 
 def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result_entry(tmp_path, monkeypatch):
-    """Mechanism-correctness audit round 3 (resilience finding #2b): the
+    """The
     per-candidate loop only caught OSError -- a plausible non-OSError
     failure while building a candidate's new header (e.g. a
     UnicodeEncodeError from a title containing a lone surrogate) escaped
@@ -231,7 +229,7 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
     assert statuses[processed[0]] == "migrated"
     assert statuses[processed[1]] == "failed"
     assert statuses[processed[2]] == "migrated"
-    # Test-adequacy audit round 3: was only `assert results[1]["error"]`
+    # Was only `assert results[1]["error"]`
     # (truthiness), which would pass even with the wrong error text.
     assert "simulated disk failure" in results[1]["error"]
 
@@ -242,7 +240,7 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
 
 
 def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """Round 8 resilience audit, Finding 2 (Medium): the write-phase read
+    """The write-phase read
     of a candidate's own bytes had no retry tolerance, unlike this
     command's own SCAN-phase read of the exact same file a few dozen
     lines earlier (read_header_lines_with_report, already retried).
@@ -285,15 +283,15 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
     text = legacy_path.read_text(encoding="utf-8")
     assert "<!-- Migrated -->" in text
     assert "|File title md|UsePostgreSQL|" in text
-    assert "|Created||" in text  # StatusCreate stays Unknown, per the real tool
+    assert "|Created||" in text  # StatusCreate stays Unknown, per the reference tool
     assert "# Use PostgreSQL\n\n## Context\n\nWe need a database.\n" in text
-    # Round 4 test-adequacy audit, Finding 3: no test pinned the exact
+    # No test pinned the exact
     # empty-list value on a genuine happy path, only that the key exists.
     assert result["warnings"] == []
 
 
 def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 4: retry_warning's own
+    """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
     migrate.py calls atomic_write_BYTES, not atomic_write_text."""
     _init_repo_with_pattern(tmp_path)
@@ -312,7 +310,8 @@ def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
-    """Regression, confirmed against a real `adrplus migrate` run: the
+    """Regression, confirmed against a real run of the reference tool's
+    own `migrate` command: the
     original body's own line endings (here, bare LF, unlike the header's
     host os.linesep) must pass through completely untouched -- only the
     header is new text. This is what caught the bug: an early version
@@ -330,9 +329,9 @@ def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
 
 
 def test_migrate_strips_a_leading_utf8_bom(tmp_path):
-    """Fidelity audit F7: confirmed live -- the real adrplus discards a
+    """Confirmed against the reference tool's own live behavior: it discards a
     leading UTF-8 BOM when reading the legacy file, so the migrated result
-    never has one; adrpy preserved the raw bytes including the BOM, which
+    never has one; this port preserved the raw bytes including the BOM, which
     landed it in the MIDDLE of the file (after the new header, before the
     body) instead of not existing at all."""
     tmp_path = _init_repo_with_pattern(tmp_path)
@@ -424,7 +423,7 @@ def test_migrate_rejects_when_tool_created_adr_already_exists(tmp_path):
 
 
 def test_migrate_refuses_when_a_scanned_file_has_a_lossy_encoding(tmp_path):
-    """Round 4 observability audit, Finding 2, reproduced: the scan-phase
+    """The scan-phase
     read used `errors="replace"` with no signal at all -- a single
     invalid UTF-8 byte in an otherwise-valid, already-tool-created
     header's status-label cell made parse_header see it as invalid,
@@ -500,7 +499,7 @@ def test_migrate_end_to_end_through_main(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Round 4 observability audit, Finding 3: migrate's own scan used to
+    """Migrate's own scan used to
     drop an is_within-excluded candidate with zero signal, same as
     scan_decisions/explore."""
     _init_repo_with_pattern(tmp_path)
@@ -523,7 +522,7 @@ def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
-    """Round 4 performance front, Finding D: migrate's scan phase used to
+    """Migrate's scan phase used to
     read a candidate's ENTIRE content (read_lines_with_report) just to
     parse its 12-line header and check its encoding -- the same class of
     waste the round-1 performance fix already closed for family_members.
@@ -551,7 +550,7 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
 
 
 def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_loop(tmp_path, monkeypatch):
-    """Round 5 stability re-run, Finding 3: losing the lock between two
+    """Losing the lock between two
     candidates used to raise straight out of the per-candidate loop,
     discarding the `results` list describe() promises names every
     candidate's own outcome. Distinct from a per-file OSError/
@@ -587,8 +586,7 @@ def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_lo
 
 
 def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):
-    """Round 4 second corroboration pass (2/3 and 3/3, both independent):
-    migrate held no lock at all -- confirmed empirically (real thread
+    """Migrate held no lock at all -- confirmed empirically (real thread
     interleaving) to let it silently erase a concurrent approve's
     already-committed write, even though approve correctly held the lock
     and its own verify_still_held() passed honestly. migrate's missing
@@ -628,7 +626,7 @@ def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monk
 
 
 def test_migrate_describe_documents_the_migrationpattern_precondition():
-    """Usability audit A9: migrate fails with migration-pattern-not-
+    """Migrate fails with migration-pattern-not-
     configured on any freshly-init'd repository (100% of the time, not an
     edge case) -- describe() never said so, so an agent only discovered
     this by trial and error."""
@@ -636,7 +634,7 @@ def test_migrate_describe_documents_the_migrationpattern_precondition():
 
 
 def test_migrate_describe_documents_the_persist_back_write_survives_a_later_failure():
-    """Round 11 usability pass: the persist-back write commits before
+    """The persist-back write commits before
     the scan/eligibility checks and is never rolled back if one of them
     later refuses the run -- describe() used to imply the opposite via
     "no file is touched" phrasing that predates the fallback."""

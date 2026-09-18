@@ -15,14 +15,13 @@ def test_emit_failure_omits_warnings_key_when_warnings_is_none(capsys):
 
 
 def test_emit_failure_includes_an_explicitly_empty_warnings_list(capsys):
-    """Round 4 (observability audit Finding 4 / test-adequacy audit
-    Finding 4, both independently found this): emit_failure's `if
+    """emit_failure's `if
     warnings:` treated an explicitly empty list the same as None,
     silently dropping the key -- even though every raise site that
     passes `warnings=warnings` from inside a command's attach_warnings
     region passes a REAL, already-initialized list, frequently still
     empty on a fresh run's first eligibility check. This directly
-    contradicts round 3's own stated goal (commit 1a95548): every
+    contradicts Every
     success result carries "warnings" unconditionally, even empty,
     specifically so a generic wrapper never needs a special case --
     failure responses had no equivalent guarantee."""

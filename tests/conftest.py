@@ -16,7 +16,7 @@ def _no_install_level_config_by_default(monkeypatch):
     would not reach). A test that needs to exercise the install-level
     config path explicitly overrides this with its own monkeypatch.
 
-    Scope, explicitly (round 11 test-adequacy pass, Finding A): this
+    Scope, explicitly: this
     covers `init`/`migrate` only -- `installconfig` itself never calls
     `read_install_config_text`, only `resolve_install_config_path`
     directly, which this fixture does NOT patch. `tests/

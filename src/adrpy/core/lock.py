@@ -1,16 +1,14 @@
 """Concurrency lock for any operation that decides "what's the next
-number/version" (harness Fase 4).
+number/version".
 
-Deliberate hardening beyond the original: AdrPlus itself has no equivalent
-protection (confirmed -- no `Mutex`, `Semaphore`, `lock` statement, or
-exclusive `FileShare` anywhere in its source), motivated by an AI agent
-being able to fire concurrent calls in a way the original's single
-interactive user never needed to. Registered as such, not as fidelity.
+Deliberate hardening beyond the reference tool, which has no equivalent
+protection at all, motivated by an AI agent being able to fire concurrent
+calls in a way its single interactive user never needed to. Registered
+as such, not as fidelity.
 
-`LOCK_FILE_NAME` is reserved and must be excluded from every future scan of
-the decisions directory (Fase 6/7) -- it must never appear as an
-"unrecognized file" in a report, nor be mistaken for a candidate under
-either naming scheme.
+`LOCK_FILE_NAME` is reserved and must be excluded from every scan of the
+decisions directory -- it must never appear as an "unrecognized file" in
+a report, nor be mistaken for a candidate under either naming scheme.
 """
 
 import contextlib
@@ -35,15 +33,15 @@ LOCK_IO_RETRY_DELAY_SECONDS = 0.05
 
 class LockTimeoutError(CommandError):
     """A CommandError (not a bare Exception) so a genuine timeout surfaces
-    as a real, named failure code (resilience audit R4) instead of falling
-    through __main__'s catch-all as an internal-error."""
+    as a real, named failure code instead of falling through __main__'s
+    catch-all as an internal-error."""
 
     def __init__(self, detail, warnings=None):
         super().__init__("repository-locked", detail, warnings=warnings)
 
 
 class LockLostError(CommandError):
-    """Round 4 ADR001 (doc/adr/ADR001V01-...): the lock was acquired
+    """ADR001 (doc/adr/ADR001V01-...): the lock was acquired
     successfully but was reclaimed by another process before this
     command's write could commit -- distinct from LockTimeoutError (never
     acquired the lock at all), so a caller retrying on this code knows
@@ -54,19 +52,18 @@ class LockLostError(CommandError):
 
 
 def _unlink_with_retry(path):
-    """Same transient-PermissionError retry as atomic_write_text (Fase 4) --
-    a Windows "pending delete"/sharing-violation window under heavy
+    """Same transient-PermissionError retry as atomic_write_text -- a
+    Windows "pending delete"/sharing-violation window under heavy
     concurrent lock churn can make an unlink of a file that genuinely is
     ours fail momentarily.
 
     Returns True once the file is confirmed gone (removed by this call, or
     already absent), False when removal could not be confirmed. Never
     raises: best-effort, since a lock file left behind is still eligible
-    for reclaim later by `_reclaim_if_abandoned` -- but round 4's
-    resilience/observability audit found the return value was missing
-    entirely (every caller assumed success) and that only PermissionError
-    was even caught, so any other OSError during release used to escape
-    `acquire_repo_lock`'s own `finally` block raw, turning a fully
+    for reclaim later by `_reclaim_if_abandoned`. The return value matters
+    because a caller that assumed success unconditionally, or that only
+    caught PermissionError, would let any other OSError during release
+    escape `acquire_repo_lock`'s own `finally` block raw, turning a fully
     successful write into a reported failure."""
     for attempt in range(LOCK_IO_RETRY_ATTEMPTS):
         try:
@@ -83,13 +80,13 @@ def _unlink_with_retry(path):
 def _read_lock(path):
     """Retries a transient PermissionError, the same tolerance
     `_unlink_with_retry`/`atomic_write_bytes` already have for this
-    project's own documented contention window (round 4, resilience
-    Finding 4) -- called both from the wait loop (every poll) and from
-    the release path, so an intolerant read here could abort a wait that
-    should have simply retried, or raise out of a `finally` block.
+    project's own documented contention window -- called both from the
+    wait loop (every poll) and from the release path, so an intolerant
+    read here could abort a wait that should have simply retried, or
+    raise out of a `finally` block.
 
-    Round 5 stability re-run, Finding 4, class closure: the retry loop
-    itself now lives in core/io_retry.py, shared with core/lifecycle.py's
+    The retry loop itself lives in core/io_retry.py, shared with
+    core/lifecycle.py's
     own decision-file reads instead of being a second independent copy --
     this call passes this module's own LOCK_IO_RETRY_* tuning explicitly,
     so a future change to either site's numbers can't silently drift the
@@ -110,25 +107,22 @@ def _read_lock(path):
 
 
 def _try_create(path, token):
-    """Round 4, resilience Finding 2: a process killed (or any other
-    OSError, e.g. disk full) between os.open and the write landing used to
-    leave a 0-byte/truncated lock file behind with no cleanup -- unlike
-    atomic_write_bytes, hardened for this exact class in round 1. Left
+    """A process killed (or any other OSError, e.g. disk full) between
+    os.open and the write landing could otherwise leave a 0-byte/truncated
+    lock file behind with no cleanup -- unlike atomic_write_bytes. Left
     behind, that file is unparseable, which is exactly the case
     `_reclaim_if_abandoned`'s mtime fallback below exists for -- but
     cleaning it up immediately here means a future reclaim isn't the only
     thing standing between a crash and a permanent deadlock.
 
-    Round 6 stability re-run, corroborated (Finding A-3, upgraded to
-    Medium on independent corroboration -- real cross-process contention
-    reliably reproduces PermissionError on this exact os.open call, ~14%
-    collision rate under stress): this was the one lock-file creation
-    site with no tolerance at all for the same transient contention
-    window `_read_lock`/`_unlink_with_retry` already retry. A
-    PermissionError still persisting past the retry budget gets the
-    identical, already-safe treatment as FileExistsError below -- return
-    False and let the wait loop's own timeout handle it, rather than
-    escaping raw."""
+    This is also the one lock-file creation site needing tolerance for
+    the same transient contention window `_read_lock`/`_unlink_with_retry`
+    already retry: real cross-process contention reliably reproduces
+    PermissionError on this exact os.open call (~14% collision rate under
+    stress, empirically measured). A PermissionError still persisting past
+    the retry budget gets the identical, already-safe treatment as
+    FileExistsError below -- return False and let the wait loop's own
+    timeout handle it, rather than escaping raw."""
     try:
         fd = read_with_permission_retry(
             lambda: os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY),
@@ -151,35 +145,31 @@ def _reclaim_if_abandoned(path, abandon_after):
     lock just inspected -- narrows, but cannot fully close, the race against
     a different process reclaiming (or refreshing) it at the same moment.
     Returns True only when this call's own `_unlink_with_retry` confirms
-    the removal happened, not merely attempted (round 4, resilience/
-    observability Finding 1a: this used to return True unconditionally,
-    producing a false "reclaimed" claim while the lock file was still on
-    disk), so the caller can report it (harness Fase 4: a reclaim must
-    warn, naming the two possible causes -- a crashed process or a
-    genuinely slow one -- since neither can be told apart from here).
+    the removal happened, not merely attempted -- returning True
+    unconditionally would produce a false "reclaimed" claim while the lock
+    file was still on disk -- so the caller can report it: a reclaim must
+    warn, naming the two possible causes (a crashed process or a genuinely
+    slow one), since neither can be told apart from here.
 
     A lock file whose content doesn't parse (e.g. 0 bytes or truncated, as
     `_try_create` above can no longer leave behind itself, but a crash
     mid-write could still produce via a different path) has no timestamp
     to compare against `abandon_after` -- falls back to the file's own
     mtime, or such a lock could never be recognized as abandoned and the
-    repository deadlocks permanently (round 4, resilience Finding 2,
-    reproduced).
+    repository deadlocks permanently.
 
-    Round 6 stability re-run: related gap found while corroborating
-    Finding A-3, same contention class -- both `path.stat()` calls below
-    now tolerate a transient PermissionError the same way `_read_lock`/
-    `_try_create` already do; previously only FileNotFoundError was
-    caught, so a persistent I/O failure here could escape this function
-    raw, out of `acquire_repo_lock`'s own wait loop entirely.
+    Both `path.stat()` calls below tolerate a transient PermissionError
+    the same way `_read_lock`/`_try_create` already do -- without this, a
+    persistent I/O failure here could escape this function raw, out of
+    `acquire_repo_lock`'s own wait loop entirely.
 
-    Round 7 resilience audit, Finding 2: the two `_read_lock` calls just
-    below had no equivalent tolerance for their own PERSISTENT
-    PermissionError (past `_read_lock`'s own retry budget, which re-
-    raises rather than swallowing it) -- inconsistent with the stat()
-    calls hardened above. Ownership can't be confirmed either way when
-    this happens; abstain (don't reclaim) rather than let it escape raw,
-    same default this whole module already uses elsewhere."""
+    The two `_read_lock` calls just below also need equivalent tolerance
+    for their own PERSISTENT PermissionError (past `_read_lock`'s own
+    retry budget, which re-raises rather than swallowing it) -- consistent
+    with the stat() calls hardened above. Ownership can't be confirmed
+    either way when this happens; abstain (don't reclaim) rather than let
+    it escape raw, same default this whole module already uses
+    elsewhere."""
     try:
         existing = _read_lock(path)
     except PermissionError:
@@ -221,8 +211,8 @@ def _reclaim_if_abandoned(path, abandon_after):
 
 
 class RepoLock:
-    """Yielded by acquire_repo_lock in place of a bare warnings list (round
-    4 ADR001): bundles the warnings accumulated so far with the means to
+    """Yielded by acquire_repo_lock in place of a bare warnings list
+    (ADR001): bundles the warnings accumulated so far with the means to
     prove this process still owns the lock immediately before a command's
     final write. No bounded-lease lock without heartbeat/renewal can
     prevent every reclaim of a still-working holder -- this guarantees
@@ -239,16 +229,14 @@ class RepoLock:
         try:
             existing = _read_lock(self._path)
         except OSError as error:
-            # Round 6 stability/resilience re-run (2 independent fronts,
-            # cross-corroborated): a persistent I/O failure reading the
-            # lock file here used to re-raise as a bare OSError -- in
-            # migrate's per-candidate loop specifically, that meant it
-            # was caught by the per-file except clause and misreported
-            # as THAT candidate's own write failure, even though the
-            # candidate was never touched, and the loop kept going,
-            # repeating the same misclassification for every remaining
-            # candidate. Ownership can't be confirmed either way here --
-            # treat it exactly as protectively as a genuine loss, under
+            # A persistent I/O failure reading the lock file here must
+            # not re-raise as a bare OSError -- in migrate's per-candidate
+            # loop specifically, that would be caught by the per-file
+            # except clause and misreported as THAT candidate's own write
+            # failure, even though the candidate was never touched, with
+            # the loop repeating the same misclassification for every
+            # remaining candidate. Ownership can't be confirmed either way
+            # here -- treat it exactly as protectively as a genuine loss, under
             # the same LockLostError contract every caller already
             # handles correctly (no new wiring needed anywhere).
             raise LockLostError(
@@ -295,11 +283,10 @@ def acquire_repo_lock(
         if _reclaim_if_abandoned(path, abandon_after):
             reclaimed_stale_lock = True
         if time.monotonic() >= deadline:
-            # Mechanism-correctness audit: reclaiming a stale lock right
-            # before timing out anyway used to vanish entirely -- the
-            # reclaim actually happened (a real side effect, same as
-            # the success-path warning below), but nothing in the
-            # resulting failure said so.
+            # Reclaiming a stale lock right before timing out anyway is a
+            # real side effect (same as the success-path warning below)
+            # that the resulting failure must say happened, not let vanish
+            # silently.
             timeout_warnings = (
                 [
                     "A stale repository lock (from a possibly-crashed or genuinely slow process) was "
@@ -313,10 +300,8 @@ def acquire_repo_lock(
             )
         time.sleep(poll_interval)
 
-    # Observability audit: yields the warnings list the caller should
-    # attach to its own result -- reclaiming a stale lock used to be
-    # completely silent, even though the harness explicitly requires a
-    # warning here.
+    # Yields the warnings list the caller should attach to its own result
+    # -- reclaiming a stale lock must never be silent.
     warnings = []
     if reclaimed_stale_lock:
         warnings.append(
@@ -328,10 +313,10 @@ def acquire_repo_lock(
     try:
         yield lock
     finally:
-        # Round 5 stability re-run, Finding 2: same class round 4 already
-        # closed for _unlink_with_retry just below -- any OSError escaping
-        # this `finally` block turns a fully successful write into a
-        # reported failure (and, since a `finally`-raised exception
+        # Same class already closed for _unlink_with_retry just below --
+        # any OSError escaping this `finally` block would turn a fully
+        # successful write into a reported failure (and, since a
+        # `finally`-raised exception
         # supersedes whatever was propagating from `try: yield lock`, can
         # mask a real CommandError code as a generic io-error) -- and
         # skips _unlink_with_retry entirely, leaking the lock file for the
@@ -344,9 +329,9 @@ def acquire_repo_lock(
         except OSError:
             existing = None
         if existing is not None and existing[0] == token:
-            # Round 5 stability re-run, Finding 6 (narrows, does not fully
-            # close -- no atomic compare-and-delete exists at the
-            # filesystem level): re-read immediately before unlinking,
+            # Narrows, but does not fully close -- no atomic
+            # compare-and-delete exists at the filesystem level: re-read
+            # immediately before unlinking,
             # the same inner race-guard shape _reclaim_if_abandoned
             # already uses for its own removal decision. If a reclaim
             # lands in exactly this narrower window (between the

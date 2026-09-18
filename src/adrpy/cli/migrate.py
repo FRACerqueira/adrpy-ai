@@ -1,6 +1,5 @@
 """`migrate` command: adds an AdrPlus-compliant header to existing,
-hand-written decision files (harness Fase 7, item 7). Ported from
-MigrateCommandHandler.cs. Refuses outright if ANY file already has a
+hand-written decision files. Refuses outright if ANY file already has a
 valid, non-migrated header (current-scheme, tool-created) -- migration is
 a one-time operation for repositories with only manually-created
 decisions. Rewrites only the header in place, and the filename is never
@@ -14,8 +13,8 @@ If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
 command; ADR002V01) when one is set there, and persists the found value
 back into this repository's own `adr-config.adrplus` as part of the same
-locked write -- matching the real tool's own behavior, confirmed against
-MigrateCommandHandler.cs:97-105. The fallback lookup and persist-back
+locked write -- matching the reference tool's own confirmed behavior. The
+fallback lookup and persist-back
 happen AFTER the repository lock is acquired and the config is re-read
 fresh (ADR001's freshness principle), not from the pre-lock read, so a
 concurrent direct edit of the repo's own migrationpattern is never
@@ -109,19 +108,18 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Round 4 second corroboration pass (audit-stability, 2/3 and 3/3
-        # independently): migrate held no lock at all -- confirmed
-        # empirically to let it silently erase a concurrent approve's
-        # already-committed write, even though approve correctly held
-        # the lock and its own verify_still_held() passed honestly.
-        # migrate's missing lock defeated ADR001's guarantee for a
-        # command that did everything right, not just for migrate itself
-        # racing against a second migrate. The whole scan-decide-write
-        # flow is now one critical section, same as the other 8 commands.
+        # Without this lock, migrate could silently erase a concurrent
+        # approve's already-committed write, even when approve correctly
+        # held the lock and its own verify_still_held() passed honestly --
+        # a missing lock here defeats ADR001's guarantee for a command
+        # that did everything right, not just for migrate itself racing
+        # against a second migrate. The whole scan-decide-write flow is
+        # one critical section, same as every other mutating command.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see cli/approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the
+            # pre-lock read and lock acquisition -- operating against a
+            # stale folder would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
 
             # ADR002V01: the fallback decision and its persist-back write
@@ -143,9 +141,9 @@ def run(args):
                         warnings=warnings,
                     )
                 # Persists the found value back into the repo's own
-                # config, matching MigrateCommandHandler.cs:97-105 --
-                # covered by the same lock as the rest of this critical
-                # section, not a separate write outside it.
+                # config, matching the reference tool's own behavior -- covered
+                # by the same lock as the rest of this critical section,
+                # not a separate write outside it.
                 merged = asdict(config)
                 merged["migrationpattern"] = fallback_pattern
                 merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
@@ -159,8 +157,8 @@ def run(args):
             entries = []  # (ParsedFileName, Path, HeaderParseResult)
             unreliable_files = []
             if folder.is_dir():
-                # Round 4 performance front: resolved once, not once per
-                # candidate -- see is_within's own note.
+                # Resolved once, not once per candidate -- see is_within's
+                # own note.
                 try:
                     resolved_folder = folder.resolve()
                 except (OSError, ValueError):
@@ -175,34 +173,31 @@ def run(args):
                         continue
                     _, parsed = found
                     try:
-                        # Round 4 observability audit, Finding 2, reproduced:
-                        # this used to decode with errors="replace" and no
-                        # signal at all -- a single invalid UTF-8 byte in an
+                        # A lossy decode (errors="replace") with no signal
+                        # would let a single invalid UTF-8 byte in an
                         # otherwise-valid, already-tool-created header's
-                        # status-label cell made parse_header see it as
+                        # status-label cell make parse_header see it as
                         # invalid, bypassing the already-tool-created-adrs-
-                        # exist safety check below and letting the file get a
-                        # SECOND header stamped onto it. Same lossy-decode
+                        # exist safety check below and letting the file get
+                        # a SECOND header stamped onto it. Same lossy-decode
                         # detection every other read in this project already
                         # uses; entries with a lossy read are set aside below,
                         # never trusted for a safety-critical decision.
                         #
-                        # Round 4 performance front, Finding D: reads only
-                        # the bounded header (parse_header never looks past
-                        # it, and the write loop below copies body bytes
-                        # through raw, untouched either way), not the whole
-                        # candidate -- same class the round-1 performance
-                        # fix already closed for family_members.
+                        # Reads only the bounded header (parse_header never
+                        # looks past it, and the write loop below copies
+                        # body bytes through raw, untouched either way), not
+                        # the whole candidate.
                         lines, encoding_repaired = read_header_lines_with_report(candidate)
                     except OSError as error:
-                        # Mechanism-correctness audit round 3 (resilience
-                        # finding #2a): this scan-phase read used to run
-                        # entirely outside any try/except -- a real failure
-                        # here (permission denied, a locked file, a network-
-                        # drive hiccup) escaped as a raw OSError, discarding
-                        # the orphan-cleanup warning already appended above
-                        # and skipping the deterministic per-file reporting
-                        # the best-effort redesign otherwise guarantees.
+                        # This scan-phase read must not run outside a
+                        # try/except: a real failure here (permission
+                        # denied, a locked file, a network-drive hiccup)
+                        # would otherwise escape as a raw OSError,
+                        # discarding the orphan-cleanup warning already
+                        # appended above and skipping the deterministic
+                        # per-file reporting the best-effort design
+                        # otherwise guarantees.
                         raise CommandError(
                             "migration-scan-failed",
                             f"{candidate}: {error}",
@@ -213,26 +208,22 @@ def run(args):
                         unreliable_files.append(str(candidate))
                     entries.append((parsed, candidate, parse_header(lines, config)))
 
-                # Round 4 observability audit, Finding 3: same as scan_
-                # decisions/explore -- an is_within-excluded candidate used to
-                # be dropped with zero signal.
+                # Same as scan_decisions/explore -- an is_within-excluded
+                # candidate is reported, not dropped with zero signal.
                 warning = excluded_candidate_warning(excluded)
                 if warning:
                     warnings.append(warning)
-                # Round 6 resilience re-run, Finding B, class closure:
                 # rglob above silently swallows an OSError from an
                 # unreadable subdirectory -- see
-                # find_unreadable_subdirectories' own note.
-                #
-                # Round 8 stability audit, class closure: fails closed
+                # find_unreadable_subdirectories' own note. Fails closed
                 # instead of warning -- unlike explore's own best-effort
-                # listing, this scan feeds already-tool-created-adrs-
-                # exist below, a real safety decision (a hidden already-
-                # migrated file could make that check silently answer
-                # "no" when the true answer is "yes"). Same fail-closed
-                # treatment this command already gives an unreadable
-                # FILE (migration-scan-failed) -- a directory it can't
-                # enter is the identical risk, just one level up.
+                # listing, this scan feeds already-tool-created-adrs-exist
+                # below, a real safety decision (a hidden already-migrated
+                # file could make that check silently answer "no" when the
+                # true answer is "yes"). Same fail-closed treatment this
+                # command already gives an unreadable FILE
+                # (migration-scan-failed) -- a directory it can't enter is
+                # the identical risk, just one level up.
                 unreadable_dirs = find_unreadable_subdirectories(folder)
                 if unreadable_dirs:
                     raise CommandError(
@@ -280,42 +271,41 @@ def run(args):
             if not candidates:
                 raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
 
-            # Design decision (2026-09-15): best-effort, not fail-fast -- one
-            # file's OSError (permission denied, full disk) must not block the
-            # rest from migrating, and the eventual failure response must
-            # carry a deterministic per-candidate result (every file, migrated
-            # or failed) rather than forcing the caller to infer what was
-            # never attempted. Deliberate hardening beyond the original: the
-            # real MigrateCommandHandler.cs's own per-file loop
-            # (MigrateRepositoryAsync) has no try/catch either -- an exception
-            # there propagates and loses even the partial `result` list it had
-            # already built, so this isn't a fidelity requirement to preserve.
+            # Best-effort, not fail-fast -- one file's OSError (permission
+            # denied, full disk) must not block the rest from migrating,
+            # and the eventual failure response must carry a deterministic
+            # per-candidate result (every file, migrated or failed) rather
+            # than forcing the caller to infer what was never attempted.
+            # Deliberate hardening beyond the reference tool, whose own
+            # per-file loop has no try/catch either -- an exception there
+            # propagates and loses even the partial `result` list it had
+            # already built, so this isn't a fidelity requirement to
+            # preserve.
             results = []
             for parsed, candidate_path in candidates:
                 try:
                     # ADR001, part 3: guarantees this write never commits
-                    # blindly if the lease was reclaimed -- see approve.py's
-                    # own comment. Checked before every candidate's write,
-                    # not just once, since this loop can run for a while.
+                    # blindly if the lease was reclaimed. Checked before
+                    # every candidate's write, not just once, since this
+                    # loop can run for a while.
                     lock.verify_still_held()
                     # Raw bytes, not text: the original content's own line
                     # endings (and anything else about its bytes) must pass
                     # through completely untouched -- only the header text is
-                    # new. The one exception, confirmed live (fidelity audit
-                    # F7): the real tool discards a leading UTF-8 BOM when
-                    # reading, so it never appears in the migrated result --
-                    # pass it through here and it lands stranded in the middle
-                    # of the file, after the new header.
+                    # new. The one exception, confirmed live: the reference tool
+                    # discards a leading UTF-8 BOM when reading, so it never
+                    # appears in the migrated result -- pass it through here
+                    # and it lands stranded in the middle of the file, after
+                    # the new header.
                     #
-                    # Round 8 resilience audit, Finding 2: retries a
-                    # transient PermissionError the same way this
+                    # Retries a transient PermissionError the same way this
                     # command's own SCAN-phase read of this exact file
                     # already does (read_header_lines_with_report, a few
-                    # dozen lines above) -- without this, a transient
-                    # blip here permanently misclassified the candidate
-                    # as "failed" in a one-time, largely irreversible
-                    # operation, instead of retrying like its sibling
-                    # read of the same file already would.
+                    # dozen lines above) -- without this, a transient blip
+                    # here would permanently misclassify the candidate as
+                    # "failed" in a one-time, largely irreversible operation,
+                    # instead of retrying like its sibling read of the same
+                    # file already would.
                     raw_bytes = read_with_permission_retry(candidate_path.read_bytes)
                     if raw_bytes.startswith(b"\xef\xbb\xbf"):
                         raw_bytes = raw_bytes[3:]
@@ -327,15 +317,14 @@ def run(args):
                         warnings.append(warning)
                     results.append({"file": str(candidate_path), "status": "migrated", "error": None})
                 except LockLostError:
-                    # Round 5 stability re-run, Finding 3: distinct from
-                    # the per-file OSError/UnicodeError case just below --
-                    # losing the lock is a whole-operation event, not this
-                    # one candidate's own problem, so looping on would
-                    # just re-lose the same already-gone lock on every
-                    # remaining candidate and misreport each of them as
-                    # individually "failed" when none were ever attempted.
-                    # Stop outright and report exactly what was actually
-                    # done so far.
+                    # Distinct from the per-file OSError/UnicodeError case
+                    # just below -- losing the lock is a whole-operation
+                    # event, not this one candidate's own problem, so
+                    # looping on would just re-lose the same already-gone
+                    # lock on every remaining candidate and misreport each
+                    # of them as individually "failed" when none were ever
+                    # attempted. Stop outright and report exactly what was
+                    # actually done so far.
                     raise CommandError(
                         "migration-lock-lost",
                         f"The repository lock was lost after {len(results)} of {len(candidates)} file(s) were "
@@ -347,8 +336,7 @@ def run(args):
                     # UnicodeError (e.g. a UnicodeEncodeError from a title
                     # containing a lone surrogate) is not an OSError, but is
                     # just as plausible here as a real per-file failure --
-                    # mechanism-correctness audit round 3 (resilience finding
-                    # #2b): only catching OSError let it escape the whole
+                    # catching only OSError would let it escape the whole
                     # loop, discarding every result already collected.
                     results.append({"file": str(candidate_path), "status": "failed", "error": str(error)})
 

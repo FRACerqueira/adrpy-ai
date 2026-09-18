@@ -1,4 +1,4 @@
-"""Atomic file writes shared by every writer in the project (harness Fase 4).
+"""Atomic file writes shared by every writer in the project.
 
 Every write goes through a temp file in the same directory, then an atomic
 `os.replace` -- never truncate-in-place, so a concurrent reader can never
@@ -24,12 +24,11 @@ def split_real_lines(text):
     """Splits `text` on real line terminators only -- CRLF, lone CR, lone
     LF -- unlike `str.splitlines()`, which also treats several Unicode
     line-separator characters (vertical tab, form feed, FS/GS/RS, NEL,
-    LINE/PARAGRAPH SEPARATOR) as breaks. Confirmed live against the real
-    adrplus/.NET: a decision body containing any of those mid-line survives
-    `approve` byte-for-byte, same line count before and after -- none of
-    them is a line break there. Using `str.splitlines()` for this was a
-    pure porting bug (silently corrupting such a body into extra CRLF
-    lines), not a fidelity choice.
+    LINE/PARAGRAPH SEPARATOR) as breaks. A decision body containing any of
+    those mid-line must survive `approve` byte-for-byte, same line count
+    before and after -- none of them is a real line break here. Using
+    `str.splitlines()` for this would silently corrupt such a body into
+    extra CRLF lines.
 
     Matches str.splitlines()'s own convention of never producing a
     trailing empty element for a trailing terminator (only `re.split`'s
@@ -45,15 +44,12 @@ def split_real_lines(text):
 def normalize_newlines(text):
     """Splits `text` on ANY real newline convention already present (bare
     "\\n", "\\r\\n", lone "\\r" -- including a different OS's own
-    convention) and rejoins using THIS host's `os.linesep`. Not a
-    Python-side invention -- mirrors what AdrPlus itself does when carrying
-    body content forward between operations (AdrService.cs:413: split into
-    lines, then `string.Join(Environment.NewLine, ...)`, discarding
-    whatever terminator the source had). Makes every write's newline
+    convention) and rejoins using THIS host's `os.linesep`, matching how
+    the reference tool carries body content forward between operations
+    (discarding whatever terminator the source had). Makes every write's newline
     handling the same single call, regardless of whether the content came
     in already terminated, with bare "\\n", or mixed -- the exact ambiguity
-    that caused a real doubled-CR bug in the `new` command (see that
-    commit)."""
+    that caused a real doubled-CR bug in the `new` command."""
     if not text:
         return text
     trailing = text[-1] in ("\n", "\r")
@@ -77,14 +73,14 @@ def atomic_write_bytes(path, content_bytes):
     """Same atomicity guarantees as atomic_write_text, but no newline
     normalization at all -- for the one real case where that would be
     wrong: `migrate` prepends a header to an existing file's content
-    verbatim, whatever line endings it already has (confirmed against a
-    real `adrplus migrate` run: the original's own text encoding doesn't
-    normalize an already-read string either, so a hand-written LF file
-    ends up with a CRLF header pasted onto an untouched LF body -- mixed
-    endings in one file, by design, not a bug to "fix" by normalizing).
+    verbatim, whatever line endings it already has -- confirmed the real
+    tool doesn't normalize an already-read string either, so a
+    hand-written LF file ends up with a CRLF header pasted onto an
+    untouched LF body -- mixed endings in one file, by design, not a bug
+    to "fix" by normalizing.
 
-    Resilience audit R6/R7: only retries PermissionError -- the one
-    confirmed-transient failure (a Windows "pending delete"/sharing-
+    Only retries PermissionError -- the one confirmed-transient failure
+    (a Windows "pending delete"/sharing-
     violation window under a concurrent reader). Any other OSError
     (ENOSPC, a missing parent directory) is not transient -- retrying
     wouldn't help -- so it fails on the first occurrence instead of
@@ -116,26 +112,24 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     """Removes leftover `*.tmp` files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed
     process, a full disk) once older than `max_age_seconds`. Returns the
-    paths removed, so the caller can warn about it (Fase 4: "com aviso
-    quando algo é de fato removido").
+    paths removed, so the caller can warn about it.
 
-    Round 6 resilience re-run, Finding B-3: this runs BEFORE the
-    repository lock in every one of the 8 commands that call it -- a
-    concurrent process's own in-flight write could plausibly hold a temp
+    This runs BEFORE the repository lock in every command that calls it --
+    a concurrent process's own in-flight write could plausibly hold a temp
     file open (or have already removed it) at the exact moment this scan
-    reaches it. Best-effort per candidate now, matching
+    reaches it. Best-effort per candidate, matching
     `_unlink_with_retry`'s own established philosophy for this exact
-    class of problem (core/lock.py): a transient OSError here no longer
-    fails the caller's entire command over best-effort housekeeping
+    class of problem (core/lock.py): a transient OSError here does not
+    fail the caller's entire command over best-effort housekeeping
     unrelated to what it was actually asked to do -- left in place for a
     later cleanup pass instead, and reported via `warnings` when given.
 
-    Round 7 stability audit, Low finding: uses rglob, not glob -- every
-    other scan in this codebase (scan_decisions, migrate, explore, init's
-    own numbering) already covers subfolders under folderadr; a non-
-    recursive scan here left an orphan inside a subfolder unfound and
-    unreported (a housekeeping leak, not a correctness issue -- temp
-    files never collide by name and are never read by anything)."""
+    Uses rglob, not glob -- every other scan in this codebase
+    (scan_decisions, migrate, explore, init's own numbering) already
+    covers subfolders under folderadr; a non-recursive scan here would
+    leave an orphan inside a subfolder unfound and unreported (a
+    housekeeping leak, not a correctness issue -- temp files never
+    collide by name and are never read by anything)."""
     directory = Path(directory)
     now = time.time()
     removed = []

@@ -82,7 +82,7 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
 
 
 def test_resolve_repo_and_target_reports_when_no_adr_config_is_found_above(tmp_path):
-    """Round 4 test-adequacy audit, Finding 8: cannot-determine-root-path
+    """Cannot-determine-root-path
     (raised when find_repo_root walks all the way up without finding
     adr-config.adrplus) had zero coverage -- reachable from every one of
     the 6 status-transition commands via resolve_repo_and_target."""
@@ -105,7 +105,7 @@ def test_resolve_repo_and_target_reports_when_no_adr_config_is_found_above(tmp_p
     ],
 )
 def test_load_target_surfaces_the_specific_header_error_as_the_code(tmp_path, content, expected_code):
-    """Usability audit A4: header.error is already a specific, correctly-
+    """Header.error is already a specific, correctly-
     computed reason (adr-file-empty, adr-header-title-not-found, ...);
     load_target discarded it behind a single fixed "header-invalid" code,
     forcing an agent to fall back to a stderr string it can't rely on."""
@@ -138,8 +138,8 @@ def test_load_target_reports_no_encoding_repair_for_a_clean_file(tmp_path):
 
 
 def test_load_target_reports_encoding_repair_when_body_has_invalid_utf8_bytes(tmp_path):
-    """Observability audit: reading a file with invalid UTF-8 bytes (Fase
-    4: tolerated, confirmed live to match the real tool) silently replaces
+    """Reading a file with invalid UTF-8 bytes (Fase
+    4: tolerated, confirmed live to match the reference tool) silently replaces
     them with U+FFFD -- nothing told the caller this happened, even though
     it's a real, permanent loss of the original bytes the moment the file
     is rewritten."""
@@ -160,7 +160,7 @@ def test_load_target_reports_encoding_repair_when_body_has_invalid_utf8_bytes(tm
 
 
 def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
-    """Observability audit: rewrite_status_field discarded atomic_write_text's
+    """rewrite_status_field discarded atomic_write_text's
     own attempt count -- callers (approve/reject/undo) had no way to
     surface a "this needed retries" warning."""
     config = load_repo_config(FIXTURE_PATH)
@@ -199,14 +199,14 @@ def _header(**overrides):
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted"}, "not-proposed"),
-        # Regression, audit round 2: a status_update value that is
+        # A status_update value that is
         # structurally valid (one of the 4 configured status labels, so
         # header.is_valid stays True) but is neither "Accepted" nor
         # "Rejected" -- reachable via a hand-edited/corrupted file whose
         # "Changed" cell contains the "Proposed" or "Superseded" label
-        # text. Confirmed against the real ApproveCommandHandler.cs:59
-        # (`StatusUpdate == AdrStatus.Unknown`) and this project's own
-        # pre-refactor boolean (`status_update is None`): BOTH require
+        # text. Confirmed against the reference tool's own equivalent check
+        # and this project's own pre-refactor boolean (`status_update is
+        # None`): BOTH require
         # status_update to be None to be eligible -- any other value,
         # known or not, must be ineligible. The granular-code refactor
         # only excluded "Accepted"/"Rejected" explicitly, silently
@@ -216,8 +216,8 @@ def _header(**overrides):
     ],
 )
 def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reason):
-    """Usability audit: replaces a single collapsed not-eligible-for-*
-    boolean with the SPECIFIC observed state -- an agent needs to know
+    """Replaces a single collapsed not-eligible-for-* boolean with the
+    SPECIFIC observed state -- an agent needs to know
     whether a decision is already accepted, already rejected, or already
     superseded, since each calls for a different recovery action."""
     header = _header(**header_kwargs)
@@ -249,7 +249,7 @@ def test_ineligibility_reason_for_undo(header_kwargs, expected_reason):
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
-        # Regression, audit round 2: same class as approve_or_reject's own
+        # Same class as approve_or_reject's own
         # case above, but here it's a mislabel rather than a false
         # eligibility -- ineligible either way, but calling a corrupted
         # "Superseded"-in-the-wrong-cell value "already-rejected" is wrong.
@@ -270,7 +270,7 @@ def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
         ({"status_update": None}, "still-proposed"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
         ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
-        # Regression, audit round 2: mislabel, not a false-eligibility bug
+        # Mislabel, not a false-eligibility bug
         # here (the boolean outcome already matched) -- but "still-proposed"
         # is wrong for a status_update that isn't actually None.
         ({"status_update": "Superseded"}, "unexpected-status"),
@@ -311,7 +311,7 @@ def test_read_header_lines_handles_a_file_shorter_than_the_header(tmp_path):
 
 
 def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
-    """Round 4 performance front, Finding D: same bounded-read guarantee
+    """Same bounded-read guarantee
     as read_header_lines, now also used by migrate's own scan phase."""
     header_lines = [f"line{i}" for i in range(12)]
     huge_body = "x" * (5 * 1024 * 1024)
@@ -342,7 +342,7 @@ def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tm
 
 
 def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """Round 5 stability re-run, Finding 4: this read had no
+    """This read had no
     PermissionError tolerance at all, unlike the write side
     (atomic_write.py) and the lock-file read side (core/lock.py's own
     _read_lock), which both already retry this project's own documented
@@ -444,9 +444,9 @@ def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tm
 
 
 def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
-    """Legacy-scheme census audit: family_members must apply
-    counts_as_family_member (is_valid OR is_migrated), mirroring
-    AdrService.ReadAllAdrByNumber -- a filename-matching file whose header
+    """family_members must apply
+    counts_as_family_member (is_valid OR is_migrated), matching the real
+    tool's own equivalent scan -- a filename-matching file whose header
     doesn't parse at all (unmigrated legacy, or simply corrupt) must never
     be counted as a family member, regardless of which naming scheme
     matched its filename."""
@@ -468,9 +468,8 @@ def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
 
 
 def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):
-    """Harness Fase 4/6/7 requirement (flagged by the resilience audit as
-    unchecked by any front): LOCK_FILE_NAME must never appear as an
-    "unrecognized file" nor be mistaken for a naming-scheme candidate.
+    """LOCK_FILE_NAME must never appear as an "unrecognized file" nor be
+    mistaken for a naming-scheme candidate.
     Confirmed here as an explicit guarantee, not an accident of every
     rglob call happening to filter on "*.md" -- if that filter ever
     changed, this is the test that would catch a regression."""
@@ -486,7 +485,7 @@ def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_path):
-    """Security audit F2: resolve_within only validates the repository
+    """resolve_within only validates the repository
     root; rglob("*.md") happily descends into a Windows junction planted
     inside the decisions folder (no admin privilege required to create
     one, and Path.is_symlink() does NOT detect it). Confirmed live:
@@ -520,7 +519,7 @@ def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_pat
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list(tmp_path):
-    """Round 4 observability audit, Finding 3: is_within deliberately never
+    """is_within deliberately never
     RAISES over an escaped candidate (a scan should keep going, not fail
     over one), but that's a decision about raising, not about reporting --
     every call site used to drop the exclusion with zero signal. An agent
@@ -554,7 +553,7 @@ def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list
 
 
 def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 6 resilience re-run, Finding B, class closure: Path.rglob
+    """Path.rglob
     (which scan_decisions uses) silently swallows an OSError raised
     while walking a subtree -- a subfolder that becomes unreadable
     mid-scan used to just make the result set smaller, with zero
@@ -583,14 +582,12 @@ def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
 
 def test_scan_decisions_fails_closed_when_strict_and_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, class closure: round 6's own fix only
-    ever warned here, which round 8 found lets a hidden family member
-    (in an unreadable subdirectory) silently defeat safety decisions
-    built on top of this scan (family guards, next-number allocation),
-    reproducing round 7's "two live successors" corruption with no
-    concurrency needed at all. `strict=True` fails closed instead, for
-    callers that need a trustworthy result rather than a best-effort
-    listing."""
+    """Warning alone lets a hidden family member (in an unreadable
+    subdirectory) silently defeat safety decisions built on top of this
+    scan (family guards, next-number allocation), reproducing a "two
+    live successors" corruption with no concurrency needed at all.
+    `strict=True` fails closed instead, for callers that need a
+    trustworthy result rather than a best-effort listing."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -614,8 +611,8 @@ def test_scan_decisions_fails_closed_when_strict_and_a_subdirectory_is_unreadabl
 
 
 def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Round 8 stability audit, Finding 1, reproduced directly at the
-    source: family_members feeds has_superseded_sibling/has_pending_
+    """Reproduced directly at the source: family_members feeds
+    has_superseded_sibling/has_pending_
     sibling/latest_in_family in every per-file command's own family
     guard -- a hidden Superseded/Pending sibling inside an unreadable
     subdirectory must never be silently treated as "no such member"."""
@@ -638,7 +635,7 @@ def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path,
         family_members(adr_dir, config, 1)
 
     assert excinfo.value.code == "family-scan-incomplete"
-    # Round 9 test-adequacy audit, Finding 4: this assertion used to stop
+    # This assertion used to stop
     # at the code alone, unlike its sibling tests right above/below --
     # a mutation corrupting the unreadable list's own contents (while
     # keeping the code correct) would have slipped through here.
@@ -646,10 +643,10 @@ def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path,
 
 
 def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
-    """Round 6 resilience re-run, Finding B: unlike scan_decisions'
+    """Unlike scan_decisions'
     own generic callers (a warning is enough there -- nothing unsafe
     happens from an under-reported inventory), this specific guard
-    gates a real safety decision (round 5, Finding 5): whether a
+    gates a real safety decision: whether a
     folderadr change is allowed to proceed. If the scan it depends on
     might have silently missed decisions hiding in an unreadable
     subdirectory, `existing == []` can no longer be trusted to mean
@@ -704,7 +701,7 @@ def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
 
 
 def test_verify_folderadr_unchanged_since_lock_returns_fresh_config_when_matching(tmp_path):
-    """Round 6 stability re-run, root cause shared by 8 call sites: the
+    """The
     lock's own location is derived from a config read taken before the
     lock -- this helper re-reads fresh right after acquiring it and
     confirms folderadr (what the lock's location was derived from)
@@ -720,7 +717,7 @@ def test_verify_folderadr_unchanged_since_lock_returns_fresh_config_when_matchin
 
 
 def test_verify_folderadr_unchanged_since_lock_raises_when_folderadr_changed(tmp_path):
-    """Round 6 stability re-run: reproduces the class live -- a concurrent
+    """Reproduces the class live -- a concurrent
     `config --folderadr` (or `init --seed`) completing between this call's
     own pre-lock bootstrap read and the moment it acquires the lock means
     the lock's own location is no longer the repository's real folderadr.
@@ -740,7 +737,7 @@ def test_verify_folderadr_unchanged_since_lock_raises_when_folderadr_changed(tmp
 
 
 def test_read_body_returns_empty_string_when_there_is_no_body(tmp_path):
-    """Round 4 test-adequacy audit, Finding 11: read_body's `if not
+    """read_body's `if not
     body_lines: return ""` branch had zero coverage -- config.py's own
     schema documents an empty template as a legitimate, reachable state
     (`config.py`'s `template` field "may be empty"), but every existing

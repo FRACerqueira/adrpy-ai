@@ -61,7 +61,7 @@ def test_explore_returns_empty_when_adr_folder_missing(tmp_path):
     result = explore.run(["--path", str(tmp_path)])
 
     assert result["decisions"] == []
-    # Usability audit round 3 (finding #5): "warnings" is present
+    # "warnings" is present
     # unconditionally on every other command's result, even when empty --
     # explore omitted it entirely, breaking a generic wrapper that
     # assumed the key always exists.
@@ -95,7 +95,7 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
     assert by_name["ADR001V01-first-decision.md"]["header"]["is_valid"] is True
     assert by_name["ADR001V01-first-decision.md"]["header"]["status_create"] == "Proposed"
     assert by_name["ADR001V01-first-decision.md"]["header"]["date_create"] == "2026-01-01"
-    # Usability audit A1: the full path, not just the bare filename -- an
+    # The full path, not just the bare filename -- an
     # agent needs this to act on the entry (--file on approve/reject/...)
     # without re-deriving folder/filename itself, which isn't safe under a
     # recursive scan that could have subfolders.
@@ -109,8 +109,8 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
 
 
 def test_explore_reports_encoding_repair_for_a_file_with_invalid_utf8_bytes(tmp_path):
-    """Observability audit: explore already tolerates invalid UTF-8 bytes
-    (Fase 4, confirmed live to match the real tool) but never told the
+    """Explore already tolerates invalid UTF-8 bytes
+    But never told the
     caller a file needed repair -- the most natural place for this,
     since explore's whole purpose is giving an agent visibility into
     repository state."""
@@ -138,8 +138,8 @@ def test_explore_reports_encoding_repair_for_a_file_with_invalid_utf8_bytes(tmp_
 
 
 def test_explore_exposes_scope_and_domain(tmp_path):
-    """Fidelity audit F14: the real tool's own report has Scope/Domain
-    columns; adrpy's JSON dropped both entirely."""
+    """The reference tool's own report has Scope/Domain columns; this port's
+    JSON dropped both entirely."""
     config_dict = _default_config_dict()
     _write_repo(
         tmp_path,
@@ -206,7 +206,7 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Round 4 observability audit, Finding 3: explore's own docstring
+    """Explore's own docstring
     promises "a file matching neither [naming scheme] still appears in
     the report, never dropped silently" -- but a file excluded via
     is_within (e.g. behind a junction escaping the folder) genuinely was
@@ -235,7 +235,7 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
-    """Round 7 resilience audit, Finding 1 (High): _build_entry's own
+    """_build_entry's own
     raw_bytes = path.read_bytes() had no tolerance at all, transient or
     persistent -- unlike every other decision-file read in this codebase
     (read_header_lines, read_lines_with_report), which retries a
@@ -244,7 +244,7 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
     antivirus -- an ordinary occurrence in a folder of Markdown files
     people also open by hand) used to kill the ENTIRE inventory with a
     bare io-error, discarding every other, perfectly readable file too.
-    This is the same failure class round 6 already fixed for unreadable
+    This is the same failure class Already fixed for unreadable
     *subdirectories* -- explore should be just as best-effort about a
     single unreadable *file*."""
     config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
@@ -276,9 +276,9 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
 
 
 def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_file(tmp_path, monkeypatch):
-    """Round 8 test-adequacy audit, Finding 3: round 7's fix does TWO
+    """Does TWO
     things -- retries a TRANSIENT PermissionError, and treats a
-    PERSISTENT one as a skippable, warned file. The round 7 test above
+    PERSISTENT one as a skippable, warned file. The Test above
     only proves the second half; this proves the first: a file that
     fails twice then succeeds must appear normally in `decisions`, with
     no warning at all, not be silently skipped."""
@@ -326,8 +326,8 @@ def test_explore_end_to_end_through_main(tmp_path):
 
 
 def test_explore_accepts_short_flag_end_to_end_through_main(tmp_path):
-    """Fidelity audit F10: real adrplus's -p; end-to-end through main(),
-    not just parse_flags in isolation."""
+    """The reference tool's -p; end-to-end through main(), not just
+    parse_flags in isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 

@@ -1,6 +1,6 @@
 """Builds the small set of human-readable warning strings for automatic,
 non-fatal actions a command's own dependencies may take silently
-otherwise (observability audit): a retried write, a reclaimed stale
+otherwise: a retried write, a reclaimed stale
 lock, orphaned temp-file cleanup, and invalid-byte encoding repair. Every
 mutating command's result carries these under "warnings" (an empty list
 when nothing happened) so an agent calling the CLI can see them without
@@ -17,8 +17,7 @@ from adrpy.core.errors import CommandError
 
 @contextlib.contextmanager
 def attach_warnings(warnings):
-    """Mechanism-correctness audit round 2 (findings #3/#4), class closure:
-    a real side effect already accumulated in `warnings` must survive ANY
+    """A real side effect already accumulated in `warnings` must survive ANY
     CommandError this same run goes on to raise afterward -- not just the
     raise sites living directly in a command's own cli/ module (already
     threaded explicitly at each site), but also one raised from a shared
@@ -43,12 +42,12 @@ def attach_warnings(warnings):
             error.warnings = list(warnings) + list(error.warnings)
         raise
     except OSError as error:
-        # Mechanism-correctness audit round 3 (resilience finding #1): a
-        # real write failure (permission denied, full disk, a
-        # PermissionError outlasting atomic_write's retry budget) used to
-        # propagate as a bare OSError -- this context manager only caught
-        # CommandError, so it bypassed the whole mechanism entirely,
-        # reaching __main__'s generic io-error with none of this run's
+        # A real write failure (permission denied, full disk, a
+        # PermissionError outlasting atomic_write's retry budget) would
+        # otherwise propagate as a bare OSError -- this context manager
+        # only catches CommandError on its own, so without this handler it
+        # would bypass the whole mechanism entirely, reaching __main__'s
+        # generic io-error with none of this run's
         # accumulated warnings attached. This is the safety net for every
         # write in the wrapped region; a site that needs to reveal a
         # PARTICULAR partial mutation (e.g. supersede's predecessor
@@ -73,13 +72,12 @@ def retry_warning(attempts):
 
 def encoding_repaired_warning(path):
     """Only accurate once `path` itself has genuinely been rewritten --
-    round 4 resilience audit, Finding 1, reproduced: several call sites
-    used to append this before the write was even attempted (an
-    ineligibility check could still fail first), or on `path`s this
+    calling this before the write was even attempted (an ineligibility
+    check could still fail first), or on `path`s this
     command never rewrites at all (version/revise's own source, which
     only ever donates its BODY to a newly created file -- see
-    encoding_repaired_source_warning below). Callers now append this
-    only after the write to this exact path has actually succeeded."""
+    encoding_repaired_source_warning below). Callers append this only
+    after the write to this exact path has actually succeeded."""
     return (
         f"{path}: invalid UTF-8 bytes were replaced with U+FFFD while reading; "
         "the original bytes are now lost, since the file has been rewritten."
@@ -94,7 +92,7 @@ def excluded_candidate_warning(paths):
     raising, not about reporting: every scan call site used to drop the
     exclusion with zero signal, leaving an agent no way to learn why an
     inventory or a next-number looked off from what's physically
-    listable in the folder (round 4 observability audit, Finding 3)."""
+    listable in the folder."""
     if not paths:
         return None
     names = ", ".join(str(path) for path in paths)
@@ -108,8 +106,7 @@ def encoding_repaired_source_warning(path):
     """For a read-only source whose BODY is carried into a newly created
     file (version/revise) -- `path` itself is never rewritten by these
     commands, so encoding_repaired_warning's "the file has been
-    rewritten" claim is never true here, success or failure (round 4
-    resilience audit, Finding 1)."""
+    rewritten" claim is never true here, success or failure."""
     return (
         f"{path}: invalid UTF-8 bytes were replaced with U+FFFD while reading its body; "
         "the source file itself is unchanged, but a new file created from this content "

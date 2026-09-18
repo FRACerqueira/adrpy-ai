@@ -38,7 +38,7 @@ def test_atomic_write_bytes_returns_the_attempt_count(tmp_path):
 
 
 def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_path, monkeypatch):
-    """Observability audit: the retry count was computed but never
+    """The retry count was computed but never
     returned to the caller, so nothing (not even the command's own
     result) could tell whether a write needed contention-driven retries."""
     target = tmp_path / "decision.md"
@@ -61,7 +61,7 @@ def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_pa
 
 
 def test_atomic_write_raises_the_last_error_after_exhausting_all_retries(tmp_path, monkeypatch):
-    """Round 4 test-adequacy audit, Finding 8: no existing test forced ALL
+    """No existing test forced ALL
     RETRY_ATTEMPTS to fail -- only 2 of 3, succeeding on the 3rd. A
     persistent PermissionError (outlasting the whole retry budget) must
     propagate as the real error, not hang or swallow it, and the orphaned
@@ -95,8 +95,8 @@ def test_atomic_write_text_also_returns_the_attempt_count(tmp_path):
 
 
 def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monkeypatch):
-    """Resilience audit R6: only PermissionError triggered the orphan-temp
-    cleanup; any other OSError (ENOSPC, a missing parent directory) left
+    """Only PermissionError triggered the orphan-temp cleanup; any other
+    OSError (ENOSPC, a missing parent directory) left
     the temp file behind forever. Confirmed there is nothing transient
     about these -- retrying wouldn't help -- so they must fail fast (no
     retry budget wasted) but still never leak the temp file."""
@@ -181,7 +181,7 @@ def test_cleanup_removes_only_old_temp_files(tmp_path):
 
 
 def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
-    """Round 7 stability audit, Low finding: every other scan in this
+    """Every other scan in this
     codebase (scan_decisions, migrate, explore, init's own numbering) uses
     rglob to also cover subfolders under folderadr; this one used a
     non-recursive glob, so an orphan left inside a subfolder was never
@@ -201,7 +201,7 @@ def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
 
 
 def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be_removed(tmp_path, monkeypatch):
-    """Round 6 resilience re-run, Finding B-3: this best-effort
+    """This best-effort
     housekeeping call runs BEFORE the repository lock in every one of
     the 8 commands that use it -- a concurrent process's own in-flight
     write could plausibly hold a temp file open (or have already
@@ -280,12 +280,12 @@ def test_normalize_then_write_never_doubles_a_cr(tmp_path):
     ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
 )
 def test_normalize_newlines_does_not_treat_unicode_separators_as_line_breaks(separator):
-    """Confirmed live against the real adrplus/.NET (approve on a body
-    containing each of these mid-line): none is treated as a line break
-    there -- the body survives byte-for-byte, same line count before and
-    after. Only str.splitlines()'s much broader definition of "line
-    boundary" treats these as breaks, which is a pure porting bug, not a
-    fidelity choice (unlike invalid-UTF-8-byte replacement on rewrite,
-    separately confirmed live to match the real tool exactly)."""
+    """Confirmed live against the reference tool's own .NET runtime (approve
+    on a body containing each of these mid-line): none is treated as a
+    line break there -- the body survives byte-for-byte, same line count
+    before and after. Only str.splitlines()'s much broader definition of
+    "line boundary" treats these as breaks -- a genuine behavioral gap,
+    not a deliberate choice (unlike invalid-UTF-8-byte replacement on
+    rewrite, separately confirmed live to match the reference tool exactly)."""
     text = f"before{separator}after"
     assert normalize_newlines(text) == text

@@ -1,5 +1,5 @@
-"""Shared `--flag value` argument parsing (harness Fase 1): every command's
-CLI args follow the same shape, so this is one function, not N near-copies."""
+"""Shared `--flag value` argument parsing: every command's CLI args follow
+the same shape, so this is one function, not N near-copies."""
 
 from adrpy.core.errors import UsageError
 
@@ -7,11 +7,10 @@ from adrpy.core.errors import UsageError
 def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
     """`required`/`optional` are flag names (without `--`) that take a
     value; `switches` are presence-only flags (e.g. `--empty`) that take
-    none. `aliases` (Fase 7/fidelity audit F10) maps a single-letter short
-    form (without `-`, e.g. "p") to the long flag name it stands for
-    (e.g. "path") -- `-p value` is then exactly equivalent to
-    `--path value`, matching the real adrplus's own short-alias-per-
-    argument convention. Returns a dict keyed by the LONG flag name --
+    none. `aliases` maps a single-letter short form (without `-`, e.g.
+    "p") to the long flag name it stands for (e.g. "path") -- `-p value`
+    is then exactly equivalent to `--path value`. Returns a dict keyed
+    by the LONG flag name --
     switches map to True when present, and are simply absent from the
     dict otherwise. Raises UsageError for an unknown flag, a value-flag
     missing its value or given an empty one, or a missing required flag.
@@ -39,10 +38,9 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
             raise UsageError(f"--{name} requires a value")
         value = args[i]
         if value == "":
-            # Fidelity audit F5: confirmed live, `adrplus --title ""`
-            # refuses with "Missing value for argument" -- the real tool
-            # treats an empty string the same as an omitted value, not as
-            # a real (if unusual) one.
+            # An empty string is treated the same as an omitted value,
+            # not as a real (if unusual) one, matching the reference tool's own
+            # confirmed behavior.
             raise UsageError(f"--{name} requires a non-empty value")
         values[name] = value
         i += 1

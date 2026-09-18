@@ -1,6 +1,5 @@
 """`version` command: creates a new major version of an Accepted/Rejected
-decision (harness Fase 7, item 6). Ported from VersionCommandHandler.cs.
-`--open` is permanently not implemented (see `new.py`'s note).
+decision. `--open` is permanently not implemented (see `new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags
@@ -92,12 +91,10 @@ def describe():
                 "alias": "-e",
                 "type": "switch",
                 "required": False,
-                # Usability audit A2: this is presence-only (`--empty` with
-                # no value, like a getopt flag) -- confirmed live that
-                # `--empty true`/`--empty false` both fail with "Unknown
-                # argument", not a real boolean value flag. Labeled
-                # "boolean" before, which reads as accepting an explicit
-                # value the same way `config --disableplugins` does.
+                # Presence-only (`--empty` with no value, like a getopt
+                # flag), not "boolean" -- `--empty true`/`--empty false`
+                # both fail with "Unknown argument", unlike
+                # `config --disableplugins`, which does take a value.
                 "description": (
                     "Start from the default template instead of carrying the source's content forward. "
                     "Presence-only: pass just '--empty' with no value; do not pass '--empty true/false'."
@@ -124,35 +121,33 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Concurrency audit (critical): the family-state read (latest/sibling
-        # checks) and the eventual write must be one critical section -- a
-        # concurrent supersede/approve/etc. on a sibling could otherwise slip
-        # in between, and this call's next-version-number decision could go
+        # The family-state read (latest/sibling checks) and the eventual
+        # write must be one critical section -- a concurrent
+        # supersede/approve/etc. on a sibling could otherwise slip in
+        # between, and this call's next-version-number decision could go
         # stale before it's ever written. Same class as `new`'s own comment.
-        #
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): the target's own header is
-        # now read fresh, inside the lock, instead of via load_target before
-        # it -- same freshness fix as approve/reject/undo/supersede.
+        # The target's own header is read fresh, inside the lock, instead
+        # of via load_target before it -- same freshness fix as
+        # approve/reject/undo/supersede.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the pre-lock
+            # read and lock acquisition -- operating against a stale folder
+            # would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
-            # Round 4 resilience audit, Finding 1: version never rewrites
-            # its own source (only its BODY is carried into a newly
-            # created file) -- encoding_repaired_warning's "the file has
-            # been rewritten" claim is never true here; this stays
-            # accurate regardless of whether the command goes on to
-            # succeed, so it fires right away, not after a write.
+            # version never rewrites its own source (only its BODY is
+            # carried into a newly created file) -- encoding_repaired_
+            # warning's "the file has been rewritten" claim is never true
+            # here; this stays accurate regardless of whether the command
+            # goes on to succeed, so it fires right away, not after a write.
             if encoding_repaired:
                 warnings.append(encoding_repaired_source_warning(path))
 
-            # Performance backlog item: one scan, shared by all three checks
-            # below -- each used to call family_members (and so
-            # scan_decisions) on its own (3 scans per invocation).
+            # One scan shared by all three checks below, avoiding a
+            # duplicate scan_decisions call each.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
@@ -170,9 +165,8 @@ def run(args):
                 )
 
             if latest_path.resolve() != path.resolve():
-                # Branching a new version off an older member is allowed only when
-                # the actual latest was Rejected -- the harness's own documented
-                # exception (Fase 7 item 6).
+                # Branching a new version off an older member is allowed
+                # only when the actual latest was Rejected.
                 allowed = latest_header.status_update == "Rejected" and (
                     latest_parsed.version > filename_info.version
                     or (
@@ -181,10 +175,10 @@ def run(args):
                     )
                 )
                 if not allowed:
-                    # Usability audit: names the actual latest member as
-                    # structured data -- the code alone can't carry a version
-                    # number, and an agent has no other way to learn it
-                    # without a separate `explore` call.
+                    # Names the actual latest member as structured data --
+                    # the code alone can't carry a version number, and an
+                    # agent has no other way to learn it without a separate
+                    # `explore` call.
                     raise CommandError(
                         "not-latest-version",
                         "This decision is not the latest version/revision in its family.",
@@ -197,8 +191,8 @@ def run(args):
                         warnings=warnings,
                     )
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-version.
+            # A specific reason code, not one collapsed not-eligible-for-
+            # version, so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_version_or_revise(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
@@ -224,7 +218,7 @@ def run(args):
             # Unlike `new`, an omitted --scope/--domain defaults to the LATEST
             # family member's own current value, not empty -- and not the
             # branch-target's value either, when branching off an older Rejected
-            # sibling (confirmed in VersionCommandHandler.cs).
+            # sibling.
             scope = flags["scope"] if "scope" in flags else (latest_header.scope or "")
             domain = flags["domain"] if "domain" in flags else (latest_header.domain or "")
             reject_embedded_delimiter(scope, "scope")
@@ -262,5 +256,5 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: canonical keyword, not the repo's configured label.
+    # Canonical keyword, not the repo's configured status label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

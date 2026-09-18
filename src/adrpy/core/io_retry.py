@@ -1,6 +1,6 @@
-"""Shared transient-I/O retry helper (round 5 stability re-run, Finding 4,
-class closure): the same Windows "pending delete"/sharing-violation
-contention window this project already retries on the write side
+"""Shared transient-I/O retry helper: the same Windows "pending
+delete"/sharing-violation contention window this project already retries
+on the write side
 (atomic_write.py, its own exponential backoff empirically tuned for a
 busier concurrent-writer case) and on the lock-file read side
 (core/lock.py's own _read_lock) also applies to reading any OTHER file

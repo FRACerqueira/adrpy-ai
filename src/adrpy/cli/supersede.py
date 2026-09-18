@@ -1,9 +1,8 @@
 """`supersede` command: marks an Accepted decision as Superseded and
-creates its successor (harness Fase 7, item 5). Ported from
-SupersedeCommandHandler.cs. The successor never copies the predecessor's
-body (always starts from the config's default template) and its filename
-suffix is unconditional, never a collision-disambiguator. `--open` is
-permanently not implemented (see `new.py`'s note).
+creates its successor. The successor never copies the predecessor's body (always starts from the
+config's default template) and its filename suffix is unconditional,
+never a collision-disambiguator. `--open` is permanently not implemented
+(see `new.py`'s note).
 """
 
 from adrpy.core.args import parse_flags
@@ -120,36 +119,33 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # Concurrency audit (critical): same next-number race as `new` -- see
-        # that command's comment. Also covers mark_superseded's mutation of
-        # the predecessor, so a concurrent scan by another command never
-        # observes the predecessor half-transitioned.
+        # Covers the same next-number race as `new` (two concurrent calls
+        # could otherwise compute the same sequence number), plus
+        # mark_superseded's mutation of the predecessor, so a concurrent
+        # scan by another command never observes it half-transitioned.
         #
-        # Round 4 ADR001 (doc/adr/ADR001V01-...): the predecessor's own
-        # header/lines are now read fresh, inside the lock, instead of
-        # before it -- previously, two concurrent supersede calls on the
-        # SAME predecessor each wrote it from their own stale, pre-lock
-        # snapshot; the lock only ever prevented a successor NUMBER
-        # collision, not this (stability audit Finding 2, reproduced: two
-        # live successors, only one referenced by the predecessor at all).
+        # The predecessor's own header/lines are read fresh, inside the
+        # lock, instead of before it -- without this, two concurrent
+        # supersede calls on the SAME predecessor could each write it from
+        # their own stale, pre-lock snapshot, producing two live successors
+        # with only one referenced by the predecessor at all.
         with acquire_repo_lock(folder) as lock:
             warnings.extend(lock.warnings)
-            # Round 6 stability re-run, root cause shared by 8 call
-            # sites -- see approve.py's own comment.
+            # Re-reads fresh in case folderadr changed between the pre-lock
+            # read and lock acquisition -- operating against a stale folder
+            # would be silently wrong.
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
             filename_info, header, lines, encoding_repaired = read_target(path, config)
 
-            # Usability audit: a specific reason code instead of one collapsed
-            # not-eligible-for-supersede.
+            # A specific reason code, not one collapsed not-eligible-for-
+            # supersede, so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_supersede(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # Round 7 stability audit, Finding 1: unlike version/revise,
-            # supersede never consulted the rest of the family before
-            # writing -- two different members of the same family could
+            # Without this, two different members of the same family could
             # each be independently superseded, producing two live
             # successors. Same guard version.py/revise.py already use.
             members = family_members(folder, config, filename_info.number, warnings=warnings)
@@ -179,11 +175,10 @@ def run(args):
             reject_embedded_delimiter(scope, "scope")
             reject_embedded_delimiter(domain, "domain")
 
-            # Round 8 stability audit, class closure: strict -- an
-            # unreadable subdirectory hiding a higher-numbered decision
-            # must never be silently treated as "not found" here, or the
-            # allocated successor number could collide once that
-            # subdirectory becomes readable again.
+            # strict=True: an unreadable subdirectory hiding a
+            # higher-numbered decision must never be silently treated as
+            # "not found" here, or the allocated successor number could
+            # collide once that subdirectory becomes readable again.
             successor_number = next_number(
                 scan_decisions(
                     folder, config, warnings=warnings, strict=True,
@@ -195,9 +190,7 @@ def run(args):
                 number=successor_number,
                 # The successor's title comes from the predecessor's FILENAME
                 # segment (already case-transformed), not its header's prose
-                # title -- confirmed via live comparison: SupersedeCommandHandler
-                # builds its new AdrRecord from `infoadr.Title` (AdrFileNameComponents'
-                # own property, filename-derived), not `infoadr.Header.Title`.
+                # title -- confirmed via live comparison against the reference tool.
                 title=filename_info.title,
                 version=1,
                 revision=1 if config.lenrevision > 0 else None,
@@ -224,9 +217,7 @@ def run(args):
                 _record, _content, attempts = mark_superseded(
                     path, config, lines, header, filename_info, successor_number, refdate
                 )
-                # Round 4 resilience audit, Finding 1: only true once the
-                # write above has actually happened -- see approve.py's
-                # own comment.
+                # Accurate only because the write above already succeeded.
                 if encoding_repaired:
                     warnings.append(encoding_repaired_warning(path))
             except OSError as error:
@@ -249,21 +240,14 @@ def run(args):
                 lock.verify_still_held()
                 attempts = atomic_write_text(successor_path, content)
             except (OSError, LockLostError) as error:
-                # Mechanism-correctness audit round 3 (resilience finding
-                # #1), the worst instance found: by this point the
-                # predecessor has ALREADY been marked Superseded for real
-                # (the write above already succeeded) -- data names that
-                # partial mutation explicitly, so a caller doesn't have to
-                # infer an orphaned family state from a generic io-error.
-                #
-                # Round 5 stability re-run, Finding 3: LockLostError used
-                # to bypass this handler entirely (only OSError was
-                # caught), so a caller saw the generic, dataless "no write
-                # was made" lock-lost message even though the predecessor
-                # write above already committed for real -- same orphaned-
-                # family risk, just a different trigger. Reuses this
-                # command's own existing code/data shape rather than
-                # inventing a parallel one.
+                # By this point the predecessor has ALREADY been marked
+                # Superseded for real (the write above already succeeded)
+                # -- data names that partial mutation explicitly, so a
+                # caller doesn't have to infer an orphaned family state
+                # from a generic io-error. Both OSError and LockLostError
+                # are caught here (not just OSError), so a lock lost on
+                # this second write reports the same orphaned-family risk
+                # instead of a generic, dataless "no write was made".
                 raise CommandError(
                     "supersede-successor-write-failed",
                     f"{successor_path}: {error}",
@@ -278,5 +262,5 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-    # Usability audit M4: canonical keyword, not the repo's configured label.
+    # Canonical keyword, not the repo's configured status label.
     return {"predecessor": str(path), "created": str(successor_path), "status": "Proposed", "warnings": warnings}

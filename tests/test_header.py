@@ -27,11 +27,11 @@ def _valid_header_lines(config):
 
 
 def test_build_header_matches_real_adrplus_output():
-    """Captured byte-for-byte from a real `adrplus new` run (AdrPlus 1.0.0,
-    Windows) against a disposable copy of this same fixture: `adrplus new
-    --title "Fixture parity check" --domain "Testing" --refdate 2026-09-14`.
+    """Captured byte-for-byte from a real run of the reference tool's own
+    `new` command (version 1.0.0, Windows) against a disposable copy of
+    this same fixture, with matching --title/--domain/--refdate arguments.
 
-    One deliberate divergence from that captured output: the real tool's
+    One deliberate divergence from that captured output: the reference tool's
     row 2 reads literally "Values Migrated " even for this non-migrated
     file; adrpy-ai now omits the "Migrated" word when `migrated=False`
     (decision-log: accepted-divergence--2026-09-16--header--migrated-word-
@@ -68,9 +68,9 @@ def test_build_header_matches_real_adrplus_output():
 
 
 def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
-    """Deliberate divergence from the real adrplus's own literal "Values
+    """Deliberate divergence from the reference tool's own literal "Values
     Migrated" column label -- confirmed via `parse_header` below (and the
-    real tool's own positional-only parsing) that the label text is never
+    reference tool's own positional-only parsing) that the label text is never
     read by either side, only the trailing `<!-- Migrated -->` HTML comment
     is (see decision-log:
     accepted-divergence--2026-09-16--header--migrated-word-only-when-migrated.md).
@@ -116,10 +116,10 @@ def test_build_then_parse_round_trips_the_record():
 
 
 def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid():
-    """Mirrors AdrService.cs: `IsMigrated` is set from row 2 alone, before
-    the rest of the header is parsed, and survives an early return caused by
-    a later row failing to parse -- exactly the gap `counts_as_family_member`
-    exists to cover."""
+    """Matches the reference tool's own behavior: `is_migrated` is set from
+    row 2 alone, before the rest of the header is parsed, and survives an
+    early return caused by a later row failing to parse -- exactly the gap
+    `counts_as_family_member` exists to cover."""
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
@@ -152,7 +152,7 @@ def _replaced(lines, index, value):
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     [
-        # Round 4 test-adequacy audit, Finding 5: parse_header discriminates
+        # parse_header discriminates
         # ~15 distinct error codes, only checked via `not parsed.is_valid`
         # (or not at all) anywhere in this file -- an off-by-one that swaps
         # two adjacent branches, or collapses two into a generic code, would

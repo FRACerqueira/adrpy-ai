@@ -10,7 +10,7 @@ _PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revi
 
 
 def test_every_locked_command_documents_repository_locked():
-    """Round 5 stability re-run, Usability Finding 1: repository-locked/
+    """Repository-locked/
     lock-lost are the ADR001-designed failure boundary for every command
     that acquires the repository lock, but were undocumented anywhere on
     the caller-facing describe() surface -- an agent had no way to learn
@@ -26,12 +26,11 @@ def test_every_locked_command_documents_repository_locked():
 
 
 def test_every_locked_command_documents_folderadr_changed_after_lock_acquired():
-    """Round 6 calibration, usability finding: folderadr-changed-after-
+    """Folderadr-changed-after-
     lock-acquired (core.lifecycle.verify_folderadr_unchanged_since_lock,
     used by all 9 write commands plus init's --seed-on-existing-repo
-    path) was introduced by round 6's own shared fix but never
-    documented in any describe() -- found by the calibration process
-    itself (a grep) before proposing round 7, not by a dedicated
+    path) was a shared fix never documented in any describe() -- found
+    by the calibration process itself (a grep), not by a dedicated
     audit pass."""
     for name in _LOCKED_COMMANDS:
         info = COMMANDS[name].describe()
@@ -40,11 +39,11 @@ def test_every_locked_command_documents_folderadr_changed_after_lock_acquired():
 
 
 def test_config_and_init_document_folderadr_change_scan_incomplete():
-    """Round 6 calibration, usability finding: folderadr-change-scan-
+    """Folderadr-change-scan-
     incomplete (core.lifecycle.reject_folderadr_change_if_decisions_exist's
     own fail-closed path) is only reachable from config and init (the
-    only two callers of that guard), also introduced by round 6 and also
-    undocumented until now."""
+    only two callers of that guard), and was also undocumented until
+    now."""
     for name in ("config", "init"):
         info = COMMANDS[name].describe()
         text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
@@ -52,7 +51,7 @@ def test_config_and_init_document_folderadr_change_scan_incomplete():
 
 
 def test_new_supersede_and_version_document_the_forbidden_character_constraint():
-    """Round 7 usability audit, Finding 1 (Medium): reject_embedded_
+    """reject_embedded_
     delimiter (core/security.py) is enforced on title/domain/scope in
     new, and domain/scope in supersede/version, but only config.py's own
     field descriptions ever mentioned this constraint -- an asymmetry
@@ -73,7 +72,7 @@ def test_new_supersede_and_version_document_the_forbidden_character_constraint()
 
 
 def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
-    """Round 7 usability audit, Finding 3 (Medium): --refdate's
+    """--refdate's
     description was byte-identical across 6 commands even though the
     actual lower-bound rule differs -- new has none at all (a brand new
     decision has no prior history), approve/reject/supersede bound
@@ -96,7 +95,7 @@ def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
 
 
 def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
-    """Round 9 usability audit, Finding 2 (Medium): init-existing-numbers-
+    """Init-existing-numbers-
     scan-incomplete used to be documented only inside the --seed
     argument's own description, in the same breath as codes that really
     are scoped to the already-existing-repository path -- but this one
@@ -108,7 +107,7 @@ def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
 
 
 def test_every_family_member_command_documents_family_scan_incomplete():
-    """Round 8 stability audit, class closure: family_members() (used by
+    """family_members() (used by
     every per-file command's own family guard) now fails closed on an
     unreadable subdirectory instead of merely warning -- documented on
     all 6 commands that call it."""
@@ -119,7 +118,7 @@ def test_every_family_member_command_documents_family_scan_incomplete():
 
 
 def test_short_flag_aliases_are_documented_in_describe():
-    """Round 7 usability audit, Finding 4 (Low): every command's real
+    """Every command's real
     parse_flags(aliases=...) accepts a short form (-p, -f, -t, ...), but
     describe() never exposed it anywhere -- an agent relying solely on
     describe()/help (the documented self-description channel for a non-
@@ -145,7 +144,7 @@ def test_short_flag_aliases_are_documented_in_describe():
 
 
 def test_migrate_documents_its_scan_failed_error_code():
-    """Round 7 usability audit, Finding 5 (Low): migrate's describe()
+    """Migrate's describe()
     documented migration-scan-unreliable-encoding at length but never
     its structurally identical sibling migration-scan-failed (same scan
     loop, same phase, same all-or-nothing semantics for an OSError
@@ -155,7 +154,7 @@ def test_migrate_documents_its_scan_failed_error_code():
 
 
 def test_every_per_file_command_documents_the_md_auto_suffix():
-    """Round 5 usability re-run, Finding 7 (pre-existing, minor): every
+    """Every
     per-file command's `--file` silently gets '.md' appended when the
     given path has no extension (resolve_repo_and_target's own doing) --
     none of their describe()'s ever mentioned it."""
@@ -172,7 +171,7 @@ def test_help_lists_commands(capsys):
     assert exit_code == EXIT_SUCCESS
     assert payload["success"] is True
     assert any(c["name"] == "help" for c in payload["data"]["commands"])
-    # Usability audit round 3 (finding #5): "warnings" is present
+    # "warnings" is present
     # unconditionally on every other command's result, even when empty --
     # help omitted it entirely, breaking a generic wrapper that assumed
     # the key always exists.
@@ -218,8 +217,8 @@ def test_help_describes_single_command(capsys):
 
 
 def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch):
-    """Usability audit: some failures need more than a code and a stderr-
-    only detail string to be actionable -- not-latest-version, for
+    """Some failures need more than a code and a stderr-only detail
+    string to be actionable -- not-latest-version, for
     instance, needs to name WHICH version actually is the latest. A
     CommandError should be able to carry that as real JSON data, not a
     number buried in free text."""
@@ -240,7 +239,7 @@ def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch)
 
 
 def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
-    """Mechanism-correctness audit round 2: a real side effect (an encoding
+    """A real side effect (an encoding
     repair, an orphan-temp-file cleanup, a stale-lock reclaim, a retried
     write) that already happened before a command goes on to fail for an
     unrelated reason used to be silently dropped -- the failure envelope
@@ -262,8 +261,7 @@ def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
 
 
 def test_command_error_includes_an_explicitly_empty_warnings_list(capsys, monkeypatch):
-    """Round 4 (observability audit Finding 4 / test-adequacy audit
-    Finding 4): distinct from the "no warnings" case below -- warnings=[]
+    """Distinct from the "no warnings" case below -- warnings=[]
     means a command's own attach_warnings region genuinely started
     accumulating and just had nothing to report yet, not "nothing to
     report at all". See core/output.py's own emit_failure fix."""
@@ -311,7 +309,7 @@ def test_help_unknown_command_reports_structured_failure(capsys):
 
 
 def test_unknown_verb_is_a_usage_error(capsys):
-    """Usability audit C2: a malformed invocation must still honor the
+    """A malformed invocation must still honor the
     JSON-on-stdout contract, exit code 2 notwithstanding -- an agent
     should never need a second parser just for exit-code-2 failures."""
     exit_code = main(["bogus"])
@@ -336,8 +334,7 @@ def test_usage_error_from_a_command_still_emits_json_on_stdout(capsys):
 
 
 def test_unhandled_oserror_still_emits_json_on_stdout(capsys, monkeypatch, tmp_path):
-    """Fidelity/resilience/usability audits (independently, 3 fronts): an
-    OSError not translated into a CommandError by the command itself (a
+    """An OSError not translated into a CommandError by the command itself (a
     real repro: adrpy.exe new against a path that resolves through an
     NTFS Alternate Data Stream) used to propagate as a raw traceback with
     EMPTY stdout, breaking the one contract this whole project exists to
