@@ -28,36 +28,35 @@ A clarification of what an *existing* ADR's own scope already covered is
 still not a new architectural decision, even when it took real discussion
 to confirm -- that's a `scope-note` entry, not a new ADR.
 
-## Step 2: the full workflow
+## Step 2: pick a classification
+
+Classification is a closed vocabulary -- pick the one row below that
+matches what actually happened. Full definitions (with edge cases) live
+in [`doc/decision-log/INDEX.md`](decision-log/INDEX.md)'s own header;
+this table is the quick lookup.
+
+| Classification | Use it when... |
+|---|---|
+| `audit-finding` | A bug was found and fixed, or a review pass is closing a finding. |
+| `retraction` | A prior verdict or claim (here or elsewhere) turned out to be wrong. |
+| `doc-drift` | A durable doc (an ADR, this workflow page, ...) describes something that's no longer true. |
+| `accepted-divergence` | Confirmed behavior differs from a reference, with no architecture change. |
+| `scope-note` | Clarifies an existing decision's own boundary -- not a new decision. |
+| `deferred` | Knowingly postponed, **with a concrete reopening trigger** you can name. No trigger you can name → it's `risk-accepted`, not this. |
+| `risk-accepted` | A known gap left unfixed on purpose, with no reopening trigger. |
+| `investigation` | A hypothesis was checked and did **not** hold (the narrative twin of a regression test for a fear that didn't materialize). |
+| `process-exception` | A one-off, justified deviation from standing process -- scoped to this instance only. |
+
+Add a new classification only when an entry genuinely fits none of these
+-- a category invented for one entry is often a sign that entry is
+actually an ADR in disguise.
+
+## Step 3: write and register the entry
 
 ```mermaid
 graph TD
-    START(["Something worth recording<br/>happened"]) --> Q1{"Does it change a design<br/>choice with a lasting<br/>architectural consequence?"}
-    Q1 -->|yes| ADR["Write an ADR instead<br/>(doc/adr/) -- stop here"]
-    Q1 -->|no| Q2{"What kind of event is it?"}
-
-    Q2 -->|"bug found & fixed,<br/>or a review closure claim"| AF["audit-finding"]
-    Q2 -->|"a prior verdict or claim<br/>turned out wrong"| RT["retraction"]
-    Q2 -->|"a durable doc describes<br/>something no longer true"| DD["doc-drift"]
-    Q2 -->|"confirmed behavior differs<br/>from a reference, no<br/>architecture change"| ADIV["accepted-divergence"]
-    Q2 -->|"clarifies an existing<br/>decision's own boundary"| SN["scope-note"]
-    Q2 -->|"knowingly postponed, with<br/>a concrete reopening trigger"| DEF["deferred"]
-    Q2 -->|"known gap left unfixed<br/>on purpose, no trigger"| RA["risk-accepted"]
-    Q2 -->|"a hypothesis was checked<br/>and did NOT hold"| INV["investigation"]
-    Q2 -->|"a one-off, justified<br/>process deviation"| PE["process-exception"]
-
-    AF --> NAME
-    RT --> NAME
-    DD --> NAME
-    ADIV --> NAME
-    SN --> NAME
-    DEF --> NAME
-    RA --> NAME
-    INV --> NAME
-    PE --> NAME
-
-    NAME["Name the file:<br/>{classification}--{ISO date}--{scope}--{slug}.md"] --> STRUCT{"Which classification?"}
-    STRUCT -->|"audit-finding or doc-drift"| LINE1["Add the structured line:<br/>Front | Severity | Resolution | Round"]
+    NAME["Name the file:<br/>{classification}--{ISO date}--{scope}--{slug}.md"] --> STRUCT{"Which classification<br/>did step 2 pick?"}
+    STRUCT -->|"audit-finding<br/>or doc-drift"| LINE1["Add the structured line:<br/>Front | Severity | Resolution | Round"]
     STRUCT -->|deferred| LINE2["Add the structured line:<br/>Reopen-when: {condition}"]
     STRUCT -->|"anything else"| WRITE
     LINE1 --> WRITE
