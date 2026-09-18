@@ -107,6 +107,7 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 | [`explore`](doc/commands/explore.md) | Lists every decision file in the repository, on a best-effort basis. |
 | [`config`](doc/commands/config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
 | [`installconfig`](doc/commands/installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
+| [`log`](doc/commands/log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 | [`help`](doc/commands/help.md) | Lists every command, or describes one of them in full. |
 
 Every command's full argument list, types, and every failure code it can return is available at any time via:

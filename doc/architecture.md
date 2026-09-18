@@ -50,8 +50,8 @@ layers:
 graph TD
     CALLER["Caller<br/>(human or AI agent)"] --> MAIN
     MAIN["__main__.py<br/>entry point + dispatch"] --> CLI
-    CLI["cli/*.py<br/>13 thin command modules,<br/>one per adrpy verb"] --> CORE
-    CORE["core/*.py<br/>15 shared modules, grouped by<br/>concern in the table below"] --> FS[("Filesystem")]
+    CLI["cli/*.py<br/>14 thin command modules,<br/>one per adrpy verb"] --> CORE
+    CORE["core/*.py<br/>16 shared modules, grouped by<br/>concern in the table below"] --> FS[("Filesystem")]
 ```
 
 No single command uses every `core/` module, and no `core/` module is used
@@ -66,13 +66,15 @@ actually read.
 | Concurrency & storage | `lock.py`, `atomic_write.py`, `io_retry.py` | The whole-repository advisory lock ([ADR001](adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md)); atomic, retrying file writes; the shared transient-read-retry loop both of the above lean on. |
 | Configuration | `config.py`, `install_config.py` | A repository's own `adr-config.adrplus` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py` | Status transitions and family scans; the 12-line header format; filename parsing/building for both naming schemes; title case transforms; path-escape guards. |
+| Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). |
 | Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal recovery (a retried write, a reclaimed stale lock, orphan cleanup, an encoding repair). |
 
 Every write command (`new`, `approve`, `reject`, `undo`, `supersede`,
-`version`, `revise`, `migrate`, `config`) touches Concurrency & storage;
-every command that reasons about existing decision files touches Decision
-file mechanics; `init`/`config`/`migrate`/`installconfig` touch
-Configuration; every command touches Dispatch & contract.
+`version`, `revise`, `migrate`, `config`, `log`) touches Concurrency &
+storage; every command that reasons about existing decision files
+touches Decision file mechanics; `init`/`config`/`migrate`/`installconfig`
+touch Configuration; only `log` touches Decision log; every command
+touches Dispatch & contract.
 
 ## Request lifecycle
 

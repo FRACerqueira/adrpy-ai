@@ -22,6 +22,7 @@ page has drifted; regenerate it instead of hand-editing around the gap.
 | [`explore`](explore.md) | Lists every decision file in the repository, on a best-effort basis. |
 | [`config`](config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
 | [`installconfig`](installconfig.md) | Reads or updates the per-user, install-level default config. |
+| [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
 Every failure code a command can return is documented inline, in that
 command's own `## Description` section, alongside the condition that

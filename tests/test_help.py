@@ -7,7 +7,7 @@ from adrpy.core.registry import COMMANDS
 import pytest
 
 
-_LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init")
+_LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init", "log")
 _PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revise")
 
 
@@ -63,6 +63,7 @@ def test_new_supersede_and_version_document_the_forbidden_character_constraint()
         "new": ("title", "domain", "scope"),
         "supersede": ("domain", "scope"),
         "version": ("domain", "scope"),
+        "log": ("scope", "summary"),
     }
     for name, fields in checks.items():
         info = COMMANDS[name].describe()
@@ -138,6 +139,7 @@ def test_short_flag_aliases_are_documented_in_describe():
         "migrate": {"path": "-p"},
         "init": {"path": "-p", "seed": "-s"},
         "explore": {"path": "-p"},
+        "log": {"path": "-p", "classification": "-c", "scope": "-s", "refdate": "-r"},
     }
     for name, aliases in expected.items():
         by_name = {arg["name"]: arg for arg in COMMANDS[name].describe()["arguments"]}

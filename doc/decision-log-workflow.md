@@ -53,20 +53,39 @@ actually an ADR in disguise.
 
 ## Step 3: write and register the entry
 
-```mermaid
-graph TD
-    NAME["Name the file:<br/>{ISO date}--{classification}--{scope}--{slug}.md"] --> STRUCT{"Which classification<br/>did step 2 pick?"}
-    STRUCT -->|"audit-finding<br/>or doc-drift"| LINE1["Add the structured line:<br/>Front | Severity | Resolution | Round"]
-    STRUCT -->|deferred| LINE2["Add the structured line:<br/>Reopen-when: {condition}"]
-    STRUCT -->|"anything else"| WRITE
-    LINE1 --> WRITE
-    LINE2 --> WRITE
+Once steps 1-2 are settled -- this genuinely belongs in the log, and you
+know its classification -- run [`adrpy log`](commands/log.md)
+([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
+It owns everything mechanical in one call: constructing the filename,
+formatting the classification-specific structured line, writing the
+entry, and regenerating `INDEX.md` -- and refuses outright
+(`log-entry-already-exists`) instead of silently overwriting if the
+exact same date/classification/scope/slug already exists. `--round` is
+never a flag; `adrpy log` computes it itself (highest existing `Round`
+across `audit-finding`/`doc-drift` entries, plus one) so it can never be
+typed wrong or reused by mistake.
 
-    WRITE["Write the entry:<br/>one # heading = the one-line summary,<br/>free-form body below it"] --> REGEN["Run scripts/generate_decision_log_index.py<br/>to regenerate INDEX.md"]
-    REGEN --> DONE(["Done -- never edit this entry again;<br/>a correction is a new retraction entry"])
+```bash
+# Most classifications: no structured line
+adrpy log --path . --classification scope-note --scope lock --slug clarify-timeout-behavior \
+  --summary "Clarify what happens on timeout" --body "The full explanation goes here."
+
+# audit-finding / doc-drift: --front/--severity/--resolution required together
+adrpy log --path . --classification audit-finding --scope lock --slug retry-loop-off-by-one \
+  --summary "Retry loop stopped one attempt short" --body "Details of the fix." \
+  --front "test-adequacy audit" --severity Medium --resolution Direct
+
+# deferred: --reopenwhen required instead
+adrpy log --path . --classification deferred --scope security --slug posix-symlink-coverage \
+  --summary "POSIX symlink-escape coverage deferred" --body "Windows-only today." \
+  --reopenwhen "the test-adequacy audit front runs again"
 ```
 
-## The rules that don't fit in the diagram
+Passing a structured-line flag for a classification that doesn't use it
+(or omitting one it requires) is a `usage-error` -- see
+[`doc/commands/log.md`](commands/log.md) for the full argument reference.
+
+## Rules `adrpy log` doesn't enforce for you
 
 - **No sequential numbering in the filename.** The slug (a few kebab-case
   words) is what guarantees uniqueness -- a sequential number would turn
