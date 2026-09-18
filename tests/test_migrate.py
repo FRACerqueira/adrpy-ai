@@ -369,6 +369,22 @@ def test_migrate_rejects_when_pattern_not_configured(tmp_path):
     assert excinfo.value.code == "migration-pattern-not-configured"
 
 
+def test_migrate_rejects_when_install_level_config_exists_but_its_own_pattern_is_empty(tmp_path, monkeypatch):
+    """ADR002V01 part 3's own stated precondition: "if migrationpattern
+    is empty in BOTH places" -- distinct from the install-level config
+    not existing at all (test_migrate_rejects_when_pattern_not_configured
+    only exercises the latter, via conftest.py's default)."""
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    fallback_text = json.dumps(_seed_config_with_pattern(""))
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: fallback_text)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-pattern-not-configured"
+
+
 def test_migrate_falls_back_to_install_level_pattern_and_persists_it(tmp_path, monkeypatch):
     tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
@@ -617,3 +633,13 @@ def test_migrate_describe_documents_the_migrationpattern_precondition():
     edge case) -- describe() never said so, so an agent only discovered
     this by trial and error."""
     assert "migrationpattern" in migrate.describe()["description"]
+
+
+def test_migrate_describe_documents_the_persist_back_write_survives_a_later_failure():
+    """Round 11 usability pass: the persist-back write commits before
+    the scan/eligibility checks and is never rolled back if one of them
+    later refuses the run -- describe() used to imply the opposite via
+    "no file is touched" phrasing that predates the fallback."""
+    description = migrate.describe()["description"]
+    assert "survives" in description
+    assert "no decision file is touched" in description
