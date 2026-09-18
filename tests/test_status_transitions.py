@@ -77,6 +77,35 @@ def test_approve_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-01)|" in text  # untouched
 
 
+def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 1 (HIGH): round 8's own
+    decision log claims approve/reject/undo/version/revise "inherit [the
+    family_members fail-closed fix] for free" from family_members' own
+    strict=True -- but nothing end-to-end proved that for THIS command.
+    Demonstrated: wrapping this command's own family_members call in
+    try/except CommandError (a plausible future "degrade gracefully"
+    refactor) left the full suite green with no test noticing."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert "|Created|Proposed (2026-01-01)|" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
+
+
 def test_approve_rejects_already_approved(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
@@ -509,6 +538,32 @@ def test_reject_happy_path(tmp_path):
     assert "|Changed|Rejected (2026-01-02)|" in text
 
 
+def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 1 (HIGH): see approve's own
+    equivalent test -- this is reject's OWN family scan (its own family,
+    not the predecessor lookup covered by the round-9 usability fix
+    above), which runs before any write."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert "|Created|Proposed (2026-01-01)|" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
+
+
 def test_reject_rejects_already_resolved(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
@@ -846,6 +901,31 @@ def test_undo_happy_path(tmp_path):
     assert result["status"] == "Proposed"
     text = adr_path.read_text(encoding="utf-8")
     assert "|Changed||" in text
+
+
+def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 1 (HIGH): see approve's own
+    equivalent test."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path)])
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert "|Changed|Accepted" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
 
 
 def test_undo_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):

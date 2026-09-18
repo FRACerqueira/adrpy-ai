@@ -1,3 +1,4 @@
+import os
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, reject, version
@@ -28,6 +29,34 @@ def _setup_accepted_repo(tmp_path):
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-use-postgre-sql.md"
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
     return tmp_path, adr_path
+
+
+def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 1 (HIGH): round 8's own
+    decision log claims this command "inherit[s] [the family_members
+    fail-closed fix] for free" -- but nothing end-to-end proved that.
+    Demonstrated: wrapping this command's own family_members call in
+    try/except CommandError left the full suite green with no test
+    noticing."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert not (adr_dir / "ADR001V02-use-postgre-sql.md").exists()  # no write made
 
 
 def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):

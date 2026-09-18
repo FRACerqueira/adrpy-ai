@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import date, timedelta
 
 from adrpy.cli import approve, config, init, new, reject, revise
@@ -81,6 +82,30 @@ def test_revise_still_fails_safely_when_lenrevision_races_to_zero_after_the_pre_
     assert excinfo.value.code == "lenrevision-too-small-for-new-revision"
     # No new revision file was created.
     assert not (tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md").exists()
+
+
+def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Round 9 test-adequacy audit, Finding 1 (HIGH): see version's own
+    equivalent test."""
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "family-scan-incomplete"
+    assert not (adr_dir / "ADR001V01R02-use-postgre-sql.md").exists()  # no write made
 
 
 def test_revise_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
