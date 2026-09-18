@@ -5,6 +5,7 @@ from adrpy.cli import config as config_command
 from adrpy.cli import explore as explore_command
 from adrpy.cli import help as help_command
 from adrpy.cli import init as init_command
+from adrpy.cli import installconfig as installconfig_command
 from adrpy.cli import migrate as migrate_command
 from adrpy.cli import new as new_command
 from adrpy.cli import reject as reject_command
@@ -26,4 +27,5 @@ COMMANDS = {
     "revise": revise_command,
     "migrate": migrate_command,
     "config": config_command,
+    "installconfig": installconfig_command,
 }
