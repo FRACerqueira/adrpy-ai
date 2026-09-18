@@ -115,7 +115,7 @@ Every command's full argument list, types, and every failure code it can return 
 adrpy help <command>
 ```
 
-...or as a prose reference page under [`doc/commands/`](doc/commands/README.md), one per command, generated directly from the same `describe()` contract.
+...or as a prose reference page under [`doc/commands/`](doc/commands/INDEX.md), one per command, generated directly from the same `describe()` contract.
 
 ## Using adrpy-ai with AI Coding Agents
 
@@ -151,6 +151,8 @@ If you're evaluating this project's engineering rigor rather than just its featu
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the test/verification discipline this project expects of every change, and how to submit a pull request. Please also read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Found a security issue? See [SECURITY.md](SECURITY.md) instead of opening a public issue.
+
+Released changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

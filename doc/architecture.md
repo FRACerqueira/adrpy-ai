@@ -1,10 +1,12 @@
+[← README](../README.md)
+
 # Architecture
 
 This page explains how `adrpy-ai` is put together and why: the module
 layout, the request lifecycle, the two load-bearing architectural
 decisions (the repository lock and the install-level config), and the
 decision lifecycle the whole tool exists to manage. For the individual
-command contracts, see [`doc/commands/`](commands/README.md); for the
+command contracts, see [`doc/commands/`](commands/INDEX.md); for the
 project's own recorded architectural decisions and their full rationale,
 see [`doc/adr/`](adr/) and [`doc/decision-log/`](decision-log/INDEX.md) --
 this page summarizes and links to them, it does not replace them.
@@ -250,7 +252,7 @@ succeeds or fails:
 `code` is always a stable, documented string (`repository-locked`,
 `config-already-exists`, ...), never a free-text message a caller has to
 pattern-match -- the full, per-command list of codes lives inline in each
-command's own [`doc/commands/`](commands/README.md) page, next to the
+command's own [`doc/commands/`](commands/INDEX.md) page, next to the
 exact condition that triggers it. `warnings` is always present, even when
 empty, and carries non-fatal information about automatic recovery a
 command's own dependencies performed silently (a retried write, a
@@ -260,7 +262,7 @@ anywhere a caller could see it.
 
 ## Where to go deeper
 
-- [`doc/commands/`](commands/README.md) -- full argument and failure-code
+- [`doc/commands/`](commands/INDEX.md) -- full argument and failure-code
   reference, one page per command, generated from `describe()`.
 - [`doc/adr/`](adr/) -- this project's own formal Architecture Decision
   Records, written using `adrpy-ai` itself.

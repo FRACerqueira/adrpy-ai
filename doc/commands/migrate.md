@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy migrate`
 
 Adds an adrpy-compliant header to existing, hand-written decision files.

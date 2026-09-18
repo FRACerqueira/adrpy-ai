@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy supersede`
 
 Marks an `Accepted` decision `Superseded` and creates its successor.

@@ -108,9 +108,9 @@ def generate():
         "- **Round** -- a single, project-wide, ever-increasing integer identifying "
         "the pre-release-audit round this entry belongs to. Never resets. A "
         "human-friendly **Cycle** name grouping a range of rounds, when one is "
-        "warranted, lives separately in `doc/decision-log/CYCLES.md` -- never "
-        "repeated on individual entries, and only ever assigned in hindsight once a "
-        "cycle's own boundary is visible (see that file for the naming rule).",
+        "warranted, lives separately in [`doc/decision-log/CYCLES.md`](CYCLES.md) -- "
+        "never repeated on individual entries, and only ever assigned in hindsight "
+        "once a cycle's own boundary is visible (see that file for the naming rule).",
         "",
         "`deferred` entries carry their own, different structured line instead -- "
         "`**Reopen-when:** ...` -- the reopening condition every `deferred` entry "

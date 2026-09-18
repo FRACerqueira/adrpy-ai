@@ -1,3 +1,5 @@
+[← README](../../README.md) · [Architecture](../architecture.md)
+
 # Command Reference
 
 One page per `adrpy` command, each generated directly from that command's own

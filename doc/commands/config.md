@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy config`
 
 Reads or updates an existing repository's own `adr-config.adrplus`.

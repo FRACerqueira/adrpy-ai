@@ -16,7 +16,7 @@ For `audit-finding`/`doc-drift` entries specifically, the four extra columns bel
 - **Front** -- which review angle found it (free text -- may still mention the round narratively, but **Round** below is the authoritative, mechanically-parseable value).
 - **Severity** -- Low / Medium / High.
 - **Resolution** -- `Direct` (followed an already-established pattern, no design choice needed), `Escalated` (a real trade-off, presented as options and chosen by the project owner before implementation), or `Retraction` (reverses a previously confirmed decision that didn't hold).
-- **Round** -- a single, project-wide, ever-increasing integer identifying the pre-release-audit round this entry belongs to. Never resets. A human-friendly **Cycle** name grouping a range of rounds, when one is warranted, lives separately in `doc/decision-log/CYCLES.md` -- never repeated on individual entries, and only ever assigned in hindsight once a cycle's own boundary is visible (see that file for the naming rule).
+- **Round** -- a single, project-wide, ever-increasing integer identifying the pre-release-audit round this entry belongs to. Never resets. A human-friendly **Cycle** name grouping a range of rounds, when one is warranted, lives separately in [`doc/decision-log/CYCLES.md`](CYCLES.md) -- never repeated on individual entries, and only ever assigned in hindsight once a cycle's own boundary is visible (see that file for the naming rule).
 
 `deferred` entries carry their own, different structured line instead -- `**Reopen-when:** ...` -- the reopening condition every `deferred` entry already has to name, structured so it can be checked mechanically without re-reading each entry's own prose.
 

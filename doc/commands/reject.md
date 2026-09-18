@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy reject`
 
 Marks a `Proposed` decision `Rejected`.

@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy new`
 
 Creates a new decision, status `Proposed`.

@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy revise`
 
 Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision.

@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy help`
 
 Lists every command, or describes one of them in full.

@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy approve`
 
 Marks a `Proposed` decision `Accepted`.

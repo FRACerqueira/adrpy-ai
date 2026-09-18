@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy explore`
 
 Lists every decision file in the repository, on a best-effort basis.

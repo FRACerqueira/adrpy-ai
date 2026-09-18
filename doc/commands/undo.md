@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy undo`
 
 Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`.

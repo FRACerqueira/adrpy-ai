@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy version`
 
 Creates a new major version of an `Accepted`/`Rejected` decision.

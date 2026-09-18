@@ -1,3 +1,5 @@
+[← Command Reference](INDEX.md)
+
 # `adrpy init`
 
 Initializes an ADR repository: writes `adr-config.adrplus` and creates the decisions folder.
