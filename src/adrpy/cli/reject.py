@@ -154,10 +154,18 @@ def run(args):
                     # second-phase codes -- re-raise with that same
                     # partial-success shape instead of leaving the
                     # caller to infer it from `warnings` alone.
+                    #
+                    # Round 10 stability audit, Finding 1: the original
+                    # error's own `data` (family-scan-incomplete's
+                    # `folder`/`unreadable`, naming exactly which
+                    # subdirectories couldn't be scanned) used to be
+                    # discarded wholesale here -- merged in now instead,
+                    # so this second-phase failure keeps both diagnostic
+                    # payloads, not just this command's own.
                     raise CommandError(
                         error.code,
                         str(error),
-                        data={"file": str(path), "status": "Rejected"},
+                        data={**(error.data or {}), "file": str(path), "status": "Rejected"},
                         warnings=warnings,
                     ) from error
                 # Round 7 stability audit, Finding 2: latest_in_family picks

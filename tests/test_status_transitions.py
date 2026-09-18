@@ -884,6 +884,11 @@ def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_inco
     assert excinfo.value.code == "family-scan-incomplete"
     assert excinfo.value.data["file"] == str(successor_path)
     assert excinfo.value.data["status"] == "Rejected"
+    # Round 10 stability audit, Finding 1: the original error's own data
+    # (which subdirectories couldn't be scanned) must survive the
+    # re-raise too, not just this command's own file/status.
+    assert excinfo.value.data["folder"] == str(adr_dir)
+    assert excinfo.value.data["unreadable"] == [str(adr_dir / "restricted")]
     # The primary write really did commit despite the overall failure.
     assert "Rejected (2026-01-04)" in successor_path.read_text(encoding="utf-8")
     assert calls["count"] == 2
