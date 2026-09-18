@@ -11,6 +11,14 @@
 - [ ] New/changed behavior has a test that would actually catch a regression
 - [ ] For a bug fix: the test failed for the right reason before the fix, and passes after
 
+## Decision record
+
+<!-- Does this change need an ADR or a decision-log entry? See
+     doc/decision-log-workflow.md for how to decide and how to write one. -->
+
+- [ ] Not applicable -- no architectural choice, divergence, finding, or trade-off to record
+- [ ] Recorded: <!-- link the ADR or decision-log entry this PR adds -->
+
 ## Related issue
 
 Closes #

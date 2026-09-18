@@ -4,6 +4,8 @@ from adrpy.__main__ import main
 from adrpy.core.output import EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR
 from adrpy.core.registry import COMMANDS
 
+import pytest
+
 
 _LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init")
 _PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revise")
@@ -192,6 +194,32 @@ def test_no_arguments_matches_help_command(capsys):
 
     assert exit_code == EXIT_SUCCESS
     assert payload["success"] is True
+
+
+def test_version_flag_is_the_one_deliberate_exception_to_json_only_output(capsys):
+    """--version/-v is a human-only convenience, never parsed by a script
+    or agent -- the one flag allowed to print plain text instead of the
+    JSON envelope every other call returns."""
+    exit_code = main(["--version"])
+    out = capsys.readouterr().out
+
+    assert exit_code == EXIT_SUCCESS
+    assert out.startswith("adrpy-ai ")
+    assert "Docs:" in out
+    assert "Usage: adrpy help" in out
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(out)
+
+
+def test_short_version_flag_matches_the_long_form(capsys):
+    exit_code = main(["-v"])
+    out_short = capsys.readouterr().out
+
+    main(["--version"])
+    out_long = capsys.readouterr().out
+
+    assert exit_code == EXIT_SUCCESS
+    assert out_short == out_long
 
 
 def test_help_describes_single_command(capsys):
