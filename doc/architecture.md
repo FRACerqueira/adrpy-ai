@@ -43,62 +43,36 @@ only describes `adrpy-ai`'s own architecture.
 Every command handler in `cli/` is thin: it parses its own flags, then
 delegates the actual work -- locking, reading, validating, writing -- to
 the shared modules in `core/`. No `core/` module ever imports from `cli/`;
-the dependency direction is one-way.
+the dependency direction is one-way, always downward through these four
+layers:
 
 ```mermaid
 graph TD
-    subgraph "Entry point"
-        MAIN["__main__.py<br/>dispatches argv, translates every<br/>exception into the JSON contract"]
-    end
-
-    subgraph "cli/ -- one thin module per command"
-        INIT[init.py]
-        NEW[new.py]
-        APPROVE[approve.py]
-        REJECT[reject.py]
-        UNDO[undo.py]
-        SUPERSEDE[supersede.py]
-        VERSION[version.py]
-        REVISE[revise.py]
-        MIGRATE[migrate.py]
-        EXPLORE[explore.py]
-        CONFIG[config.py]
-        INSTALLCONFIG[installconfig.py]
-        HELP[help.py]
-    end
-
-    subgraph "core/ -- shared mechanics, no cli/ dependency"
-        REGISTRY[registry.py<br/>verb -> module map]
-        ARGS[args.py<br/>--flag parsing]
-        LOCK[lock.py<br/>repository lock]
-        LIFECYCLE[lifecycle.py<br/>status transitions, family scan]
-        CONFIGCORE[config.py<br/>adr-config.adrplus schema]
-        INSTALLCFG[install_config.py<br/>per-user config]
-        HEADER[header.py<br/>12-line header format]
-        NAMING[naming.py<br/>filename parsing/building]
-        CASING[casing.py<br/>title case transforms]
-        ATOMIC[atomic_write.py<br/>atomic, retrying writes]
-        IORETRY[io_retry.py<br/>shared read-retry loop]
-        SECURITY[security.py<br/>path-escape guards]
-        OUTPUT[output.py<br/>JSON envelope + exit codes]
-        ERRORS[errors.py<br/>CommandError / UsageError]
-        WARNINGS[warnings.py<br/>warning-string builders]
-    end
-
-    MAIN --> REGISTRY
-    REGISTRY --> INIT & NEW & APPROVE & REJECT & UNDO & SUPERSEDE & VERSION & REVISE & MIGRATE & EXPLORE & CONFIG & INSTALLCONFIG & HELP
-
-    NEW & APPROVE & REJECT & UNDO & SUPERSEDE & VERSION & REVISE & MIGRATE & CONFIG --> LOCK
-    NEW & APPROVE & REJECT & UNDO & SUPERSEDE & VERSION & REVISE & EXPLORE --> LIFECYCLE
-    INIT & CONFIG & MIGRATE --> CONFIGCORE
-    INIT & MIGRATE & INSTALLCONFIG --> INSTALLCFG
-    LIFECYCLE --> HEADER & NAMING & SECURITY
-    NEW & SUPERSEDE & VERSION --> CASING
-    LIFECYCLE & CONFIGCORE & INSTALLCFG --> ATOMIC
-    ATOMIC --> IORETRY
-    INIT & NEW & APPROVE & REJECT & UNDO & SUPERSEDE & VERSION & REVISE & MIGRATE & CONFIG & INSTALLCONFIG & EXPLORE & HELP --> ARGS & OUTPUT & ERRORS
-    LOCK & LIFECYCLE & CONFIGCORE --> WARNINGS
+    CALLER["Caller<br/>(human or AI agent)"] --> MAIN
+    MAIN["__main__.py<br/>entry point + dispatch"] --> CLI
+    CLI["cli/*.py<br/>13 thin command modules,<br/>one per adrpy verb"] --> CORE
+    CORE["core/*.py<br/>15 shared modules, grouped by<br/>concern in the table below"] --> FS[("Filesystem")]
 ```
+
+No single command uses every `core/` module, and no `core/` module is used
+by every command -- the table below is the accurate picture; the diagram
+above is deliberately just the layering, not a full edge list, because a
+command-by-module graph for 13 x 15 modules is a hairball no one can
+actually read.
+
+| Concern | Modules | Responsibility |
+|---|---|---|
+| Dispatch & contract | `registry.py`, `args.py`, `output.py`, `errors.py` | Maps each verb to its command module; parses `--flag value` pairs; builds the JSON envelope and exit code; defines `CommandError`/`UsageError`. Used by every command. |
+| Concurrency & storage | `lock.py`, `atomic_write.py`, `io_retry.py` | The whole-repository advisory lock ([ADR001](adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md)); atomic, retrying file writes; the shared transient-read-retry loop both of the above lean on. |
+| Configuration | `config.py`, `install_config.py` | A repository's own `adr-config.adrplus` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
+| Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py` | Status transitions and family scans; the 12-line header format; filename parsing/building for both naming schemes; title case transforms; path-escape guards. |
+| Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal recovery (a retried write, a reclaimed stale lock, orphan cleanup, an encoding repair). |
+
+Every write command (`new`, `approve`, `reject`, `undo`, `supersede`,
+`version`, `revise`, `migrate`, `config`) touches Concurrency & storage;
+every command that reasons about existing decision files touches Decision
+file mechanics; `init`/`config`/`migrate`/`installconfig` touch
+Configuration; every command touches Dispatch & contract.
 
 ## Request lifecycle
 
