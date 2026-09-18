@@ -5,9 +5,33 @@ build-backend = "hatchling.build"
 [project]
 name = "adrpy-ai"
 version = "0.1.0"
-description = "ADR management CLI designed for AI-agent-driven use: no wizard, JSON-only output."
+description = "ADR lifecycle CLI for humans and AI agents alike -- JSON-only, no wizard, zero dependencies."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [
+    { name = "Fernando Cerqueira" },
+]
+keywords = ["adr", "architecture-decision-records", "cli", "ai-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Documentation",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/FRACerqueira/adrpy-ai"
+Repository = "https://github.com/FRACerqueira/adrpy-ai"
+Issues = "https://github.com/FRACerqueira/adrpy-ai/issues"
+Changelog = "https://github.com/FRACerqueira/adrpy-ai/blob/main/CHANGELOG.md"
 
 [project.scripts]
 adrpy = "adrpy.__main__:main"
