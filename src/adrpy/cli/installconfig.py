@@ -6,7 +6,12 @@ not mirrored here).
 
 Unlike every other command, this one takes no `--path` -- it always
 operates on the one, fixed, per-user location `core/install_config.py`
-resolves. One flag per schema field (mirroring `config`'s own pattern),
+resolves (`%APPDATA%\\adrpy\\install-config.json` on Windows,
+`$XDG_CONFIG_HOME/adrpy/install-config.json` or
+`~/.config/adrpy/install-config.json` on POSIX -- also always returned
+as this command's own `file` key, so a caller never needs to know the
+convention to locate it). One flag per schema field (mirroring
+`config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
 schema is byte-compatible with a repository's own adr-config.adrplus
 (ADR002V01), `--seed` pointed directly at a real AdrPlus installation's
@@ -24,7 +29,17 @@ the shared repository state ADR001's lock rule is scoped to (ADR002V01).
 A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
 a single human/agent doing one-time setup, not the routine concurrent
-workload the repository lock exists to protect.
+workload the repository lock exists to protect. Round 11 stability
+pass: confirmed the worst case really is a lost update, never
+corruption (a merge-write always merges onto a fully-committed prior
+state, and atomic_write_text's own os.replace-based commit means a
+concurrent reader never observes a partial file) -- but the blast
+radius of a lost update can be larger than "one field": a `--seed`
+(wholesale replace) racing a field-edit (which reads the *existing*
+file as its own base, never the seed's content) can have its entire
+replacement silently reverted back to the pre-seed file, with only the
+field-edit's own one field actually surviving, if the field-edit's
+write lands after the seed's.
 """
 
 import json
@@ -69,8 +84,10 @@ def _field_description(field):
         return (
             "Relative path to the decisions folder that a newly init'd repository using this as its "
             f"seed will get by default, max {config_schema.FOLDERADR_MAX_LENGTH} characters; cannot be "
-            "empty, absolute, or use a path that would escape a repository once applied (the same rule "
-            "the `config` command's own --folderadr enforces there)."
+            "empty or absolute. Unlike the `config` command's own --folderadr, this one does NOT check "
+            "whether the value would escape a repository once applied -- there is no repository yet at "
+            "the point this file is written; that check happens later, in whichever command consumes "
+            "this file as a seed (currently `init`)."
         )
     if field == "migrationpattern":
         return (
@@ -138,13 +155,15 @@ def describe():
             "With no field flags and no --seed, reads the current config back (read-only, no write); "
             "the result's `configured` key is false with no `config` key at all if the file doesn't "
             "exist yet -- the normal state for any installation that has never run this command, not an "
-            "error -- or true with a `config` key otherwise. "
+            "error -- or true with a `config` key otherwise. `updated_fields` is present as an empty "
+            "list on every read too, same as `config`'s own bare-read shape -- a generic wrapper that "
+            "reads `data.updated_fields` unconditionally works the same after any call, read or write. "
             "`activeplugins` is never included in that read result or accepted as a field to update -- "
             "same as the `config` command, the plugin system is out of scope for now -- but is still "
             "carried through unchanged from whatever base a write merges onto. "
             "Omitted fields keep their current value (or the built-in default's, on first write); only "
             "the fields passed are updated. A write call's result never has the `config`/`configured` "
-            "keys, only `updated_fields`. "
+            "keys. "
             "--seed replaces the file wholesale, same as `init --seed`, and reports every editable field "
             "in `updated_fields` since a full replace makes every one of them this call's own -- not a "
             "diff against whatever was there before."
@@ -159,7 +178,10 @@ def describe():
                     "merging individual field flags -- same semantics as `init --seed`. The install-level "
                     "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
                     "this also covers importing one from a real AdrPlus installation's own template file "
-                    "directly, with no separate flag needed."
+                    "directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed is "
+                    "silently ignored, not applied and not an error -- unlike `init`, which raises for its "
+                    "own incompatible flag combination (--seed with --language); still reported in "
+                    "`updated_fields` since --seed makes every field this call's own regardless."
                 ),
             },
             *[
@@ -197,10 +219,16 @@ def run(args):
 
     if not any(field in flags for field in _EDITABLE_FIELDS):
         if not target.is_file():
-            return {"file": str(target), "configured": False, "warnings": []}
+            return {"file": str(target), "configured": False, "updated_fields": [], "warnings": []}
         current = parse_repo_config(read_config_text(target))
         current_fields = {field: getattr(current, field) for field in _EDITABLE_FIELDS}
-        return {"file": str(target), "configured": True, "config": current_fields, "warnings": []}
+        return {
+            "file": str(target),
+            "configured": True,
+            "config": current_fields,
+            "updated_fields": [],
+            "warnings": [],
+        }
 
     base_text = read_config_text(target) if target.is_file() else _default_config_text()
     base = parse_repo_config(base_text)

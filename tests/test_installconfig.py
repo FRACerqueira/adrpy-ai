@@ -22,6 +22,7 @@ def test_bare_read_reports_not_configured_when_file_missing(tmp_path):
 
     assert result["configured"] is False
     assert "config" not in result
+    assert result["updated_fields"] == []  # present on every read, same shape as config.py's own
     assert result["warnings"] == []
 
 
@@ -34,6 +35,7 @@ def test_write_creates_the_file_from_the_bundled_default_and_merges_the_flag(tmp
     assert read_back["config"]["prefix"] == "XYZ"
     assert read_back["config"]["lenseq"] == 3  # bundled default, untouched
     assert "activeplugins" not in read_back["config"]  # never exposed, same as config
+    assert read_back["updated_fields"] == []  # present on every read too
 
 
 def test_second_write_merges_onto_the_existing_file_not_the_bundled_default(tmp_path):
@@ -64,6 +66,24 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
     assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
     target_path = installconfig.resolve_install_config_path()
     assert target_path.read_text(encoding="utf-8") == Path(FIXTURE_PATH).read_text(encoding="utf-8")
+
+
+def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
+    """Round 11 test-adequacy pass: zero coverage existed for a --seed
+    file that exists and is readable but fails schema validation --
+    mutation-confirmed that removing installconfig.py's own
+    `parse_repo_config(seed_text)` validate-before-write call left every
+    existing test green."""
+    data = json.loads(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
+    del data["lenseq"]
+    bad_seed = tmp_path / "bad-seed.json"
+    bad_seed.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        installconfig.run(["--seed", str(bad_seed)])
+
+    assert excinfo.value.code == "config-missing-field"
+    assert not installconfig.resolve_install_config_path().exists()
 
 
 def test_seed_rejects_a_missing_file(tmp_path):
