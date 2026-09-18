@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "adrpy-ai"
-version = "0.1.0"
+dynamic = ["version"]
 description = "ADR lifecycle CLI for humans and AI agents alike -- JSON-only, no wizard, zero dependencies."
 readme = "README.md"
 license = "MIT"
@@ -44,3 +44,9 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adrpy"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/adrpy/_version.py"
