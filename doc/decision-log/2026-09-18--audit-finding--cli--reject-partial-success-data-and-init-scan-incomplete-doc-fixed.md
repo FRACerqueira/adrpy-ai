@@ -1,6 +1,6 @@
 # reject's partial-success data gap and init's mis-scoped error-code documentation are fixed
 
-**Front:** Usability (round 9), Findings 1 and 2 | **Severity:** High | **Resolution:** Direct
+**Front:** Usability (round 9), Findings 1 and 2 | **Severity:** High | **Resolution:** Direct | **Round:** 9
 
 Round 9 usability audit, Finding 1 (HIGH): `reject`'s predecessor-family scan runs AFTER the primary write (marking this file Rejected) has already committed -- unlike every other `family_members` call in this codebase, all of which run before their command's own first write. The bare `family-scan-incomplete` `family_members` raises carried no `data.file`/`data.status`, unlike this command's other two second-phase codes (`superseded-predecessor-not-found`, `reject-predecessor-write-failed`), leaving the caller to infer the already-committed write from `warnings` alone.
 

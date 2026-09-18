@@ -1,6 +1,6 @@
 # supersede's family-member-pending guard and reject's back-reference matching are now independently tested
 
-**Front:** Test-Adequacy (round 8), Findings 1 and 4 | **Severity:** High | **Resolution:** Direct
+**Front:** Test-Adequacy (round 8), Findings 1 and 4 | **Severity:** High | **Resolution:** Direct | **Round:** 8
 
 Round 8 test-adequacy audit, Finding 1 (HIGH): round 7's fix added TWO co-equal guards to `supersede` in the same commit -- `has_superseded_sibling` and `has_pending_sibling`, mirroring `version`/`revise` -- but only the first ever got a test. Deleting the `has_pending_sibling` block entirely left the full 596-test suite green, meaning a future refactor or merge conflict could silently drop this guard with nothing to catch it.
 

@@ -16,7 +16,8 @@ INDEX_PATH = DECISION_LOG_DIR / "INDEX.md"
 
 _FRONT_SEVERITY_RE = re.compile(
     r"^\*\*Front:\*\*\s*(.+?)\s*\|\s*\*\*Severity:\*\*\s*(.+?)"
-    r"(?:\s*\|\s*\*\*Resolution:\*\*\s*(.+?))?\s*$"
+    r"(?:\s*\|\s*\*\*Resolution:\*\*\s*(.+?))?"
+    r"(?:\s*\|\s*\*\*Round:\*\*\s*(.+?))?\s*$"
 )
 
 
@@ -24,11 +25,12 @@ def _parse_entry(path):
     date, classification, scope, _slug = path.stem.split("--", 3)
     lines = path.read_text(encoding="utf-8").splitlines()
     heading = lines[0].lstrip("#").strip()
-    front, severity, resolution = "", "", ""
+    front, severity, resolution, round_ = "", "", "", ""
     for line in lines[1:5]:
         match = _FRONT_SEVERITY_RE.match(line)
         if match:
-            front, severity, resolution = match.group(1), match.group(2), match.group(3) or ""
+            front, severity = match.group(1), match.group(2)
+            resolution, round_ = match.group(3) or "", match.group(4) or ""
             break
     return {
         "path": path.name,
@@ -39,6 +41,7 @@ def _parse_entry(path):
         "front": front,
         "severity": severity,
         "resolution": resolution,
+        "round": round_,
     }
 
 
@@ -79,26 +82,35 @@ def generate():
         "actually guarantees the filename is unique, since classification+date+scope "
         "alone commonly repeat.",
         "",
-        "For `audit-finding` entries specifically, the three extra columns below come "
-        "from a structured line inside the entry itself (`**Front:** ... | "
-        "**Severity:** ... | **Resolution:** ...`), used by the `pre-release-audit` "
-        "skill's calibration step -- blank for every other classification, which "
-        "doesn't carry that line:",
+        "For `audit-finding`/`doc-drift` entries specifically, the four extra columns "
+        "below come from a structured line inside the entry itself (`**Front:** ... | "
+        "**Severity:** ... | **Resolution:** ... | **Round:** ...`), used by the "
+        "`pre-release-audit` skill's calibration step -- blank for every other "
+        "classification, which doesn't carry that line:",
         "",
-        "- **Front** -- which review angle found it, and in which round.",
+        "- **Front** -- which review angle found it (free text -- may still mention "
+        "the round narratively, but **Round** below is the authoritative, "
+        "mechanically-parseable value).",
         "- **Severity** -- Low / Medium / High.",
         "- **Resolution** -- `Direct` (followed an already-established pattern, no "
         "design choice needed), `Escalated` (a real trade-off, presented as options "
         "and chosen by the project owner before implementation), or `Retraction` "
         "(reverses a previously confirmed decision that didn't hold).",
+        "- **Round** -- a single, project-wide, ever-increasing integer identifying "
+        "the pre-release-audit round this entry belongs to. Never resets; adrpy-ai "
+        "is local-project-only for now (not yet part of the shared decision-log "
+        "skill). A human-friendly **Cycle** name grouping a range of rounds, when "
+        "one is warranted, lives separately in `doc/decision-log/CYCLES.md` -- never "
+        "repeated on individual entries, and only ever assigned in hindsight once a "
+        "cycle's own boundary is visible (see that file for the naming rule).",
         "",
-        "| Date | Classification | Scope | Front | Severity | Resolution | Summary | File |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Date | Classification | Scope | Front | Severity | Resolution | Round | Summary | File |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for entry in entries:
         lines.append(
             f"| {entry['date']} | {entry['classification']} | {entry['scope']} "
-            f"| {entry['front']} | {entry['severity']} | {entry['resolution']} "
+            f"| {entry['front']} | {entry['severity']} | {entry['resolution']} | {entry['round']} "
             f"| {entry['summary']} | [{entry['path']}]({entry['path']}) |"
         )
     lines.append("")

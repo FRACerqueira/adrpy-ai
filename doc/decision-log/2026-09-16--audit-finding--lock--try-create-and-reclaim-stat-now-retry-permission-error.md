@@ -1,6 +1,6 @@
 # _try_create's os.open and _reclaim_if_abandoned's stat() now retry a transient PermissionError
 
-**Front:** Stability (round 6), Finding A-3, corroborated by a second independent instance | **Severity:** Medium (upgraded from the original pass's Medium-low on corroboration)
+**Front:** Stability (round 6), Finding A-3, corroborated by a second independent instance | **Severity:** Medium (upgraded from the original pass's Medium-low on corroboration) | **Round:** 6
 
 Round 6 stability re-run, Finding A-3: `_try_create` (the lock file's own creation, `os.open(..., O_CREAT|O_EXCL|O_WRONLY)`) was the one lock-file operation in `core/lock.py` with no tolerance at all for the same Windows "pending delete"/sharing-violation contention window `_read_lock` and `_unlink_with_retry` already retry.
 

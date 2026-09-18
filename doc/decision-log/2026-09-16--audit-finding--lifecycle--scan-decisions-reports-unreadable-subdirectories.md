@@ -1,6 +1,6 @@
 # scan_decisions and its 3 siblings now report unreadable subdirectories instead of silently under-scanning
 
-**Front:** Resilience (round 6), Finding B | **Severity:** Medium
+**Front:** Resilience (round 6), Finding B | **Severity:** Medium | **Round:** 6
 
 Round 6 resilience re-run, Finding B, class closure: `Path.rglob` (CPython's own pathlib implementation) silently swallows any `OSError` raised while walking a subtree. A subfolder that becomes unreadable mid-scan -- an ordinary ACL choice for a team-restricted area, something `core/lock.py`'s own module docstring already anticipates -- made every `rglob("*.md")` scan in this project return fewer results, or none, with no exception and no signal at all: `scan_decisions`, `explore`, `migrate`'s own scan, and `init`'s `_max_existing_numbers` all shared this gap, not just the one call site originally reported.
 

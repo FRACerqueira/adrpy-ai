@@ -1,6 +1,6 @@
 # verify_still_held() now treats its own read failure as LockLostError, not a bare OSError
 
-**Front:** Stability + Resilience (round 6 -- both fronts independently, no shared context) | **Severity:** High
+**Front:** Stability + Resilience (round 6 -- both fronts independently, no shared context) | **Severity:** High | **Round:** 6
 
 Round 6 stability + resilience re-run (2 independent fronts, no shared context, same defect found by both): a persistent I/O failure reading the lock file during the pre-commit ownership recheck used to escape as a bare `OSError`. In `migrate`'s per-candidate loop specifically, that meant it fell through the command's own `except LockLostError` clause into the generic per-file `except (OSError, UnicodeError)`, mislabeling a candidate that was never touched as individually `"failed"` -- then repeated the same misclassification for every remaining candidate, discarding the command's own documented `migration-lock-lost` contract.
 

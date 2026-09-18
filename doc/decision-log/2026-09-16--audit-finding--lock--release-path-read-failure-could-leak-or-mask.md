@@ -1,6 +1,6 @@
 # acquire_repo_lock's release-path read failure could leak the lock or mask a real error
 
-**Front:** Stability (round 5 re-run, Opus), Finding 2 | **Severity:** Medium
+**Front:** Stability (round 5 re-run, Opus), Finding 2 | **Severity:** Medium | **Round:** 5
 
 Round 5 stability re-run (Opus), Finding 2: `acquire_repo_lock`'s own `finally` block called `_read_lock` first, to confirm ownership before unlinking -- but `_read_lock` still raises past its own retry budget on a persistent `PermissionError`, and any other `OSError` immediately. Either escaping the `finally` block (a) skipped `_unlink_with_retry` entirely, leaking the lock file for the full 30s `ABANDON_AFTER_SECONDS` window (no single command invocation waits that long), and (b) since a `finally`-raised exception supersedes whatever was propagating from the `try: yield lock` block, could replace a real `CommandError` (e.g. `already-accepted`) with a generic `io-error`, discarding the structured code. Reproduced deterministically (a mocked `_read_lock` raising `OSError`/a persistent `PermissionError`).
 

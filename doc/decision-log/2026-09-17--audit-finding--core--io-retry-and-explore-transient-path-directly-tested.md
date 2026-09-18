@@ -1,6 +1,6 @@
 # read_with_permission_retry and explore's transient-retry path are now directly tested
 
-**Front:** Test-Adequacy (round 8), Findings 3 and 5 | **Severity:** Low | **Resolution:** Direct
+**Front:** Test-Adequacy (round 8), Findings 3 and 5 | **Severity:** Low | **Resolution:** Direct | **Round:** 8
 
 Round 8 test-adequacy audit, Finding 5: the shared `read_with_permission_retry` helper (`core/io_retry.py`) had no direct unit test of its own contract -- every exercise of it was indirect, through one specific caller's own test (`_read_lock`'s, or `lifecycle.py`'s read functions). Nothing proved the helper's exact retry count, delay, that only `PermissionError` is retried (not `FileNotFoundError` or anything else), or the `attempts=1` boundary.
 

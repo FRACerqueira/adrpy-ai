@@ -1,6 +1,6 @@
 # LockLostError bypassed each command's own second-write partial-mutation reporting
 
-**Front:** Stability (round 5 re-run), Finding 3 | **Severity:** Medium
+**Front:** Stability (round 5 re-run), Finding 3 | **Severity:** Medium | **Round:** 5
 
 Round 5 stability re-run, Finding 3: `LockLostError` on a command's SECOND write (`supersede`'s successor creation, `reject`'s predecessor update) or per-candidate write (`migrate`'s loop) bypassed each command's own partial-mutation handler entirely -- only `OSError` was caught there. A caller saw the generic, dataless "no write was made" `lock-lost` message even though the FIRST write (or an earlier candidate) had already, for real, committed -- exactly the orphaned-family/partial-result risk the OSError sibling handler already guards against.
 

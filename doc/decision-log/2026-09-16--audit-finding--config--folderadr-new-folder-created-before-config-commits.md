@@ -1,6 +1,6 @@
 # config/init now create folderadr's new folder BEFORE the config write commits
 
-**Front:** Resilience (round 7), Finding 3 | **Severity:** High | **Resolution:** Retraction
+**Front:** Resilience (round 7), Finding 3 | **Severity:** High | **Resolution:** Retraction | **Round:** 7
 
 Round 7 resilience audit, Finding 3: `config --folderadr` and `init --seed` (on an already-existing repo) both committed the `folderadr` change to disk BEFORE creating the new folder. If that folder creation then failed, the command reported a bare `io-error` with no `data` naming that the config was already mutated, and every subsequent mutating command failed with a generic `io-error` (the lock's own `_try_create` requires the parent directory to exist) until someone noticed and manually retried the same `config`/`init --seed` call.
 

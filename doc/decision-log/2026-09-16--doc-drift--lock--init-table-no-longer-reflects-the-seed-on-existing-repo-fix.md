@@ -1,6 +1,6 @@
 # ADR001's "Universal coverage" table no longer reflects init's --seed exemption precisely
 
-**Front:** Stability (round 5 re-run), Finding 1 | **Severity:** Low | **Resolution:** Direct
+**Front:** Stability (round 5 re-run), Finding 1 | **Severity:** Low | **Resolution:** Direct | **Round:** 5
 
 `doc/adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md`'s own "Universal coverage" table (part 1) lists `init` as flatly "Deliberately exempted from this principle, accepted risk, not fixed." That was accurate when written (round 4's second corroboration pass), but round 5's stability re-run (Finding 1, HIGH) found `--seed` overwriting an already-existing repository's config wrote fully unlocked -- a real, reproduced defect, since that path is live shared state, not the "a path that, by definition, has no repository yet" case the ADR's own exemption reasoning describes. Fixed: `init --seed` on an already-existing repository now acquires the same lock the other 8 commands use (`src/adrpy/cli/init.py`'s `_validate_and_write`, `old_config` parameter). Only the genuinely-fresh-bootstrap path remains exempt, matching the ADR's own stated reasoning exactly.
 

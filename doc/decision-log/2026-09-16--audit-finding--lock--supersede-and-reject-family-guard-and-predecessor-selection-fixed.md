@@ -1,6 +1,6 @@
 # supersede now guards the whole family, and reject matches the actual predecessor instead of the latest sibling
 
-**Front:** Stability (round 7), Findings 1 and 2 | **Severity:** High | **Resolution:** Direct
+**Front:** Stability (round 7), Findings 1 and 2 | **Severity:** High | **Resolution:** Direct | **Round:** 7
 
 Round 7 stability audit, Finding 1: `supersede` had no family-wide guard at all -- unlike `version`/`revise`, which both check `has_superseded_sibling`/`has_pending_sibling` before writing. Two different members of the same family could each be independently superseded, producing two live successors and two Superseded predecessors: exactly the corruption shape ADR001's own Decision Drivers name as HIGH-severity reproduced corruption, and round 6's freshness fix does not close it (freshness only protects the same-file race, not a second, different family member). Reproduced deterministically, no race needed.
 

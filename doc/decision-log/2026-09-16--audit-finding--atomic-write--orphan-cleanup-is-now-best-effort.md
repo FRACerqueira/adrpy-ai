@@ -1,6 +1,6 @@
 # Orphaned-temp-file cleanup is now best-effort, reported as a warning instead of failing the command
 
-**Front:** Resilience (round 6) | **Severity:** Low
+**Front:** Resilience (round 6) | **Severity:** Low | **Round:** 6
 
 Round 6 resilience re-run, Finding B-3: `cleanup_orphaned_temp_files` runs before the repository lock in every one of the 8 commands that call it -- a concurrent process's own in-flight write could plausibly hold a temp file open (or have already removed it) at the exact moment this scan reaches it. A transient `OSError` there used to propagate raw, failing the caller's entire command over best-effort housekeeping unrelated to what it was actually asked to do (e.g. `approve` failing with a generic `io-error` while trying to clean up a stale `*.tmp` file that had nothing to do with the decision being approved).
 

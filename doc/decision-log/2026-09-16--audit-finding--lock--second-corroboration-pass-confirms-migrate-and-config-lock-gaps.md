@@ -1,6 +1,6 @@
 # Second corroboration pass confirms and fixes migrate/config's missing lock; narrows the config fix
 
-**Front:** Stability (round 4, second corroboration pass -- 2 independent instances) | **Severity:** High
+**Front:** Stability (round 4, second corroboration pass -- 2 independent instances) | **Severity:** High | **Round:** 4
 
 ADR001's own "Negative Consequences" section flagged the `migrate`/`config`/`init` lock gaps as single-audit-instance findings needing a second, independent pass before being treated as confirmed. Two independent `audit-stability` instances were run against exactly that scope, given only the code and the general question ("is this command safe under concurrency"), not the original pass's own hypothesis or reasoning, so as not to bias a fresh look. Both independently reproduced real, empirical defects in `migrate` and `config` (2 of 2 agreement on every core finding).
 

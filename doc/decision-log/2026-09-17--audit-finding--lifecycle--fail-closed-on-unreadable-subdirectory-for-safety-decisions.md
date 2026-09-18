@@ -1,6 +1,6 @@
 # scan_decisions and its safety-critical consumers now fail closed on an unreadable subdirectory
 
-**Front:** Stability (round 8), Finding 1 | **Severity:** High | **Resolution:** Direct
+**Front:** Stability (round 8), Finding 1 | **Severity:** High | **Resolution:** Direct | **Round:** 8
 
 Round 8 stability audit, Finding 1: round 6's own fix made `scan_decisions` WARN on an unreadable subdirectory instead of silently under-scanning, but never fail closed -- fine for a pure listing (explore), but every safety-critical consumer built on top of it (family membership, next-number allocation, existing-number gating) inherited the same warn-only behavior. Reproduced: hiding an already-Superseded family member inside a permission-denied subdirectory made `has_superseded_sibling` return False, letting a second, independent `supersede` succeed -- the exact "two live successors" corruption round 7 just closed, reproducible with **no concurrency at all**. Also reproduced separately for `next_number` (a hidden higher-numbered decision let `new` allocate a duplicate number).
 

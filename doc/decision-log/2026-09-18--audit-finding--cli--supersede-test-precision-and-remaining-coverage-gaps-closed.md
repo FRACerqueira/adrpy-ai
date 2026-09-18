@@ -1,6 +1,6 @@
 # supersede's ambiguous test tightened; remaining CLI/data-completeness coverage gaps closed
 
-**Front:** Test-Adequacy (round 9), Findings 2, 3, 4 and 5 | **Severity:** Low-Medium | **Resolution:** Direct
+**Front:** Test-Adequacy (round 9), Findings 2, 3, 4 and 5 | **Severity:** Low-Medium | **Resolution:** Direct | **Round:** 9
 
 Round 9 test-adequacy audit, Finding 2 (Low-Medium): `supersede`'s own fail-closed test accepted either of two error codes (`family-scan-incomplete` OR `supersede-successor-scan-incomplete`), which meant it couldn't tell "the guard the docstring says fires" from "a different guard happened to also fire" -- it did not notice when Finding 1's mutation disabled `family_members`' own strict scan, since `supersede`'s second, independent successor-number scan coincidentally covered for it.
 

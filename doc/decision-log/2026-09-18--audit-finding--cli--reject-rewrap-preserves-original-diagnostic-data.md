@@ -1,6 +1,6 @@
 # reject's family-scan-incomplete re-raise now preserves the original error's own diagnostic data
 
-**Front:** Stability (round 10, confirmation pass triggered by round 9's reject.py change) | **Severity:** Low | **Resolution:** Direct
+**Front:** Stability (round 10, confirmation pass triggered by round 9's reject.py change) | **Severity:** Low | **Resolution:** Direct | **Round:** 10
 
 Round 10 stability audit, Finding 1: round 9's fix (`2026-09-18--audit-finding--cli--reject-partial-success-data-and-init-scan-incomplete-doc-fixed.md`) re-raised `family_members`' `family-scan-incomplete` with `data={"file": str(path), "status": "Rejected"}`, replacing the original error's own `data` wholesale instead of merging. `scan_decisions`' own raise (`core/lifecycle.py`) carries `data={"folder": ..., "unreadable": [...]}` -- the only place naming which subdirectories couldn't be scanned, since this raise happens before `scan_decisions`' own warnings block would otherwise also report it. The wholesale replacement discarded that information irrecoverably; `__main__.py` puts `data` directly into the CLI's JSON output, so this was caller-visible, not just internal. No data corruption, no wrong write -- a diagnostic-payload regression on one failure path, not a concurrency defect.
 
