@@ -9,10 +9,7 @@ required arguments, resolved through the review process described in
 doc/decision-log-workflow.md before this command is ever called.
 """
 
-from pathlib import Path
-
 from adrpy.core.args import parse_flags
-from adrpy.core.config import load_repo_config
 from adrpy.core.decision_log import (
     CLASSIFICATIONS,
     DEFERRED_CLASSIFICATION,
@@ -34,7 +31,12 @@ from adrpy.core.decision_log import (
 )
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.lifecycle import parse_refdate, validate_refdate_not_in_future, verify_folderadr_unchanged_since_lock
+from adrpy.core.lifecycle import (
+    parse_refdate,
+    resolve_target_and_config,
+    validate_refdate_not_in_future,
+    verify_folderadr_unchanged_since_lock,
+)
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.security import reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
@@ -198,7 +200,6 @@ def run(args):
         optional=("refdate",) + _STRUCTURED_FIELDS + ("round", "reopenwhen"),
         aliases={"p": "path", "c": "classification", "s": "scope", "r": "refdate"},
     )
-    target = Path(flags["path"])
     classification = flags["classification"]
     scope = flags["scope"]
     slug = flags["slug"]
@@ -253,13 +254,7 @@ def run(args):
             )
         explicit_round = None
 
-    if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {flags['path']}")
-
-    config_path = target / "adr-config.adrplus"
-    if not config_path.is_file():
-        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
-    config = load_repo_config(config_path)
+    target, config_path, config = resolve_target_and_config(flags["path"])
 
     refdate = parse_refdate(flags.get("refdate"))
     validate_refdate_not_in_future(refdate)

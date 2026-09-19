@@ -24,6 +24,7 @@ from adrpy.core.lifecycle import (
     read_header_lines_with_report,
     reject_folderadr_change_if_decisions_exist,
     resolve_repo_and_target,
+    resolve_target_and_config,
     rewrite_status_field,
     scan_decisions,
     validate_refdate_not_before,
@@ -95,6 +96,42 @@ def test_resolve_repo_and_target_reports_when_no_adr_config_is_found_above(tmp_p
         resolve_repo_and_target(target)
 
     assert excinfo.value.code == "cannot-determine-root-path"
+
+
+def test_resolve_target_and_config_reports_a_missing_directory(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        resolve_target_and_config(tmp_path / "does-not-exist")
+
+    assert excinfo.value.code == "target-directory-not-found"
+
+
+def test_resolve_target_and_config_reports_a_missing_config(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        resolve_target_and_config(tmp_path)
+
+    assert excinfo.value.code == "config-not-found"
+
+
+def test_resolve_target_and_config_loads_and_returns_the_config(tmp_path):
+    (tmp_path / "adr-config.adrplus").write_bytes(Path(FIXTURE_PATH).read_bytes())
+
+    target, config_path, config = resolve_target_and_config(tmp_path)
+
+    assert target == tmp_path
+    assert config_path == tmp_path / "adr-config.adrplus"
+    assert config.folderadr == load_repo_config(FIXTURE_PATH).folderadr
+
+
+def test_resolve_target_and_config_skips_the_config_check_when_not_required(tmp_path):
+    """init's own case: a missing config is its normal, expected state,
+    not an error -- require_config=False must still enforce the
+    directory check, but return without ever looking for the config
+    file or loading it."""
+    target, config_path, config = resolve_target_and_config(tmp_path, require_config=False)
+
+    assert target == tmp_path
+    assert config_path == tmp_path / "adr-config.adrplus"
+    assert config is None
 
 
 @pytest.mark.parametrize(

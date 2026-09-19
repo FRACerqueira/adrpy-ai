@@ -54,7 +54,9 @@ def test_new_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypat
 
     config_module.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
 
-    monkeypatch.setattr(new, "load_repo_config", lambda path: stale_config)
+    monkeypatch.setattr(
+        new, "resolve_target_and_config", lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_config)
+    )
 
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path), "--title", "Orphan me"])

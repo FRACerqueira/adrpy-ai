@@ -17,15 +17,15 @@ presence-only switch, since either direction is a real edit.
 
 import json
 from dataclasses import asdict
-from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, load_repo_config, parse_repo_config
+from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
+    resolve_target_and_config,
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
@@ -169,14 +169,7 @@ def describe():
 
 def run(args):
     flags = parse_flags(args, required=("path",), optional=_EDITABLE_FIELDS)
-    target = Path(flags["path"])
-
-    if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {flags['path']}")
-
-    config_path = target / "adr-config.adrplus"
-    if not config_path.is_file():
-        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
+    target, config_path, config = resolve_target_and_config(flags["path"])
 
     # Which fields (if any) this call would touch is knowable from the
     # flags alone, before reading the file at all -- a pure read (no
@@ -188,8 +181,7 @@ def run(args):
         # natural way an agent would try to "just look" -- still rewrote
         # (and reformatted) the file as a side effect of what looks like a
         # read-only call. `activeplugins` stays excluded, same as a write.
-        current = load_repo_config(config_path)
-        current_fields = {field: getattr(current, field) for field in _EDITABLE_FIELDS}
+        current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
     # This command used to do a read-merge-write with no lock at all --
@@ -204,7 +196,7 @@ def run(args):
     # concurrent edit to folderadr itself is safe: whichever call writes
     # second still merges its own field onto the other's already-
     # committed change.
-    bootstrap_config = load_repo_config(config_path)
+    bootstrap_config = config
     folder = resolve_within(target, bootstrap_config.folderadr)
     # Unlike the other 8 commands (which only ever run after `init`
     # already created this directory), nothing requires it to exist

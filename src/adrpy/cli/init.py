@@ -19,6 +19,7 @@ from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
+    resolve_target_and_config,
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
@@ -131,15 +132,11 @@ def run(args):
     path = flags["path"]
     seed_arg = flags.get("seed")
     language_arg = flags.get("language")
-    target = Path(path)
 
     if seed_arg is not None and language_arg is not None:
         raise UsageError("--language cannot be combined with --seed.")
 
-    if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
-
-    config_path = target / "adr-config.adrplus"
+    target, config_path, _ = resolve_target_and_config(path, require_config=False)
     # Captured before any write below -- this is what decides whether the
     # write path below is live shared state (needs a lock) or a genuine
     # fresh bootstrap (nothing to race against yet).

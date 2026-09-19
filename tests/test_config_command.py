@@ -27,7 +27,11 @@ def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkey
     tmp_path = _init_repo(tmp_path)
     stale_bootstrap = load_repo_config(tmp_path / "adr-config.adrplus")
 
-    monkeypatch.setattr(config, "load_repo_config", lambda path: stale_bootstrap)
+    monkeypatch.setattr(
+        config,
+        "resolve_target_and_config",
+        lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_bootstrap),
+    )
 
     data = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
     data["folderadr"] = "doc/adrB"

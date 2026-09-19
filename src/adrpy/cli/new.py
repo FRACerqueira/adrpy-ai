@@ -7,17 +7,15 @@ an opened editor back to (decision-log:
 accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 """
 
-from pathlib import Path
-
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
-from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
     find_by_unique_title,
     next_number,
     parse_refdate,
+    resolve_target_and_config,
     scan_decisions,
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
@@ -95,19 +93,11 @@ def run(args):
         optional=("domain", "scope", "refdate"),
         aliases={"p": "path", "t": "title", "d": "domain", "s": "scope", "r": "refdate"},
     )
-    target = Path(flags["path"])
     title = flags["title"]
     domain = flags.get("domain", "")
     scope = flags.get("scope", "")
 
-    if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {flags['path']}")
-
-    config_path = target / "adr-config.adrplus"
-    if not config_path.is_file():
-        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
-
-    config = load_repo_config(config_path)
+    target, config_path, config = resolve_target_and_config(flags["path"])
 
     reject_embedded_delimiter(title, "title")
     reject_embedded_delimiter(domain, "domain")

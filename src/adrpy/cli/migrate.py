@@ -23,16 +23,15 @@ silently overwritten by a stale fallback decision.
 
 import json
 from dataclasses import asdict
-from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_bytes, atomic_write_text, cleanup_orphaned_temp_files
-from adrpy.core.config import load_repo_config, parse_repo_config
+from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.io_retry import read_with_permission_retry
-from adrpy.core.lifecycle import read_header_lines_with_report, verify_folderadr_unchanged_since_lock
+from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
@@ -90,15 +89,7 @@ def describe():
 
 def run(args):
     path = parse_flags(args, required=("path",), aliases={"p": "path"})["path"]
-    target = Path(path)
-
-    if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
-
-    config_path = target / "adr-config.adrplus"
-    if not config_path.is_file():
-        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
-    config = load_repo_config(config_path)
+    target, config_path, config = resolve_target_and_config(path)
 
     folder = resolve_within(target, config.folderadr)
     warnings = []

@@ -329,6 +329,27 @@ def resolve_repo_and_target(fileadr):
     return config, config_path.parent, fileadr
 
 
+def resolve_target_and_config(path, *, require_config=True):
+    """The path-rooted counterpart to resolve_repo_and_target above:
+    config/explore/log/migrate/new all take a repository --path directly
+    (rather than a decision file to walk up from), and each used to
+    hand-roll the identical target-directory-not-found/config-not-found
+    checks. `require_config=False` (init's own case) skips the
+    config-not-found check and the load entirely -- a missing config is
+    init's normal, expected state, not an error, and init decides for
+    itself, from `config_path.exists()`, whether this is a fresh
+    bootstrap or an already-initialized repository to re-validate."""
+    target = Path(path)
+    if not target.is_dir():
+        raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
+    config_path = target / "adr-config.adrplus"
+    if not require_config:
+        return target, config_path, None
+    if not config_path.is_file():
+        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
+    return target, config_path, load_repo_config(config_path)
+
+
 def read_target(path, config):
     """The content-dependent half of load_target (ADR001): reads and
     parses the target file's own name and header. Call this AFTER
@@ -435,6 +456,21 @@ def latest_in_family(folder, config, number, members=None):
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
 
 
+def _ineligibility_reason_for_proposed_state(header):
+    """The two structural checks every ineligibility_reason_for_* below
+    shares byte-for-byte: must be Proposed (or a migrated placeholder
+    with no update status yet), and must not already be superseded.
+    Returns None when both hold, else the shared reason -- each caller
+    layers its own status_update-specific interpretation on top of this
+    when it returns None, since that part genuinely differs per use case
+    (see each function's own docstring for exactly how)."""
+    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
+        return "not-proposed"
+    if header.status_change is not None:
+        return "already-superseded"
+    return None
+
+
 def ineligibility_reason_for_approve_or_reject(header):
     """Confirmed against the reference tool: eligible requires status_update
     to be None, full stop -- not merely "not Accepted and not Rejected".
@@ -449,10 +485,9 @@ def ineligibility_reason_for_approve_or_reject(header):
     could otherwise fall through to eligible here -- confirmed reachable
     live via approve on such a file. Any non-None, non-Accepted,
     non-Rejected value must be ineligible too."""
-    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return "not-proposed"
-    if header.status_change is not None:
-        return "already-superseded"
+    shared_reason = _ineligibility_reason_for_proposed_state(header)
+    if shared_reason is not None:
+        return shared_reason
     if header.status_update is None:
         return None
     if header.status_update == "Accepted":
@@ -463,11 +498,12 @@ def ineligibility_reason_for_approve_or_reject(header):
 
 
 def ineligibility_reason_for_undo(header):
-    """See ineligibility_reason_for_approve_or_reject's own note."""
-    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return "not-proposed"
-    if header.status_change is not None:
-        return "already-superseded"
+    """See ineligibility_reason_for_approve_or_reject's own note. Unlike
+    the other three below, grants NO migrated-placeholder exception --
+    undo requires a real, already-applied status_update to undo."""
+    shared_reason = _ineligibility_reason_for_proposed_state(header)
+    if shared_reason is not None:
+        return shared_reason
     if header.status_update is None:
         return "still-proposed"
     return None
@@ -482,10 +518,9 @@ def ineligibility_reason_for_supersede(header):
     cell) must be distinguished from a genuine Rejected value, not
     mislabeled "already-rejected" -- the boolean outcome (ineligible
     either way) is unaffected, only the reported reason."""
-    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return "not-proposed"
-    if header.status_change is not None:
-        return "already-superseded"
+    shared_reason = _ineligibility_reason_for_proposed_state(header)
+    if shared_reason is not None:
+        return shared_reason
     if header.status_update == "Accepted" or (header.status_update is None and header.is_migrated):
         return None
     if header.status_update is None:
@@ -504,10 +539,9 @@ def ineligibility_reason_for_version_or_revise(header):
     corrupted non-None, non-Accepted, non-Rejected value must not be
     labeled "still-proposed", which is only accurate when status_update
     genuinely is None."""
-    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return "not-proposed"
-    if header.status_change is not None:
-        return "already-superseded"
+    shared_reason = _ineligibility_reason_for_proposed_state(header)
+    if shared_reason is not None:
+        return shared_reason
     if header.status_update in ("Accepted", "Rejected") or (header.status_update is None and header.is_migrated):
         return None
     if header.status_update is None:
