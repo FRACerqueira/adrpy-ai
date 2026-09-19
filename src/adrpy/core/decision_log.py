@@ -190,6 +190,19 @@ def _parse_entry(path):
             data={"file": path.name},
         )
     lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        # Same fail-closed treatment as an unparseable filename shape or
+        # an unrecognized classification above -- an empty (or otherwise
+        # heading-less) file is just as unsafe to guess past (round 14
+        # stability finding: this used to be a raw, uncaught IndexError
+        # one statement below, the exact bug class this function's other
+        # two guards already exist to close).
+        raise CommandError(
+            "log-directory-contains-unrecognized-file",
+            f"{path.name} has no content -- cannot safely compute the next Round or regenerate "
+            "INDEX.md while this file is present.",
+            data={"file": path.name},
+        )
     heading = lines[0].lstrip("#").strip()
     front, severity, resolution, round_, reopen_when = "", "", "", "", ""
     # Gated by the entry's OWN classification (from its filename), not

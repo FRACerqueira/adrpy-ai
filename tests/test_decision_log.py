@@ -236,6 +236,27 @@ def test_max_existing_round_fails_closed_on_a_malformed_round_on_a_real_structur
     assert excinfo.value.code == "log-directory-contains-unrecognized-file"
 
 
+def test_max_existing_round_fails_closed_when_the_round_segment_is_entirely_missing(tmp_path):
+    """Distinct from the malformed-value case above: here the structured
+    line is otherwise well-formed (Front/Severity present) but the
+    optional '| **Round:** ...' segment is absent entirely, not merely
+    non-integer. Round-14 corroboration found this specific sub-case
+    untested -- confirmed by mutating `match.group(4) or ""` to
+    `match.group(4) or "0"` and observing every existing test still
+    passed, since the malformed-value test's own Round IS present (just
+    non-integer), never reaching this fallback at all."""
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    (log_dir / "2026-01-01--audit-finding--lock--first.md").write_text(
+        "# First\n\n**Front:** stability | **Severity:** High\n\nbody\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
 def test_parse_entry_raises_a_clean_error_for_an_unrecognized_classification(tmp_path):
     """A typo'd classification (e.g. 'audit-findings') passes the
     filename-shape check (still 4 '--'-delimited segments) but must still

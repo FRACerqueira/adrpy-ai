@@ -510,7 +510,16 @@ def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_
     classification' test passes exactly one offending flag -- the message
     joins ALL of them (`'/--'.join(offending)`), but nothing had ever
     exercised more than one at a time, so a regression collapsing the
-    list to just the first entry would have shipped silently."""
+    list to just the first entry would have shipped silently.
+
+    Round-14 corroboration found THIS test was itself vacuous: the
+    message's own static tail already names every possible flag
+    (front/severity/resolution/round/reopenwhen) unconditionally, so
+    loose 'X in str(...)' checks pass regardless of what `offending`
+    actually contains -- confirmed by mutating '/--'.join(offending) to
+    offending[0] and observing this test still passed. Asserts the
+    literal joined substring instead, which only the real dynamic join
+    (not the static boilerplate) can produce."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:
@@ -521,8 +530,7 @@ def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_
             ]
         )
 
-    assert "round" in str(excinfo.value)
-    assert "reopenwhen" in str(excinfo.value)
+    assert "--round/--reopenwhen" in str(excinfo.value)
 
 
 def test_log_rejects_round_on_deferred(tmp_path):
