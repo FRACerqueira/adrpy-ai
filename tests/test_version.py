@@ -391,6 +391,30 @@ def test_version_rejects_embedded_delimiter(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_version_rejects_embedded_delimiter_in_domain(tmp_path):
+    """Round-16 test-adequacy finding: only --scope was ever tested for
+    the '|' rejection, despite --domain going through the exact same
+    reject_embedded_delimiter call one line below."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--domain", "Bad|domain"])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+@pytest.mark.parametrize("flag", ["domain", "scope"])
+def test_version_rejects_a_whitespace_only_value(tmp_path, flag):
+    """Round-16 stability finding: a whitespace-only value used to be
+    written verbatim into the new version's header cell."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), f"--{flag}", "   "])
+
+    assert excinfo.value.code == "field-is-blank"
+
+
 def test_version_rejects_path_traversal_via_header_title(tmp_path):
     """Unlike --title on `new`, version/revise/supersede
     source the new record's title from the target's already-parsed header

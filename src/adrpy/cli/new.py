@@ -50,7 +50,7 @@ def describe():
                 "required": True,
                 "description": (
                     "Title of the new decision. Cannot contain '|' or a line-break-like character "
-                    "(field-contains-forbidden-character)."
+                    "(field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -60,7 +60,7 @@ def describe():
                 "required": False,
                 "description": (
                     "Optional domain header field. Cannot contain '|' or a line-break-like character "
-                    "(field-contains-forbidden-character)."
+                    "(field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -70,7 +70,7 @@ def describe():
                 "required": False,
                 "description": (
                     "Optional scope header field. Cannot contain '|' or a line-break-like character "
-                    "(field-contains-forbidden-character)."
+                    "(field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {

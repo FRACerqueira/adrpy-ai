@@ -539,6 +539,28 @@ def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkey
         init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
 
+def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_repository_root(tmp_path, monkeypatch):
+    """Round-16 stability finding: this is the most dangerous entry point
+    for the folderadr-collapse bug -- 'installconfig --folderadr' does
+    NOT validate against a repository (there isn't one yet), so a
+    poisoned per-user config used to make every subsequent `init` on that
+    machine (no --seed/--language given) silently create a repository
+    whose own decisions folder equals its own root. The existing-decisions
+    guard never engages either, since a fresh repo has zero decisions."""
+    from importlib import resources
+
+    default_text = resources.files("adrpy.resources").joinpath("default_repo_config.json").read_text(encoding="utf-8")
+    poisoned = json.loads(default_text)
+    poisoned["folderadr"] = "."
+    monkeypatch.setattr(init, "read_install_config_text", lambda: json.dumps(poisoned))
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "path-outside-repository"
+    assert not (tmp_path / "adr-config.adrplus").exists()
+
+
 def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
     """The install-level config
     read used to run unconditionally before target.is_dir() -- a

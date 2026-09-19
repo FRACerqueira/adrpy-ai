@@ -689,6 +689,52 @@ def test_log_rejects_forbidden_character_in_reopenwhen(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_log_rejects_a_whitespace_only_summary(tmp_path):
+    """Round-16 stability finding (the round-15 discovery that started
+    this front): '--summary \"   \"' used to write a blank heading
+    silently -- '#    ' -> parsed back as an empty summary, with no error
+    and no warning."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "   ", "--body", "x",
+            ]
+        )
+
+    assert excinfo.value.code == "field-is-blank"
+
+
+def test_log_rejects_a_whitespace_only_front(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "   ", "--severity", "Low", "--resolution", "Direct",
+            ]
+        )
+
+    assert excinfo.value.code == "field-is-blank"
+
+
+def test_log_rejects_a_whitespace_only_reopenwhen(tmp_path):
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "deferred", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--reopenwhen", "   ",
+            ]
+        )
+
+    assert excinfo.value.code == "field-is-blank"
+
+
 def test_log_reports_target_directory_not_found():
     with pytest.raises(CommandError) as excinfo:
         log.run(

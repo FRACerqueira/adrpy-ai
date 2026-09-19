@@ -28,7 +28,7 @@ A few kebab-case words identifying this specific entry -- lowercase letters/digi
 
 ### `--summary` *(required, string)*
 
-One-line summary -- becomes the entry's own '#' heading. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+One-line summary -- becomes the entry's own '#' heading. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--body` *(required, string)*
 
@@ -40,7 +40,7 @@ Reference date (YYYY-MM-DD) used as the entry's own filename date; defaults to t
 
 ### `--front` *(optional, string)*
 
-Required together with --severity/--resolution, only when --classification is audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Required together with --severity/--resolution, only when --classification is audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--severity` *(optional, string)*
 
@@ -56,7 +56,7 @@ Only valid when --classification is audit-finding or doc-drift; usage-error othe
 
 ### `--reopenwhen` *(optional, string)*
 
-Required, and only valid, when --classification is deferred; usage-error otherwise. The concrete, checkable condition that reopens this deferred item. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Required, and only valid, when --classification is deferred; usage-error otherwise. The concrete, checkable condition that reopens this deferred item. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ## Example
 

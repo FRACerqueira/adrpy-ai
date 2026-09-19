@@ -9,14 +9,24 @@ from adrpy.core.errors import CommandError
 def resolve_within(base_dir, candidate):
     """Resolves `candidate` (relative or absolute) against `base_dir` and
     rejects it if the real path escapes `base_dir` -- real path resolution
-    (following `..` and symlinks), never a string-pattern blacklist."""
+    (following `..` and symlinks), never a string-pattern blacklist. Also
+    rejects a candidate that collapses onto `base_dir` itself (e.g. '.',
+    '   ', or 'x/..') -- every caller (a decisions folder relative to a
+    repository, a filename relative to a folder) expects a real entry
+    strictly inside `base_dir`, never `base_dir` unchanged (round-16
+    stability finding: on Windows, a whitespace-only or '.'-only path
+    component silently resolves away, so `folderadr` could collapse to
+    the repository root itself without ever looking like it "escaped")."""
     base = Path(base_dir).resolve()
     try:
         resolved = (base / candidate).resolve()
     except (OSError, ValueError) as error:
         raise CommandError("path-invalid", f"'{candidate}' is not a usable path.") from error
-    if not resolved.is_relative_to(base):
-        raise CommandError("path-outside-repository", f"'{candidate}' resolves outside the repository.")
+    if not resolved.is_relative_to(base) or resolved == base:
+        raise CommandError(
+            "path-outside-repository",
+            f"'{candidate}' does not resolve to a location strictly inside the repository.",
+        )
     return resolved
 
 
@@ -89,7 +99,20 @@ def reject_embedded_delimiter(value, field_name):
     real line terminators to the file format (confirmed live they are not,
     see atomic_write.split_real_lines), but because any one of them left
     inside a single-line cell is exactly the same data-hygiene defect as an
-    embedded literal '|', '\\n', or '\\r'."""
+    embedded literal '|', '\\n', or '\\r'.
+
+    Also rejects a value that is whitespace-only (non-empty, but blank
+    after stripping): round-16's stability finding showed a value like
+    `--summary "   "` passed this far unnoticed and was then written
+    verbatim -- a blank-looking heading/label with no error and no
+    warning. A literal empty string is deliberately NOT rejected here --
+    several callers (new/supersede/version's optional domain/scope) use
+    `""` as their own established "not provided" sentinel, distinct from
+    "provided but blank"; a required field can never reach this function
+    with `""` in the first place (`parse_flags` already treats an empty
+    flag value as omitted)."""
+    if value != "" and not value.strip():
+        raise CommandError("field-is-blank", f"Field '{field_name}' cannot be blank.")
     if "|" in value or value != "".join(value.splitlines()):
         raise CommandError(
             "field-contains-forbidden-character",

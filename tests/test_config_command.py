@@ -340,6 +340,38 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
 
 
+@pytest.mark.parametrize("folderadr", [".", "   "])
+def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_path, folderadr):
+    """Round-16 stability finding: unlike '../../evil' above (which
+    escapes outward), '.' and a whitespace-only value silently resolve
+    BACK to the repository root on this platform -- resolve_within used
+    to accept that as 'not outside,' so folderadr became indistinguishable
+    from the repo root and every subsequent write would land next to
+    adr-config.adrplus itself."""
+    tmp_path = _init_repo(tmp_path)
+    before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderadr", folderadr])
+
+    assert excinfo.value.code == "path-outside-repository"
+    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
+
+
+def test_config_rejects_a_whitespace_only_header_field_end_to_end(tmp_path):
+    """Round-16 test-adequacy finding: the 16 header/status fields'
+    forbidden-character/blank rejection was thoroughly tested at the
+    schema layer (test_config.py) but never independently through the
+    CLI command layer -- confirming config.run() actually propagates
+    field-is-blank as config-field-is-blank, not some other wrapping."""
+    tmp_path = _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--headerdisclaimer", "   "])
+
+    assert excinfo.value.code == "config-field-is-blank"
+
+
 def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp_path):
     """There was no way to read the current config through the JSON
     contract at all (an

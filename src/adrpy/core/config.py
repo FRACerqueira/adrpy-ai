@@ -276,6 +276,8 @@ def parse_repo_config(text):
         try:
             reject_embedded_delimiter(lowered[name], name)
         except CommandError as error:
+            if error.code == "field-is-blank":
+                raise CommandError("config-field-is-blank", error.detail) from error
             raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 
     # The reference tool validates a non-empty migrationpattern the same way,

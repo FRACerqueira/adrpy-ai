@@ -268,6 +268,45 @@ def test_empty_required_string_field_is_rejected():
     assert excinfo.value.code == "config-field-empty"
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "headertitlefile",
+        "headerversion",
+        "headerrevision",
+        "headerscope",
+        "headerdomain",
+        "headertitlestatuscreated",
+        "headertitlestatuschanged",
+        "headertitlestatussuperseded",
+        "headertablefields",
+        "headertablevalues",
+        "headermigrated",
+        "headerdisclaimer",
+        "statusnew",
+        "statusacc",
+        "statusrej",
+        "statussup",
+    ],
+)
+def test_header_cell_field_with_whitespace_only_content_is_rejected(field):
+    """Round-16 stability finding: `_NON_EMPTY_STRING_FIELDS`'s own check
+    only catches a literal empty string (falsy) -- a whitespace-only
+    value is truthy, so it slipped past that check and landed verbatim in
+    a header-table cell, only cosmetically 'cannot be empty' as promised
+    by this field's own doc/commands/config.md description. Same breadth
+    as the sibling pipe-rejection test above -- the 'only statusnew is
+    tested for the empty case' asymmetry a round-16 test-adequacy finding
+    flagged."""
+    data = _valid_config_dict()
+    data[field] = "   "
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-field-is-blank"
+
+
 def test_field_names_are_case_insensitive():
     data = _valid_config_dict()
     data["FolderAdr"] = data.pop("folderadr")

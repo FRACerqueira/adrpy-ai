@@ -16,11 +16,11 @@ Path to the decision file. A bare name with no extension gets '.md' appended.
 
 ### `--domain` / `-d` *(optional, string)*
 
-Domain for the new version; defaults to the latest version's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Domain for the new version; defaults to the latest version's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--scope` / `-s` *(optional, string)*
 
-Scope for the new version; defaults to the latest version's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Scope for the new version; defaults to the latest version's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--refdate` / `-r` *(optional, string)*
 

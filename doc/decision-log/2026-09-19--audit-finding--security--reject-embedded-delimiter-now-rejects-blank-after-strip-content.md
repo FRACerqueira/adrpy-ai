@@ -1,0 +1,11 @@
+# reject_embedded_delimiter now rejects whitespace-only content across every free-text field in the CLI, not just the delimiter case
+
+**Front:** Stability audit + Test-Adequacy audit (independently, 2 fronts) | **Severity:** High | **Resolution:** Direct | **Round:** 16
+
+Round 16 mapped the full boundary of the whitespace-only free-text bug round 15 found in `adrpy log` alone: `reject_embedded_delimiter` (`core/security.py`) rejected '|' and line-break-like characters, never blank-after-strip content. Stability and Test-Adequacy, run independently and in parallel over the whole CLI, converged on the same ~11 call sites: `new --title/--domain/--scope`, `log --summary/--front/--reopenwhen`, `supersede --domain/--scope`, `version --domain/--scope`, and the 16 header/status label fields `config`/`installconfig` share (`headerdisclaimer`, 11 header labels, 4 status labels). Every one of these fields is already documented (doc/commands/*.md) as required or 'cannot be empty' -- the fix makes the code actually enforce a contract that was already promised, not new scope.
+
+Fixed at the shared root: `reject_embedded_delimiter` now also rejects a value that is non-empty but blank after stripping, closing every site above in one place with no call-site changes. A literal empty string is deliberately NOT rejected -- new/supersede/version's optional --domain/--scope use '' as their own established 'not provided' sentinel (confirmed live: the first fix attempt broke 85 existing tests by rejecting that sentinel; narrowed to `value != "" and not value.strip()`, full suite green again). `core/config.py`'s wrapper around this function was updated to surface the new `field-is-blank`/`config-field-is-blank` code distinctly from `field-contains-forbidden-character`, instead of relabeling every failure as a delimiter error.
+
+This also closes, at the write path, the round-15 deferred item's INDEX.md-collapse case (`log --summary` can no longer produce a blank heading) -- see the companion scope-note entry for that closure.
+
+Verified red (30 tests failed with 'DID NOT RAISE', across every call site above) against a mutation disabling the new check, and red again (2 tests failed) against a mutation removing the '' exemption, both for the predicted reason; green after each revert. Full suite (798 tests) green.

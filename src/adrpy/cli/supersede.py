@@ -75,7 +75,7 @@ def describe():
                 "required": False,
                 "description": (
                     "Domain for the successor; defaults to the predecessor's own value. Cannot contain '|' "
-                    "or a line-break-like character (field-contains-forbidden-character)."
+                    "or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -85,7 +85,7 @@ def describe():
                 "required": False,
                 "description": (
                     "Scope for the successor; defaults to the predecessor's own value. Cannot contain '|' "
-                    "or a line-break-like character (field-contains-forbidden-character)."
+                    "or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {

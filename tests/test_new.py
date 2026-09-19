@@ -194,6 +194,48 @@ def test_new_rejects_embedded_delimiter_in_title(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+@pytest.mark.parametrize("flag", ["domain", "scope"])
+def test_new_rejects_embedded_delimiter_in_domain_and_scope(tmp_path, flag):
+    """Round-16 test-adequacy finding: only --title was ever tested for
+    the '|' rejection, despite --domain/--scope going through the exact
+    same reject_embedded_delimiter call one line below."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "Real Title", f"--{flag}", "bad|value"])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+@pytest.mark.parametrize("flag", ["title", "domain", "scope"])
+def test_new_rejects_a_whitespace_only_value(tmp_path, flag):
+    """Round-16 stability finding: a whitespace-only value used to be
+    written verbatim -- 'new --title \"   \"' created a file literally
+    named 'ADR001V01-   .md'."""
+    _init_repo(tmp_path)
+    args = ["--path", str(tmp_path), "--title", "Real Title"]
+    if flag == "title":
+        args = ["--path", str(tmp_path), "--title", "   "]
+    else:
+        args += [f"--{flag}", "   "]
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(args)
+
+    assert excinfo.value.code == "field-is-blank"
+
+
+def test_new_accepts_domain_and_scope_omitted(tmp_path):
+    """Positive control: domain/scope default to '' when not provided at
+    all -- the blank-content fix above must not reject that established
+    sentinel."""
+    _init_repo(tmp_path)
+
+    result = new.run(["--path", str(tmp_path), "--title", "Real Title"])
+
+    assert "created" in result
+
+
 def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path):
     """cleanup_orphaned_temp_files existed and was tested in
     isolation, but no command ever called it -- a

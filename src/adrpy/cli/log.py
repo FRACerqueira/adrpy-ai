@@ -114,7 +114,7 @@ def describe():
                 "required": True,
                 "description": (
                     "One-line summary -- becomes the entry's own '#' heading. Cannot contain '|' or a "
-                    "line-break-like character (field-contains-forbidden-character)."
+                    "line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -140,7 +140,7 @@ def describe():
                 "description": (
                     "Required together with --severity/--resolution, only when --classification is "
                     "audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot "
-                    "contain '|' or a line-break-like character (field-contains-forbidden-character)."
+                    "contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -184,7 +184,7 @@ def describe():
                 "description": (
                     "Required, and only valid, when --classification is deferred; usage-error otherwise. The "
                     "concrete, checkable condition that reopens this deferred item. Cannot contain '|' or a "
-                    "line-break-like character (field-contains-forbidden-character)."
+                    "line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
         ],

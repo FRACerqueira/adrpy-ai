@@ -16,15 +16,15 @@ Repository root directory.
 
 ### `--title` / `-t` *(required, string)*
 
-Title of the new decision. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Title of the new decision. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--domain` / `-d` *(optional, string)*
 
-Optional domain header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Optional domain header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--scope` / `-s` *(optional, string)*
 
-Optional scope header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character).
+Optional scope header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--refdate` / `-r` *(optional, string)*
 
