@@ -61,7 +61,22 @@ def test_resolve_within_rejects_path_traversal_escape(tmp_path):
     assert excinfo.value.code == "path-outside-repository"
 
 
-@pytest.mark.parametrize("candidate", [".", "   ", "doc/.."])
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        ".",
+        pytest.param(
+            "   ",
+            marks=pytest.mark.skipif(
+                sys.platform != "win32",
+                reason="a whitespace-only path component only collapses away on Windows -- on "
+                "POSIX it resolves to a literally-named '   ' entry instead, a different (and "
+                "milder) case",
+            ),
+        ),
+        "doc/..",
+    ],
+)
 def test_resolve_within_rejects_a_candidate_that_collapses_onto_the_base_itself(tmp_path, candidate):
     """Every real caller (a decisions folder relative to a repository, a
     filename relative to a folder) expects a real entry strictly inside

@@ -16,7 +16,13 @@ def resolve_within(base_dir, candidate):
     strictly inside `base_dir`, never `base_dir` unchanged. On Windows, a
     whitespace-only or '.'-only path component silently resolves away, so
     `folderadr` could collapse to the repository root itself without ever
-    looking like it "escaped"."""
+    looking like it "escaped". A NUL byte is rejected explicitly, up
+    front, rather than relying on the OS/pathlib layer to raise for it --
+    that behavior is not consistent across Python versions (confirmed:
+    Python 3.13 on Windows no longer raises here at all, silently
+    embedding the NUL into the resolved path instead)."""
+    if "\x00" in str(candidate):
+        raise CommandError("path-invalid", f"'{candidate}' is not a usable path.")
     base = Path(base_dir).resolve()
     try:
         resolved = (base / candidate).resolve()

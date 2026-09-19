@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 
 from adrpy.cli import config, init, new
@@ -344,11 +345,25 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
 
 
-@pytest.mark.parametrize("folderadr", [".", "   "])
+@pytest.mark.parametrize(
+    "folderadr",
+    [
+        ".",
+        pytest.param(
+            "   ",
+            marks=pytest.mark.skipif(
+                sys.platform != "win32",
+                reason="a whitespace-only path component only collapses away on Windows -- on "
+                "POSIX it resolves to a literally-named '   ' entry instead, a different (and "
+                "milder) case",
+            ),
+        ),
+    ],
+)
 def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_path, folderadr):
-    """Unlike '../../evil' above (which escapes outward), '.' and a
-    whitespace-only value silently resolve BACK to the repository root on
-    this platform -- resolve_within must not accept that as 'not
+    """Unlike '../../evil' above (which escapes outward), '.' and (on
+    Windows) a whitespace-only value silently resolve BACK to the
+    repository root -- resolve_within must not accept that as 'not
     outside,' or folderadr would become indistinguishable from the repo
     root and every subsequent write would land next to
     adr-config.adrplus itself."""
