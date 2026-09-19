@@ -533,6 +533,86 @@ def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_
     assert "--round/--reopenwhen" in str(excinfo.value)
 
 
+def test_log_rejects_a_lone_structured_field_on_a_plain_classification(tmp_path):
+    """Round-15 Test-Adequacy: no existing test ever passed --front/
+    --severity/--resolution together with a classification that is
+    neither audit-finding/doc-drift nor deferred. The current code
+    already rejects it via `offending = provided_structured + ...`, but
+    nothing proved that -- a future simplification dropping
+    `provided_structured` from that expression would silently write a
+    corrupted structured line with literal 'None' fields instead."""
+    _init_repo(tmp_path)
+    log_dir = tmp_path / "doc" / "decision-log"
+
+    with pytest.raises(UsageError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--front", "corrupt-me",
+            ]
+        )
+
+    assert "--front" in str(excinfo.value)
+    if log_dir.exists():
+        assert not any(log_dir.glob("*.md"))
+
+
+def test_log_rejects_reopenwhen_on_audit_finding(tmp_path):
+    """Round-15 Test-Adequacy: --reopenwhen's rejection is only ever
+    tested against a plain classification (scope-note); the
+    STRUCTURED_CLASSIFICATIONS branch's own `if provided_reopenwhen:
+    raise ...` check (audit-finding/doc-drift) had never been exercised."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x",
+                "--front", "x", "--severity", "Low", "--resolution", "Direct", "--reopenwhen", "x",
+            ]
+        )
+
+    assert "--reopenwhen" in str(excinfo.value)
+
+
+def test_log_names_all_three_structured_fields_when_none_are_provided(tmp_path):
+    """Round-15 Test-Adequacy: the only existing 'missing structured
+    field' test always leaves two of the three present -- the 'forgot
+    all three' case (the more likely real mistake) and the message's own
+    join were both untested. Mutating '/--'.join(missing) to missing[0]
+    would have passed every existing test."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "audit-finding", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x",
+            ]
+        )
+
+    assert "--front/--severity/--resolution" in str(excinfo.value)
+
+
+def test_log_names_every_offending_structured_field_on_deferred(tmp_path):
+    """Round-15 Test-Adequacy: the only existing 'structured field on
+    deferred' test passes just --front and asserts only the exception
+    type, never the message -- mutating '/--'.join(provided_structured)
+    to provided_structured[0] would have passed regardless."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "deferred", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--reopenwhen", "x", "--front", "x", "--severity", "Low",
+            ]
+        )
+
+    assert "--front/--severity" in str(excinfo.value)
+
+
 def test_log_rejects_round_on_deferred(tmp_path):
     _init_repo(tmp_path)
 

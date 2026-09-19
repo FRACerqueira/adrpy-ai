@@ -257,6 +257,20 @@ def test_max_existing_round_fails_closed_when_the_round_segment_is_entirely_miss
     assert excinfo.value.code == "log-directory-contains-unrecognized-file"
 
 
+def test_max_existing_round_fails_closed_on_a_completely_empty_file(tmp_path):
+    """Round-15 Test-Adequacy: round 14's `if not lines:` guard (added to
+    fix a raw IndexError on `lines[0]` for a zero-byte decision-log file)
+    shipped with no test at all -- confirmed by mutating the guard to
+    `if False and not lines:` and observing the full suite still pass."""
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    (log_dir / "2026-01-01--audit-finding--lock--empty.md").write_text("", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
 def test_parse_entry_raises_a_clean_error_for_an_unrecognized_classification(tmp_path):
     """A typo'd classification (e.g. 'audit-findings') passes the
     filename-shape check (still 4 '--'-delimited segments) but must still
