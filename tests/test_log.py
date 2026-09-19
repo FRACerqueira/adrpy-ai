@@ -221,6 +221,34 @@ def test_log_rejects_a_non_kebab_case_scope(tmp_path):
     assert excinfo.value.code == "log-scope-invalid"
 
 
+def test_log_never_writes_outside_the_decision_log_directory_even_if_scope_validation_is_bypassed(
+    tmp_path, monkeypatch
+):
+    """Round-13 corroboration: validate_scope alone is not the only thing
+    standing between a crafted --scope and a path escape -- confirmed by
+    weakening validate_scope to a no-op (simulating a future regression,
+    e.g. someone reusing reject_embedded_delimiter instead of the
+    kebab-case check) and showing file_path's own resolve_within call
+    (a second, independent layer, the same one new.py's own file_path
+    already goes through) still catches a 3-level '../' traversal that
+    would otherwise land outside doc/decision-log/ entirely."""
+    _init_repo(tmp_path)
+    monkeypatch.setattr(log, "validate_scope", lambda value: None)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "../../../escaped",
+                "--slug", "x", "--summary", "x", "--body", "SECRET CONTENT",
+            ]
+        )
+
+    assert excinfo.value.code == "path-outside-repository"
+    # Confirms the escape genuinely didn't happen -- not just that some
+    # error was raised.
+    assert not any(tmp_path.rglob("*escaped*"))
+
+
 def test_log_rejects_forbidden_character_in_summary(tmp_path):
     _init_repo(tmp_path)
 
@@ -475,6 +503,26 @@ def test_log_rejects_round_on_a_classification_that_does_not_use_it(tmp_path):
                 "--summary", "x", "--body", "x", "--round", "1",
             ]
         )
+
+
+def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_path):
+    """Round-13 corroboration: every existing 'wrong flag for this
+    classification' test passes exactly one offending flag -- the message
+    joins ALL of them (`'/--'.join(offending)`), but nothing had ever
+    exercised more than one at a time, so a regression collapsing the
+    list to just the first entry would have shipped silently."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(UsageError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x", "--round", "1", "--reopenwhen", "x",
+            ]
+        )
+
+    assert "round" in str(excinfo.value)
+    assert "reopenwhen" in str(excinfo.value)
 
 
 def test_log_rejects_round_on_deferred(tmp_path):

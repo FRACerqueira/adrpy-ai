@@ -224,8 +224,11 @@ def run(args):
             raise UsageError(f"--reopenwhen is not valid when --classification is '{classification}'.")
         validate_severity(flags["severity"])
         validate_resolution(flags["resolution"])
-        for name in ("front", "severity", "resolution"):
-            reject_embedded_delimiter(flags[name], name)
+        # front is the only one of the three still free text -- severity/
+        # resolution are already constrained to a closed set above, which
+        # can never contain a delimiter, so checking them here would be
+        # dead code (round-13 corroboration).
+        reject_embedded_delimiter(flags["front"], "front")
         explicit_round = parse_round(flags["round"]) if provided_round else None
     elif classification == DEFERRED_CLASSIFICATION:
         if not provided_reopenwhen:
@@ -294,7 +297,13 @@ def run(args):
                         )
 
             filename = build_filename(refdate, classification, scope, slug)
-            file_path = log_dir / filename
+            # Second, independent layer of defense beyond validate_scope's
+            # own kebab-case check (round-13 corroboration: a future
+            # weakening of that regex, e.g. reusing reject_embedded_
+            # delimiter instead, must not silently let scope escape
+            # log_dir -- the same real-path-resolution guard new.py's own
+            # file_path already goes through, not just a stricter regex).
+            file_path = resolve_within(log_dir, filename)
             if file_path.exists():
                 raise CommandError(
                     "log-entry-already-exists",

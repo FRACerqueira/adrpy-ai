@@ -174,6 +174,21 @@ def _parse_entry(path):
             "Round or regenerate INDEX.md while this file is present.",
             data={"file": path.name},
         ) from error
+    if classification not in CLASSIFICATIONS:
+        # Same failure as an unparseable filename shape, not a softer one:
+        # an unrecognized classification means the structured-line gate
+        # below can't know whether to look for Front/Severity/Round or
+        # Reopen-when, so it would otherwise silently treat the entry as
+        # carrying neither -- reopening the exact duplicate-Round risk
+        # this gate exists to close, just via a typo'd classification
+        # (e.g. "audit-findings") instead of a coincidentally-structured
+        # non-structured entry.
+        raise CommandError(
+            "log-directory-contains-unrecognized-file",
+            f"{path.name} has an unrecognized classification ('{classification}') -- cannot safely "
+            "compute the next Round or regenerate INDEX.md while this file is present.",
+            data={"file": path.name},
+        )
     lines = path.read_text(encoding="utf-8").splitlines()
     heading = lines[0].lstrip("#").strip()
     front, severity, resolution, round_, reopen_when = "", "", "", "", ""
@@ -223,14 +238,29 @@ def _existing_entries(decision_log_dir):
 def max_existing_round(decision_log_dir):
     """0 if no audit-finding/doc-drift entry carries a Round yet, else the
     highest one found -- the single source of truth both next_round's own
-    default and an explicit --round's own lower-bound check are built on."""
+    default and an explicit --round's own lower-bound check are built on.
+
+    Fails closed (rather than silently skipping) on a structured entry
+    whose Round is missing or not a plain integer -- e.g. a hand-written
+    entry with no structured line at all, or one written "5 (tentative)".
+    Silently skipping it would let this function under-report the real
+    max, and a later call could then allocate a Round that duplicates the
+    one already on that file -- the same risk an unrecognized
+    classification poses, just triggered by a malformed Round instead."""
     rounds = []
     for entry in _existing_entries(decision_log_dir):
-        if entry["round"]:
-            try:
-                rounds.append(int(entry["round"]))
-            except ValueError:
-                continue
+        if entry["classification"] not in STRUCTURED_CLASSIFICATIONS:
+            continue
+        try:
+            rounds.append(int(entry["round"]))
+        except (TypeError, ValueError) as error:
+            raise CommandError(
+                "log-directory-contains-unrecognized-file",
+                f"{entry['path']} is classified '{entry['classification']}' but its Round "
+                f"({entry['round']!r}) is missing or not a plain integer -- cannot safely compute "
+                "the next Round while this file is present.",
+                data={"file": entry["path"]},
+            ) from error
     return max(rounds, default=0)
 
 

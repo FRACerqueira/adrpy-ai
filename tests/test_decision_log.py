@@ -211,12 +211,14 @@ def test_next_round_ignores_a_non_structured_entrys_coincidentally_structured_lo
     assert max_existing_round(log_dir) == 0
 
 
-def test_next_round_ignores_a_malformed_round_on_a_real_structured_entry(tmp_path):
+def test_max_existing_round_fails_closed_on_a_malformed_round_on_a_real_structured_entry(tmp_path):
     """A hand-written/legacy structured entry with a non-integer Round
     (scripts/generate_decision_log_index.py's own docstring anticipates
-    hand-written entries) is treated as carrying no Round at all, not as
-    a crash -- confirms the `except ValueError: continue` guard actually
-    fires end-to-end, not just in isolation."""
+    hand-written entries) must fail closed, not be silently treated as
+    carrying no Round at all -- round-13 corroboration found the earlier
+    silent-skip behavior left this exact class of duplicate-Round risk
+    open (a real structured entry's Round quietly not counting toward
+    max_existing_round would let a later call reissue that same Round)."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--first.md").write_text(
@@ -225,8 +227,39 @@ def test_next_round_ignores_a_malformed_round_on_a_real_structured_entry(tmp_pat
         encoding="utf-8",
     )
 
-    assert max_existing_round(log_dir) == 0
-    assert next_round(log_dir) == 1
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+    with pytest.raises(CommandError) as excinfo:
+        next_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
+def test_parse_entry_raises_a_clean_error_for_an_unrecognized_classification(tmp_path):
+    """A typo'd classification (e.g. 'audit-findings') passes the
+    filename-shape check (still 4 '--'-delimited segments) but must still
+    fail closed -- round-13 corroboration found this was the actual
+    vector for the exact duplicate-Round risk the classification-gated
+    regex match (round 12) was supposed to close: an unrecognized
+    classification silently fell through to "no structured line",
+    dropping a real Round that was still on disk from max_existing_round's
+    own count."""
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    (log_dir / "2026-01-01--audit-finding--lock--a.md").write_text(
+        build_entry_content("A", "Body.", front="x", severity="Low", resolution="Direct", round_=7),
+        encoding="utf-8",
+    )
+    (log_dir / "2026-01-02--audit-findings--lock--b.md").write_text(
+        build_entry_content("B", "Body.", front="x", severity="Low", resolution="Direct", round_=8),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+    assert excinfo.value.data == {"file": "2026-01-02--audit-findings--lock--b.md"}
 
 
 def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path):
@@ -248,6 +281,28 @@ def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path)
     with pytest.raises(CommandError) as excinfo:
         regenerate_index(log_dir)
     assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
+def test_regenerate_index_writes_lf_only_on_a_normal_successful_run(tmp_path):
+    """Round-13 corroboration: the atomic-write fix's own stated purpose
+    was partly to preserve this function's explicit LF-only convention
+    regardless of host OS (real, load-bearing: the committed
+    doc/decision-log/INDEX.md is genuinely LF-only on disk) -- but the
+    only existing test of the atomic-write change checked the FAILURE
+    path (original file untouched), never that a normal SUCCESSFUL
+    regeneration is itself free of CRLF on a host whose os.linesep is
+    CRLF (e.g. Windows). Reverting atomic_write_bytes to atomic_write_text
+    (which normalizes to os.linesep) would pass every other test in this
+    file silently."""
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    (log_dir / "2026-09-18--scope-note--lock--first.md").write_text(
+        build_entry_content("First", "Body."), encoding="utf-8"
+    )
+
+    regenerate_index(log_dir)
+
+    assert b"\r\n" not in (log_dir / "INDEX.md").read_bytes()
 
 
 def test_regenerate_index_sorts_multiple_entries_by_date_classification_scope(tmp_path):
@@ -388,3 +443,16 @@ def test_validate_round_not_regressing_rejects_lower_than_the_current_max():
 
     assert excinfo.value.code == "log-round-too-low"
     assert excinfo.value.data == {"round": 3, "current_max": 5}
+
+
+def test_validate_round_not_regressing_rejects_the_adjacent_lower_boundary():
+    """Round-13 corroboration: every prior 'rejects lower' test used a
+    gap of 2 (current_max=5, attempted=3) -- the adjacent value
+    (current_max=5, attempted=4, exactly one below) was never exercised,
+    and an off-by-one (`< current_max` vs `<= current_max - 1`, or
+    similar) would have shipped silently."""
+    with pytest.raises(CommandError) as excinfo:
+        validate_round_not_regressing(4, current_max=5)
+
+    assert excinfo.value.code == "log-round-too-low"
+    assert excinfo.value.data == {"round": 4, "current_max": 5}
