@@ -206,12 +206,11 @@ def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be
     the 8 commands that use it -- a concurrent process's own in-flight
     write could plausibly hold a temp file open (or have already
     removed it) at the exact moment this scan reaches it. A transient
-    OSError here used to propagate raw, failing the caller's entire
+    OSError here must not propagate raw and fail the caller's entire
     command over best-effort cleanup unrelated to what it was actually
-    asked to do. Now best-effort per candidate, matching
+    asked to do -- best-effort per candidate instead, matching
     _unlink_with_retry's own established philosophy for this exact
-    class of problem -- reported as a warning instead, when the caller
-    opts in."""
+    class of problem, reported as a warning when the caller opts in."""
     old_temp = tmp_path / "old.tmp"
     old_temp.write_text("stale")
     old_time = time.time() - 60

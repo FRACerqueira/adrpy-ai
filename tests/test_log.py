@@ -224,7 +224,7 @@ def test_log_rejects_a_non_kebab_case_scope(tmp_path):
 def test_log_never_writes_outside_the_decision_log_directory_even_if_scope_validation_is_bypassed(
     tmp_path, monkeypatch
 ):
-    """Round-13 corroboration: validate_scope alone is not the only thing
+    """validate_scope alone is not the only thing
     standing between a crafted --scope and a path escape -- confirmed by
     weakening validate_scope to a no-op (simulating a future regression,
     e.g. someone reusing reject_embedded_delimiter instead of the
@@ -508,20 +508,19 @@ def test_log_rejects_round_on_a_classification_that_does_not_use_it(tmp_path):
 
 
 def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_path):
-    """Round-13 corroboration: every existing 'wrong flag for this
-    classification' test passes exactly one offending flag -- the message
-    joins ALL of them (`'/--'.join(offending)`), but nothing had ever
-    exercised more than one at a time, so a regression collapsing the
-    list to just the first entry would have shipped silently.
+    """Every other 'wrong flag for this classification' test passes
+    exactly one offending flag -- the message joins ALL of them
+    (`'/--'.join(offending)`), so this test exercises more than one at a
+    time: a regression collapsing the list to just the first entry must
+    not ship silently.
 
-    Round-14 corroboration found THIS test was itself vacuous: the
-    message's own static tail already names every possible flag
-    (front/severity/resolution/round/reopenwhen) unconditionally, so
-    loose 'X in str(...)' checks pass regardless of what `offending`
-    actually contains -- confirmed by mutating '/--'.join(offending) to
-    offending[0] and observing this test still passed. Asserts the
-    literal joined substring instead, which only the real dynamic join
-    (not the static boilerplate) can produce."""
+    Asserts the literal joined substring, not a loose 'X in str(...)'
+    check: the message's own static tail already names every possible
+    flag (front/severity/resolution/round/reopenwhen) unconditionally, so
+    a loose check would pass regardless of what `offending` actually
+    contains -- only the literal joined substring, which the static
+    boilerplate can't produce on its own, actually proves the dynamic
+    join ran."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:
@@ -536,13 +535,12 @@ def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_
 
 
 def test_log_rejects_a_lone_structured_field_on_a_plain_classification(tmp_path):
-    """Round-15 Test-Adequacy: no existing test ever passed --front/
-    --severity/--resolution together with a classification that is
-    neither audit-finding/doc-drift nor deferred. The current code
-    already rejects it via `offending = provided_structured + ...`, but
-    nothing proved that -- a future simplification dropping
-    `provided_structured` from that expression would silently write a
-    corrupted structured line with literal 'None' fields instead."""
+    """--front/--severity/--resolution together with a classification
+    that is neither audit-finding/doc-drift nor deferred is rejected via
+    `offending = provided_structured + ...` -- a future simplification
+    dropping `provided_structured` from that expression would silently
+    write a corrupted structured line with literal 'None' fields
+    instead."""
     _init_repo(tmp_path)
     log_dir = tmp_path / "doc" / "decision-log"
 
@@ -560,10 +558,10 @@ def test_log_rejects_a_lone_structured_field_on_a_plain_classification(tmp_path)
 
 
 def test_log_rejects_reopenwhen_on_audit_finding(tmp_path):
-    """Round-15 Test-Adequacy: --reopenwhen's rejection is only ever
-    tested against a plain classification (scope-note); the
-    STRUCTURED_CLASSIFICATIONS branch's own `if provided_reopenwhen:
-    raise ...` check (audit-finding/doc-drift) had never been exercised."""
+    """The STRUCTURED_CLASSIFICATIONS branch's own `if provided_reopenwhen:
+    raise ...` check (audit-finding/doc-drift) needs its own direct test,
+    distinct from --reopenwhen's rejection on a plain classification
+    (scope-note)."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:
@@ -579,11 +577,11 @@ def test_log_rejects_reopenwhen_on_audit_finding(tmp_path):
 
 
 def test_log_names_all_three_structured_fields_when_none_are_provided(tmp_path):
-    """Round-15 Test-Adequacy: the only existing 'missing structured
-    field' test always leaves two of the three present -- the 'forgot
-    all three' case (the more likely real mistake) and the message's own
-    join were both untested. Mutating '/--'.join(missing) to missing[0]
-    would have passed every existing test."""
+    """The 'forgot all three' case (the more likely real mistake), and
+    the message's own join, need their own coverage distinct from the
+    'missing one of three' test above, which always leaves two of the
+    three present -- mutating '/--'.join(missing) to missing[0] would
+    pass that test regardless."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:
@@ -598,10 +596,10 @@ def test_log_names_all_three_structured_fields_when_none_are_provided(tmp_path):
 
 
 def test_log_names_every_offending_structured_field_on_deferred(tmp_path):
-    """Round-15 Test-Adequacy: the only existing 'structured field on
-    deferred' test passes just --front and asserts only the exception
-    type, never the message -- mutating '/--'.join(provided_structured)
-    to provided_structured[0] would have passed regardless."""
+    """Asserts the message content, not just the exception type: mutating
+    '/--'.join(provided_structured) to provided_structured[0] would pass
+    a check that only asserts the exception type, since that mutation
+    doesn't change which exception is raised, only its text."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:
@@ -692,10 +690,9 @@ def test_log_rejects_forbidden_character_in_reopenwhen(tmp_path):
 
 
 def test_log_rejects_a_whitespace_only_summary(tmp_path):
-    """Round-16 stability finding (the round-15 discovery that started
-    this front): '--summary \"   \"' used to write a blank heading
-    silently -- '#    ' -> parsed back as an empty summary, with no error
-    and no warning."""
+    """'--summary "   "' must not write a blank heading silently -- an
+    unguarded '#    ' would parse back as an empty summary, with no
+    error and no warning."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:

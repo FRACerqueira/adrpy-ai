@@ -13,10 +13,10 @@ def resolve_within(base_dir, candidate):
     rejects a candidate that collapses onto `base_dir` itself (e.g. '.',
     '   ', or 'x/..') -- every caller (a decisions folder relative to a
     repository, a filename relative to a folder) expects a real entry
-    strictly inside `base_dir`, never `base_dir` unchanged (round-16
-    stability finding: on Windows, a whitespace-only or '.'-only path
-    component silently resolves away, so `folderadr` could collapse to
-    the repository root itself without ever looking like it "escaped")."""
+    strictly inside `base_dir`, never `base_dir` unchanged. On Windows, a
+    whitespace-only or '.'-only path component silently resolves away, so
+    `folderadr` could collapse to the repository root itself without ever
+    looking like it "escaped"."""
     base = Path(base_dir).resolve()
     try:
         resolved = (base / candidate).resolve()
@@ -102,10 +102,10 @@ def reject_embedded_delimiter(value, field_name):
     embedded literal '|', '\\n', or '\\r'.
 
     Also rejects a value that is whitespace-only (non-empty, but blank
-    after stripping): round-16's stability finding showed a value like
-    `--summary "   "` passed this far unnoticed and was then written
-    verbatim -- a blank-looking heading/label with no error and no
-    warning. A literal empty string is deliberately NOT rejected here --
+    after stripping): a value like `--summary "   "` would otherwise pass
+    this check unnoticed and get written verbatim -- a blank-looking
+    heading/label with no error and no warning. A literal empty string is
+    deliberately NOT rejected here --
     several callers (new/supersede/version's optional domain/scope) use
     `""` as their own established "not provided" sentinel, distinct from
     "provided but blank"; a required field can never reach this function

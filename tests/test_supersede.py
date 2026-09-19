@@ -63,8 +63,8 @@ def test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_
 ):
     """Same partial-mutation risk as
     the OSError test above, but for LockLostError on this command's
-    SECOND write -- it used to bypass supersede-successor-write-failed's
-    handler entirely (only OSError was caught there), so a caller saw the
+    SECOND write -- it must not bypass supersede-successor-write-failed's
+    handler (which only catches OSError), or a caller would see the
     generic, dataless 'no write was made' lock-lost message even though
     the predecessor was already, for real, committed to Superseded."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
@@ -305,9 +305,9 @@ def test_supersede_rejects_embedded_delimiter_in_scope(tmp_path):
 
 
 def test_supersede_rejects_embedded_delimiter_in_domain(tmp_path):
-    """Round-16 test-adequacy finding: only --scope was ever tested for
-    the '|' rejection, despite --domain going through the exact same
-    reject_embedded_delimiter call one line below."""
+    """--domain needs its own '|'-rejection coverage, distinct from
+    --scope's: it goes through the exact same reject_embedded_delimiter
+    call one line below."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -318,8 +318,8 @@ def test_supersede_rejects_embedded_delimiter_in_domain(tmp_path):
 
 @pytest.mark.parametrize("flag", ["domain", "scope"])
 def test_supersede_rejects_a_whitespace_only_value(tmp_path, flag):
-    """Round-16 stability finding: a whitespace-only value used to be
-    written verbatim into the successor's header cell."""
+    """A whitespace-only value must not be written verbatim into the
+    successor's header cell."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:

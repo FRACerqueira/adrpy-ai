@@ -392,9 +392,9 @@ def test_version_rejects_embedded_delimiter(tmp_path):
 
 
 def test_version_rejects_embedded_delimiter_in_domain(tmp_path):
-    """Round-16 test-adequacy finding: only --scope was ever tested for
-    the '|' rejection, despite --domain going through the exact same
-    reject_embedded_delimiter call one line below."""
+    """--domain needs its own '|'-rejection coverage, distinct from
+    --scope's: it goes through the exact same reject_embedded_delimiter
+    call one line below."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -405,8 +405,8 @@ def test_version_rejects_embedded_delimiter_in_domain(tmp_path):
 
 @pytest.mark.parametrize("flag", ["domain", "scope"])
 def test_version_rejects_a_whitespace_only_value(tmp_path, flag):
-    """Round-16 stability finding: a whitespace-only value used to be
-    written verbatim into the new version's header cell."""
+    """A whitespace-only value must not be written verbatim into the new
+    version's header cell."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:

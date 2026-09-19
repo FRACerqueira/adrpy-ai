@@ -63,13 +63,13 @@ def test_resolve_within_rejects_path_traversal_escape(tmp_path):
 
 @pytest.mark.parametrize("candidate", [".", "   ", "doc/.."])
 def test_resolve_within_rejects_a_candidate_that_collapses_onto_the_base_itself(tmp_path, candidate):
-    """Round-16 stability finding: every real caller (a decisions folder
-    relative to a repository, a filename relative to a folder) expects a
-    real entry strictly inside base_dir -- a candidate that resolves back
-    to base_dir itself (a bare '.', a whitespace-only segment that
-    Windows path resolution silently drops, or a self-cancelling 'x/..')
-    used to be accepted as 'not outside,' letting `folderadr` collapse
-    onto the repository root."""
+    """Every real caller (a decisions folder relative to a repository, a
+    filename relative to a folder) expects a real entry strictly inside
+    base_dir -- a candidate that resolves back to base_dir itself (a
+    bare '.', a whitespace-only segment that Windows path resolution
+    silently drops, or a self-cancelling 'x/..') must not be accepted as
+    'not outside,' which would let `folderadr` collapse onto the
+    repository root."""
     with pytest.raises(CommandError) as excinfo:
         resolve_within(tmp_path, candidate)
 
@@ -165,9 +165,9 @@ def test_reject_embedded_delimiter_accepts_clean_value():
 
 @pytest.mark.parametrize("value", ["   ", "\t", "\n".join(["", ""])])
 def test_reject_embedded_delimiter_rejects_whitespace_only_content(value):
-    """Round-16 stability finding: a whitespace-only value (e.g.
-    `--summary '   '`) passed the old '|'/line-break-only check unnoticed
-    and was written verbatim as a blank-looking heading/label."""
+    """A whitespace-only value (e.g. `--summary '   '`) must not pass a
+    '|'/line-break-only check unnoticed and get written verbatim as a
+    blank-looking heading/label."""
     with pytest.raises(CommandError) as excinfo:
         reject_embedded_delimiter(value, "title")
 

@@ -141,8 +141,8 @@ def test_approve_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path)
     warning claims "the file has been rewritten... bytes are now lost" --
     false whenever the command fails before ever reaching its own write.
     Confirmed live: approve on an already-Accepted, encoding-corrupted
-    file used to report this claim anyway, even though the file was never
-    touched by this call."""
+    file must not report this claim, since the file is never touched by
+    such a call."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
     with open(adr_path, "ab") as handle:
@@ -194,17 +194,17 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
 def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
     """A warning
     already recorded earlier in the same run (here, an orphaned temp-file
-    cleanup, which runs before the lock/eligibility check either way) used
-    to be silently discarded the moment the command went on to fail for an
-    unrelated reason (here, the decision is already Accepted) -- nothing
-    in the failure response revealed that the cleanup had already happened
-    for real.
+    cleanup, which runs before the lock/eligibility check either way)
+    must not be silently discarded the moment the command goes on to
+    fail for an unrelated reason (here, the decision is already
+    Accepted) -- the failure response must reveal that the cleanup
+    already happened for real.
 
-    This used to use an
-    encoding-repair warning for the same purpose, but that warning is now
-    only ever appended after the write it describes genuinely happens --
-    `already-accepted` fails before any write, so it's no longer a valid
-    example of "a warning that already happened before this failure"."""
+    An orphaned temp-file cleanup is used here rather than an
+    encoding-repair warning: encoding-repair is only ever appended after
+    the write it describes genuinely happens, and `already-accepted`
+    fails before any write, so it would not demonstrate "a warning that
+    already happened before this failure"."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
     orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
@@ -304,16 +304,13 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
     temp-file cleanup AND an encoding repair) surviving together to a
     later, unrelated CommandError, and checks both content and order.
 
-    Previously used `approve`
-    failing on family-member-superseded, a failure that happens BEFORE
-    any write -- encoding_repaired_warning now only fires once the write
-    it describes has actually happened (this test's own point predates
-    that fix, and was itself asserting the bug). `reject` on a successor
-    whose predecessor is missing is the natural home for this now: its
-    own target write genuinely succeeds first (encoding_repaired_warning
-    becomes true), and the LATER, unrelated failure is discovering the
-    predecessor doesn't exist -- both warnings are real by the time they
-    survive to that failure, not merely by coincidence of timing."""
+    `reject` on a successor whose predecessor is missing is the natural
+    home for this: encoding_repaired_warning only fires once the write it
+    describes has actually happened, and here the target write genuinely
+    succeeds first (making the warning true), with the LATER, unrelated
+    failure being that the predecessor doesn't exist -- both warnings are
+    real by the time they survive to that failure, not merely by
+    coincidence of timing."""
     target = tmp_path
     init.run(["--path", str(target)])
     config = load_repo_config(target / "adr-config.adrplus")
@@ -387,10 +384,10 @@ def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the
 ):
     """Same class as the OSError
     sibling test above, but for LockLostError on this command's SECOND
-    write -- it used to bypass reject-predecessor-write-failed's handler
-    entirely (only OSError was caught there), reporting a generic,
-    dataless lock-lost even though the target was already, for real,
-    committed to Rejected."""
+    write -- it must not bypass reject-predecessor-write-failed's handler
+    (which only catches OSError), or it would report a generic, dataless
+    lock-lost even though the target was already, for real, committed to
+    Rejected."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)

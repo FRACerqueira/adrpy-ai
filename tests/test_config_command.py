@@ -76,14 +76,14 @@ def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(t
 
 
 def test_concurrent_config_calls_on_different_fields_do_not_lose_an_update(tmp_path, monkeypatch):
-    """config used to do a read-merge-write with no lock at all -- two
-    concurrent calls editing DIFFERENT fields silently lost one of
-    the two edits, contradicting this command's own documented contract
-    ("an omitted flag preserves the repo's current value, never resets
-    it"). Fixed with the same repository lock the other 8 write commands
-    already use (scoped to folderadr) -- the second caller simply waits,
-    then reads fresh once it acquires the lock, so BOTH edits survive
-    instead of either being lost or the second one failing outright."""
+    """Two concurrent calls editing DIFFERENT fields with no lock at all
+    would silently lose one of the two edits, contradicting this
+    command's own documented contract ("an omitted flag preserves the
+    repo's current value, never resets it"). The same repository lock
+    the other 8 write commands already use (scoped to folderadr) closes
+    this: the second caller simply waits, then reads fresh once it
+    acquires the lock, so BOTH edits survive instead of either being
+    lost or the second one failing outright."""
     tmp_path = _init_repo(tmp_path)
 
     from adrpy.cli import config as config_module
@@ -346,11 +346,11 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
 
 @pytest.mark.parametrize("folderadr", [".", "   "])
 def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_path, folderadr):
-    """Round-16 stability finding: unlike '../../evil' above (which
-    escapes outward), '.' and a whitespace-only value silently resolve
-    BACK to the repository root on this platform -- resolve_within used
-    to accept that as 'not outside,' so folderadr became indistinguishable
-    from the repo root and every subsequent write would land next to
+    """Unlike '../../evil' above (which escapes outward), '.' and a
+    whitespace-only value silently resolve BACK to the repository root on
+    this platform -- resolve_within must not accept that as 'not
+    outside,' or folderadr would become indistinguishable from the repo
+    root and every subsequent write would land next to
     adr-config.adrplus itself."""
     tmp_path = _init_repo(tmp_path)
     before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
@@ -363,11 +363,11 @@ def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_pa
 
 
 def test_config_rejects_a_whitespace_only_header_field_end_to_end(tmp_path):
-    """Round-16 test-adequacy finding: the 16 header/status fields'
-    forbidden-character/blank rejection was thoroughly tested at the
-    schema layer (test_config.py) but never independently through the
-    CLI command layer -- confirming config.run() actually propagates
-    field-is-blank as config-field-is-blank, not some other wrapping."""
+    """The 16 header/status fields' forbidden-character/blank rejection
+    is thoroughly tested at the schema layer (test_config.py), but needs
+    its own, independent coverage through the CLI command layer too --
+    confirming config.run() actually propagates field-is-blank as
+    config-field-is-blank, not some other wrapping."""
     tmp_path = _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -377,12 +377,12 @@ def test_config_rejects_a_whitespace_only_header_field_end_to_end(tmp_path):
 
 
 def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp_path):
-    """There was no way to read the current config through the JSON
-    contract at all (an
-    agent needed to know, e.g., whether lenrevision > 0 before calling
-    revise, or the current migrationpattern before calling migrate), and
-    `config --path X` with no field flags still rewrote (and reformatted)
-    the file as a side effect of a call that looks read-only."""
+    """`config --path X` with no field flags must not rewrite (and
+    reformat) the file as a side effect of a call that looks read-only --
+    an agent needs a way to read the current config through the JSON
+    contract (e.g. whether lenrevision > 0 before calling revise, or the
+    current migrationpattern before calling migrate) without triggering
+    a write."""
     tmp_path = _init_repo(tmp_path)
     before_bytes = (tmp_path / "adr-config.adrplus").read_bytes()
 

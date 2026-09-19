@@ -204,10 +204,10 @@ def run(args):
     if seed_arg is not None:
         # Decision-log: 2026-09-18--audit-finding--install-config--seed-
         # plus-field-flag-misreports-updated-fields.md -- a co-passed
-        # field flag used to be silently ignored while still appearing
-        # in updated_fields as if applied. Now errors instead, matching
-        # init's own precedent for its incompatible flag combination
-        # (--seed + --language).
+        # field flag must be rejected outright, matching init's own
+        # precedent for its incompatible flag combination (--seed +
+        # --language): silently ignoring it while still reporting it in
+        # updated_fields would misrepresent what was actually applied.
         conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
         if conflicting:
             raise UsageError(

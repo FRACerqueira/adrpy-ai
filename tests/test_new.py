@@ -198,9 +198,9 @@ def test_new_rejects_embedded_delimiter_in_title(tmp_path):
 
 @pytest.mark.parametrize("flag", ["domain", "scope"])
 def test_new_rejects_embedded_delimiter_in_domain_and_scope(tmp_path, flag):
-    """Round-16 test-adequacy finding: only --title was ever tested for
-    the '|' rejection, despite --domain/--scope going through the exact
-    same reject_embedded_delimiter call one line below."""
+    """--domain/--scope need their own '|'-rejection coverage, distinct
+    from --title's: they go through the exact same reject_embedded_
+    delimiter call one line below."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -211,9 +211,9 @@ def test_new_rejects_embedded_delimiter_in_domain_and_scope(tmp_path, flag):
 
 @pytest.mark.parametrize("flag", ["title", "domain", "scope"])
 def test_new_rejects_a_whitespace_only_value(tmp_path, flag):
-    """Round-16 stability finding: a whitespace-only value used to be
-    written verbatim -- 'new --title \"   \"' created a file literally
-    named 'ADR001V01-   .md'."""
+    """A whitespace-only value must not be written verbatim -- an
+    unguarded 'new --title "   "' would create a file literally named
+    'ADR001V01-   .md'."""
     _init_repo(tmp_path)
     args = ["--path", str(tmp_path), "--title", "Real Title"]
     if flag == "title":

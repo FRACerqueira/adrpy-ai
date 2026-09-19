@@ -242,11 +242,10 @@ def _read_header_bytes(path, count):
 
 def read_header_lines(path, count=HEADER_LINE_COUNT):
     """Reads only enough of `path` to recover the first `count` real
-    lines -- never the whole file. Used wherever
-    only the header is needed (family membership checks), which
-    previously read a candidate's entire body, however large, just to
-    look at its first 12 lines. Tolerates invalid bytes the same way
-    read_lines does."""
+    lines -- never the whole file. Used wherever only the header is
+    needed (family membership checks): reading a candidate's entire
+    body, however large, just to look at its first 12 lines would be
+    wasteful. Tolerates invalid bytes the same way read_lines does."""
     text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
     return split_real_lines(text)[:count]
 

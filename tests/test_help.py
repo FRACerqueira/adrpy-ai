@@ -98,13 +98,13 @@ def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
 
 
 def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
-    """Init-existing-numbers-
-    scan-incomplete used to be documented only inside the --seed
-    argument's own description, in the same breath as codes that really
-    are scoped to the already-existing-repository path -- but this one
-    fires on a genuinely fresh `init` too (no --seed needed) if a
-    decisions folder with an unreadable subdirectory already exists.
-    Moved to the top-level description, which every path shares."""
+    """init-existing-numbers-
+    scan-incomplete belongs in the top-level description, which every
+    path shares -- not only inside the --seed argument's own
+    description, in the same breath as codes that really are scoped to
+    the already-existing-repository path, since this one fires on a
+    genuinely fresh `init` too (no --seed needed) if a decisions folder
+    with an unreadable subdirectory already exists."""
     info = COMMANDS["init"].describe()
     assert "init-existing-numbers-scan-incomplete" in info["description"]
 
@@ -272,8 +272,8 @@ def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
     """A real side effect (an encoding
     repair, an orphan-temp-file cleanup, a stale-lock reclaim, a retried
     write) that already happened before a command goes on to fail for an
-    unrelated reason used to be silently dropped -- the failure envelope
-    carried no trace that anything had already occurred."""
+    unrelated reason must not be silently dropped -- the failure envelope
+    must carry a trace that it already occurred."""
     from adrpy.cli import help as help_command
     from adrpy.core.errors import CommandError
 
@@ -352,7 +352,7 @@ def test_unknown_verb_is_a_usage_error(capsys):
 
 def test_usage_error_from_a_command_still_emits_json_on_stdout(capsys):
     """Same contract, the other UsageError source: a command's own
-    parse_flags (missing required argument, unknown flag) used to print
+    parse_flags (missing required argument, unknown flag) must not print
     free text to stderr with nothing at all on stdout."""
     exit_code = main(["new", "--path", "."])  # missing required --title
 
@@ -366,9 +366,9 @@ def test_usage_error_from_a_command_still_emits_json_on_stdout(capsys):
 def test_unhandled_oserror_still_emits_json_on_stdout(capsys, monkeypatch, tmp_path):
     """An OSError not translated into a CommandError by the command itself (a
     real repro: adrpy.exe new against a path that resolves through an
-    NTFS Alternate Data Stream) used to propagate as a raw traceback with
-    EMPTY stdout, breaking the one contract this whole project exists to
-    provide."""
+    NTFS Alternate Data Stream) must not propagate as a raw traceback
+    with EMPTY stdout -- that would break the one contract this whole
+    project exists to provide."""
     from adrpy.cli import help as help_command
 
     def boom(_args):

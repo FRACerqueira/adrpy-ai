@@ -84,19 +84,19 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(tmp_path, monkeypatch):
     """`init --seed` on a
     repository that already has a config -- a documented overwrite, not a
-    fresh bootstrap -- used to write completely unlocked. A concurrent
-    `config` edit already committed under lock protection
-    (verify_still_held() passed, reported success) could be silently
-    clobbered by init's own unprotected write immediately after, with
-    neither caller having any way to detect it. Distinct from the
-    already-accepted config-already-exists race (ADR001's own addendum):
-    that race is on a genuinely fresh path with no lock location to even
-    acquire yet -- here the decisions folder already exists (every prior
-    init created it), so there's no such excuse; init now locks this path
-    exactly like config.py's own bootstrap-then-lock pattern."""
+    fresh bootstrap -- must not write unlocked: an unprotected write
+    could silently clobber a concurrent `config` edit already committed
+    under lock protection (verify_still_held() passed, reported
+    success), with neither caller having any way to detect it. Distinct
+    from the already-accepted config-already-exists race (ADR001's own
+    addendum): that race is on a genuinely fresh path with no lock
+    location to even acquire yet -- here the decisions folder already
+    exists (every prior init created it), so there's no such excuse;
+    init locks this path exactly like config.py's own bootstrap-then-lock
+    pattern."""
     from adrpy.cli import config
 
-    init.run(["--path", str(tmp_path)])  # fresh bootstrap: unlocked, unaffected by this fix
+    init.run(["--path", str(tmp_path)])  # fresh bootstrap: unlocked by design, a separate case
 
     resource_text = init._default_config_text()
     seed = json.loads(resource_text)
@@ -540,13 +540,13 @@ def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkey
 
 
 def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_repository_root(tmp_path, monkeypatch):
-    """Round-16 stability finding: this is the most dangerous entry point
-    for the folderadr-collapse bug -- 'installconfig --folderadr' does
-    NOT validate against a repository (there isn't one yet), so a
-    poisoned per-user config used to make every subsequent `init` on that
-    machine (no --seed/--language given) silently create a repository
-    whose own decisions folder equals its own root. The existing-decisions
-    guard never engages either, since a fresh repo has zero decisions."""
+    """The most dangerous entry point for the folderadr-collapse bug --
+    'installconfig --folderadr' does NOT validate against a repository
+    (there isn't one yet), so a poisoned per-user config would make every
+    subsequent `init` on that machine (no --seed/--language given)
+    silently create a repository whose own decisions folder equals its
+    own root. The existing-decisions guard never engages either, since a
+    fresh repo has zero decisions."""
     from importlib import resources
 
     default_text = resources.files("adrpy.resources").joinpath("default_repo_config.json").read_text(encoding="utf-8")
@@ -562,10 +562,9 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
 
 
 def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
-    """The install-level config
-    read used to run unconditionally before target.is_dir() -- a
-    corrupted per-user file masked the real, relevant error with an
-    unrelated schema-validation failure."""
+    """The install-level config read must not run unconditionally before
+    target.is_dir() -- a corrupted per-user file would otherwise mask the
+    real, relevant error with an unrelated schema-validation failure."""
 
     def _raise_corrupted():
         raise CommandError("config-invalid-json", "simulated corruption")
@@ -635,7 +634,7 @@ def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(t
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_init_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
     """Init's own pre-existing-
-    decisions scan (_max_existing_numbers) used to drop an is_within-
+    decisions scan (_max_existing_numbers) must not drop an is_within-
     excluded candidate with zero signal, same as scan_decisions/explore."""
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True)

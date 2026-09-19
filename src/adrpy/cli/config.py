@@ -184,18 +184,17 @@ def run(args):
         current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
-    # This command used to do a read-merge-write with no lock at all --
-    # two concurrent calls editing DIFFERENT fields
-    # silently lost one of the two edits, contradicting this command's
-    # own documented contract above ("an omitted flag preserves the
-    # repo's current value, never resets it"). Now uses the same
-    # repository lock the other 8 write commands already use, scoped to
-    # folderadr -- resolved here from the pre-edit config just to know
-    # where the lock lives; the actual merge below re-reads fresh,
-    # inside the lock (ADR001's own freshness principle), so even a
-    # concurrent edit to folderadr itself is safe: whichever call writes
-    # second still merges its own field onto the other's already-
-    # committed change.
+    # A read-merge-write with no lock would let two concurrent calls
+    # editing DIFFERENT fields silently lose one of the two edits,
+    # contradicting this command's own documented contract above ("an
+    # omitted flag preserves the repo's current value, never resets it").
+    # Uses the same repository lock the other 8 write commands already
+    # use, scoped to folderadr -- resolved here from the pre-edit config
+    # just to know where the lock lives; the actual merge below re-reads
+    # fresh, inside the lock (ADR001's own freshness principle), so even
+    # a concurrent edit to folderadr itself is safe: whichever call
+    # writes second still merges its own field onto the other's
+    # already-committed change.
     bootstrap_config = config
     folder = resolve_within(target, bootstrap_config.folderadr)
     # Unlike the other 8 commands (which only ever run after `init`

@@ -37,12 +37,11 @@ def test_attach_warnings_is_a_noop_when_the_error_already_carries_the_same_list(
 
 
 def test_attach_warnings_merges_a_distinct_warnings_list_in_order():
-    """Previously zero-coverage branch: the
-    only production path that reaches here is a LockTimeoutError carrying
-    its own reclaim warning, but the merge logic itself is independent of
-    that -- any CommandError arriving with its OWN, distinct warnings list
-    must have the command's own accumulated warnings prepended, not
-    replaced, and in the right order."""
+    """The only production path that reaches here is a LockTimeoutError
+    carrying its own reclaim warning, but the merge logic itself is
+    independent of that -- any CommandError arriving with its OWN,
+    distinct warnings list must have the command's own accumulated
+    warnings prepended, not replaced, and in the right order."""
     warnings = ["accumulated-first", "accumulated-second"]
     with pytest.raises(CommandError) as excinfo:
         with attach_warnings(warnings):
@@ -53,13 +52,13 @@ def test_attach_warnings_merges_a_distinct_warnings_list_in_order():
 def test_attach_warnings_converts_a_bare_oserror_into_a_command_error():
     """A real
     OSError from a write (permission denied, full disk, a PermissionError
-    outlasting atomic_write's retry budget) used to bypass this mechanism
-    entirely -- attach_warnings only caught CommandError -- propagating
-    raw past every command's own accumulated warnings to __main__'s
-    generic io-error with none of them attached. This is the safety net
-    for every write in the wrapped region that doesn't already have its
-    own tailored OSError handling (e.g. supersede's/reject's partial-
-    mutation-specific `data`)."""
+    outlasting atomic_write's retry budget) must not bypass this
+    mechanism -- attach_warnings must also catch a bare OSError, not just
+    CommandError, or it would propagate raw past every command's own
+    accumulated warnings to __main__'s generic io-error with none of them
+    attached. This is the safety net for every write in the wrapped
+    region that doesn't already have its own tailored OSError handling
+    (e.g. supersede's/reject's partial-mutation-specific `data`)."""
     warnings = ["accumulated"]
     with pytest.raises(CommandError) as excinfo:
         with attach_warnings(warnings):

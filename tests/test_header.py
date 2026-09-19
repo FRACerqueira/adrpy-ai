@@ -74,7 +74,7 @@ def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
     read by either side, only the trailing `<!-- Migrated -->` HTML comment
     is (see decision-log:
     accepted-divergence--2026-09-16--header--migrated-word-only-when-migrated.md).
-    A non-migrated file's label no longer reads as if it had been."""
+    A non-migrated file's label must not read as if it had been."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,

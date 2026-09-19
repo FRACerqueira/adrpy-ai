@@ -95,10 +95,10 @@ def test_seed_rejects_a_missing_file(tmp_path):
 
 def test_seed_combined_with_a_field_flag_raises_usage_error(tmp_path):
     """Decision-log: 2026-09-18--audit-finding--install-config--seed-
-    plus-field-flag-misreports-updated-fields.md, resolved 2026-09-18 --
-    used to silently ignore the field flag while still reporting it as
-    applied; now errors instead, matching init's own --seed+--language
-    precedent, rather than a combination whose flag is quietly dropped."""
+    plus-field-flag-misreports-updated-fields.md -- matching init's own
+    --seed+--language precedent, this combination must be rejected
+    outright, not silently ignore the field flag while still reporting
+    it as applied."""
     with pytest.raises(UsageError):
         installconfig.run(["--seed", FIXTURE_PATH, "--prefix", "ZZZ"])
 

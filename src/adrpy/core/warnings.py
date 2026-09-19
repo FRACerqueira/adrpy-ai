@@ -89,10 +89,10 @@ def excluded_candidate_warning(paths):
     candidate whose real path escapes the repository boundary (e.g. a
     Windows junction planted inside the decisions folder) -- a scan
     should keep going, not fail over one. That's a decision about
-    raising, not about reporting: every scan call site used to drop the
-    exclusion with zero signal, leaving an agent no way to learn why an
-    inventory or a next-number looked off from what's physically
-    listable in the folder."""
+    raising, not about reporting: without this warning, a scan call site
+    would drop the exclusion with zero signal, leaving an agent no way to
+    learn why an inventory or a next-number looks off from what's
+    physically listable in the folder."""
     if not paths:
         return None
     names = ", ".join(str(path) for path in paths)

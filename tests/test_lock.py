@@ -67,10 +67,10 @@ def test_lock_reports_when_a_stale_lock_was_reclaimed(tmp_path):
     with acquire_repo_lock(tmp_path, abandon_after=1, wait_ceiling=2, poll_interval=0.05) as lock:
         pass
 
-    # This used to check only a
-    # "stale" substring -- lock.py has TWO warning strings containing it
-    # (this success-path one, and the timeout-path one below), so a
-    # substring-only check couldn't actually tell them apart.
+    # Checks more than a "stale" substring -- lock.py has TWO warning
+    # strings containing it (this success-path one, and the timeout-path
+    # one below), so a substring-only check couldn't actually tell them
+    # apart.
     assert lock.warnings == [
         "A stale repository lock (from a possibly-crashed or genuinely slow process) was reclaimed "
         "before this operation could proceed."
@@ -134,13 +134,13 @@ def test_lock_timeout_after_reclaiming_a_stale_lock_still_warns(tmp_path):
 def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
     """A lock file left
     partially written (0 bytes, or otherwise unparseable) by a process
-    killed between os.open and a successful close used to be permanently
-    unreclaimable -- _read_lock returns None for anything that doesn't
-    parse as "token\\ntimestamp", and _reclaim_if_abandoned treated
-    `existing is None` as "no lock, nothing to reclaim" regardless of the
-    file's age, deadlocking the repository until a human deleted it by
-    hand. Falls back to the file's own mtime when the content is
-    unparseable."""
+    killed between os.open and a successful close must not be
+    permanently unreclaimable: `_read_lock` returns None for anything
+    that doesn't parse as "token\\ntimestamp", and `_reclaim_if_abandoned`
+    treating `existing is None` as "no lock, nothing to reclaim"
+    regardless of the file's age would deadlock the repository until a
+    human deleted it by hand. Falls back to the file's own mtime when the
+    content is unparseable."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text("")  # malformed: empty, unparseable
     old = time.time() - 999
@@ -153,10 +153,11 @@ def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
 
 
 def test_reclaim_if_abandoned_returns_false_when_the_unlink_itself_fails(tmp_path, monkeypatch):
-    """_reclaim_if_abandoned used to unconditionally return True regardless of whether
-    the unlink actually succeeded, producing a false "reclaimed" claim
-    (and a false stale-lock warning) even when the stale lock file was
-    still physically on disk afterward."""
+    """_reclaim_if_abandoned must not unconditionally return True
+    regardless of whether the unlink actually succeeded -- that would
+    produce a false "reclaimed" claim (and a false stale-lock warning)
+    even when the stale lock file was still physically on disk
+    afterward."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text(f"stale-token\n{time.time() - 999}")
 
@@ -200,10 +201,10 @@ def test_unlink_with_retry_swallows_a_persistent_non_permission_oserror(tmp_path
 
 
 def test_try_create_cleans_up_the_lock_file_when_the_write_fails(tmp_path, monkeypatch):
-    """Unlike atomic_write_bytes, _try_create used to leave the
+    """Unlike atomic_write_bytes, _try_create must not leave the
     just-created (empty) lock file behind on any OSError during the
-    write -- the direct mechanism behind the malformed/unreclaimable
-    lock file covered above."""
+    write -- that is the direct mechanism behind the malformed/
+    unreclaimable lock file covered above."""
     lock_path = tmp_path / ".adrpy.lock"
 
     class _FailingHandle:
@@ -276,11 +277,11 @@ def test_try_create_returns_false_when_the_permission_error_persists(tmp_path, m
 
 
 def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp_path, monkeypatch):
-    """Related gap found during A-3's
-    corroboration, same contention class -- both path.stat() calls in
-    the malformed-lock-file fallback only tolerated FileNotFoundError,
-    not a transient PermissionError, which could escape this function
-    raw, out of acquire_repo_lock's own wait loop entirely."""
+    """Same contention class as the sibling gap above: both path.stat()
+    calls in the malformed-lock-file fallback must tolerate a transient
+    PermissionError, not just FileNotFoundError, or one could escape
+    this function raw, out of acquire_repo_lock's own wait loop
+    entirely."""
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_bytes(b"")  # malformed: 0 bytes, no parseable timestamp
     old_time = time.time() - 60
@@ -306,11 +307,11 @@ def test_reclaim_if_abandoned_tolerates_a_transient_permission_error_on_stat(tmp
 
 def test_reclaim_if_abandoned_returns_false_when_read_lock_itself_persistently_fails(tmp_path, monkeypatch):
     """_reclaim_if_abandoned's
-    own _read_lock() calls (parsed-lock branch) had no tolerance at all for
-    a PERSISTENT PermissionError -- unlike its sibling path.stat() calls in
-    the malformed-lock-file fallback. A persistent
-    failure here used to escape raw out of acquire_repo_lock's wait loop,
-    losing the purpose-built repository-locked/lock-lost reporting this
+    own _read_lock() calls (parsed-lock branch) must tolerate a
+    PERSISTENT PermissionError, matching its sibling path.stat() calls in
+    the malformed-lock-file fallback. A persistent failure here must not
+    escape raw out of acquire_repo_lock's wait loop -- that would lose
+    the purpose-built repository-locked/lock-lost reporting this
     mechanism exists to guarantee. Ownership can't be confirmed either way
     -- the safe default is to abstain (don't reclaim), same as every other
     persistent-failure case in this module."""
@@ -404,14 +405,14 @@ def test_read_lock_raises_when_the_permission_error_persists(tmp_path, monkeypat
 def test_lock_finally_block_survives_a_read_failure_during_release(tmp_path, monkeypatch):
     """_read_lock, called first in
     acquire_repo_lock's own `finally` block to confirm ownership before
-    unlinking, was only tolerant of a transient PermissionError up to its
+    unlinking, is only tolerant of a transient PermissionError up to its
     own retry budget -- any OSError beyond that (or any other OSError
-    class, e.g. a genuine I/O failure) used to escape the `finally` block
-    raw. That turns a fully successful write into a reported failure and
-    skips _unlink_with_retry entirely, leaking the lock file for the full
-    ABANDON_AFTER_SECONDS window -- the exact class Already closed
-    for _unlink_with_retry itself (see its own docstring), just missing
-    from its neighbor called first in this same block."""
+    class, e.g. a genuine I/O failure) must not escape the `finally`
+    block raw. That would turn a fully successful write into a reported
+    failure and skip _unlink_with_retry entirely, leaking the lock file
+    for the full ABANDON_AFTER_SECONDS window -- the exact class already
+    closed for _unlink_with_retry itself (see its own docstring), just
+    missing from its neighbor called first in this same block."""
 
     def always_fails(path):
         raise PermissionError("Access is denied")

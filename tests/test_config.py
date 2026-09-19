@@ -290,14 +290,13 @@ def test_empty_required_string_field_is_rejected():
     ],
 )
 def test_header_cell_field_with_whitespace_only_content_is_rejected(field):
-    """Round-16 stability finding: `_NON_EMPTY_STRING_FIELDS`'s own check
-    only catches a literal empty string (falsy) -- a whitespace-only
-    value is truthy, so it slipped past that check and landed verbatim in
-    a header-table cell, only cosmetically 'cannot be empty' as promised
-    by this field's own doc/commands/config.md description. Same breadth
-    as the sibling pipe-rejection test above -- the 'only statusnew is
-    tested for the empty case' asymmetry a round-16 test-adequacy finding
-    flagged."""
+    """`_NON_EMPTY_STRING_FIELDS`'s own check only catches a literal
+    empty string (falsy) -- a whitespace-only value is truthy, so it must
+    be caught separately, or it would land verbatim in a header-table
+    cell, only cosmetically 'cannot be empty' as promised by this field's
+    own doc/commands/config.md description. Same breadth as the sibling
+    pipe-rejection test above, closing the 'only statusnew is tested for
+    the empty case' asymmetry."""
     data = _valid_config_dict()
     data[field] = "   "
 
@@ -331,8 +330,8 @@ def test_field_names_are_case_insensitive():
 )
 def test_invalid_migrationpattern_is_rejected(pattern):
     """Confirmed against the reference tool's own long-standing validation:
-    it rejects a malformed migrationpattern outright; this port
-    previously accepted any string at all."""
+    a malformed migrationpattern must be rejected outright, not accepted
+    as any string would be."""
     data = _valid_config_dict()
     data["migrationpattern"] = pattern
 

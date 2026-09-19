@@ -235,17 +235,17 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
-    """_build_entry's own
+    """`_build_entry`'s own
     raw_bytes = path.read_bytes() had no tolerance at all, transient or
     persistent -- unlike every other decision-file read in this codebase
     (read_header_lines, read_lines_with_report), which retries a
     transient PermissionError via the shared io_retry helper. One
     genuinely unreadable file (locked by an editor, backup tool, or
     antivirus -- an ordinary occurrence in a folder of Markdown files
-    people also open by hand) used to kill the ENTIRE inventory with a
-    bare io-error, discarding every other, perfectly readable file too.
-    This is the same failure class Already fixed for unreadable
-    *subdirectories* -- explore should be just as best-effort about a
+    people also open by hand) must not kill the ENTIRE inventory with a
+    bare io-error, discarding every other, perfectly readable file too --
+    the same failure class already guarded against for unreadable
+    *subdirectories*; explore should be just as best-effort about a
     single unreadable *file*."""
     config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
     _write_repo(

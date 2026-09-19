@@ -215,10 +215,9 @@ def test_max_existing_round_fails_closed_on_a_malformed_round_on_a_real_structur
     """A hand-written/legacy structured entry with a non-integer Round
     (scripts/generate_decision_log_index.py's own docstring anticipates
     hand-written entries) must fail closed, not be silently treated as
-    carrying no Round at all -- round-13 corroboration found the earlier
-    silent-skip behavior left this exact class of duplicate-Round risk
-    open (a real structured entry's Round quietly not counting toward
-    max_existing_round would let a later call reissue that same Round)."""
+    carrying no Round at all -- a real structured entry's Round quietly
+    not counting toward max_existing_round would let a later call
+    reissue that same Round."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--first.md").write_text(
@@ -240,11 +239,10 @@ def test_max_existing_round_fails_closed_when_the_round_segment_is_entirely_miss
     """Distinct from the malformed-value case above: here the structured
     line is otherwise well-formed (Front/Severity present) but the
     optional '| **Round:** ...' segment is absent entirely, not merely
-    non-integer. Round-14 corroboration found this specific sub-case
-    untested -- confirmed by mutating `match.group(4) or ""` to
-    `match.group(4) or "0"` and observing every existing test still
-    passed, since the malformed-value test's own Round IS present (just
-    non-integer), never reaching this fallback at all."""
+    non-integer -- the malformed-value test's own Round IS present (just
+    non-integer), so it never reaches this fallback (`match.group(4) or
+    ""`); mutating that fallback to `match.group(4) or "0"` would pass
+    every other existing test."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--first.md").write_text(
@@ -258,10 +256,10 @@ def test_max_existing_round_fails_closed_when_the_round_segment_is_entirely_miss
 
 
 def test_max_existing_round_fails_closed_on_a_completely_empty_file(tmp_path):
-    """Round-15 Test-Adequacy: round 14's `if not lines:` guard (added to
-    fix a raw IndexError on `lines[0]` for a zero-byte decision-log file)
-    shipped with no test at all -- confirmed by mutating the guard to
-    `if False and not lines:` and observing the full suite still pass."""
+    """The `if not lines:` guard (closes a raw IndexError on `lines[0]`
+    for a zero-byte decision-log file) needs its own direct test --
+    confirmed by mutating the guard to `if False and not lines:` and
+    observing the full suite still pass."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--empty.md").write_text("", encoding="utf-8")
@@ -274,12 +272,11 @@ def test_max_existing_round_fails_closed_on_a_completely_empty_file(tmp_path):
 def test_parse_entry_raises_a_clean_error_for_an_unrecognized_classification(tmp_path):
     """A typo'd classification (e.g. 'audit-findings') passes the
     filename-shape check (still 4 '--'-delimited segments) but must still
-    fail closed -- round-13 corroboration found this was the actual
-    vector for the exact duplicate-Round risk the classification-gated
-    regex match (round 12) was supposed to close: an unrecognized
-    classification silently fell through to "no structured line",
-    dropping a real Round that was still on disk from max_existing_round's
-    own count."""
+    fail closed: an unrecognized classification must not silently fall
+    through to "no structured line", dropping a real Round that's still
+    on disk from max_existing_round's own count -- the classification-
+    gated regex match exists precisely to close this duplicate-Round
+    risk."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--a.md").write_text(
@@ -319,16 +316,14 @@ def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path)
 
 
 def test_regenerate_index_writes_lf_only_on_a_normal_successful_run(tmp_path):
-    """Round-13 corroboration: the atomic-write fix's own stated purpose
-    was partly to preserve this function's explicit LF-only convention
-    regardless of host OS (real, load-bearing: the committed
-    doc/decision-log/INDEX.md is genuinely LF-only on disk) -- but the
-    only existing test of the atomic-write change checked the FAILURE
-    path (original file untouched), never that a normal SUCCESSFUL
-    regeneration is itself free of CRLF on a host whose os.linesep is
-    CRLF (e.g. Windows). Reverting atomic_write_bytes to atomic_write_text
-    (which normalizes to os.linesep) would pass every other test in this
-    file silently."""
+    """This function's explicit LF-only convention must hold regardless
+    of host OS (real, load-bearing: the committed
+    doc/decision-log/INDEX.md is genuinely LF-only on disk), including on
+    a normal SUCCESSFUL regeneration -- not just on the FAILURE path
+    (original file untouched), which every other test of the atomic-write
+    behavior already covers. Reverting atomic_write_bytes to
+    atomic_write_text (which normalizes to os.linesep) would pass every
+    other test in this file silently."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-09-18--scope-note--lock--first.md").write_text(
@@ -481,11 +476,11 @@ def test_validate_round_not_regressing_rejects_lower_than_the_current_max():
 
 
 def test_validate_round_not_regressing_rejects_the_adjacent_lower_boundary():
-    """Round-13 corroboration: every prior 'rejects lower' test used a
-    gap of 2 (current_max=5, attempted=3) -- the adjacent value
-    (current_max=5, attempted=4, exactly one below) was never exercised,
-    and an off-by-one (`< current_max` vs `<= current_max - 1`, or
-    similar) would have shipped silently."""
+    """The boundary case, not just a gap: every prior 'rejects lower'
+    test used a gap of 2 (current_max=5, attempted=3) -- the adjacent
+    value (current_max=5, attempted=4, exactly one below) needs its own
+    coverage, or an off-by-one (`< current_max` vs `<= current_max - 1`,
+    or similar) could ship silently."""
     with pytest.raises(CommandError) as excinfo:
         validate_round_not_regressing(4, current_max=5)
 

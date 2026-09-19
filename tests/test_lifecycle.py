@@ -379,14 +379,13 @@ def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tm
 
 
 def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """This read had no
-    PermissionError tolerance at all, unlike the write side
-    (atomic_write.py) and the lock-file read side (core/lock.py's own
-    _read_lock), which both already retry this project's own documented
-    Windows "pending delete"/sharing-violation contention window --
-    measured live at ~0.2% of reads under real concurrent writers. Same
-    shared helper (core/io_retry.py) as _read_lock now uses, not a
-    fourth independent copy of the loop."""
+    """This read must tolerate a transient PermissionError, matching the
+    write side (atomic_write.py) and the lock-file read side
+    (core/lock.py's own _read_lock), which both already retry this
+    project's own documented Windows "pending delete"/sharing-violation
+    contention window -- measured live at ~0.2% of reads under real
+    concurrent writers. Same shared helper (core/io_retry.py) `_read_lock`
+    already uses, not a fourth independent copy of the loop."""
     target = tmp_path / "flaky.md"
     header_lines = [f"line{i}" for i in range(12)]
     target.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
@@ -559,9 +558,9 @@ def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list
     """is_within deliberately never
     RAISES over an escaped candidate (a scan should keep going, not fail
     over one), but that's a decision about raising, not about reporting --
-    every call site used to drop the exclusion with zero signal. An agent
+    a call site must not drop the exclusion with zero signal, or an agent
     seeing an unexpected next_number, or an inventory that doesn't match
-    what's physically listable in the folder, had no way to learn why."""
+    what's physically listable in the folder, has no way to learn why."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / "repo" / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -593,8 +592,8 @@ def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkey
     """Path.rglob
     (which scan_decisions uses) silently swallows an OSError raised
     while walking a subtree -- a subfolder that becomes unreadable
-    mid-scan used to just make the result set smaller, with zero
-    signal. Every caller that passes warnings= now finds out."""
+    mid-scan must not just make the result set smaller with zero
+    signal; every caller that passes warnings= must find out."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -672,10 +671,10 @@ def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path,
         family_members(adr_dir, config, 1)
 
     assert excinfo.value.code == "family-scan-incomplete"
-    # This assertion used to stop
-    # at the code alone, unlike its sibling tests right above/below --
-    # a mutation corrupting the unreadable list's own contents (while
-    # keeping the code correct) would have slipped through here.
+    # Checks the unreadable list's own contents, not just the code, unlike
+    # its sibling tests right above/below -- a mutation corrupting the
+    # contents while keeping the code correct would otherwise slip
+    # through here.
     assert str(blocked) in excinfo.value.data["unreadable"][0]
 
 

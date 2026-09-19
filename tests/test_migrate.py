@@ -44,11 +44,11 @@ def _write_legacy_file(tmp_path, filename, content):
 def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """Unlike an unreadable FILE
     (migration-scan-failed, already fail-closed), an unreadable
-    subdirectory used to only warn -- but this scan feeds
+    subdirectory must get the same fail-closed treatment as its
+    file-level sibling, not merely a warning -- this scan feeds
     already-tool-created-adrs-exist, a real safety decision (a hidden
     already-migrated file inside it could make that check silently
-    answer "no" when the true answer is "yes"). Same fail-closed
-    treatment as its file-level sibling now."""
+    answer "no" when the true answer is "yes")."""
     tmp_path = _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001T01.md", "Legacy content\n")
     adr_dir = tmp_path / "doc" / "adr"
@@ -93,16 +93,16 @@ def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monke
 
 def test_migrate_reports_lock_lost_not_a_per_candidate_failure_when_the_lock_read_itself_fails(tmp_path, monkeypatch):
     """A persistent I/O failure reading
-    the lock file during verify_still_held() used to escape as a bare
-    PermissionError, which -- being an OSError but not a LockLostError
-    -- fell through migrate's own `except LockLostError` clause into the
-    per-candidate `except (OSError, UnicodeError)`, misreporting a
-    candidate that was never touched as individually "failed", then
-    repeating the same misclassification for every remaining candidate.
-    Fixed at the source (RepoLock.verify_still_held itself): this is now
-    a clean migration-lock-lost, matching the command's own documented
-    contract, and the loop stops immediately instead of repeating the
-    misclassification."""
+    the lock file during verify_still_held() must not escape as a bare
+    PermissionError -- being an OSError but not a LockLostError, it
+    would otherwise fall through migrate's own `except LockLostError`
+    clause into the per-candidate `except (OSError, UnicodeError)`,
+    misreporting a candidate that was never touched as individually
+    "failed", then repeating the same misclassification for every
+    remaining candidate. Handled at the source (RepoLock.verify_still_held
+    itself): this is a clean migration-lock-lost, matching the command's
+    own documented contract, and the loop stops immediately instead of
+    repeating the misclassification."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
     _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
@@ -553,14 +553,13 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
 
 def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_loop(tmp_path, monkeypatch):
     """Losing the lock between two
-    candidates used to raise straight out of the per-candidate loop,
-    discarding the `results` list describe() promises names every
-    candidate's own outcome. Distinct from a per-file OSError/
-    UnicodeError (which correctly keeps the loop going, one candidate at
-    a time): losing the lock is a whole-operation event, not a single
-    file's own problem, so it must stop the loop outright instead of
-    misreporting every untouched remaining candidate as individually
-    'failed'."""
+    candidates must raise with the `results` list attached, not bare --
+    describe() promises it names every candidate's own outcome, even on
+    failure. Distinct from a per-file OSError/UnicodeError (which
+    correctly keeps the loop going, one candidate at a time): losing the
+    lock is a whole-operation event, not a single file's own problem, so
+    it must stop the loop outright instead of misreporting every
+    untouched remaining candidate as individually 'failed'."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
     _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
@@ -588,16 +587,16 @@ def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_lo
 
 
 def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):
-    """Migrate held no lock at all -- confirmed empirically (real thread
-    interleaving) to let it silently erase a concurrent approve's
+    """Migrate must hold the SAME repository lock for its whole operation
+    (scan through every write), not just around a single write --
+    confirmed empirically (real thread interleaving) that holding no
+    lock at all lets it silently erase a concurrent approve's
     already-committed write, even though approve correctly held the lock
-    and its own verify_still_held() passed honestly. migrate's missing
-    lock defeated ADR001's guarantee for a command that did everything
-    right. Proves migrate now holds the SAME repository lock for its
-    whole operation (scan through every write), not just around a single
-    write: while migrate is paused mid-run (in its write loop), a
-    separate attempt to acquire the same lock with a short wait_ceiling
-    must time out."""
+    and its own verify_still_held() passed honestly: a missing lock on
+    migrate's side would defeat ADR001's guarantee for a command that did
+    everything right. Proves the guarantee holds: while migrate is
+    paused mid-run (in its write loop), a separate attempt to acquire the
+    same lock with a short wait_ceiling must time out."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
 
@@ -638,8 +637,9 @@ def test_migrate_describe_documents_the_migrationpattern_precondition():
 def test_migrate_describe_documents_the_persist_back_write_survives_a_later_failure():
     """The persist-back write commits before
     the scan/eligibility checks and is never rolled back if one of them
-    later refuses the run -- describe() used to imply the opposite via
-    "no file is touched" phrasing that predates the fallback."""
+    later refuses the run -- describe() must say so explicitly, not just
+    "no file is touched," which would misleadingly imply
+    adr-config.adrplus itself was untouched too."""
     description = migrate.describe()["description"]
     assert "survives" in description
     assert "no decision file is touched" in description
