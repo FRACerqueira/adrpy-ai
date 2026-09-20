@@ -1,3 +1,5 @@
+<img src="src/adrpy/icon.png" width="64" alt="adrpy-ai icon">
+
 # adrpy-ai
 
 [![CI](https://github.com/FRACerqueira/adrpy-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/FRACerqueira/adrpy-ai/actions/workflows/ci.yml)

@@ -1,3 +1,5 @@
+<img src="../../src/adrpy/icon.png" width="64" alt="adrpy-ai icon">
+
 [← Command Reference](INDEX.md)
 
 # `adrpy config`

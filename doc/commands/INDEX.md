@@ -1,3 +1,5 @@
+<img src="../../src/adrpy/icon.png" width="64" alt="adrpy-ai icon">
+
 [← README](../../README.md) · [Architecture](../architecture.md)
 
 # Command Reference
