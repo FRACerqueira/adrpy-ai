@@ -547,7 +547,10 @@ def test_init_rejects_unsupported_language(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path), "--language", "klingon"])
 
-    assert excinfo.value.code == "init-language-not-supported"
+    # Generic code, not init-specific: shared with installconfig's own
+    # --language, since neither command has anything left to add once
+    # the language itself isn't recognized.
+    assert excinfo.value.code == "language-not-supported"
 
 
 def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypatch):

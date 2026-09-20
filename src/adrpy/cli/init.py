@@ -8,13 +8,18 @@ default config already contains (confirmed true even with --language's
 own merge, since no language pack defines that field).
 """
 
-import json
-from importlib import resources
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.config import default_repo_config_text, load_repo_config, parse_repo_config, read_config_text
+from adrpy.core.config import (
+    SUPPORTED_LANGUAGES,
+    default_repo_config_text,
+    default_repo_config_text_for_language,
+    load_repo_config,
+    parse_repo_config,
+    read_config_text,
+)
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
@@ -26,23 +31,6 @@ from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, no_install_level_config_warning, retry_warning
-
-# `language` doesn't just affect interactive UI text -- it also selects
-# the DEFAULT header/status labels and the default template content
-# baked into a newly init'd repo.
-SUPPORTED_LANGUAGES = (
-    "en-us",
-    "pt-br",
-    "de-de",
-    "es-es",
-    "fr-fr",
-    "it-it",
-    "ja-jp",
-    "ko-kr",
-    "nl-be",
-    "ru-ru",
-    "zh-cn",
-)
 
 
 def describe():
@@ -177,7 +165,7 @@ def run(args):
             raise CommandError("config-file-not-found", f"File not found: {seed_arg}")
         config_text = read_config_text(seed_path)
     elif language_arg is not None:
-        config_text = _default_config_text_for_language(language_arg)
+        config_text = default_repo_config_text_for_language(language_arg)
     elif install_config_text is not None:
         config_text = install_config_text
     else:
@@ -303,27 +291,6 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         created.append(str(folder_adr))
 
     return created
-
-
-def _load_language_pack(language):
-    if language not in SUPPORTED_LANGUAGES:
-        raise CommandError(
-            "init-language-not-supported",
-            f"--language must be one of {SUPPORTED_LANGUAGES}, got: {language}",
-        )
-    resource = resources.files("adrpy.resources.language_packs").joinpath(f"{language}.json")
-    return json.loads(resource.read_text(encoding="utf-8"))
-
-
-def _default_config_text_for_language(language):
-    """Merges a language pack's ~17 fields (labels/status/template) onto
-    the built-in default -- everything else (folderadr, separator,
-    lenseq/lenversion/lenrevision, casetransform, migrationpattern) is
-    language-independent, so it keeps the same built-in default
-    regardless of --language."""
-    base = json.loads(default_repo_config_text())
-    base.update(_load_language_pack(language))
-    return json.dumps(base, indent=2, ensure_ascii=False)
 
 
 def _max_existing_numbers(target, config, warnings=None):

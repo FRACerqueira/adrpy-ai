@@ -160,6 +160,49 @@ def default_repo_config_text():
     return resource.read_text(encoding="utf-8")
 
 
+# `language` doesn't just affect interactive UI text -- it also selects
+# the DEFAULT header/status labels and the default template content a
+# language-pack shortcut seeds. Shared by every command offering one
+# (`init`, `installconfig`) instead of each keeping its own private copy.
+SUPPORTED_LANGUAGES = (
+    "en-us",
+    "pt-br",
+    "de-de",
+    "es-es",
+    "fr-fr",
+    "it-it",
+    "ja-jp",
+    "ko-kr",
+    "nl-be",
+    "ru-ru",
+    "zh-cn",
+)
+
+
+def load_language_pack(language):
+    """Returns a language pack's own ~17 fields (header/status labels +
+    the default template) as a dict, or raises language-not-supported if
+    `language` isn't one of SUPPORTED_LANGUAGES."""
+    if language not in SUPPORTED_LANGUAGES:
+        raise CommandError(
+            "language-not-supported", f"--language must be one of {SUPPORTED_LANGUAGES}, got: {language}"
+        )
+    from importlib import resources
+
+    resource = resources.files("adrpy.resources.language_packs").joinpath(f"{language}.json")
+    return json.loads(resource.read_text(encoding="utf-8"))
+
+
+def default_repo_config_text_for_language(language):
+    """Merges a language pack's ~17 fields onto the built-in default --
+    everything else (folderadr, separator, lenseq/lenversion/lenrevision,
+    casetransform, migrationpattern) is language-independent, so it keeps
+    the same built-in default regardless of `language`."""
+    base = json.loads(default_repo_config_text())
+    base.update(load_language_pack(language))
+    return json.dumps(base, indent=2, ensure_ascii=False)
+
+
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must

@@ -19,6 +19,11 @@ reference tool's own template file already covers importing from it; no separate
 cross-tool flag, and no knowledge of the reference tool's own install-
 directory layout, is added for that.
 
+`--language` is a second, narrower wholesale-replace source, mirroring
+`init --language`'s own built-in language packs -- unlike `init`, never
+blocked by an existing install-level config, since writing that config
+is this command's own purpose.
+
 `activeplugins` is deliberately not exposed here either, same as
 `config` -- the plugin system is out of scope (see the `init` command's
 own note); it is still carried through from whatever base this command
@@ -44,13 +49,21 @@ write lands after the seed's.
 
 import json
 from dataclasses import asdict
-from importlib import resources
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import _BOOL_FIELDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config, read_config_text
+from adrpy.core.config import (
+    _BOOL_FIELDS,
+    _INT_FIELDS,
+    _STRING_FIELDS,
+    SUPPORTED_LANGUAGES,
+    default_repo_config_text,
+    default_repo_config_text_for_language,
+    parse_repo_config,
+    read_config_text,
+)
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import resolve_install_config_path
 from adrpy.core.warnings import retry_warning
@@ -139,11 +152,6 @@ def _field_description(field):
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
-def _default_config_text():
-    resource = resources.files("adrpy.resources").joinpath("default_repo_config.json")
-    return resource.read_text(encoding="utf-8")
-
-
 def describe():
     return {
         "name": "installconfig",
@@ -170,7 +178,9 @@ def describe():
             "keys. "
             "--seed replaces the file wholesale, same as `init --seed`, and reports every editable field "
             "in `updated_fields` since a full replace makes every one of them this call's own -- not a "
-            "diff against whatever was there before."
+            "diff against whatever was there before. --language replaces the file wholesale too, with the "
+            "built-in default's header/status labels and template swapped for that language's own -- same "
+            "reporting rule as --seed applies to it."
         ),
         "arguments": [
             {
@@ -187,6 +197,21 @@ def describe():
                     "combination (--seed with --language)."
                 ),
             },
+            {
+                "name": "language",
+                "type": "string",
+                "required": False,
+                "description": (
+                    f"Built-in default language pack for header/status labels and the default template "
+                    f"(one of {SUPPORTED_LANGUAGES}), applied over the built-in default -- everything else "
+                    "(folderadr, separator, lenseq/lenversion/lenrevision, casetransform, migrationpattern) "
+                    "stays the built-in default's own value regardless of language. Replaces the file "
+                    "wholesale, same as --seed -- cannot be combined with --seed or with any individual "
+                    "field flag in the same call; usage-error either way, same rule --seed already applies "
+                    "to a co-passed field flag. Unlike `init --language`, this one is never blocked by an "
+                    "existing install-level config -- writing that config IS what this command is for."
+                ),
+            },
             *[
                 {
                     "name": field,
@@ -201,9 +226,13 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, optional=("seed",) + _EDITABLE_FIELDS)
+    flags = parse_flags(args, optional=("seed", "language") + _EDITABLE_FIELDS)
     seed_arg = flags.get("seed")
+    language_arg = flags.get("language")
     target = resolve_install_config_path()
+
+    if seed_arg is not None and language_arg is not None:
+        raise UsageError("--language cannot be combined with --seed.")
 
     if seed_arg is not None:
         # Decision-log: 2026-09-18--audit-finding--install-config--seed-
@@ -232,6 +261,28 @@ def run(args):
             "warnings": [warning] if warning else [],
         }
 
+    if language_arg is not None:
+        # Same rule as --seed above -- a co-passed field flag is rejected
+        # outright, not silently ignored or silently overridden, since a
+        # full replace reporting every field in updated_fields would
+        # misrepresent what was actually applied otherwise.
+        conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
+        if conflicting:
+            raise UsageError(
+                f"--language cannot be combined with field flags ({', '.join(conflicting)}); "
+                "pass one or the other."
+            )
+        language_text = default_repo_config_text_for_language(language_arg)
+        parse_repo_config(language_text)  # validates before writing
+        target.parent.mkdir(parents=True, exist_ok=True)
+        attempts = atomic_write_text(target, language_text)
+        warning = retry_warning(attempts)
+        return {
+            "file": str(target),
+            "updated_fields": list(_EDITABLE_FIELDS),
+            "warnings": [warning] if warning else [],
+        }
+
     if not any(field in flags for field in _EDITABLE_FIELDS):
         if not target.is_file():
             return {"file": str(target), "configured": False, "updated_fields": [], "warnings": []}
@@ -245,7 +296,7 @@ def run(args):
             "warnings": [],
         }
 
-    base_text = read_config_text(target) if target.is_file() else _default_config_text()
+    base_text = read_config_text(target) if target.is_file() else default_repo_config_text()
     base = parse_repo_config(base_text)
     merged = asdict(base)
     updated_fields = []

@@ -105,6 +105,56 @@ def test_seed_combined_with_a_field_flag_raises_usage_error(tmp_path):
     assert not installconfig.resolve_install_config_path().exists()  # nothing written either
 
 
+def test_language_replaces_the_file_wholesale_with_localized_labels_and_template(tmp_path):
+    """Mirrors init's own test_init_with_language_seeds_localized_labels_
+    and_template -- same language packs, same merge-onto-built-in-default
+    semantics, just written to the install-level file instead of a fresh
+    repository's adr-config.adrplus."""
+    result = installconfig.run(["--language", "pt-br"])
+
+    assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
+    read_back = installconfig.run([])["config"]
+    assert read_back["statusnew"] == "Proposto"
+    assert read_back["statusacc"] == "Aceito"
+    assert read_back["headerversion"] == "Versão"
+    # Everything NOT covered by the language pack keeps the built-in default.
+    assert read_back["folderadr"] == "doc/adr"
+    assert read_back["separator"] == "-"
+
+
+def test_language_rejects_unsupported_language(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        installconfig.run(["--language", "klingon"])
+
+    assert excinfo.value.code == "language-not-supported"
+    assert not installconfig.resolve_install_config_path().exists()
+
+
+def test_language_combined_with_seed_raises_usage_error(tmp_path):
+    with pytest.raises(UsageError):
+        installconfig.run(["--seed", FIXTURE_PATH, "--language", "pt-br"])
+
+    assert not installconfig.resolve_install_config_path().exists()
+
+
+def test_language_combined_with_a_field_flag_raises_usage_error(tmp_path):
+    """Same rule as --seed's own precedent: a co-passed field flag is
+    rejected outright, not silently ignored or silently overridden by the
+    language pack."""
+    with pytest.raises(UsageError):
+        installconfig.run(["--language", "pt-br", "--prefix", "ZZZ"])
+
+    assert not installconfig.resolve_install_config_path().exists()
+
+
+@pytest.mark.parametrize("language", installconfig.SUPPORTED_LANGUAGES)
+def test_every_supported_language_is_accepted(tmp_path, language):
+    result = installconfig.run(["--language", language])
+
+    assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
+    assert installconfig.run([])["config"]["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
+
+
 def test_invalid_field_value_is_rejected(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         installconfig.run(["--lenseq", "2"])
@@ -133,6 +183,7 @@ def test_describe_has_no_path_argument_and_no_activeplugins_flag():
     assert "path" not in names
     assert "activeplugins" not in names
     assert "seed" in names
+    assert "language" in names
 
 
 def test_write_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):

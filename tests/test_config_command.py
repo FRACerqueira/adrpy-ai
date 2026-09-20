@@ -417,6 +417,17 @@ def test_config_does_not_expose_activeplugins(tmp_path):
         config.run(["--path", str(tmp_path), "--activeplugins", "Foo"])
 
 
+def test_config_does_not_expose_language(tmp_path):
+    """--language is a bootstrapping-only convenience (init, installconfig)
+    -- an existing repository already has concrete label/template values on
+    disk, so `config` has no equivalent shortcut to re-apply a language
+    pack over them."""
+    tmp_path = _init_repo(tmp_path)
+
+    with pytest.raises(UsageError):
+        config.run(["--path", str(tmp_path), "--language", "pt-br"])
+
+
 def test_config_target_directory_not_found(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path / "missing"), "--prefix", "X"])
