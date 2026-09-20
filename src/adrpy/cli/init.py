@@ -25,7 +25,7 @@ from adrpy.core.lifecycle import (
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
-from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, no_install_level_config_warning, retry_warning
 
 # `language` doesn't just affect interactive UI text -- it also selects
 # the DEFAULT header/status labels and the default template content
@@ -53,7 +53,9 @@ def describe():
             "With no --seed and no --language, seeds from the install-level config (see the "
             "installconfig command; ADR002V01) if one has been set up on this machine, or from the "
             "built-in default otherwise -- the install-level config not existing is the normal state "
-            "for any installation that has never run installconfig, not an error. "
+            "for any installation that has never run installconfig, not an error; the result's own "
+            "`warnings` names this and points at `installconfig` when it happens, since it is the one "
+            "case where nothing informed this repository's own settings at all. "
             "Not safe to call concurrently on a FRESH --path with no config yet (deliberately, see "
             "doc/adr/ADR001V01-...): two simultaneous first-time calls can silently overwrite one "
             "another's config, both reporting success -- callers must ensure at most one first-time "
@@ -167,6 +169,7 @@ def run(args):
             "(see the installconfig command); use --seed explicitly instead if you want to override it."
         )
 
+    used_built_in_default_uninformed = False
     if seed_arg is not None:
         seed_path = Path(seed_arg)
         if not seed_path.is_file():
@@ -178,9 +181,12 @@ def run(args):
         config_text = install_config_text
     else:
         config_text = _default_config_text()
+        used_built_in_default_uninformed = True
 
     config = parse_repo_config(config_text)
     warnings = []
+    if used_built_in_default_uninformed:
+        warnings.append(no_install_level_config_warning())
 
     if config_already_existed:
         # --seed overwriting an ALREADY-existing repository is live shared

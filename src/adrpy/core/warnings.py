@@ -70,6 +70,20 @@ def retry_warning(attempts):
     return f"Write succeeded only after {attempts} attempts due to transient contention."
 
 
+def no_install_level_config_warning():
+    """`init` calls this only on the one branch where it has no informed
+    source at all for the new config (no --seed, no --language, no
+    per-machine install-level config) -- a first-time user on a fresh
+    machine has no way to discover `installconfig` exists otherwise
+    (confirmed: it's undocumented anywhere outside `adrpy help`
+    itself)."""
+    return (
+        "No per-machine install-level config found -- seeded from the built-in default. "
+        "Run `adrpy installconfig` once to set your own defaults for future repositories on "
+        "this machine (see `adrpy help installconfig`)."
+    )
+
+
 def encoding_repaired_warning(path):
     """Only accurate once `path` itself has genuinely been rewritten --
     calling this before the write was even attempted (an ineligibility

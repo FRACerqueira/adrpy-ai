@@ -25,9 +25,36 @@ def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     assert config_path.read_text(encoding="utf-8") == _default_config_text()
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
-    # No test pinned the exact
-    # empty-list value on a genuine happy path, only that the key exists.
-    assert result["warnings"] == []
+    # No --seed, no --language, no install-level config on this machine
+    # (the autouse fixture forces that) -- the one branch that seeded
+    # from the built-in default with no informed source at all, so the
+    # advisory warning recommending `installconfig` must be present.
+    assert any("adrpy installconfig" in w for w in result["warnings"])
+
+
+def test_init_does_not_recommend_installconfig_when_seed_is_given(tmp_path, tmp_path_factory):
+    seed_dir = tmp_path_factory.mktemp("seed")
+    seed_file = seed_dir / "seed.json"
+    seed_file.write_text(_default_config_text(), encoding="utf-8")
+
+    result = init.run(["--path", str(tmp_path), "--seed", str(seed_file)])
+
+    assert not any("installconfig" in w for w in result["warnings"])
+
+
+def test_init_does_not_recommend_installconfig_when_language_is_given(tmp_path):
+    result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
+
+    assert not any("installconfig" in w for w in result["warnings"])
+
+
+def test_init_does_not_recommend_installconfig_when_install_level_config_exists(tmp_path, monkeypatch):
+    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
+
+    result = init.run(["--path", str(tmp_path)])
+
+    assert not any("installconfig" in w for w in result["warnings"])
 
 
 def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
@@ -369,6 +396,13 @@ def test_init_describe_documents_the_concurrency_risk():
     requirement means this has to be stated in the JSON contract surface
     a caller actually reads, not only in the ADR."""
     assert "concurrently" in init.describe()["description"].lower()
+
+
+def test_init_describe_documents_the_installconfig_recommendation_warning():
+    description = init.describe()["description"]
+
+    assert "warnings" in description
+    assert "installconfig" in description
 
 
 def test_init_file_not_found(tmp_path):
