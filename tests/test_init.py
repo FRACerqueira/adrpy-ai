@@ -252,6 +252,27 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
+def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_already_exist(tmp_path):
+    """ADR004V01: --seed replacing an already-existing repository's config
+    is exactly as capable of breaking status-label/separator recognition
+    of existing decisions as `config` is -- same shared guard."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    seed = json.loads(init.default_repo_config_text())
+    seed["statusacc"] = "Approved"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["statusacc"], "existing_decisions": 1}
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["statusacc"] == "Accepted"  # nothing was written
+
+
 def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
     """Init's own bootstrap read
     (used both to find the lock and, unrefreshed, handed straight to

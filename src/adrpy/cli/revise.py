@@ -106,7 +106,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
             # revise never rewrites its own source either -- see version.py's
             # own comment for why this fires right away, not after a write.
             if encoding_repaired:

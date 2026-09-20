@@ -127,7 +127,7 @@ def test_supersede_happy_path(tmp_path):
     assert result["status"] == "Proposed"
 
     predecessor_text = adr_path.read_text(encoding="utf-8")
-    assert "|Superseded|Superseded (2026-01-05) : 002|" in predecessor_text
+    assert "|Superseded|Superseded (2026-01-05) <!-- Superseded --> : 002|" in predecessor_text
 
     successor_text = successor_path.read_text(encoding="utf-8")
     # Title comes from the predecessor's FILENAME segment (already
@@ -136,7 +136,7 @@ def test_supersede_happy_path(tmp_path):
     assert "|File title md|use-postgre-sql|" in successor_text
     assert "|Domain|Backend|" in successor_text  # scope/domain inherited
     assert "|Scope|Data|" in successor_text
-    assert "|Created|Proposed (2026-01-05)|" in successor_text
+    assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in successor_text
 
 
 def test_supersede_can_override_scope_and_domain(tmp_path):

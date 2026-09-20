@@ -17,7 +17,7 @@ from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, c
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within
-from adrpy.core.warnings import excluded_candidate_warning
+from adrpy.core.warnings import excluded_candidate_warning, marker_label_mismatch_warning
 
 
 def parse_refdate(text):
@@ -145,6 +145,59 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
             f"Cannot change folderadr from '{old_folderadr}' to '{new_folderadr}': "
             f"{len(existing)} existing decision(s) under '{old_folderadr}' would become invisible.",
             data={"folderadr": old_folderadr, "existing_decisions": len(existing)},
+            warnings=warnings,
+        )
+
+
+_GUARDED_STATUS_AND_SEPARATOR_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup", "separator")
+
+
+def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, new_config, warnings=None):
+    """ADR004V01: a status label or `separator` change on a repository
+    that already has recognized decisions can make some or all of them
+    unrecognized -- confirmed live for both fields independently (a
+    changed statusnew/statusacc/statusrej/statussup label stops
+    core/header.py's own label-text match from recognizing an existing,
+    marker-less status cell; a changed separator stops core/naming.py's
+    own filename parse from recognizing an existing file at all).
+
+    Unconditional once any decision exists -- unlike the ADR004V01 marker
+    itself, this does not check whether a given file is already
+    marker-protected against the specific field being changed. Same
+    blanket shape reject_folderadr_change_if_decisions_exist above
+    already uses (which also never checks whether a given file would
+    individually survive), not a per-file analysis.
+
+    Scans against `old_config` (never `new_config`): the existing files
+    were written/named under the OLD rules, not the new ones -- same
+    reasoning as reject_folderadr_change_if_decisions_exist.
+
+    Fails closed (same as that guard) if the scan itself can't be
+    trusted, instead of treating an incomplete scan as "no decisions"."""
+    changed_fields = [
+        field
+        for field in _GUARDED_STATUS_AND_SEPARATOR_FIELDS
+        if getattr(old_config, field) != getattr(new_config, field)
+    ]
+    if not changed_fields:
+        return
+    unreadable = find_unreadable_subdirectories(old_folder)
+    if unreadable:
+        raise CommandError(
+            "status-or-separator-change-scan-incomplete",
+            f"Cannot safely determine whether existing decisions would be affected by changing "
+            f"{', '.join(changed_fields)}: {len(unreadable)} subdirectory/subdirectories could not be "
+            "scanned.",
+            data={"changed_fields": changed_fields, "unreadable": unreadable},
+            warnings=warnings,
+        )
+    existing = scan_decisions(old_folder, old_config, warnings=warnings)
+    if existing:
+        raise CommandError(
+            "status-or-separator-change-blocked-by-existing-decisions",
+            f"Cannot change {', '.join(changed_fields)}: {len(existing)} existing decision(s) would no "
+            "longer be recognized.",
+            data={"changed_fields": changed_fields, "existing_decisions": len(existing)},
             warnings=warnings,
         )
 
@@ -349,12 +402,18 @@ def resolve_target_and_config(path, *, require_config=True):
     return target, config_path, load_repo_config(config_path)
 
 
-def read_target(path, config):
+def read_target(path, config, warnings=None):
     """The content-dependent half of load_target (ADR001): reads and
     parses the target file's own name and header. Call this AFTER
     acquiring the repository lock for any command that goes on to write,
     so eligibility/write decisions are made from a fresh read, not one
-    captured before the lock -- the reproduced defect ADR001 closes."""
+    captured before the lock -- the reproduced defect ADR001 closes.
+
+    `warnings`, when given, reports a genuine marker/label disagreement
+    on this exact file (ADR004V01) -- informational about a pre-existing
+    condition of the file, same as excluded_candidate_warning's own
+    convention, not gated behind whether this command's own write later
+    succeeds."""
     lines, encoding_repaired = read_lines_with_report(path)
     found = parse_any_filename(path.name, config)
     if found is None:
@@ -368,6 +427,11 @@ def read_target(path, config):
         # status-line-date-invalid, ...) -- use it as the code itself
         # instead of discarding it behind one fixed label.
         raise CommandError(header.error or "header-invalid", "Header is not structurally valid.")
+
+    if warnings is not None:
+        warning = marker_label_mismatch_warning(header)
+        if warning:
+            warnings.append(warning)
 
     return filename_info, header, lines, encoding_repaired
 
@@ -415,6 +479,12 @@ def family_members(folder, config, number, warnings=None):
         # read_header_lines never loads the (potentially large) body
         # just to check that.
         header = parse_header(read_header_lines(path), config)
+        # Deliberately does not surface header.marker_label_mismatches
+        # (ADR004V01) here -- a mismatch on a SIBLING would misattribute a
+        # warning about that other file to whatever command (e.g.
+        # approve) is actually acting on a different family member.
+        # read_target's own warning already covers the file actually
+        # being acted on.
         if not counts_as_family_member(header):
             continue
         members.append((parsed, header, path))

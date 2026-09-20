@@ -163,6 +163,57 @@ def test_explore_exposes_scope_and_domain(tmp_path):
     assert entry["header"]["domain"] == "Backend"
 
 
+def test_explore_reports_no_marker_label_mismatch_for_an_ordinary_decision(tmp_path):
+    config_dict = _default_config_dict()
+    _write_repo(
+        tmp_path,
+        config_dict,
+        {
+            "ADR001V01-first-decision.md": _decision_text(
+                parse_repo_config(json.dumps(config_dict)),
+                number=1,
+                title="First decision",
+                version=1,
+                status_create="Proposed",
+                date_create=date(2026, 1, 1),
+            ),
+        },
+    )
+
+    result = explore.run(["--path", str(tmp_path)])
+
+    assert result["decisions"][0]["header"]["marker_label_mismatches"] == []
+
+
+def test_explore_reports_a_marker_label_mismatch(tmp_path):
+    """ADR004V01: end-to-end through `explore`, not just core/header.py's
+    own unit tests -- a hand-edited visible label that now disagrees with
+    the hidden marker must be visible in this report, per-file, since
+    explore lists every decision rather than acting on one specific
+    target."""
+    config_dict = _default_config_dict()
+    config = parse_repo_config(json.dumps(config_dict))
+    text = _decision_text(
+        config,
+        number=1,
+        title="Hand-edited decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+    )
+    # Hand-edit only the visible label word on the Created row, leaving
+    # the hidden marker untouched -- same construction as core/header.py's
+    # own unit test for this exact scenario.
+    assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in text
+    text = text.replace(config.statusnew, config.statusacc, 1)
+    _write_repo(tmp_path, config_dict, {"ADR001V01-first-decision.md": text})
+
+    result = explore.run(["--path", str(tmp_path)])
+
+    assert result["decisions"][0]["header"]["status_create"] == "Proposed"
+    assert result["decisions"][0]["header"]["marker_label_mismatches"] == ["status_create"]
+
+
 def test_explore_sorts_by_validity_then_migrated_then_descending_numbers(tmp_path):
     config_dict = _default_config_dict()
     config = parse_repo_config(json.dumps(config_dict))

@@ -25,6 +25,7 @@ from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
+    reject_status_or_separator_change_if_decisions_exist,
     resolve_target_and_config,
     verify_folderadr_unchanged_since_lock,
 )
@@ -147,6 +148,13 @@ def describe():
             "names the count) rather than silently orphaning them at their old, still-real path; if that "
             "check itself can't be completed (a subdirectory couldn't be scanned), fails closed instead with "
             "folderadr-change-scan-incomplete rather than assuming nothing was there. "
+            "--statusnew/--statusacc/--statusrej/--statussup/--separator can likewise only be changed while "
+            "the repository has no recognized decisions yet (ADR004V01) -- otherwise fails with "
+            "status-or-separator-change-blocked-by-existing-decisions (data.changed_fields names every "
+            "guarded field this call touched, data.existing_decisions the count) rather than silently "
+            "breaking recognition of those decisions; for --separator this is a PERMANENT block once any "
+            "decision exists, with no migration path. Same scan-incomplete fail-closed shape as folderadr's "
+            "own guard: status-or-separator-change-scan-incomplete. "
             "A write call may also fail with repository-locked if the repository lock could not be "
             "acquired in time, or lock-lost if it was acquired but reclaimed before the write could "
             "commit -- in both cases no write was made; a pure read (no field flags) never takes the lock. "
@@ -266,6 +274,15 @@ def run(args):
             reject_folderadr_change_if_decisions_exist(
                 folder, current.folderadr, new_config.folderadr, current, warnings=warnings
             )
+
+            # ADR004V01: a statusnew/statusacc/statusrej/statussup or
+            # separator change is only valid when the OLD folder has no
+            # recognized decisions yet -- otherwise some or all of them
+            # stop being recognized (a label change breaks a marker-less
+            # status cell's text match; a separator change breaks
+            # filename recognition entirely). Same `folder`/`current`
+            # pre-edit state as the folderadr guard above.
+            reject_status_or_separator_change_if_decisions_exist(folder, current, new_config, warnings=warnings)
 
             # Creating the new folder here, BEFORE the config commits,
             # means a failure creating it aborts cleanly with nothing yet

@@ -138,7 +138,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # supersede, so the caller knows which recovery action applies.

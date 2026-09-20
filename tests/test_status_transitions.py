@@ -73,8 +73,27 @@ def test_approve_happy_path(tmp_path):
 
     assert result["status"] == "Accepted"
     text = adr_path.read_text(encoding="utf-8")
-    assert "|Changed|Accepted (2026-01-02)|" in text
-    assert "|Created|Proposed (2026-01-01)|" in text  # untouched
+    assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in text
+    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text  # untouched
+
+
+def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
+    """ADR004V01: end-to-end through a real write command (approve is
+    representative of all 6 -- read_target's own warning is shared code),
+    not just core/header.py's own unit test for this scenario. A hand-
+    edited visible label that disagrees with the hidden marker must
+    surface as a warning, but must NOT block approve -- the marker is
+    still authoritative and the write still proceeds normally."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    text = adr_path.read_text(encoding="utf-8")
+    assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in text
+    atomic_write_text(adr_path, text.replace(config.statusnew, config.statusacc, 1))
+
+    result = approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+
+    assert result["status"] == "Accepted"  # the write still proceeds
+    assert any("status_create" in w and "marker" in w for w in result["warnings"])
 
 
 def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -102,7 +121,8 @@ def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
         approve.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "family-scan-incomplete"
-    assert "|Created|Proposed (2026-01-01)|" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
+    # unchanged, no write made
+    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
 
 def test_approve_rejects_already_approved(tmp_path):
@@ -530,7 +550,7 @@ def test_reject_happy_path(tmp_path):
     assert result["status"] == "Rejected"
     assert result["undone_predecessor"] is None
     text = adr_path.read_text(encoding="utf-8")
-    assert "|Changed|Rejected (2026-01-02)|" in text
+    assert "|Changed|Rejected (2026-01-02) <!-- Rejected -->|" in text
 
 
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -556,7 +576,8 @@ def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
         reject.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "family-scan-incomplete"
-    assert "|Created|Proposed (2026-01-01)|" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
+    # unchanged, no write made
+    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
 
 def test_reject_rejects_already_resolved(tmp_path):
@@ -1146,4 +1167,4 @@ def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 
     assert main(["approve", "-f", str(adr_path), "-r", "2026-01-02"]) == EXIT_SUCCESS
-    assert "|Changed|Accepted (2026-01-02)|" in adr_path.read_text(encoding="utf-8")
+    assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in adr_path.read_text(encoding="utf-8")

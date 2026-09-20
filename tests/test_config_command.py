@@ -230,6 +230,91 @@ def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
     assert (tmp_path / "decisions").is_dir()
 
 
+def test_config_rejects_a_status_label_change_when_decisions_already_exist(tmp_path):
+    """ADR004V01: a status label change on a repository that already has
+    recognized decisions can break a marker-less status cell's text
+    match -- same shape guard as folderadr's own, confirmed live before
+    this existed (changing --statusnew made an existing decision
+    is_valid: false)."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    before = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["statusnew"], "existing_decisions": 1}
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.statusnew == before.statusnew  # nothing was written
+
+
+def test_config_rejects_a_separator_change_when_decisions_already_exist(tmp_path):
+    """ADR004V01: a separator change on a repository that already has
+    recognized decisions breaks filename recognition entirely, with no
+    marker option available for it at all (unlike status labels) -- this
+    guard is `separator`'s only protection, permanently, once any
+    decision exists."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["separator"], "existing_decisions": 1}
+
+
+def test_config_rejects_multiple_guarded_fields_changed_at_once_naming_all_of_them(tmp_path):
+    """A single call changing more than one guarded field at once must
+    name every changed field in `data.changed_fields`, not just the
+    first one found -- the one shared guard covers both fields with one
+    scan, not independently per field."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusacc", "Approved", "--separator", "_"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert set(excinfo.value.data["changed_fields"]) == {"statusacc", "separator"}
+
+
+def test_config_status_or_separator_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """Mirrors the folderadr guard's own equivalent test -- status-or-
+    separator-change-scan-incomplete (the new guard's own fail-closed
+    path) needs the same CLI-level coverage."""
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
+
+    assert excinfo.value.code == "status-or-separator-change-scan-incomplete"
+
+
+def test_config_allows_a_status_label_change_when_no_decisions_exist_yet(tmp_path):
+    """Companion to the rejection tests above: an empty (or missing)
+    decisions folder has nothing to break, so the change must still go
+    through."""
+    tmp_path = _init_repo(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
+
+    assert result["updated_fields"] == ["statusnew"]
+
+
 def test_config_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tmp_path, monkeypatch):
     """The new folder is created BEFORE the
     config write commits -- a failure creating it aborts cleanly with

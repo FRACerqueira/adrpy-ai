@@ -138,7 +138,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config)
+            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
             # version never rewrites its own source (only its BODY is
             # carried into a newly created file) -- encoding_repaired_
             # warning's "the file has been rewritten" claim is never true

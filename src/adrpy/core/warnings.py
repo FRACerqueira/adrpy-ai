@@ -116,6 +116,22 @@ def excluded_candidate_warning(paths):
     )
 
 
+def marker_label_mismatch_warning(header):
+    """ADR004V01: a hidden canonical status marker takes precedence over
+    the status cell's visible label text when both are present. If they
+    resolve to a valid but DIFFERENT status, that combination only
+    happens when the visible word was hand-edited after the marker was
+    written -- worth surfacing, since otherwise the marker's own
+    silent-override would leave zero signal that this happened."""
+    if not header.marker_label_mismatches:
+        return None
+    names = ", ".join(header.marker_label_mismatches)
+    return (
+        f"{names}: the status cell's hidden marker and its visible label text disagree -- the marker "
+        "(authoritative) was used; the visible word may have been hand-edited after the marker was written."
+    )
+
+
 def encoding_repaired_source_warning(path):
     """For a read-only source whose BODY is carried into a newly created
     file (version/revise) -- `path` itself is never rewritten by these

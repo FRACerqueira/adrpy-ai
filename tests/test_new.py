@@ -33,7 +33,7 @@ def test_new_creates_first_decision(tmp_path):
     assert b"\r\r\n" not in raw  # regression: newline=os.linesep on already-CRLF content doubles every CR
     text = raw.decode("utf-8")
     assert "|File title md|Use PostgreSQL|" in text
-    assert "|Created|Proposed (2026-01-01)|" in text
+    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text
     assert "|Revision||" in text  # fixture's lenrevision == 0
 
 

@@ -134,7 +134,7 @@ def test_revise_happy_path(tmp_path):
     assert "|Version|01|" in text  # version unchanged
     assert "|Revision|02|" in text
     assert "|Domain|Backend|" in text  # target's own value
-    assert "|Created|Proposed (2026-01-05)|" in text
+    assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in text
 
 
 def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):

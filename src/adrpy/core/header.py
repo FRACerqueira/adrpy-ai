@@ -5,6 +5,7 @@ position and the surrounding pipe characters.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import date as date_cls
 
@@ -16,6 +17,19 @@ _STATUS_CONFIG_FIELD = {
     "Rejected": "statusrej",
     "Superseded": "statussup",
 }
+
+# ADR004V01: a fixed, non-translatable marker written after the status
+# cell's date -- in the trailing space both this parser and the real
+# AdrPlus's own ParseStatusLine already ignore for date purposes (proven
+# in production by the Superseded row's own ": <number>" suffix below).
+# Recognizing it takes recognition of a decision written under this
+# scheme off the repository's CURRENT statusnew/statusacc/statusrej/
+# statussup text entirely, so a later label or language change can never
+# again break it. Absent (any file written before this existed) falls
+# back to the same label-text match as before.
+_CANONICAL_MARKER_PATTERN = re.compile(
+    r"<!--\s*(" + "|".join(_STATUS_CONFIG_FIELD.keys()) + r")\s*-->"
+)
 
 
 @dataclass
@@ -98,7 +112,8 @@ def _status_row(config, row_label, status, date_value, suffix=""):
         return f"|{row_label}||"
     status_text = getattr(config, _STATUS_CONFIG_FIELD[status])
     day = (date_value or date_cls.today()).isoformat()
-    return f"|{row_label}|{status_text} ({day}){suffix}|"
+    marker = f" <!-- {status} -->"
+    return f"|{row_label}|{status_text} ({day}){marker}{suffix}|"
 
 
 @dataclass
@@ -119,6 +134,13 @@ class HeaderParseResult:
     status_change: str | None = None
     date_change: date_cls | None = None
     superseded_by_file: str | None = None
+    # ADR004V01: names which of status_create/status_update/status_change
+    # carried BOTH a canonical marker and a label-text match, where the two
+    # disagreed (the marker still wins for the field's own resolved value
+    # above) -- a hand edit of the visible word after the marker was
+    # written, not the routine, expected case of a label/language change
+    # simply no longer matching an existing marker-less file's old text.
+    marker_label_mismatches: tuple = ()
 
 
 def parse_header(lines, config):
@@ -184,34 +206,40 @@ def parse_header(lines, config):
         return result
     result.domain = domain
 
+    mismatches = []
+
     created_text = _extract_cell(lines[8])
     if not lines[8].startswith("|") or created_text is None:
         result.error = "adr-header-status-created-not-found"
         return result
     if created_text:
-        status, parsed_date, error = _parse_status_cell(created_text, config)
+        status, parsed_date, mismatch, error = _parse_status_cell(created_text, config)
         if error:
             result.error = error
             return result
         result.status_create, result.date_create = status, parsed_date
+        if mismatch:
+            mismatches.append("status_create")
 
     changed_text = _extract_cell(lines[9])
     if not lines[9].startswith("|") or changed_text is None:
         result.error = "adr-header-status-updated-not-found"
         return result
     if changed_text:
-        status, parsed_date, error = _parse_status_cell(changed_text, config)
+        status, parsed_date, mismatch, error = _parse_status_cell(changed_text, config)
         if error:
             result.error = error
             return result
         result.status_update, result.date_update = status, parsed_date
+        if mismatch:
+            mismatches.append("status_update")
 
     superseded_text = _extract_cell(lines[10])
     if not lines[10].startswith("|") or superseded_text is None:
         result.error = "adr-header-status-superseded-not-found"
         return result
     if superseded_text:
-        status, parsed_date, error = _parse_status_cell(superseded_text, config)
+        status, parsed_date, mismatch, error = _parse_status_cell(superseded_text, config)
         if error:
             result.error = error
             return result
@@ -221,11 +249,14 @@ def parse_header(lines, config):
             return result
         result.status_change, result.date_change = status, parsed_date
         result.superseded_by_file = superseded_text[colon_index + 1 :].strip()
+        if mismatch:
+            mismatches.append("status_change")
 
     if not (lines[11].startswith("<!-- ") and lines[11].rstrip().endswith(" -->")):
         result.error = "adr-header-comment-not-found"
         return result
 
+    result.marker_label_mismatches = tuple(mismatches)
     result.is_valid = True
     return result
 
@@ -241,10 +272,25 @@ def _extract_cell(line):
 
 
 def _parse_status_cell(text, config):
+    """Returns (status, date, marker_label_mismatch, error).
+
+    ADR004V01: a canonical marker after the date's closing `)`, when
+    present, decides `status` on its own -- the repository's CURRENT
+    statusnew/statusacc/statusrej/statussup no longer has any say, so a
+    later label or language change can never again break recognition of
+    a file written under this scheme. Falls back to the pre-existing
+    label-text match when no marker is present (any file written before
+    this existed).
+
+    The label match is still attempted even when a marker is present,
+    purely to detect `marker_label_mismatch`: the label legitimately no
+    longer matching anything current (the routine case after a label/
+    language change) is NOT a mismatch -- only a label that still
+    resolves, but to a DIFFERENT status than the marker, is."""
     open_paren = text.find("(")
     close_paren = text.find(")")
     if open_paren < 0 or close_paren < 0 or close_paren < open_paren:
-        return None, None, "status-line-format-invalid"
+        return None, None, False, "status-line-format-invalid"
 
     status_text = text[:open_paren].strip()
     label_to_status = {
@@ -253,20 +299,28 @@ def _parse_status_cell(text, config):
         config.statusrej: "Rejected",
         config.statussup: "Superseded",
     }
-    status = next(
+    label_status = next(
         (status for label, status in label_to_status.items() if label.lower() == status_text.lower()),
         None,
     )
-    if status is None:
-        return None, None, "status-line-unknown-status"
+
+    marker_match = _CANONICAL_MARKER_PATTERN.search(text[close_paren + 1 :])
+    if marker_match:
+        status = marker_match.group(1)
+        mismatch = label_status is not None and label_status != status
+    else:
+        status = label_status
+        mismatch = False
+        if status is None:
+            return None, None, False, "status-line-unknown-status"
 
     date_text = text[open_paren + 1 : close_paren].strip()
     try:
         parsed_date = date_cls.fromisoformat(date_text)
     except ValueError:
-        return None, None, "status-line-date-invalid"
+        return None, None, False, "status-line-date-invalid"
 
-    return status, parsed_date, None
+    return status, parsed_date, mismatch, None
 
 
 def counts_as_family_member(header):

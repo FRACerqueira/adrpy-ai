@@ -24,6 +24,7 @@ from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
+    reject_status_or_separator_change_if_decisions_exist,
     resolve_target_and_config,
     verify_folderadr_unchanged_since_lock,
 )
@@ -88,7 +89,12 @@ def describe():
                     "of silently orphaning them (same rule as the `config` command's own --folderadr guard); "
                     "if that check itself can't be completed (a subdirectory couldn't be scanned), fails "
                     "closed instead with folderadr-change-scan-incomplete rather than assuming nothing was "
-                    "there. On this same already-existing-repository path, may also fail with "
+                    "there. Likewise, if the seed's own statusnew/statusacc/statusrej/statussup/separator "
+                    "differ from the current ones AND the repository already has recognized decisions, fails "
+                    "with status-or-separator-change-blocked-by-existing-decisions (ADR004V01; same rule as "
+                    "the `config` command's own guard for these fields) -- or status-or-separator-change-"
+                    "scan-incomplete if that check itself can't be completed. On this same already-existing-"
+                    "repository path, may also fail with "
                     "repository-locked, lock-lost (see this command's own top-level description), or "
                     "folderadr-changed-after-lock-acquired (a concurrent config change moved folderadr while "
                     "this call was acquiring the lock -- retry) -- never on a genuinely fresh path, which "
@@ -225,6 +231,11 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         reject_folderadr_change_if_decisions_exist(
             old_folder, old_config.folderadr, config.folderadr, old_config, warnings=warnings
         )
+        # ADR004V01: --seed replacing an ALREADY-existing repository's
+        # config is exactly as capable of breaking status-label/separator
+        # recognition of existing decisions as `config` is -- same guard,
+        # same pre-edit `old_folder`/`old_config`.
+        reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, config, warnings=warnings)
 
     # Same as scan_decisions/explore/migrate -- an is_within-excluded
     # candidate is reported, not dropped with zero signal, since these are

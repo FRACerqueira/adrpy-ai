@@ -150,5 +150,10 @@ def _build_entry(path, config):
             # lossy-decoded -- explore is a read-only report, the natural
             # place for this visibility.
             "encoding_repaired": encoding_repaired,
+            # ADR004V01: names which status field(s), if any, had a
+            # marker/label disagreement -- explore lists every decision,
+            # not just the one a write command happens to be acting on,
+            # so this is per-file data here rather than a warning.
+            "marker_label_mismatches": list(header.marker_label_mismatches),
         },
     }

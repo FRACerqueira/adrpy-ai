@@ -198,6 +198,11 @@ def run(args):
                         ) from error
                     if encoding_repaired:
                         unreliable_files.append(str(candidate))
+                    # Deliberately does not surface header.marker_label_
+                    # mismatches (ADR004V01) here -- this scan is a bulk
+                    # eligibility pass over every candidate, not a report
+                    # on one specific target file the way read_target's
+                    # own warning already covers.
                     entries.append((parsed, candidate, parse_header(lines, config)))
 
                 # Same as scan_decisions/explore -- an is_within-excluded

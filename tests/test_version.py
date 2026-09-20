@@ -125,7 +125,7 @@ def test_version_happy_path(tmp_path):
     assert "|Version|02|" in text
     assert "|Domain|Backend|" in text  # inherited from latest
     assert "|Scope|Data|" in text
-    assert "|Created|Proposed (2026-01-05)|" in text
+    assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in text
     assert "# body" not in text  # body carried forward from the source (template, not literal marker)
     # No test pinned the exact
     # empty-list value on a genuine happy path, only that the key exists.
