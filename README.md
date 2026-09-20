@@ -35,7 +35,14 @@ A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueir
 
 ## Installation
 
-adrpy-ai isn't published to PyPI yet. Install from source:
+```bash
+pip install adrpy-ai
+adrpy help
+```
+
+Requires Python 3.11+.
+
+To install from source instead — for development, or to run a specific commit:
 
 ```bash
 git clone https://github.com/FRACerqueira/adrpy-ai.git
@@ -43,8 +50,6 @@ cd adrpy-ai
 pip install .
 adrpy help
 ```
-
-Requires Python 3.11+.
 
 For development (running the test suite), see [Contributing](#contributing).
 
