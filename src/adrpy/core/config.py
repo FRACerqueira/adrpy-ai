@@ -148,6 +148,18 @@ def load_repo_config(path):
     return parse_repo_config(text)
 
 
+def default_repo_config_text():
+    """The bundled, built-in default -- `init`'s own last-resort fallback
+    (no --seed, no --language, no install-level config), and reused
+    verbatim wherever else that same built-in default needs to be shown
+    or seeded from, so there is exactly one place that reads this
+    resource."""
+    from importlib import resources
+
+    resource = resources.files("adrpy.resources").joinpath("default_repo_config.json")
+    return resource.read_text(encoding="utf-8")
+
+
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must

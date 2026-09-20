@@ -36,6 +36,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "version",
+        "summary": "Creates a new major version of an Accepted/Rejected decision.",
         "description": (
             "Creates a new major version of an Accepted/Rejected decision. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "

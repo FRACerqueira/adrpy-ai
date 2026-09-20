@@ -129,6 +129,7 @@ def _field_description(field):
 def describe():
     return {
         "name": "config",
+        "summary": "Reads or updates an existing repository's own adr-config.adrplus.",
         "description": (
             "Reads or updates fields of an existing repository's adr-config.adrplus. "
             "With no field flags, reads the current config back (read-only, no write). "

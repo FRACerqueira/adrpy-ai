@@ -13,7 +13,7 @@ adr-config.adrplus, so there is no separate schema to maintain here.
 import os
 from pathlib import Path
 
-from adrpy.core.config import parse_repo_config, read_config_text
+from adrpy.core.config import default_repo_config_text, parse_repo_config, read_config_text
 
 _APP_DIR_NAME = "adrpy"
 _FILE_NAME = "install-config.json"
@@ -46,3 +46,17 @@ def read_install_config_text(path=None):
     text = read_config_text(target)
     parse_repo_config(text)  # validates; raises CommandError on corruption
     return text
+
+
+def resolve_effective_default_config_text():
+    """The config text a fresh `init` (no --seed, no --language) would
+    actually use today: this machine's own install-level config if one
+    exists, or the built-in default otherwise. Shared with `init`'s own
+    resolution (same two-way choice) and `help`'s own preview of what a
+    fresh `init` would produce, so the three can never silently drift
+    apart. Returns (source, text) -- source is "install-config" or
+    "built-in"."""
+    install_text = read_install_config_text()
+    if install_text is not None:
+        return "install-config", install_text
+    return "built-in", default_repo_config_text()

@@ -37,6 +37,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "reject",
+        "summary": "Marks a Proposed decision Rejected.",
         "description": (
             "Marks a Proposed decision as Rejected. If this decision is itself a successor "
             "(created by `supersede`), also reverts the predecessor's Superseded status -- the "

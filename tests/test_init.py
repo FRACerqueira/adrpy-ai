@@ -125,7 +125,7 @@ def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(t
 
     init.run(["--path", str(tmp_path)])  # fresh bootstrap: unlocked by design, a separate case
 
-    resource_text = init._default_config_text()
+    resource_text = init.default_repo_config_text()
     seed = json.loads(resource_text)
     seed["prefix"] = "SEED"
     seed_path = tmp_path / "seed.json"
@@ -204,7 +204,7 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
 
-    seed = json.loads(init._default_config_text())
+    seed = json.loads(init.default_repo_config_text())
     seed["folderadr"] = "decisions"
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
@@ -239,7 +239,7 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
 
     monkeypatch.setattr(os, "scandir", flaky_scandir)
 
-    seed = json.loads(init._default_config_text())
+    seed = json.loads(init.default_repo_config_text())
     seed["folderadr"] = "decisions"
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
@@ -272,7 +272,7 @@ def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, mon
 
     monkeypatch.setattr(init, "load_repo_config", lambda path: stale_bootstrap)
 
-    seed = json.loads(init._default_config_text())  # seed's own folderadr == "doc/adr" (default, == stale value)
+    seed = json.loads(init.default_repo_config_text())  # seed's own folderadr == "doc/adr" (default, == stale value)
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
 
@@ -306,7 +306,7 @@ def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
 
     monkeypatch.setattr(os, "scandir", flaky_scandir)
 
-    seed = json.loads(init._default_config_text())
+    seed = json.loads(init.default_repo_config_text())
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
 
@@ -324,7 +324,7 @@ def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created
     directory that doesn't exist."""
     init.run(["--path", str(tmp_path)])
 
-    seed = json.loads(init._default_config_text())
+    seed = json.loads(init.default_repo_config_text())
     seed["folderadr"] = "newfolder"
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")

@@ -30,6 +30,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "undo",
+        "summary": "Reverts a decision's Accepted/Rejected status back to Proposed.",
         "description": (
             "Reverts a decision's Accepted/Rejected status back to Proposed. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "

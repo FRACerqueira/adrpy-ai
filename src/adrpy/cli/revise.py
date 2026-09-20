@@ -40,6 +40,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "revise",
+        "summary": "Creates a new revision (wording fix) of an Accepted/Rejected decision.",
         "description": (
             "Creates a new revision (wording fix) of an Accepted/Rejected decision. "
             "Requires the repository's lenrevision to be > 0 (see the `config` command); "

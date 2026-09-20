@@ -29,6 +29,7 @@ from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_w
 def describe():
     return {
         "name": "new",
+        "summary": "Creates a new decision, status Proposed.",
         "description": (
             "Creates a new decision with status Proposed. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "

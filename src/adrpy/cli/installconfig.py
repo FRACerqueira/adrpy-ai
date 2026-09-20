@@ -147,6 +147,10 @@ def _default_config_text():
 def describe():
     return {
         "name": "installconfig",
+        "summary": (
+            "Reads or updates the per-user, install-level default config (seeds new repositories, "
+            "supplies a migrate fallback)."
+        ),
         "description": (
             "Reads or updates the per-user install-level config (ADR002V01) -- used by `init` as its "
             "default seed when no --seed/--language is given, and by `migrate` as a migrationpattern "

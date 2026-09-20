@@ -14,7 +14,7 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.config import load_repo_config, parse_repo_config, read_config_text
+from adrpy.core.config import default_repo_config_text, load_repo_config, parse_repo_config, read_config_text
 from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
@@ -48,6 +48,7 @@ SUPPORTED_LANGUAGES = (
 def describe():
     return {
         "name": "init",
+        "summary": "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder.",
         "description": (
             "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
             "With no --seed and no --language, seeds from the install-level config (see the "
@@ -180,7 +181,7 @@ def run(args):
     elif install_config_text is not None:
         config_text = install_config_text
     else:
-        config_text = _default_config_text()
+        config_text = default_repo_config_text()
         used_built_in_default_uninformed = True
 
     config = parse_repo_config(config_text)
@@ -304,11 +305,6 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     return created
 
 
-def _default_config_text():
-    resource = resources.files("adrpy.resources").joinpath("default_repo_config.json")
-    return resource.read_text(encoding="utf-8")
-
-
 def _load_language_pack(language):
     if language not in SUPPORTED_LANGUAGES:
         raise CommandError(
@@ -325,7 +321,7 @@ def _default_config_text_for_language(language):
     lenseq/lenversion/lenrevision, casetransform, migrationpattern) is
     language-independent, so it keeps the same built-in default
     regardless of --language."""
-    base = json.loads(_default_config_text())
+    base = json.loads(default_repo_config_text())
     base.update(_load_language_pack(language))
     return json.dumps(base, indent=2, ensure_ascii=False)
 

@@ -31,6 +31,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "approve",
+        "summary": "Marks a Proposed decision Accepted.",
         "description": (
             "Marks a Proposed decision as Accepted. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "

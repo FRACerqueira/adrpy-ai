@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from adrpy.__main__ import main
 from adrpy.core.output import EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR
@@ -182,6 +183,89 @@ def test_help_lists_commands(capsys):
     assert payload["data"]["warnings"] == []
 
 
+def test_every_registered_command_has_a_non_empty_summary():
+    """Structural, not a hardcoded list of names -- a future command
+    added to COMMANDS without its own `summary` would otherwise show up
+    blank in the bare `adrpy help` listing with nothing catching it."""
+    for name, command in COMMANDS.items():
+        summary = command.describe().get("summary")
+        assert summary, f"{name} has no summary"
+
+
+def test_bare_help_is_summarized_by_default(capsys):
+    exit_code = main(["help"])
+    payload = json.loads(capsys.readouterr().out)["data"]
+
+    assert exit_code == EXIT_SUCCESS
+    assert len(payload["commands"]) == len(COMMANDS)
+    for entry in payload["commands"]:
+        assert set(entry.keys()) == {"name", "summary"}
+    assert "arguments" not in payload["commands"][0]
+    assert "description" not in payload["commands"][0]
+    assert "hint" in payload
+    assert "defaults" in payload
+
+
+def test_bare_help_defaults_reflects_the_built_in_default_with_no_install_level_config(capsys):
+    """The autouse fixture forces no install-level config on this
+    machine for every test -- this is the baseline `source` value."""
+    exit_code = main(["help"])
+    payload = json.loads(capsys.readouterr().out)["data"]
+
+    assert exit_code == EXIT_SUCCESS
+    assert payload["defaults"]["source"] == "built-in"
+    assert payload["defaults"]["folderadr"] == "doc/adr"
+    assert payload["defaults"]["prefix"] == "ADR"
+    assert "headertitlefile" not in payload["defaults"]
+
+
+def test_bare_help_defaults_reflects_an_install_level_config_when_one_exists(capsys, monkeypatch):
+    from adrpy.core import install_config
+
+    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    monkeypatch.setattr(install_config, "read_install_config_text", lambda *args, **kwargs: install_text)
+
+    exit_code = main(["help"])
+    payload = json.loads(capsys.readouterr().out)["data"]
+
+    assert exit_code == EXIT_SUCCESS
+    assert payload["defaults"]["source"] == "install-config"
+
+
+def test_help_full_returns_every_commands_complete_contract(capsys):
+    exit_code = main(["help", "--full"])
+    payload = json.loads(capsys.readouterr().out)["data"]
+
+    assert exit_code == EXIT_SUCCESS
+    assert payload["commands"] == [command.describe() for command in COMMANDS.values()]
+    assert "defaults" not in payload
+    assert "hint" not in payload
+
+
+def test_help_full_is_ignored_when_a_specific_command_is_named(capsys):
+    exit_code = main(["help", "init", "--full"])
+    payload = json.loads(capsys.readouterr().out)["data"]
+
+    assert exit_code == EXIT_SUCCESS
+    assert payload["commands"] == [COMMANDS["init"].describe()]
+
+
+def test_help_rejects_an_unknown_flag(capsys):
+    exit_code = main(["help", "--bogus"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == EXIT_USAGE_ERROR
+    assert payload["success"] is False
+
+
+def test_help_rejects_more_than_one_command_name(capsys):
+    exit_code = main(["help", "init", "new"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == EXIT_USAGE_ERROR
+    assert payload["success"] is False
+
+
 def test_top_level_help_flag_matches_help_command(capsys):
     exit_code = main(["--help"])
     payload = json.loads(capsys.readouterr().out)
@@ -229,21 +313,12 @@ def test_help_describes_single_command(capsys):
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == EXIT_SUCCESS
-    assert payload["data"]["commands"] == [
-        {
-            "name": "help",
-            "description": "Lists available commands, or describes one command.",
-            "arguments": [
-                {
-                    "name": "command",
-                    "type": "string",
-                    "required": False,
-                    "positional": True,
-                    "description": "Name of the command to describe.",
-                },
-            ],
-        }
-    ]
+    # Compared against the live describe() output, not a hand-copied
+    # literal -- the whole point of this command is that its own contract
+    # is the single source of truth; hardcoding a copy here would just
+    # recreate the drift risk this project's own describe()-driven docs
+    # exist to avoid.
+    assert payload["data"]["commands"] == [COMMANDS["help"].describe()]
 
 
 def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch):

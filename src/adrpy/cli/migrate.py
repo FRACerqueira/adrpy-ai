@@ -41,6 +41,7 @@ from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orp
 def describe():
     return {
         "name": "migrate",
+        "summary": "Adds an adrpy-compliant header to existing, hand-written decision files.",
         "description": (
             "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
             "Requires the repository's migrationpattern to be set, either directly (see the `config` "

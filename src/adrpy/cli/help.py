@@ -1,10 +1,34 @@
 """`help` command: lists available commands, or describes one of them."""
 
+_DEFAULTS_PREVIEW_FIELDS = (
+    "folderadr",
+    "prefix",
+    "separator",
+    "casetransform",
+    "lenseq",
+    "lenversion",
+    "lenrevision",
+    "statusnew",
+    "statusacc",
+    "statusrej",
+    "statussup",
+)
+
 
 def describe():
     return {
         "name": "help",
-        "description": "Lists available commands, or describes one command.",
+        "summary": "Lists every command, or describes one of them in full.",
+        "description": (
+            "Lists available commands, or describes one command. With no `command` and no --full, "
+            "lists every command's name and one-line `summary` only, plus `defaults` (the config "
+            "fields a fresh `init` on this machine would actually produce -- `source` names whether "
+            "that comes from this machine's own install-level config or the built-in default) and a "
+            "`hint` pointing at `--full`/a specific command name for the complete contract. --full "
+            "returns every command's full description and argument list in one call, the same shape "
+            "this command always returned before summaries existed. Naming a specific `command` "
+            "always returns its full description and argument list, regardless of --full."
+        ),
         "arguments": [
             {
                 "name": "command",
@@ -19,23 +43,69 @@ def describe():
                 "positional": True,
                 "description": "Name of the command to describe.",
             },
+            {
+                "name": "full",
+                "type": "switch",
+                "required": False,
+                "description": (
+                    "Return every command's full description and argument list at once, instead of "
+                    "the default summarized listing. Ignored when `command` is also given -- a single "
+                    "named command is already returned in full either way."
+                ),
+            },
         ],
     }
 
 
 def run(args):
-    from adrpy.core.errors import CommandError
+    from adrpy.core.errors import CommandError, UsageError
     from adrpy.core.registry import COMMANDS
 
-    if args:
-        name = args[0]
+    full = False
+    positional = []
+    for token in args:
+        if token == "--full":
+            full = True
+        elif token.startswith("--"):
+            raise UsageError(f"Unknown argument: {token}")
+        else:
+            positional.append(token)
+    if len(positional) > 1:
+        raise UsageError(f"Unknown argument: {positional[1]}")
+
+    if positional:
+        name = positional[0]
         command = COMMANDS.get(name)
         if command is None:
             raise CommandError("unknown-command", f"No such command: {name}")
         return {"commands": [command.describe()], "warnings": []}
 
-    # Same reasoning as explore's own "warnings" key -- present
-    # unconditionally across every other command's result, even when
-    # empty, so a generic wrapper doesn't need a special case for the two
-    # read-only commands.
-    return {"commands": [command.describe() for command in COMMANDS.values()], "warnings": []}
+    if full:
+        # Same reasoning as explore's own "warnings" key -- present
+        # unconditionally across every other command's result, even when
+        # empty, so a generic wrapper doesn't need a special case for the
+        # two read-only commands.
+        return {"commands": [command.describe() for command in COMMANDS.values()], "warnings": []}
+
+    return {
+        "commands": [
+            {"name": name, "summary": command.describe()["summary"]} for name, command in COMMANDS.items()
+        ],
+        "defaults": _defaults_preview(),
+        "hint": (
+            "Run `adrpy help <command>` for one command's full contract, or `adrpy help --full` for "
+            "every command's full contract at once."
+        ),
+        "warnings": [],
+    }
+
+
+def _defaults_preview():
+    from adrpy.core.config import parse_repo_config
+    from adrpy.core.install_config import resolve_effective_default_config_text
+
+    source, text = resolve_effective_default_config_text()
+    config = parse_repo_config(text)
+    preview = {"source": source}
+    preview.update({field: getattr(config, field) for field in _DEFAULTS_PREVIEW_FIELDS})
+    return preview

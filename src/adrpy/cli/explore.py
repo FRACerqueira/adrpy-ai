@@ -20,6 +20,7 @@ from adrpy.core.warnings import excluded_candidate_warning
 def describe():
     return {
         "name": "explore",
+        "summary": "Lists every decision file in the repository, on a best-effort basis.",
         "description": (
             "Lists every decision file in the repository, recognized or not, on a best-effort basis: "
             "a file excluded for escaping the repository boundary, a subdirectory that could not be "

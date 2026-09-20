@@ -47,6 +47,7 @@ _STRUCTURED_FIELDS = ("front", "severity", "resolution")
 def describe():
     return {
         "name": "log",
+        "summary": "Writes a decision-log entry -- the lighter-weight sibling of a formal ADR.",
         "description": (
             "Writes a decision-log entry: the lighter-weight sibling of a formal ADR, for an event worth "
             "recording that is not itself an architectural decision (see doc/decision-log-workflow.md for "

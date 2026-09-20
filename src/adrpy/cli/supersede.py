@@ -41,6 +41,7 @@ _INELIGIBILITY_DETAILS = {
 def describe():
     return {
         "name": "supersede",
+        "summary": "Marks an Accepted decision Superseded and creates its successor.",
         "description": (
             "Marks an Accepted decision as Superseded and creates its successor. "
             "Refuses with family-member-superseded if another member of the same family has "
