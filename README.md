@@ -1,4 +1,4 @@
-<img src="src/adrpy/icon.png" width="128" alt="adrpy-ai icon">
+<img src="src/adrpy/icon.png" width="160" alt="adrpy-ai icon">
 
 # adrpy-ai
 
