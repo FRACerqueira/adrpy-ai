@@ -89,7 +89,13 @@ def describe():
                     "of silently orphaning them (same rule as the `config` command's own --folderadr guard); "
                     "if that check itself can't be completed (a subdirectory couldn't be scanned), fails "
                     "closed instead with folderadr-change-scan-incomplete rather than assuming nothing was "
-                    "there. Likewise, if the seed's own statusnew/statusacc/statusrej/statussup/separator/"
+                    "there. The NEW folder is checked too (same rule as `config`'s own guard): if it already "
+                    "exists and holds a file that would newly parse as a decision under the resulting config, "
+                    "fails with folderadr-change-would-adopt-unrelated-files (data.adopted_files lists the "
+                    "file paths) instead of silently absorbing it and corrupting next-number allocation -- "
+                    "the same scan-incomplete code above covers an unreadable subdirectory under the new "
+                    "folder too; skipped entirely when the new folder does not exist yet. Likewise, if the "
+                    "seed's own statusnew/statusacc/statusrej/statussup/separator/"
                     "migrationpattern differ from the current ones in a way that would break recognition of "
                     "an existing decision, fails with status-or-separator-change-blocked-by-existing-decisions "
                     "(ADR004V01/V02; same rule as the `config` command's own guard for these fields -- status "
@@ -97,8 +103,13 @@ def describe():
                     "dependency is current-scheme-only, but a value already present in a legacy filename could "
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
-                    "exists; for those last two this is a PERMANENT block once the decisions each one actually "
-                    "protects exist, with no migration path. data.changed_fields on this error names only the "
+                    "exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
+                    "migration path -- for the four status fields and --separator that means ANY recognized "
+                    "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already "
+                    "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
+                    "config change itself -- a marker-protected repository is blocked exactly the same as one "
+                    "with none); for --migrationpattern it means a LEGACY-scheme decision specifically. "
+                    "data.changed_fields on this error names only the "
                     "field(s) actually blocking, not necessarily every field the seed touched) -- or "
                     "status-or-separator-change-scan-incomplete if that check itself can't be completed (that "
                     "sibling error's own data.changed_fields DOES list every guarded field touched, since it "
@@ -249,7 +260,13 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         # against).
         old_folder = resolve_within(target, old_config.folderadr)
         reject_folderadr_change_if_decisions_exist(
-            old_folder, old_config.folderadr, config.folderadr, old_config, warnings=warnings
+            old_folder,
+            old_config.folderadr,
+            config.folderadr,
+            old_config,
+            target=target,
+            new_config=config,
+            warnings=warnings,
         )
         # ADR004V01: --seed replacing an ALREADY-existing repository's
         # config is exactly as capable of breaking status-label/separator

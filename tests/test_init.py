@@ -252,6 +252,31 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
+def test_init_seed_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tmp_path):
+    """Same class as config.py's own --folderadr adoption-check
+    (round-22 stability finding): --seed repointing folderadr at a
+    directory that already has an unrelated file matching the naming
+    scheme is exactly as capable of silently adopting it as `config` is."""
+    init.run(["--path", str(tmp_path)])
+    new_folder = tmp_path / "unrelated-docs"
+    new_folder.mkdir(parents=True)
+    (new_folder / "ADR001V01-unrelated.md").write_bytes(b"hand written, never a real decision\n")
+
+    seed = json.loads(init.default_repo_config_text())
+    seed["folderadr"] = "unrelated-docs"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+    assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["folderadr"] == "doc/adr"  # nothing was written
+
+
 def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_already_exist(tmp_path):
     """ADR004V01: --seed replacing an already-existing repository's config
     is exactly as capable of breaking status-label/separator recognition

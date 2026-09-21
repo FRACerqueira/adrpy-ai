@@ -102,7 +102,10 @@ def _field_description(field):
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
-            "characters; cannot be empty, contain '|', or contain a line-break-like character."
+            "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
+            "contain '(', ')', '<!--', or '-->' -- these four fields alone land inside the status cell's own "
+            "parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker), so one of these "
+            "characters could otherwise forge a date/marker the tool never wrote."
         )
     if field == "headerdisclaimer":
         return (
@@ -147,7 +150,12 @@ def describe():
             "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
             "names the count) rather than silently orphaning them at their old, still-real path; if that "
             "check itself can't be completed (a subdirectory couldn't be scanned), fails closed instead with "
-            "folderadr-change-scan-incomplete rather than assuming nothing was there. "
+            "folderadr-change-scan-incomplete rather than assuming nothing was there. The NEW folder is "
+            "checked too: if it already exists and holds a file that would newly parse as a decision under "
+            "the resulting config, fails with folderadr-change-would-adopt-unrelated-files "
+            "(data.adopted_files lists the file paths) instead of silently absorbing it and corrupting "
+            "next-number allocation -- the same scan-incomplete code above covers an unreadable subdirectory "
+            "under the new folder too. Skipped entirely when the new folder does not exist yet. "
             "--statusnew/--statusacc/--statusrej/--statussup/--separator/--migrationpattern can likewise only "
             "be changed while doing so would not break recognition of an existing decision (ADR004V01/V02) -- "
             "otherwise fails with status-or-separator-change-blocked-by-existing-decisions "
@@ -161,9 +169,14 @@ def describe():
             "the current-scheme parser too, silently reclassifying it, so --separator cannot be scoped to "
             "current-scheme decisions the way --migrationpattern safely can); --migrationpattern blocks only "
             "if a LEGACY-scheme decision exists (parse_filename, the current-scheme parser, never reads "
-            "migrationpattern, so no equivalent reclassification risk exists in that direction). For both "
-            "--separator and --migrationpattern this is a PERMANENT block once the decisions it actually "
-            "protects exist, with no migration path. Same scan-incomplete fail-closed shape as folderadr's "
+            "migrationpattern, so no equivalent reclassification risk exists in that direction). This is a "
+            "PERMANENT block once the decisions it actually protects exist, with no migration path -- for "
+            "--statusnew/--statusacc/--statusrej/--statussup and --separator that means ANY recognized "
+            "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already carry "
+            "it against a later label change, but does not exempt THIS GUARD from refusing the config change "
+            "itself -- the two are independent, and a marker-protected repository is blocked exactly the same "
+            "as one with none); for --migrationpattern it means a LEGACY-scheme decision specifically. Same "
+            "scan-incomplete fail-closed shape as folderadr's "
             "own guard: status-or-separator-change-scan-incomplete, whose own data.changed_fields DOES list "
             "every guarded field the call touched (not just the blocking ones) -- an unreadable subdirectory's "
             "own contents can't be ruled out for any guarded field, so this one fails closed unconditionally. "
@@ -293,7 +306,13 @@ def run(args):
             # `folder` (this same lock's own location) -- both are the
             # pre-edit state.
             reject_folderadr_change_if_decisions_exist(
-                folder, current.folderadr, new_config.folderadr, current, warnings=warnings
+                folder,
+                current.folderadr,
+                new_config.folderadr,
+                current,
+                target=target,
+                new_config=new_config,
+                warnings=warnings,
             )
 
             # ADR004V01: a statusnew/statusacc/statusrej/statussup or

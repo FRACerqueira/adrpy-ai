@@ -704,11 +704,77 @@ def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incom
     monkeypatch.setattr(os, "scandir", flaky_scandir)
 
     with pytest.raises(CommandError) as excinfo:
-        reject_folderadr_change_if_decisions_exist(old_folder, config.folderadr, "doc/adrB", config)
+        reject_folderadr_change_if_decisions_exist(
+            old_folder, config.folderadr, "doc/adrB", config, target=tmp_path, new_config=config
+        )
 
     assert excinfo.value.code == "folderadr-change-scan-incomplete"
     assert excinfo.value.data["folderadr"] == config.folderadr
     assert str(blocked) in excinfo.value.data["unreadable"][0]
+
+
+def test_reject_folderadr_change_if_decisions_exist_rejects_a_new_folder_that_would_adopt_an_unrelated_file(
+    tmp_path,
+):
+    """A round-22 stability finding: every check above is keyed on the OLD
+    folder -- none of them catch the NEW folderadr already containing an
+    unrelated pre-existing file that happens to match the naming scheme.
+    Confirmed live: pointing folderadr at such a directory silently
+    adopted the file as a decision, corrupting the next `new` call's own
+    number allocation (ADR008V01 instead of ADR001V01). Same shape hazard
+    as --separator's own adoption-check (ADR004V02), just triggered by a
+    folder move instead of a naming-rule change."""
+    config = load_repo_config(FIXTURE_PATH)
+    old_folder = tmp_path / config.folderadr
+    old_folder.mkdir(parents=True)
+
+    new_folder = tmp_path / "unrelated-docs"
+    new_folder.mkdir(parents=True)
+    (new_folder / "ADR001V01-unrelated.md").write_bytes(b"hand written, never a real decision\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_folderadr_change_if_decisions_exist(
+            old_folder, config.folderadr, "unrelated-docs", config, target=tmp_path, new_config=config
+        )
+
+    assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+    assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
+
+
+def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_that_does_not_exist_yet(tmp_path):
+    """Companion to the rejection test above: the overwhelmingly common
+    case -- pointing folderadr at a brand-new directory nothing has ever
+    written to -- must still go through. `find_unreadable_subdirectories`
+    treats a nonexistent path as unreadable (confirmed directly), so the
+    new-folder check must skip entirely when the new folder does not
+    exist yet, the same way `scan_decisions` itself already treats a
+    missing folder as empty rather than an error."""
+    config = load_repo_config(FIXTURE_PATH)
+    old_folder = tmp_path / config.folderadr
+    old_folder.mkdir(parents=True)
+
+    reject_folderadr_change_if_decisions_exist(
+        old_folder, config.folderadr, "brand-new-folder", config, target=tmp_path, new_config=config
+    )  # must not raise
+
+
+def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_with_unrecognized_content(tmp_path):
+    """Companion to the rejection test above: a new folder that already
+    exists but has nothing that would newly parse as a decision must
+    still go through -- this guard must not become a blanket refusal to
+    ever repoint folderadr at a non-empty directory."""
+    config = load_repo_config(FIXTURE_PATH)
+    old_folder = tmp_path / config.folderadr
+    old_folder.mkdir(parents=True)
+
+    new_folder = tmp_path / "existing-notes"
+    new_folder.mkdir(parents=True)
+    (new_folder / "readme.md").write_bytes(b"not decision-shaped at all\n")
+
+    reject_folderadr_change_if_decisions_exist(
+        old_folder, config.folderadr, "existing-notes", config, target=tmp_path, new_config=config
+    )  # must not raise
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")

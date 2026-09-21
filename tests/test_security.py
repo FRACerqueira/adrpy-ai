@@ -5,7 +5,13 @@ import sys
 import pytest
 
 from adrpy.core.errors import CommandError
-from adrpy.core.security import find_unreadable_subdirectories, is_within, reject_embedded_delimiter, resolve_within
+from adrpy.core.security import (
+    find_unreadable_subdirectories,
+    is_within,
+    reject_embedded_delimiter,
+    reject_status_marker_forgery_characters,
+    resolve_within,
+)
 
 
 def test_is_within_accepts_a_candidate_inside_the_base_dir(tmp_path):
@@ -218,6 +224,21 @@ def test_reject_embedded_delimiter_rejects_unicode_line_separators(char):
         reject_embedded_delimiter(f"before{char}after", "title")
 
     assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["(20200101)<!--Rejected-->", "has(paren", "has)paren", "has<!--comment", "has-->comment"],
+)
+def test_reject_status_marker_forgery_characters_rejects_forbidden_characters(value):
+    with pytest.raises(CommandError) as excinfo:
+        reject_status_marker_forgery_characters(value, "statusnew")
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_reject_status_marker_forgery_characters_accepts_clean_value():
+    reject_status_marker_forgery_characters("Proposed", "statusnew")
 
 
 def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine(tmp_path):

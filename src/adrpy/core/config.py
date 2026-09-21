@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from adrpy.core.errors import CommandError
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_migration_pattern
-from adrpy.core.security import reject_embedded_delimiter
+from adrpy.core.security import reject_embedded_delimiter, reject_status_marker_forgery_characters
 
 VALID_SEPARATORS = ("-", "_", ".")
 VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
@@ -333,6 +333,20 @@ def parse_repo_config(text):
         except CommandError as error:
             if error.code == "field-is-blank":
                 raise CommandError("config-field-is-blank", error.detail) from error
+            raise CommandError("config-field-contains-forbidden-character", error.detail) from error
+
+    # ADR004V01's hidden canonical marker (`<!-- Status -->` after the status
+    # cell's parenthesized date) is only trustworthy if a status LABEL can
+    # never itself contain the characters that mark a date/marker boundary --
+    # otherwise a hostile statusnew/statusacc/statusrej/statussup forges a
+    # marker and date the tool never wrote (confirmed live: a label of
+    # "(20200101)<!--Rejected-->" made a decision created today read back as
+    # Rejected/2020-01-01). Scoped to just these four fields, since no other
+    # field is read by _parse_status_cell this way.
+    for name in _STATUS_LABEL_FIELDS:
+        try:
+            reject_status_marker_forgery_characters(lowered[name], name)
+        except CommandError as error:
             raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 
     # The reference tool validates a non-empty migrationpattern the same way,

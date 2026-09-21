@@ -124,3 +124,24 @@ def reject_embedded_delimiter(value, field_name):
             "field-contains-forbidden-character",
             f"Field '{field_name}' cannot contain '|' or a line-break-like character.",
         )
+
+
+def reject_status_marker_forgery_characters(value, field_name):
+    """statusnew/statusacc/statusrej/statussup only -- lands verbatim in the
+    status cell that _parse_status_cell (core/header.py) also parses for the
+    decision's parenthesized date and, once ADR004V01 writes one, the hidden
+    canonical marker. That parser trusts the FIRST '(' and first ')' in the
+    cell to bound the date, then searches after it for a marker -- so a
+    label containing a well-formed '(date)<!--Status-->' substring forges a
+    marker and date the tool never wrote (confirmed live: a repository
+    seeded with `statusnew = "(20200101)<!--Rejected-->"` had a decision
+    created today read back as Rejected/2020-01-01 instead of
+    Proposed/today). Rejected outright, same shape as
+    reject_embedded_delimiter's own blacklist -- scoped to just these four
+    fields, since no other field is read by this parsing path."""
+    for forbidden in ("(", ")", "<!--", "-->"):
+        if forbidden in value:
+            raise CommandError(
+                "field-contains-forbidden-character",
+                f"Field '{field_name}' cannot contain '(', ')', '<!--', or '-->'.",
+            )

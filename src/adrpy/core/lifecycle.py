@@ -17,7 +17,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import find_unreadable_subdirectories, is_within
+from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import excluded_candidate_warning, marker_label_mismatch_warning
 
 
@@ -108,7 +108,9 @@ def scan_decisions(folder, config, warnings=None, *, strict=False, incomplete_co
     return found
 
 
-def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_folderadr, old_config, warnings=None):
+def reject_folderadr_change_if_decisions_exist(
+    old_folder, old_folderadr, new_folderadr, old_config, *, target, new_config, warnings=None
+):
     """Changing `folderadr` on a repository that already has recognized
     decisions makes every one of them invisible at its old, still-real
     path -- an orphaned-data risk no amount of "also create the new
@@ -127,7 +129,21 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
     gates a real safety decision --
     `existing == []` here is only trustworthy if the scan that produced
     it was actually complete. Fails closed instead of allowing an
-    orphaning it could not actually rule out."""
+    orphaning it could not actually rule out.
+
+    Also guards the opposite direction (a round-22 stability finding,
+    confirmed live): `new_folderadr` may already point at a directory
+    holding unrelated pre-existing content. Any of it that would be newly
+    recognized as a decision under `new_config` -- the rules that govern
+    every future scan of that directory -- gets silently adopted with no
+    warning at all, corrupting next-number allocation (confirmed live: a
+    single unrelated file matching the naming scheme made the next `new`
+    allocate ADR008V01 instead of ADR001V01). Same shape hazard as
+    --separator's own adoption-check (ADR004V02), just triggered by a
+    folder move instead of a naming-rule change. Skipped entirely when
+    the new folder does not exist yet -- the overwhelmingly common case,
+    and `find_unreadable_subdirectories` treats a missing path as
+    unreadable, which would otherwise block it."""
     if new_folderadr == old_folderadr:
         return
     unreadable = find_unreadable_subdirectories(old_folder)
@@ -148,6 +164,27 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
             data={"folderadr": old_folderadr, "existing_decisions": len(existing)},
             warnings=warnings,
         )
+
+    new_folder = resolve_within(target, new_folderadr)
+    if new_folder.is_dir():
+        new_unreadable = find_unreadable_subdirectories(new_folder)
+        if new_unreadable:
+            raise CommandError(
+                "folderadr-change-scan-incomplete",
+                f"Cannot safely determine whether '{new_folderadr}' already has unrelated content: "
+                f"{len(new_unreadable)} subdirectory/subdirectories could not be scanned.",
+                data={"folderadr": new_folderadr, "unreadable": new_unreadable},
+                warnings=warnings,
+            )
+        adopted = sorted((str(path) for _, _, path in scan_decisions(new_folder, new_config, warnings=warnings)))
+        if adopted:
+            raise CommandError(
+                "folderadr-change-would-adopt-unrelated-files",
+                f"Cannot change folderadr to '{new_folderadr}': {len(adopted)} file(s) already there would "
+                "silently become recognized decisions.",
+                data={"folderadr": new_folderadr, "adopted_files": adopted},
+                warnings=warnings,
+            )
 
 
 # ADR004V02: two groups, not one flat list -- `migrationpattern` only

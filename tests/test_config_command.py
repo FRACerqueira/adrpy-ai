@@ -239,6 +239,44 @@ def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
     assert (tmp_path / "decisions").is_dir()
 
 
+def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tmp_path):
+    """A round-22 stability finding, confirmed live: pointing folderadr at
+    a directory that already has an unrelated file matching the naming
+    scheme silently adopted it as a decision, corrupting the next `new`
+    call's own number allocation (ADR008V01 instead of ADR001V01 in the
+    live reproduction). Same shape guard as --separator's own
+    adoption-check (ADR004V02)."""
+    tmp_path = _init_repo(tmp_path)
+    new_folder = tmp_path / "unrelated-docs"
+    new_folder.mkdir(parents=True)
+    (new_folder / "ADR001V01-unrelated.md").write_bytes(b"hand written, never a real decision\n")
+    before = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderadr", "unrelated-docs"])
+
+    assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+    assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.folderadr == before.folderadr  # nothing was written
+
+
+def test_config_allows_a_folderadr_change_onto_a_directory_with_no_matching_content(tmp_path):
+    """Companion to the rejection test above: a new folder that already
+    exists but has nothing that would newly parse as a decision must
+    still go through -- this guard must not become a blanket refusal to
+    ever repoint folderadr at a non-empty directory."""
+    tmp_path = _init_repo(tmp_path)
+    new_folder = tmp_path / "existing-notes"
+    new_folder.mkdir(parents=True)
+    (new_folder / "readme.md").write_bytes(b"not decision-shaped at all\n")
+
+    result = config.run(["--path", str(tmp_path), "--folderadr", "existing-notes"])
+
+    assert result["updated_fields"] == ["folderadr"]
+
+
 def test_config_rejects_a_status_label_change_when_decisions_already_exist(tmp_path):
     """ADR004V01: a status label change on a repository that already has
     recognized decisions can break a marker-less status cell's text

@@ -258,6 +258,35 @@ def test_header_cell_field_with_embedded_pipe_is_rejected(field):
     assert excinfo.value.code == "config-field-contains-forbidden-character"
 
 
+@pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
+@pytest.mark.parametrize("payload", ["(20200101)<!--Rejected-->", "has(paren", "has)paren", "has<!--x", "hasx-->"])
+def test_status_label_with_marker_forgery_characters_is_rejected(field, payload):
+    """These four fields alone land inside _parse_status_cell's own
+    parenthesized-date-then-marker grammar (core/header.py) -- a label
+    containing '(', ')', '<!--', or '-->' can forge a date/marker the tool
+    never wrote (confirmed live: a statusnew of
+    '(20200101)<!--Rejected-->' made a decision created today read back
+    as Rejected/2020-01-01)."""
+    data = _valid_config_dict()
+    data[field] = payload  # short enough to fit every field's own length bound
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-field-contains-forbidden-character"
+
+
+def test_header_label_fields_are_not_scoped_by_the_status_marker_forgery_check():
+    """The marker-forgery check above must stay scoped to the four status
+    label fields -- header-row labels are never read by
+    _parse_status_cell, so a '(' in one of them is not part of this
+    vulnerability's own attack surface and must still be accepted."""
+    data = _valid_config_dict()
+    data["headertitlestatuscreated"] = "Status (new)"
+
+    parse_repo_config(json.dumps(data))  # must not raise
+
+
 def test_empty_required_string_field_is_rejected():
     data = _valid_config_dict()
     data["statusnew"] = ""
