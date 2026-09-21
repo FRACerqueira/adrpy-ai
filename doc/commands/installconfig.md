@@ -4,7 +4,7 @@
 
 # `adrpy installconfig`
 
-Reads or updates the per-user, install-level default config.
+Reads or updates the per-user, install-level default config (seeds new repositories, supplies a migrate fallback).
 
 ## Description
 
