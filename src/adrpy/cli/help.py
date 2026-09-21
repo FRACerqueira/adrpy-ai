@@ -63,7 +63,7 @@ def describe():
 
 
 def run(args):
-    from adrpy.core.errors import CommandError, UsageError
+    from adrpy.core.errors import CommandError, FailureCodes, UsageError
     from adrpy.core.registry import COMMANDS
 
     full = False
@@ -82,7 +82,7 @@ def run(args):
         name = positional[0]
         command = COMMANDS.get(name)
         if command is None:
-            raise CommandError("unknown-command", f"No such command: {name}")
+            raise CommandError(FailureCodes.UNKNOWN_COMMAND, f"No such command: {name}")
         return {"commands": [command.describe()], "warnings": []}
 
     if full:

@@ -243,6 +243,43 @@ def test_status_label_too_long_is_rejected():
 
 
 @pytest.mark.parametrize(
+    ("field", "too_long_length"),
+    [
+        ("headertitlefile", 41),
+        ("headerversion", 41),
+        ("headerrevision", 41),
+        ("headerscope", 41),
+        ("headerdomain", 41),
+        ("headertitlestatuscreated", 41),
+        ("headertitlestatuschanged", 41),
+        ("headertitlestatussuperseded", 41),
+        ("headertablefields", 41),
+        ("headertablevalues", 41),
+        ("headermigrated", 41),
+        ("statusnew", 26),
+        ("statusacc", 26),
+        ("statusrej", 26),
+        ("statussup", 26),
+    ],
+)
+def test_every_too_long_field_raises_its_own_matching_code(field, too_long_length):
+    """ADR005V01: these 15 codes used to be built as f"config-{name}-too-long"
+    at raise time; now looked up from core.config's _TOO_LONG_CODES mapping
+    instead. test_header_label_too_long_is_rejected/test_status_label_too_long_
+    is_rejected above already spot-check one field of each kind -- this
+    covers all 15, the concrete regression guard for the lookup-mapping
+    migration itself (a mismatch here wouldn't show up as an import error,
+    only as a silently-wrong code at runtime)."""
+    data = _valid_config_dict()
+    data[field] = "d" * too_long_length
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == f"config-{field}-too-long"
+
+
+@pytest.mark.parametrize(
     "field",
     [
         "headertitlefile",

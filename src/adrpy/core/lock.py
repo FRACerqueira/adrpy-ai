@@ -18,7 +18,7 @@ import time
 import uuid
 from pathlib import Path
 
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.io_retry import read_with_permission_retry
 
 LOCK_FILE_NAME = ".adrpy.lock"
@@ -44,7 +44,7 @@ class LockTimeoutError(CommandError):
     catch-all as an internal-error."""
 
     def __init__(self, detail, warnings=None):
-        super().__init__("repository-locked", detail, warnings=warnings)
+        super().__init__(FailureCodes.REPOSITORY_LOCKED, detail, warnings=warnings)
 
 
 class LockLostError(CommandError):
@@ -55,7 +55,7 @@ class LockLostError(CommandError):
     the repository itself is fine and only this specific race was lost."""
 
     def __init__(self, detail, warnings=None):
-        super().__init__("lock-lost", detail, warnings=warnings)
+        super().__init__(FailureCodes.LOCK_LOST, detail, warnings=warnings)
 
 
 def _unlink_with_retry(path):

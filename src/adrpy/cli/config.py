@@ -21,8 +21,8 @@ from dataclasses import asdict
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import _INT_FIELDS, _STRING_FIELDS, parse_repo_config
-from adrpy.core.errors import CommandError
+from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
     reject_status_or_separator_change_if_decisions_exist,
@@ -43,13 +43,6 @@ def _field_type(field):
     if field in _BOOLEAN_FIELD_FLAGS:
         return "boolean"
     return "string"
-
-
-_INT_FIELD_BOUNDS = {
-    "lenseq": (config_schema.LENSEQ_MIN, config_schema.LENSEQ_MAX),
-    "lenversion": (config_schema.LENVERSION_MIN, config_schema.LENVERSION_MAX),
-    "lenrevision": (config_schema.LENREVISION_MIN, config_schema.LENREVISION_MAX),
-}
 
 
 def _field_description(field):
@@ -120,8 +113,8 @@ def _field_description(field):
             f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
             "contain '|', or contain a line-break-like character."
         )
-    if field in _INT_FIELD_BOUNDS:
-        low, high = _INT_FIELD_BOUNDS[field]
+    if field in INT_FIELD_BOUNDS:
+        low, high = INT_FIELD_BOUNDS[field]
         return (
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
@@ -282,7 +275,7 @@ def run(args):
                         merged[field] = int(flags[field])
                     except ValueError as error:
                         raise CommandError(
-                            "field-not-an-integer", f"--{field} must be an integer, got: {flags[field]}"
+                            FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
                         ) from error
                     updated_fields.append(field)
 
@@ -290,7 +283,7 @@ def run(args):
                 text = flags["disableplugins"].strip().lower()
                 if text not in ("true", "false"):
                     raise CommandError(
-                        "field-not-a-boolean", "--disableplugins must be 'true' or 'false'."
+                        FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'."
                     )
                 merged["disableplugins"] = text == "true"
                 updated_fields.append("disableplugins")

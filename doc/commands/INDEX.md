@@ -30,4 +30,9 @@ Every failure code a command can return is documented inline, in that
 command's own `## Description` section, alongside the condition that
 triggers it -- there is no separate global error-code index, because a
 code's meaning is only complete together with the specific write it
-guards.
+guards. As of ADR005V01's own registry (`core/errors.py`'s `FailureCodes`),
+this claim is checkable by an automated test
+(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`) --
+currently `xfail`, since a known set of codes (mostly `core/config.py`'s
+own field-validation grammar) is not yet covered; see that test's own
+`reason` for the tracked gap.

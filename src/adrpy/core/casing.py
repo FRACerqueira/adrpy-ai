@@ -44,7 +44,7 @@ def to_kebab_case(text):
     return "-".join(word.lower() for word in words)
 
 
-_CASE_TRANSFORMS = {
+CASE_TRANSFORMS = {
     "CamelCase": to_camel_case,
     "PascalCase": to_pascal_case,
     "SnakeCase": to_snake_case,
@@ -53,7 +53,7 @@ _CASE_TRANSFORMS = {
 
 
 def to_case(text, case_format):
-    return _CASE_TRANSFORMS[case_format](text)
+    return CASE_TRANSFORMS[case_format](text)
 
 
 def unique_title_key(title, config):

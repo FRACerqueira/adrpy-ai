@@ -6,7 +6,7 @@ never a collision-disambiguator. `--open` is permanently not implemented
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
@@ -35,11 +35,11 @@ from adrpy.core.security import (
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
-    "still-proposed": "This decision must be Accepted before it can be superseded; it is still Proposed.",
-    "already-rejected": "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
-    "already-superseded": "This decision has already been superseded.",
-    "not-proposed": "This decision's own status is not Proposed.",
-    "unexpected-status": "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.STILL_PROPOSED: "This decision must be Accepted before it can be superseded; it is still Proposed.",
+    FailureCodes.ALREADY_REJECTED: "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
 }
 
 
@@ -179,13 +179,13 @@ def run(args):
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-superseded",
+                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
             if has_pending_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-pending",
+                    FailureCodes.FAMILY_MEMBER_PENDING,
                     "Another decision in this family is still unresolved (Proposed).",
                     warnings=warnings,
                 )
@@ -218,7 +218,7 @@ def run(args):
             successor_number = next_number(
                 scan_decisions(
                     folder, config, warnings=warnings, strict=True,
-                    incomplete_code="supersede-successor-scan-incomplete",
+                    incomplete_code=FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE,
                 )
             )
 
@@ -240,7 +240,7 @@ def run(args):
             successor_path = resolve_within(folder, filename)
             if successor_path.exists():
                 raise CommandError(
-                    "file-already-exists",
+                    FailureCodes.FILE_ALREADY_EXISTS,
                     f"File already exists: {filename}",
                     data={"file": filename},
                     warnings=warnings,
@@ -266,7 +266,7 @@ def run(args):
                 # already the right shape, just give it a command-
                 # specific code for discoverability.
                 raise CommandError(
-                    "supersede-write-failed", f"{path}: {error}", warnings=warnings
+                    FailureCodes.SUPERSEDE_WRITE_FAILED, f"{path}: {error}", warnings=warnings
                 ) from error
             warning = retry_warning(attempts)
             if warning:
@@ -288,7 +288,7 @@ def run(args):
                 # this second write reports the same orphaned-family risk
                 # instead of a generic, dataless "no write was made".
                 raise CommandError(
-                    "supersede-successor-write-failed",
+                    FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
                     f"{successor_path}: {error}",
                     data={
                         "predecessor": str(path),

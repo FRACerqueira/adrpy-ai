@@ -5,7 +5,7 @@ new transition.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
     family_members,
     has_pending_sibling,
@@ -26,9 +26,9 @@ from adrpy.core.security import (
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
-    "still-proposed": "This decision has never been approved or rejected; there is nothing to undo.",
-    "already-superseded": "This decision has already been superseded.",
-    "not-proposed": "This decision's own status is not Proposed.",
+    FailureCodes.STILL_PROPOSED: "This decision has never been approved or rejected; there is nothing to undo.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
 }
 
 
@@ -108,13 +108,13 @@ def run(args):
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-superseded",
+                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
             if has_pending_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-pending",
+                    FailureCodes.FAMILY_MEMBER_PENDING,
                     "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",
                     warnings=warnings,
                 )

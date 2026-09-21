@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 
 
 def resolve_within(base_dir, candidate):
@@ -23,15 +23,15 @@ def resolve_within(base_dir, candidate):
     Python 3.13 on Windows no longer raises here at all, silently
     embedding the NUL into the resolved path instead)."""
     if "\x00" in str(candidate):
-        raise CommandError("path-invalid", f"'{candidate}' is not a usable path.")
+        raise CommandError(FailureCodes.PATH_INVALID, f"'{candidate}' is not a usable path.")
     base = Path(base_dir).resolve()
     try:
         resolved = (base / candidate).resolve()
     except (OSError, ValueError) as error:
-        raise CommandError("path-invalid", f"'{candidate}' is not a usable path.") from error
+        raise CommandError(FailureCodes.PATH_INVALID, f"'{candidate}' is not a usable path.") from error
     if not resolved.is_relative_to(base) or resolved == base:
         raise CommandError(
-            "path-outside-repository",
+            FailureCodes.PATH_OUTSIDE_REPOSITORY,
             f"'{candidate}' does not resolve to a location strictly inside the repository.",
         )
     return resolved
@@ -119,10 +119,10 @@ def reject_embedded_delimiter(value, field_name):
     with `""` in the first place (`parse_flags` already treats an empty
     flag value as omitted)."""
     if value != "" and not value.strip():
-        raise CommandError("field-is-blank", f"Field '{field_name}' cannot be blank.")
+        raise CommandError(FailureCodes.FIELD_IS_BLANK, f"Field '{field_name}' cannot be blank.")
     if "|" in value or value != "".join(value.splitlines()):
         raise CommandError(
-            "field-contains-forbidden-character",
+            FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
             f"Field '{field_name}' cannot contain '|' or a line-break-like character.",
         )
 
@@ -153,7 +153,7 @@ def reject_status_marker_forgery_characters(value, field_name):
     for forbidden in ("(", ")", "<!--", "-->", ":"):
         if forbidden in value:
             raise CommandError(
-                "field-contains-forbidden-character",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
                 f"Field '{field_name}' cannot contain '(', ')', '<!--', '-->', or ':'.",
             )
 
@@ -185,7 +185,7 @@ def reject_filesystem_unsafe_title(value, field_name):
     for char in value:
         if char in _FILENAME_UNSAFE_CHARACTERS or ord(char) < 0x20:
             raise CommandError(
-                "field-contains-forbidden-character",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
                 f"Field '{field_name}' cannot contain a filesystem-unsafe character "
                 f"({''.join(sorted(_FILENAME_UNSAFE_CHARACTERS))!r} or a control character).",
             )
@@ -221,7 +221,7 @@ def reject_title_with_no_case_transform_content(value, field_name):
     error and no warning."""
     if not _NO_WORD_CONTENT_PATTERN.sub("", value):
         raise CommandError(
-            "field-contains-forbidden-character",
+            FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
             f"Field '{field_name}' must contain at least one character other than whitespace, '_', or '-'.",
         )
 
@@ -244,6 +244,6 @@ def reject_marker_comment_syntax(value, field_name):
     for forbidden in ("<!--", "-->"):
         if forbidden in value:
             raise CommandError(
-                "field-contains-forbidden-character",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
                 f"Field '{field_name}' cannot contain '<!--' or '-->'.",
             )

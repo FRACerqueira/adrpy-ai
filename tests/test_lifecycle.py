@@ -283,7 +283,7 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
     lines, expected_repaired = read_lines_with_report(target)
     expected_text = read_body(lines)
 
-    monkeypatch.setattr(lifecycle_module, "_BODY_STREAM_CHUNK_SIZE", chunk_size)
+    monkeypatch.setattr(lifecycle_module, "STREAM_CHUNK_SIZE", chunk_size)
     report = {}
     actual_bytes = b"".join(stream_normalized_body_chunks(target, report))
 

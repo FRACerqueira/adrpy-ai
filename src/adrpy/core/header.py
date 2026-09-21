@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date as date_cls
 
 from adrpy.core.atomic_write import join_lines_with_trailing_terminator
+from adrpy.core.errors import FailureCodes
 
 HEADER_LINE_COUNT = 12
 
@@ -159,62 +160,62 @@ def parse_header(lines, config):
     result = HeaderParseResult()
 
     if len(lines) == 0:
-        result.error = "adr-file-empty"
+        result.error = FailureCodes.ADR_FILE_EMPTY
         return result
     if len(lines) < HEADER_LINE_COUNT:
-        result.error = "adr-file-too-short"
+        result.error = FailureCodes.ADR_FILE_TOO_SHORT
         return result
 
     if not (lines[0].startswith("<!-- ") and lines[0].rstrip().endswith(" -->")):
-        result.error = "adr-header-comment-not-found"
+        result.error = FailureCodes.ADR_HEADER_COMMENT_NOT_FOUND
         return result
     result.disclaimer = lines[0].replace("<!-- ", "").replace(" -->", "").strip()
 
     if not lines[1].startswith("|Adr-Plus "):
-        result.error = "adr-header-invalid-format"
+        result.error = FailureCodes.ADR_HEADER_INVALID_FORMAT
         return result
     if lines[1].rstrip().endswith(" -->|") and "<!-- " in lines[1]:
         result.is_migrated = True
 
     if not lines[2].startswith("|--|--|"):
-        result.error = "adr-header-invalid-format"
+        result.error = FailureCodes.ADR_HEADER_INVALID_FORMAT
         return result
 
     title = _extract_cell(lines[3])
     if not lines[3].startswith("|") or title is None:
-        result.error = "adr-header-title-not-found"
+        result.error = FailureCodes.ADR_HEADER_TITLE_NOT_FOUND
         return result
     result.title = title
 
     version_text = _extract_cell(lines[4])
     if not lines[4].startswith("|") or version_text is None:
-        result.error = "adr-header-version-not-found"
+        result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
         return result
     if version_text:
         if not version_text.isdigit():
-            result.error = "adr-header-version-not-found"
+            result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
             return result
         result.version = int(version_text)
 
     revision_text = _extract_cell(lines[5])
     if not lines[5].startswith("|") or revision_text is None:
-        result.error = "adr-header-revision-not-found"
+        result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
         return result
     if revision_text:
         if not revision_text.isdigit():
-            result.error = "adr-header-revision-not-found"
+            result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
             return result
         result.revision = int(revision_text)
 
     scope = _extract_cell(lines[6])
     if not lines[6].startswith("|") or scope is None:
-        result.error = "adr-header-scope-not-found"
+        result.error = FailureCodes.ADR_HEADER_SCOPE_NOT_FOUND
         return result
     result.scope = scope
 
     domain = _extract_cell(lines[7])
     if not lines[7].startswith("|") or domain is None:
-        result.error = "adr-header-domain-not-found"
+        result.error = FailureCodes.ADR_HEADER_DOMAIN_NOT_FOUND
         return result
     result.domain = domain
 
@@ -222,7 +223,7 @@ def parse_header(lines, config):
 
     created_text = _extract_cell(lines[8])
     if not lines[8].startswith("|") or created_text is None:
-        result.error = "adr-header-status-created-not-found"
+        result.error = FailureCodes.ADR_HEADER_STATUS_CREATED_NOT_FOUND
         return result
     if created_text:
         status, parsed_date, mismatch, error = _parse_status_cell(created_text, config)
@@ -235,7 +236,7 @@ def parse_header(lines, config):
 
     changed_text = _extract_cell(lines[9])
     if not lines[9].startswith("|") or changed_text is None:
-        result.error = "adr-header-status-updated-not-found"
+        result.error = FailureCodes.ADR_HEADER_STATUS_UPDATED_NOT_FOUND
         return result
     if changed_text:
         status, parsed_date, mismatch, error = _parse_status_cell(changed_text, config)
@@ -248,7 +249,7 @@ def parse_header(lines, config):
 
     superseded_text = _extract_cell(lines[10])
     if not lines[10].startswith("|") or superseded_text is None:
-        result.error = "adr-header-status-superseded-not-found"
+        result.error = FailureCodes.ADR_HEADER_STATUS_SUPERSEDED_NOT_FOUND
         return result
     if superseded_text:
         status, parsed_date, mismatch, error = _parse_status_cell(superseded_text, config)
@@ -257,7 +258,7 @@ def parse_header(lines, config):
             return result
         colon_index = superseded_text.find(":")
         if colon_index < 0:
-            result.error = "adr-status-supersede-format-invalid"
+            result.error = FailureCodes.ADR_STATUS_SUPERSEDE_FORMAT_INVALID
             return result
         result.status_change, result.date_change = status, parsed_date
         result.superseded_by_file = superseded_text[colon_index + 1 :].strip()
@@ -265,7 +266,7 @@ def parse_header(lines, config):
             mismatches.append("status_change")
 
     if not (lines[11].startswith("<!-- ") and lines[11].rstrip().endswith(" -->")):
-        result.error = "adr-header-comment-not-found"
+        result.error = FailureCodes.ADR_HEADER_COMMENT_NOT_FOUND
         return result
 
     result.marker_label_mismatches = tuple(mismatches)
@@ -302,7 +303,7 @@ def _parse_status_cell(text, config):
     open_paren = text.find("(")
     close_paren = text.find(")")
     if open_paren < 0 or close_paren < 0 or close_paren < open_paren:
-        return None, None, False, "status-line-format-invalid"
+        return None, None, False, FailureCodes.STATUS_LINE_FORMAT_INVALID
 
     status_text = text[:open_paren].strip()
     label_to_status = {
@@ -324,13 +325,13 @@ def _parse_status_cell(text, config):
         status = label_status
         mismatch = False
         if status is None:
-            return None, None, False, "status-line-unknown-status"
+            return None, None, False, FailureCodes.STATUS_LINE_UNKNOWN_STATUS
 
     date_text = text[open_paren + 1 : close_paren].strip()
     try:
         parsed_date = date_cls.fromisoformat(date_text)
     except ValueError:
-        return None, None, False, "status-line-date-invalid"
+        return None, None, False, FailureCodes.STATUS_LINE_DATE_INVALID
 
     return status, parsed_date, mismatch, None
 

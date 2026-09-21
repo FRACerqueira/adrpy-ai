@@ -12,14 +12,15 @@ from pathlib import Path
 
 from adrpy.core.atomic_write import (
     LINESEP_BYTES,
+    STREAM_CHUNK_SIZE,
     atomic_write_chunks,
     atomic_write_text,
     join_lines_with_trailing_terminator,
     split_real_lines,
 )
 from adrpy.core.casing import unique_title_key
-from adrpy.core.config import load_repo_config
-from adrpy.core.errors import CommandError
+from adrpy.core.config import _STATUS_LABEL_FIELDS, load_repo_config
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
@@ -35,18 +36,18 @@ def parse_refdate(text):
     try:
         return date_cls.fromisoformat(text)
     except ValueError as error:
-        raise CommandError("refdate-invalid-format", f"Invalid date: {text}") from error
+        raise CommandError(FailureCodes.REFDATE_INVALID_FORMAT, f"Invalid date: {text}") from error
 
 
 def validate_refdate_not_in_future(refdate):
     if refdate > date_cls.today():
-        raise CommandError("refdate-in-future", f"Reference date {refdate.isoformat()} is in the future.")
+        raise CommandError(FailureCodes.REFDATE_IN_FUTURE, f"Reference date {refdate.isoformat()} is in the future.")
 
 
 def validate_refdate_not_before(refdate, not_before):
     if refdate < not_before:
         raise CommandError(
-            "refdate-before-history",
+            FailureCodes.REFDATE_BEFORE_HISTORY,
             f"Reference date {refdate.isoformat()} is before {not_before.isoformat()}.",
         )
 
@@ -155,7 +156,7 @@ def reject_folderadr_change_if_decisions_exist(
     unreadable = find_unreadable_subdirectories(old_folder)
     if unreadable:
         raise CommandError(
-            "folderadr-change-scan-incomplete",
+            FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE,
             f"Cannot safely determine whether '{old_folderadr}' still has decisions: "
             f"{len(unreadable)} subdirectory/subdirectories could not be scanned.",
             data={"folderadr": old_folderadr, "unreadable": unreadable},
@@ -164,7 +165,7 @@ def reject_folderadr_change_if_decisions_exist(
     existing = scan_decisions(old_folder, old_config, warnings=warnings)
     if existing:
         raise CommandError(
-            "folderadr-change-blocked-by-existing-decisions",
+            FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS,
             f"Cannot change folderadr from '{old_folderadr}' to '{new_folderadr}': "
             f"{len(existing)} existing decision(s) under '{old_folderadr}' would become invisible.",
             data={"folderadr": old_folderadr, "existing_decisions": len(existing)},
@@ -176,7 +177,7 @@ def reject_folderadr_change_if_decisions_exist(
         new_unreadable = find_unreadable_subdirectories(new_folder)
         if new_unreadable:
             raise CommandError(
-                "folderadr-change-scan-incomplete",
+                FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE,
                 f"Cannot safely determine whether '{new_folderadr}' already has unrelated content: "
                 f"{len(new_unreadable)} subdirectory/subdirectories could not be scanned.",
                 data={"folderadr": new_folderadr, "unreadable": new_unreadable},
@@ -185,7 +186,7 @@ def reject_folderadr_change_if_decisions_exist(
         adopted = sorted((str(path) for _, _, path in scan_decisions(new_folder, new_config, warnings=warnings)))
         if adopted:
             raise CommandError(
-                "folderadr-change-would-adopt-unrelated-files",
+                FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
                 f"Cannot change folderadr to '{new_folderadr}': {len(adopted)} file(s) already there would "
                 "silently become recognized decisions.",
                 data={"folderadr": new_folderadr, "adopted_files": adopted},
@@ -214,7 +215,7 @@ def reject_folderadr_change_if_decisions_exist(
 # reclassified legacy by a migrationpattern change, confirmed by
 # reading naming.py directly. `separator` is blanket again as a result;
 # only `migrationpattern` is genuinely safe to scope.
-_STATUS_LABEL_GUARD_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
+_STATUS_LABEL_GUARD_FIELDS = _STATUS_LABEL_FIELDS
 _BLANKET_GUARD_FIELDS = _STATUS_LABEL_GUARD_FIELDS + ("separator",)
 # `migrationpattern` is only ever read by naming.py's
 # parse_legacy_filename (the LEGACY scheme) -- parse_filename never
@@ -297,7 +298,7 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     unreadable = find_unreadable_subdirectories(old_folder)
     if unreadable:
         raise CommandError(
-            "status-or-separator-change-scan-incomplete",
+            FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE,
             f"Cannot safely determine whether existing decisions would be affected by changing "
             f"{', '.join(changed_fields)}: {len(unreadable)} subdirectory/subdirectories could not be "
             "scanned.",
@@ -322,7 +323,7 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
         # blocking field does the narrower legacy-only count apply.
         affected_count = len(existing) if blanket_fields_changed and existing else legacy_existing_count
         raise CommandError(
-            "status-or-separator-change-blocked-by-existing-decisions",
+            FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS,
             f"Cannot change {', '.join(blocking_fields)}: {affected_count} existing decision(s) would no "
             "longer be recognized.",
             data={"changed_fields": blocking_fields, "existing_decisions": affected_count},
@@ -363,7 +364,7 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
         )
         if adopted:
             raise CommandError(
-                "separator-change-would-adopt-unrelated-files",
+                FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
                 f"Cannot change separator: {len(adopted)} file(s) not currently recognized as a decision "
                 "would silently become one.",
                 data={"adopted_files": [str(path) for path in adopted]},
@@ -390,7 +391,7 @@ def verify_folderadr_unchanged_since_lock(config_path, locked_folderadr, warning
     fresh_config = load_repo_config(config_path)
     if fresh_config.folderadr != locked_folderadr:
         raise CommandError(
-            "folderadr-changed-after-lock-acquired",
+            FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED,
             f"folderadr changed from '{locked_folderadr}' to '{fresh_config.folderadr}' while this call was "
             "acquiring the repository lock, so the lock's own location is no longer current -- no write was "
             "made. Retry.",
@@ -567,7 +568,6 @@ def _body_start_offset(header_buffer, count):
     return matches[count - 1].end()
 
 
-_BODY_STREAM_CHUNK_SIZE = 65536
 _BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
 
 
@@ -625,7 +625,7 @@ def stream_normalized_body_chunks(source_path, report):
     with open(source_path, "rb") as handle:
         handle.seek(offset)
         while True:
-            raw_chunk = handle.read(_BODY_STREAM_CHUNK_SIZE)
+            raw_chunk = handle.read(STREAM_CHUNK_SIZE)
             if not raw_chunk:
                 break
             saw_any_byte = True
@@ -666,12 +666,12 @@ def resolve_repo_and_target(fileadr):
     if fileadr.suffix == "":
         fileadr = fileadr.with_suffix(".md")
     if not fileadr.is_file():
-        raise CommandError("file-not-found", f"File not found: {fileadr}")
+        raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
 
     config_path = find_repo_root(fileadr)
     if config_path is None:
         raise CommandError(
-            "cannot-determine-root-path", f"Cannot determine the repository root for: {fileadr}"
+            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
         )
     config = load_repo_config(config_path)
     return config, config_path.parent, fileadr
@@ -689,12 +689,12 @@ def resolve_target_and_config(path, *, require_config=True):
     bootstrap or an already-initialized repository to re-validate."""
     target = Path(path)
     if not target.is_dir():
-        raise CommandError("target-directory-not-found", f"Directory does not exist: {path}")
+        raise CommandError(FailureCodes.TARGET_DIRECTORY_NOT_FOUND, f"Directory does not exist: {path}")
     config_path = target / "adr-config.adrplus"
     if not require_config:
         return target, config_path, None
     if not config_path.is_file():
-        raise CommandError("config-not-found", f"No adr-config.adrplus found at: {config_path}")
+        raise CommandError(FailureCodes.CONFIG_NOT_FOUND, f"No adr-config.adrplus found at: {config_path}")
     return target, config_path, load_repo_config(config_path)
 
 
@@ -723,7 +723,7 @@ def read_target(path, config, warnings=None):
     header_lines, encoding_repaired = read_header_lines_with_report(path)
     found = parse_any_filename(path.name, config)
     if found is None:
-        raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {path.name}")
+        raise CommandError(FailureCodes.FILENAME_NOT_RECOGNIZED, f"Filename matches no naming scheme: {path.name}")
     _, filename_info = found
 
     header = parse_header(header_lines, config)
@@ -732,7 +732,7 @@ def read_target(path, config, warnings=None):
         # (adr-file-empty, adr-header-title-not-found,
         # status-line-date-invalid, ...) -- use it as the code itself
         # instead of discarding it behind one fixed label.
-        raise CommandError(header.error or "header-invalid", "Header is not structurally valid.")
+        raise CommandError(header.error or FailureCodes.HEADER_INVALID, "Header is not structurally valid.")
 
     if warnings is not None:
         warning = marker_label_mismatch_warning(header)
@@ -791,7 +791,7 @@ def family_members(folder, config, number, warnings=None, exclude_from_encoding_
     members = []
     unreliable_files = []
     for _, parsed, path in scan_decisions(
-        folder, config, warnings=warnings, strict=True, incomplete_code="family-scan-incomplete"
+        folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.FAMILY_SCAN_INCOMPLETE
     ):
         if parsed.number != number:
             continue
@@ -837,7 +837,7 @@ def family_members(folder, config, number, warnings=None, exclude_from_encoding_
         # duplicate). Fails closed instead, mirroring migrate's own
         # migration-scan-unreliable-encoding for the identical hazard.
         raise CommandError(
-            "family-scan-unreliable-encoding",
+            FailureCodes.FAMILY_SCAN_UNRELIABLE_ENCODING,
             f"{len(unreliable_files)} family member(s) could not be decoded cleanly as UTF-8; family "
             "membership can't be trusted from a lossy decode.",
             data={"unreliable_files": unreliable_files},
@@ -889,9 +889,9 @@ def _ineligibility_reason_for_proposed_state(header):
     when it returns None, since that part genuinely differs per use case
     (see each function's own docstring for exactly how)."""
     if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return "not-proposed"
+        return FailureCodes.NOT_PROPOSED
     if header.status_change is not None:
-        return "already-superseded"
+        return FailureCodes.ALREADY_SUPERSEDED
     return None
 
 
@@ -915,10 +915,10 @@ def ineligibility_reason_for_approve_or_reject(header):
     if header.status_update is None:
         return None
     if header.status_update == "Accepted":
-        return "already-accepted"
+        return FailureCodes.ALREADY_ACCEPTED
     if header.status_update == "Rejected":
-        return "already-rejected"
-    return "unexpected-status"
+        return FailureCodes.ALREADY_REJECTED
+    return FailureCodes.UNEXPECTED_STATUS
 
 
 def ineligibility_reason_for_undo(header):
@@ -929,7 +929,7 @@ def ineligibility_reason_for_undo(header):
     if shared_reason is not None:
         return shared_reason
     if header.status_update is None:
-        return "still-proposed"
+        return FailureCodes.STILL_PROPOSED
     return None
 
 
@@ -948,10 +948,10 @@ def ineligibility_reason_for_supersede(header):
     if header.status_update == "Accepted" or (header.status_update is None and header.is_migrated):
         return None
     if header.status_update is None:
-        return "still-proposed"
+        return FailureCodes.STILL_PROPOSED
     if header.status_update == "Rejected":
-        return "already-rejected"
-    return "unexpected-status"
+        return FailureCodes.ALREADY_REJECTED
+    return FailureCodes.UNEXPECTED_STATUS
 
 
 def ineligibility_reason_for_version_or_revise(header):
@@ -969,8 +969,8 @@ def ineligibility_reason_for_version_or_revise(header):
     if header.status_update in ("Accepted", "Rejected") or (header.status_update is None and header.is_migrated):
         return None
     if header.status_update is None:
-        return "still-proposed"
-    return "unexpected-status"
+        return FailureCodes.STILL_PROPOSED
+    return FailureCodes.UNEXPECTED_STATUS
 
 
 def _record_from_header(config, filename_info, header):

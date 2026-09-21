@@ -7,7 +7,7 @@ not the latest member's. --open is permanently not implemented (see
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
@@ -35,10 +35,10 @@ from adrpy.core.security import (
 from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
-    "still-proposed": "This decision must be Accepted or Rejected before a new revision can be created.",
-    "already-superseded": "This decision has already been superseded.",
-    "not-proposed": "This decision's own status is not Proposed.",
-    "unexpected-status": "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.STILL_PROPOSED: "This decision must be Accepted or Rejected before a new revision can be created.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
 }
 
 
@@ -112,7 +112,7 @@ def run(args):
 
     if config.lenrevision == 0:
         raise CommandError(
-            "revision-not-configured", "This repository's config has lenrevision == 0."
+            FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0."
         )
 
     folder = resolve_within(root, config.folderadr)
@@ -148,13 +148,13 @@ def run(args):
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
                 raise CommandError(
-                    "family-not-found", "Could not resolve this decision's own family.", warnings=warnings
+                    FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
                 )
             latest_parsed, latest_header, latest_path = latest
 
             if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
                 raise CommandError(
-                    "lenrevision-too-small-for-new-revision",
+                    FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
                     f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
                     data={"new_revision": (latest_parsed.revision or 0) + 1, "lenrevision": config.lenrevision},
                     warnings=warnings,
@@ -170,7 +170,7 @@ def run(args):
                     # Names the actual latest member as structured data --
                     # see `version`'s own comment.
                     raise CommandError(
-                        "not-latest-version",
+                        FailureCodes.NOT_LATEST_VERSION,
                         "This decision is not the latest version/revision in its family.",
                         data={
                             "latest_file": str(latest_path),
@@ -188,13 +188,13 @@ def run(args):
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-superseded",
+                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
             if has_pending_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-pending",
+                    FailureCodes.FAMILY_MEMBER_PENDING,
                     "Another decision in this family is still unresolved (Proposed).",
                     warnings=warnings,
                 )
@@ -235,7 +235,7 @@ def run(args):
             new_path = resolve_within(folder, filename)
             if new_path.exists():
                 raise CommandError(
-                    "file-already-exists",
+                    FailureCodes.FILE_ALREADY_EXISTS,
                     f"File already exists: {filename}",
                     data={"file": filename},
                     warnings=warnings,

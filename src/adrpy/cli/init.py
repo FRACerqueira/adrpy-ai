@@ -20,7 +20,7 @@ from adrpy.core.config import (
     parse_repo_config,
     read_config_text,
 )
-from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
@@ -185,7 +185,7 @@ def run(args):
     # refuse cleanly instead of the reference tool's confirm-or-refuse prompt
     # when no --seed is given to bypass it.
     if config_already_existed and seed_arg is None:
-        raise CommandError("config-already-exists", f"Configuration file already exists at: {config_path}")
+        raise CommandError(FailureCodes.CONFIG_ALREADY_EXISTS, f"Configuration file already exists at: {config_path}")
 
     # ADR002V01: an install-level config, when present, is an implicit
     # seed -- the same reason --seed and --language are already mutually
@@ -210,7 +210,7 @@ def run(args):
     if seed_arg is not None:
         seed_path = Path(seed_arg)
         if not seed_path.is_file():
-            raise CommandError("config-file-not-found", f"File not found: {seed_arg}")
+            raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         config_text = read_config_text(seed_path)
     elif language_arg is not None:
         config_text = default_repo_config_text_for_language(language_arg)
@@ -291,21 +291,21 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     max_number, max_version, max_revision = _max_existing_numbers(target, config, warnings=warnings)
     if len(str(max_number)) > config.lenseq:
         raise CommandError(
-            "lenseq-too-small-for-existing-decisions",
+            FailureCodes.LENSEQ_TOO_SMALL_FOR_EXISTING_DECISIONS,
             f"Existing decision number {max_number} does not fit in lenseq={config.lenseq}.",
             data={"max_number": max_number, "lenseq": config.lenseq},
             warnings=warnings,
         )
     if len(str(max_version)) > config.lenversion:
         raise CommandError(
-            "lenversion-too-small-for-existing-decisions",
+            FailureCodes.LENVERSION_TOO_SMALL_FOR_EXISTING_DECISIONS,
             f"Existing decision version {max_version} does not fit in lenversion={config.lenversion}.",
             data={"max_version": max_version, "lenversion": config.lenversion},
             warnings=warnings,
         )
     if config.lenrevision > 0 and len(str(max_revision)) > config.lenrevision:
         raise CommandError(
-            "lenrevision-too-small-for-existing-decisions",
+            FailureCodes.LENREVISION_TOO_SMALL_FOR_EXISTING_DECISIONS,
             f"Existing decision revision {max_revision} does not fit in lenrevision={config.lenrevision}.",
             data={"max_revision": max_revision, "lenrevision": config.lenrevision},
             warnings=warnings,
@@ -390,7 +390,7 @@ def _max_existing_numbers(target, config, warnings=None):
     unreadable = find_unreadable_subdirectories(folder)
     if unreadable:
         raise CommandError(
-            "init-existing-numbers-scan-incomplete",
+            FailureCodes.INIT_EXISTING_NUMBERS_SCAN_INCOMPLETE,
             f"Cannot safely determine existing decision numbers: {len(unreadable)} subdirectory/"
             "subdirectories could not be scanned (permission denied or similar).",
             data={"folder": str(folder), "unreadable": unreadable},

@@ -26,9 +26,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.config import parse_repo_config
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
@@ -44,19 +44,17 @@ from adrpy.core.security import (
 )
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
 
-# ADR006V01: the candidate's own content has no schema-imposed size bound
-# (unlike a header) -- streamed in fixed-size chunks straight from the
-# source file into the destination temp file (via atomic_write_chunks),
-# never assembled as one in-memory bytes object.
-_MIGRATE_STREAM_CHUNK_SIZE = 65536
-
 
 def _stream_migrated_candidate(candidate_path, header_text, lock):
-    """The new header (already fully built, schema-bounded), followed by
-    the candidate's own content streamed through unmodified -- except a
-    leading UTF-8 BOM, stripped from the very first chunk only, matching
-    the reference tool's own confirmed behavior (see this module's own
-    docstring).
+    """ADR006V01: the candidate's own content has no schema-imposed size
+    bound (unlike a header) -- the new header (already fully built,
+    schema-bounded), followed by the candidate's own content streamed
+    through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
+    the source file into the destination temp file (via
+    atomic_write_chunks), never assembled as one in-memory bytes object
+    -- except a leading UTF-8 BOM, stripped from the very first chunk
+    only, matching the reference tool's own confirmed behavior (see this
+    module's own docstring).
 
     `lock.verify_still_held()` runs again as the very last thing here,
     right before this generator exhausts (i.e. right before
@@ -70,7 +68,7 @@ def _stream_migrated_candidate(candidate_path, header_text, lock):
     with Path(candidate_path).open("rb") as source:
         first_chunk = True
         while True:
-            chunk = source.read(_MIGRATE_STREAM_CHUNK_SIZE)
+            chunk = source.read(STREAM_CHUNK_SIZE)
             if not chunk:
                 break
             if first_chunk:
@@ -182,7 +180,7 @@ def run(args):
                 fallback_pattern = parse_repo_config(fallback_text).migrationpattern if fallback_text else ""
                 if not fallback_pattern:
                     raise CommandError(
-                        "migration-pattern-not-configured",
+                        FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED,
                         "adr-config.adrplus has no migrationpattern configured, and the install-level "
                         "config (see installconfig) has none either.",
                         warnings=warnings,
@@ -246,7 +244,7 @@ def run(args):
                         # per-file reporting the best-effort design
                         # otherwise guarantees.
                         raise CommandError(
-                            "migration-scan-failed",
+                            FailureCodes.MIGRATION_SCAN_FAILED,
                             f"{candidate}: {error}",
                             data={"unreadable_file": str(candidate)},
                             warnings=warnings,
@@ -279,7 +277,7 @@ def run(args):
                 unreadable_dirs = find_unreadable_subdirectories(folder)
                 if unreadable_dirs:
                     raise CommandError(
-                        "migration-scan-incomplete",
+                        FailureCodes.MIGRATION_SCAN_INCOMPLETE,
                         f"Cannot safely scan for existing decisions: {len(unreadable_dirs)} subdirectory/"
                         "subdirectories could not be scanned (permission denied or similar).",
                         data={"folder": str(folder), "unreadable": unreadable_dirs},
@@ -288,7 +286,7 @@ def run(args):
 
             if not entries:
                 raise CommandError(
-                    "no-decisions-found",
+                    FailureCodes.NO_DECISIONS_FOUND,
                     "No .md files matching a recognized naming scheme were found.",
                     warnings=warnings,
                 )
@@ -301,7 +299,7 @@ def run(args):
                 # run rather than guess, since migrate is a one-time, largely
                 # irreversible bulk operation.
                 raise CommandError(
-                    "migration-scan-unreliable-encoding",
+                    FailureCodes.MIGRATION_SCAN_UNRELIABLE_ENCODING,
                     f"{len(unreliable_files)} file(s) could not be decoded cleanly as UTF-8; migration refuses "
                     "to run until they're fixed (their true header state can't be trusted).",
                     data={"unreliable_files": unreliable_files},
@@ -310,7 +308,7 @@ def run(args):
 
             if any(header.is_valid and not header.is_migrated for _, _, header in entries):
                 raise CommandError(
-                    "already-tool-created-adrs-exist",
+                    FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST,
                     "This repository already has decisions created by this tool; migration refuses to run.",
                     warnings=warnings,
                 )
@@ -321,7 +319,7 @@ def run(args):
                 if header.status_create is None and not header.is_migrated and not header.is_valid
             ]
             if not candidates:
-                raise CommandError("no-eligible-files-to-migrate", "No files need migration.", warnings=warnings)
+                raise CommandError(FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE, "No files need migration.", warnings=warnings)
 
             # Best-effort, not fail-fast -- one file's OSError (permission
             # denied, full disk) must not block the rest from migrating,
@@ -389,7 +387,7 @@ def run(args):
                     # attempted. Stop outright and report exactly what was
                     # actually done so far.
                     raise CommandError(
-                        "migration-lock-lost",
+                        FailureCodes.MIGRATION_LOCK_LOST,
                         f"The repository lock was lost after {len(results)} of {len(candidates)} file(s) were "
                         "processed; migration was aborted rather than continuing unprotected.",
                         data={"results": results},
@@ -411,7 +409,7 @@ def run(args):
             failed = [entry for entry in results if entry["status"] == "failed"]
             if failed:
                 raise CommandError(
-                    "migration-write-failed",
+                    FailureCodes.MIGRATION_WRITE_FAILED,
                     f"{len(failed)} of {len(results)} file(s) failed to migrate.",
                     data={"results": results},
                     warnings=warnings,

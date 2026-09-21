@@ -7,7 +7,7 @@ successor.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
     family_members,
     has_superseded_sibling,
@@ -30,11 +30,11 @@ from adrpy.core.security import (
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
-    "already-accepted": "This decision is already Accepted; run undo first to reconsider it.",
-    "already-rejected": "This decision is already Rejected.",
-    "already-superseded": "This decision has already been superseded.",
-    "not-proposed": "This decision's own status is not Proposed.",
-    "unexpected-status": "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
+    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
 }
 
 
@@ -135,7 +135,7 @@ def run(args):
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-superseded",
+                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
@@ -226,7 +226,7 @@ def run(args):
                     # alone (there may be none) or discover it only by
                     # re-reading the file itself.
                     raise CommandError(
-                        "superseded-predecessor-not-found",
+                        FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND,
                         f"Could not find the decision this one superseded (sequence {filename_info.superseded_from}).",
                         data={"file": str(path), "status": "Rejected"},
                         warnings=warnings,
@@ -270,7 +270,7 @@ def run(args):
                     # reports that partial success instead of a generic,
                     # dataless lock-lost).
                     raise CommandError(
-                        "reject-predecessor-write-failed",
+                        FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
                         f"{pred_path}: {error}",
                         data={"file": str(path), "status": "Rejected", "predecessor_file": str(pred_path)},
                         warnings=warnings,

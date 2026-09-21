@@ -9,7 +9,7 @@ accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
     find_by_unique_title,
@@ -154,13 +154,13 @@ def run(args):
             # treated as "not found" the way explore's own best-effort
             # listing can.
             decisions = scan_decisions(
-                folder, config, warnings=warnings, strict=True, incomplete_code="new-scan-incomplete"
+                folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.NEW_SCAN_INCOMPLETE
             )
 
             existing = find_by_unique_title(title, config, decisions)
             if existing is not None:
                 raise CommandError(
-                    "title-already-exists",
+                    FailureCodes.TITLE_ALREADY_EXISTS,
                     f"A decision with this title already exists: {existing.name}",
                     data={"existing_file": existing.name},
                     warnings=warnings,
@@ -181,7 +181,7 @@ def run(args):
             file_path = resolve_within(folder, filename)
             if file_path.exists():
                 raise CommandError(
-                    "file-already-exists",
+                    FailureCodes.FILE_ALREADY_EXISTS,
                     f"File already exists: {filename}",
                     data={"file": filename},
                     warnings=warnings,

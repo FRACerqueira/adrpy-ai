@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import read_header_lines
 
 CLASSIFICATIONS = (
@@ -61,7 +61,7 @@ def decision_log_dir_for(decisions_folder):
 def validate_classification(value):
     if value not in CLASSIFICATIONS:
         raise CommandError(
-            "log-classification-invalid",
+            FailureCodes.LOG_CLASSIFICATION_INVALID,
             f"'{value}' is not a recognized classification. Must be one of: {', '.join(CLASSIFICATIONS)}.",
             data={"classification": value},
         )
@@ -70,7 +70,7 @@ def validate_classification(value):
 def validate_slug(value):
     if not _KEBAB_RE.match(value):
         raise CommandError(
-            "log-slug-invalid",
+            FailureCodes.LOG_SLUG_INVALID,
             f"'{value}' is not valid kebab-case: lowercase letters/digits only, single hyphens between "
             "words, no leading/trailing/double hyphens.",
             data={"slug": value},
@@ -90,7 +90,7 @@ def validate_scope(value):
     a new constraint in practice, only one now actually enforced."""
     if not _KEBAB_RE.match(value):
         raise CommandError(
-            "log-scope-invalid",
+            FailureCodes.LOG_SCOPE_INVALID,
             f"'{value}' is not valid kebab-case: lowercase letters/digits only, single hyphens between "
             "words, no leading/trailing/double hyphens, no '/' or '\\'.",
             data={"scope": value},
@@ -100,7 +100,7 @@ def validate_scope(value):
 def validate_severity(value):
     if value not in SEVERITIES:
         raise CommandError(
-            "log-severity-invalid",
+            FailureCodes.LOG_SEVERITY_INVALID,
             f"'{value}' is not a recognized severity. Must be one of: {', '.join(SEVERITIES)}.",
             data={"severity": value},
         )
@@ -109,7 +109,7 @@ def validate_severity(value):
 def validate_resolution(value):
     if value not in RESOLUTIONS:
         raise CommandError(
-            "log-resolution-invalid",
+            FailureCodes.LOG_RESOLUTION_INVALID,
             f"'{value}' is not a recognized resolution. Must be one of: {', '.join(RESOLUTIONS)}.",
             data={"resolution": value},
         )
@@ -126,7 +126,7 @@ def parse_round(value):
         parsed = None
     if parsed is None or parsed < 1:
         raise CommandError(
-            "log-round-invalid", f"'{value}' is not a positive integer.", data={"round": value}
+            FailureCodes.LOG_ROUND_INVALID, f"'{value}' is not a positive integer.", data={"round": value}
         )
     return parsed
 
@@ -139,7 +139,7 @@ def validate_round_not_regressing(round_, current_max):
     invariant outright."""
     if round_ < current_max:
         raise CommandError(
-            "log-round-too-low",
+            FailureCodes.LOG_ROUND_TOO_LOW,
             f"--round {round_} is lower than the highest Round already recorded ({current_max}); "
             "Round never decreases. Omit --round to continue with the next one, or pass "
             f"--round {current_max} to reuse the round already in progress.",
@@ -169,7 +169,7 @@ def _parse_entry(path):
         date, classification, scope, _slug = path.stem.split("--", 3)
     except ValueError as error:
         raise CommandError(
-            "log-directory-contains-unrecognized-file",
+            FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} does not match the expected "
             "{ISO date}--{classification}--{scope}--{slug}.md shape -- cannot safely compute the next "
             "Round or regenerate INDEX.md while this file is present.",
@@ -185,7 +185,7 @@ def _parse_entry(path):
         # (e.g. "audit-findings") instead of a coincidentally-structured
         # non-structured entry.
         raise CommandError(
-            "log-directory-contains-unrecognized-file",
+            FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has an unrecognized classification ('{classification}') -- cannot safely "
             "compute the next Round or regenerate INDEX.md while this file is present.",
             data={"file": path.name},
@@ -207,7 +207,7 @@ def _parse_entry(path):
         # bug class this function's other two guards already exist to
         # close.
         raise CommandError(
-            "log-directory-contains-unrecognized-file",
+            FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has no content -- cannot safely compute the next Round or regenerate "
             "INDEX.md while this file is present.",
             data={"file": path.name},
@@ -277,7 +277,7 @@ def max_existing_round(decision_log_dir):
             rounds.append(int(entry["round"]))
         except (TypeError, ValueError) as error:
             raise CommandError(
-                "log-directory-contains-unrecognized-file",
+                FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
                 f"{entry['path']} is classified '{entry['classification']}' but its Round "
                 f"({entry['round']!r}) is missing or not a plain integer -- cannot safely compute "
                 "the next Round while this file is present.",

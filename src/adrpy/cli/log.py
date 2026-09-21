@@ -29,7 +29,7 @@ from adrpy.core.decision_log import (
     validate_severity,
     validate_slug,
 )
-from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.lifecycle import (
     parse_refdate,
@@ -305,7 +305,7 @@ def run(args):
             file_path = resolve_within(log_dir, filename)
             if file_path.exists():
                 raise CommandError(
-                    "log-entry-already-exists",
+                    FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
                     f"Decision-log entry already exists: {filename}",
                     data={"file": filename},
                     warnings=warnings,
@@ -347,7 +347,7 @@ def run(args):
                 # text already names the offending file, so it isn't
                 # duplicated into `data` alongside the entry's own path.
                 raise CommandError(
-                    "log-index-regeneration-failed",
+                    FailureCodes.LOG_INDEX_REGENERATION_FAILED,
                     f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",
                     data={"file": str(file_path)},
                     warnings=warnings,

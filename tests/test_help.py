@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from adrpy.__main__ import main
+from adrpy.core.errors import FailureCodes
 from adrpy.core.output import EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE_ERROR
 from adrpy.core.registry import COMMANDS
 
@@ -65,6 +66,43 @@ def test_every_path_based_command_documents_target_directory_not_found():
         info = COMMANDS[name].describe()
         text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
         assert "target-directory-not-found" in text, f"{name}'s describe() never mentions it"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "ADR005V01's own stated payoff: this is the permanent, automated version of the "
+        "documentation-completeness sweep this project has otherwise done by hand (twice, growing "
+        "in scope each time). As of the registry's own creation, 59 of 130 FailureCodes are still "
+        "undocumented in every command's combined describe() text -- almost entirely core/config.py's "
+        "own field-validation grammar (config-lenseq-too-small, config-*-too-long, etc.) and "
+        "core/header.py's granular parse-failure codes (adr-header-*-not-found, status-line-*), both "
+        "already named as a deliberately-NOT-hand-patched-again gap in the decision-log entry this "
+        "ADR itself closes (2026-09-21--deferred--cli--index-md-every-failure-code-documented-claim-"
+        "is-false.md). Remove this xfail once that separate documentation sweep actually closes the "
+        "gap -- strict=True means this test starts failing loudly (not silently passing) the moment "
+        "it does, so the mark itself can't go stale."
+    ),
+)
+def test_every_failure_code_is_documented_somewhere():
+    """The actual payoff ADR005V01 names as its own Positive Consequence: a
+    single, grep-able registry makes 'every code is documented' a property
+    this test can check mechanically, instead of a claim that has to be
+    re-audited by hand every few months. Combines every command's own
+    describe() text (top-level + every argument's own) into one string and
+    checks every FailureCodes attribute appears in it somewhere -- the same
+    technique this file's own tests above already use per-code, generalized
+    to the whole registry at once."""
+    combined = []
+    for module in COMMANDS.values():
+        info = module.describe()
+        combined.append(info["description"])
+        combined.extend(arg.get("description", "") for arg in info.get("arguments", []))
+    combined_text = " ".join(combined)
+
+    codes = {name: getattr(FailureCodes, name) for name in dir(FailureCodes) if name.isupper()}
+    missing = sorted(code for code in codes.values() if code not in combined_text)
+    assert not missing, f"{len(missing)} FailureCodes not documented in any describe(): {missing}"
 
 
 def test_every_path_based_command_except_init_documents_config_not_found():

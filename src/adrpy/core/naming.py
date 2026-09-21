@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 
 from adrpy.core.casing import to_case
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 
 _ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$")
 _MIGRATION_PATTERN = re.compile(
@@ -220,7 +220,7 @@ def build_filename(config, record):
         or reparsed.superseded_from != record.superseded
     ):
         raise CommandError(
-            "title-produces-unrecognizable-filename",
+            FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME,
             f"Cannot use this title: the resulting filename ('{filename}') would not be recognized as "
             "this same decision when read back, which would permanently orphan it.",
             data={"filename": filename},

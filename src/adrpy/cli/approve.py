@@ -2,7 +2,7 @@
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
     family_members,
     has_superseded_sibling,
@@ -25,11 +25,11 @@ from adrpy.core.security import (
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
-    "already-accepted": "This decision is already Accepted.",
-    "already-rejected": "This decision is already Rejected; run undo first to reconsider it.",
-    "already-superseded": "This decision has already been superseded.",
-    "not-proposed": "This decision's own status is not Proposed.",
-    "unexpected-status": "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted.",
+    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
 }
 
 
@@ -129,7 +129,7 @@ def run(args):
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
-                    "family-member-superseded",
+                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )

@@ -17,6 +17,12 @@ RETRY_ATTEMPTS = 5
 RETRY_DELAY_SECONDS = 0.05
 ORPHAN_MAX_AGE_SECONDS = 30
 
+# Shared by every reader that streams file content in fixed-size pieces
+# instead of loading it whole (core/lifecycle.py's body streaming,
+# cli/migrate.py's candidate streaming) -- one chunk-size decision instead
+# of two independently-chosen, coincidentally-equal copies.
+STREAM_CHUNK_SIZE = 65536
+
 _REAL_NEWLINE = re.compile(r"\r\n|\r|\n")
 
 
