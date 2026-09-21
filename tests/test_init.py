@@ -296,6 +296,27 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
     assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
 
 
+def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecognized_file(tmp_path):
+    """Call-site wiring proof for the deferred finding closed alongside
+    ADR004V0x -- --seed changing separator can silently adopt an
+    unrelated file exactly the same way `config` can."""
+    init.run(["--path", str(tmp_path)])
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / "0001_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
+
+    seed = json.loads(init.default_repo_config_text())
+    seed["separator"] = "_"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "separator-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+
+
 def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(tmp_path, monkeypatch):
     """ADR004V02: reject_status_or_separator_change_if_decisions_exist
     runs BEFORE _max_existing_numbers inside _validate_and_write -- when

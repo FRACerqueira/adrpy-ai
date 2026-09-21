@@ -224,7 +224,22 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     (any scheme) when a blanket field is blocking, or only the legacy-
     scheme subset when migrationpattern is the sole blocking field --
     never an inflated total that includes decisions the blocking
-    field(s) have no bearing on."""
+    field(s) have no bearing on.
+
+    A second, independent check (ADR004V0x, closing a deferred finding
+    from a post-round-20 verification pass): every check above is keyed
+    on decisions already recognized under `old_config` -- none of them
+    catch the opposite direction, a file NOT currently recognized by
+    either scheme becoming newly recognized. Confirmed live: an
+    unrelated, hand-written file with no relationship to the decision
+    lifecycle could otherwise be silently adopted as a genuine decision
+    the moment `separator` changes to a value its own name happens to
+    contain, corrupting next-number allocation and title-uniqueness for
+    every decision created afterward, with zero warning. Scoped to
+    `separator` only -- `migrationpattern` deliberately keeps its
+    existing "may newly recognize pre-existing legacy files" behavior,
+    since that is its own documented, intentional purpose (ADR002V01),
+    not an accident."""
     blanket_fields_changed = [
         field for field in _BLANKET_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
     ]
@@ -269,6 +284,31 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             data={"changed_fields": blocking_fields, "existing_decisions": affected_count},
             warnings=warnings,
         )
+
+    # Deferred finding, closed here: every check above is keyed on
+    # decisions already recognized under OLD_config -- none of them
+    # catch the opposite direction, a file NOT currently recognized (by
+    # either scheme) becoming newly recognized. `separator` has no
+    # legitimate reason to ever do this (unlike `migrationpattern`,
+    # whose whole documented purpose IS to newly recognize pre-existing
+    # legacy files -- see ADR002V01 -- so this check is deliberately
+    # NOT applied to it). Reuses `existing` (already scanned, no need
+    # to rescan with old_config again) -- only one more scan, with
+    # new_config, is needed.
+    if "separator" in blanket_fields_changed:
+        old_recognized_paths = {path for _, _, path in existing}
+        adopted = sorted(
+            (path for _, _, path in scan_decisions(old_folder, new_config) if path not in old_recognized_paths),
+            key=str,
+        )
+        if adopted:
+            raise CommandError(
+                "separator-change-would-adopt-unrelated-files",
+                f"Cannot change separator: {len(adopted)} file(s) not currently recognized as a decision "
+                "would silently become one.",
+                data={"adopted_files": [str(path) for path in adopted]},
+                warnings=warnings,
+            )
 
 
 def verify_folderadr_unchanged_since_lock(config_path, locked_folderadr, warnings=None):

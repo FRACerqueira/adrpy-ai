@@ -449,6 +449,60 @@ def test_config_separator_change_does_not_silently_reclassify_a_legacy_file_as_c
     assert config_after.separator == "-"
 
 
+def test_config_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecognized_file(tmp_path):
+    """A deferred finding (found by a post-round-20 verification pass,
+    confirmed live, then fixed): every check above is keyed on
+    decisions already recognized under the OLD config -- none of them
+    catch a file that ISN'T currently recognized by any scheme becoming
+    newly recognized. An unrelated hand-written .md file (never created
+    via `new`, no relationship to the decision lifecycle) sitting in the
+    decisions folder must never be silently adopted as a genuine
+    decision just because a separator change happens to make its own
+    name parse."""
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / "0001_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert excinfo.value.code == "separator-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+    assert "0001_MyTitle.md" in excinfo.value.data["adopted_files"][0]
+    # Nothing committed.
+    config_after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert config_after.separator == "-"
+
+
+def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path):
+    """Companion to the rejection test above: a separator change with no
+    unrelated file anywhere that would newly parse under the new value
+    must still go through -- this guard must not become a blanket
+    refusal to ever change separator at all."""
+    tmp_path = _init_repo(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert result["updated_fields"] == ["separator"]
+
+
+def test_config_migrationpattern_change_still_intentionally_adopts_legacy_files(tmp_path):
+    """The new adoption guard is deliberately scoped to `separator`
+    only -- migrationpattern recognizing a previously-unrecognized
+    legacy file is that field's own documented, intentional purpose
+    (ADR002V01), not the bug this guard exists to close. A
+    migrationpattern change that newly recognizes an existing
+    hand-written file (with no other guarded field changing, and no
+    already-recognized decision at risk) must still succeed."""
+    tmp_path = _init_repo(tmp_path)
+    _write_legacy_file(tmp_path, "0001T01.md")  # unrecognized: no migrationpattern configured yet
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+
+    assert result["updated_fields"] == ["migrationpattern"]
+
+
 def test_config_status_or_separator_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """Mirrors the folderadr guard's own equivalent test -- status-or-
     separator-change-scan-incomplete (the new guard's own fail-closed
