@@ -70,11 +70,12 @@ def describe():
             "either way. May also fail with family-scan-unreliable-encoding (data.unreliable_files names "
             "the affected file(s)) if a sibling needed a lossy UTF-8 decode -- its parsed header can't be "
             "trusted for a safety decision either, the same reasoning as an unreadable subdirectory; no "
-            "write was made. The predecessor's own title (re-read from its filename, not a flag) is "
-            "re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited "
-            "or migrated predecessor's title carries '|', a line-break-like character, a filesystem-unsafe "
-            "character (`<>:\"/\\|?*` or a control character; the successor's title lands inside an actual "
-            "filename component, not just a header-table cell), or consists entirely of "
+            "write was made. The successor's own title -- the predecessor's own filename segment, "
+            "re-validated before use, unless --title overrides it (see its own argument description) -- "
+            "may fail with field-contains-forbidden-character if it carries '|', a line-break-like "
+            "character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control character; the successor's "
+            "title lands inside an actual filename component, not just a header-table cell), or consists "
+            "entirely of "
             "whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a "
             "value raw, which can collide with the filename's own separator and produce a successor the "
             "tool can never recognize again; no write is made. Fails with one of still-proposed, "
@@ -125,6 +126,23 @@ def describe():
                     "(refdate-invalid-format/refdate-in-future/refdate-before-history)."
                 ),
             },
+            {
+                "name": "title",
+                "alias": "-t",
+                "type": "string",
+                "required": False,
+                "description": (
+                    "Title for the successor; defaults to the predecessor's own filename-segment title "
+                    "(unlike --scope/--domain, this default is NOT re-editable via the header's prose title "
+                    "-- see the description above). Cannot contain '|' or a line-break-like character, or a "
+                    "filesystem-unsafe character (`<>:\"/\\|?*` or a control character -- title lands inside "
+                    "an actual filename component, not just a header-table cell); also cannot consist "
+                    "entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls "
+                    "back to echoing such a value raw, which can collide with the filename's own separator "
+                    "and produce a successor the tool can never recognize again "
+                    "(field-contains-forbidden-character), or be blank (field-is-blank)."
+                ),
+            },
         ],
     }
 
@@ -133,8 +151,8 @@ def run(args):
     flags = parse_flags(
         args,
         required=("file",),
-        optional=("domain", "scope", "refdate"),
-        aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate"},
+        optional=("domain", "scope", "refdate", "title"),
+        aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate", "t": "title"},
     )
     config, root, path = resolve_repo_and_target(flags["file"])
     folder = resolve_within(root, config.folderadr)
@@ -202,14 +220,24 @@ def run(args):
             domain = flags["domain"] if "domain" in flags else (header.domain or "")
             reject_embedded_delimiter(scope, "scope")
             reject_embedded_delimiter(domain, "domain")
-            # `title` below is re-read from the PREDECESSOR's own filename
-            # segment, not a live flag -- a hand-edited or migrated file
-            # could already carry a filesystem-unsafe character (e.g. ':',
-            # an NTFS Alternate-Data-Stream separator), which build_filename
-            # below would otherwise propagate into a real write attempt.
-            reject_embedded_delimiter(filename_info.title, "title")
-            reject_filesystem_unsafe_title(filename_info.title, "title")
-            reject_title_with_no_case_transform_content(filename_info.title, "title")
+            if "title" in flags:
+                # An explicit --title overrides the predecessor's own
+                # filename-segment title -- validated exactly like `new
+                # --title` (same 3 checks, same order).
+                title = flags["title"]
+                reject_embedded_delimiter(title, "title")
+                reject_filesystem_unsafe_title(title, "title")
+                reject_title_with_no_case_transform_content(title, "title")
+            else:
+                # `title` is re-read from the PREDECESSOR's own filename
+                # segment, not a live flag -- a hand-edited or migrated file
+                # could already carry a filesystem-unsafe character (e.g. ':',
+                # an NTFS Alternate-Data-Stream separator), which build_filename
+                # below would otherwise propagate into a real write attempt.
+                reject_embedded_delimiter(filename_info.title, "title")
+                reject_filesystem_unsafe_title(filename_info.title, "title")
+                reject_title_with_no_case_transform_content(filename_info.title, "title")
+                title = filename_info.title
 
             # strict=True: an unreadable subdirectory hiding a
             # higher-numbered decision must never be silently treated as
@@ -224,10 +252,11 @@ def run(args):
 
             successor = DecisionRecord(
                 number=successor_number,
-                # The successor's title comes from the predecessor's FILENAME
-                # segment (already case-transformed), not its header's prose
-                # title -- confirmed via live comparison against the reference tool.
-                title=filename_info.title,
+                # Defaults to the predecessor's own FILENAME segment
+                # (already case-transformed), not its header's prose title --
+                # confirmed via live comparison against the reference tool.
+                # Overridden by --title when given (see above).
+                title=title,
                 version=1,
                 revision=1 if config.lenrevision > 0 else None,
                 scope=scope,

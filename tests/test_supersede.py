@@ -139,6 +139,51 @@ def test_supersede_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in successor_text
 
 
+def test_supersede_with_no_title_flag_still_uses_the_predecessors_filename_segment(tmp_path):
+    """Regression guard for the new --title flag: omitting it must produce
+    byte-identical output to before the flag existed -- same assertions as
+    test_supersede_happy_path, kept as its own test so this specific
+    no-flag guarantee has a name and can't be silently lost inside a
+    broader happy-path test that might get trimmed later."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    successor_path = tmp_path / "doc" / "adr" / "ADR002V01-use-postgre-sql--001.md"
+    assert result["created"] == str(successor_path)
+    successor_text = successor_path.read_text(encoding="utf-8")
+    assert "|File title md|use-postgre-sql|" in successor_text
+
+
+def test_supersede_title_flag_overrides_the_predecessors_filename_segment(tmp_path):
+    """--title's header cell holds the raw typed value, same as `new
+    --title`'s own convention (confirmed against test_new.py) -- only the
+    FILENAME gets case-transformed. This differs from the no-flag default
+    path, where the header cell shows the case-transformed segment too,
+    purely because filename_info.title is itself already a parsed,
+    case-transformed value (see test_supersede_happy_path) -- not a
+    convention --title is meant to replicate."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    result = supersede.run(
+        ["--file", str(adr_path), "--refdate", "2026-01-05", "--title", "A Brand New Title"]
+    )
+
+    successor_path = tmp_path / "doc" / "adr" / "ADR002V01-a-brand-new-title--001.md"
+    assert result["created"] == str(successor_path)
+    successor_text = successor_path.read_text(encoding="utf-8")
+    assert "|File title md|A Brand New Title|" in successor_text
+
+
+def test_supersede_rejects_embedded_delimiter_in_title_flag(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05", "--title", "Bad|title"])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_character(tmp_path, monkeypatch):
     """A round-22 security finding: the successor's title comes from the
     predecessor's own FILENAME segment (filename_info.title), never
