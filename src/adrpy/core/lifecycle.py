@@ -149,21 +149,37 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
         )
 
 
-# ADR004V02: three separate groups, not one flat list -- each guarded
-# field only actually affects recognition of ONE naming scheme's files,
-# except status labels, which are header content read identically
-# regardless of which scheme matched a file's own NAME.
+# ADR004V02: two groups, not one flat list -- `migrationpattern` only
+# affects recognition of LEGACY-scheme files (naming.py's
+# parse_legacy_filename is its only reader); every other guarded field
+# is blanket (blocks on any recognized decision, any scheme).
+#
+# `separator` looks like it should be current-scheme-scoped the same
+# way (naming.py's parse_filename, the CURRENT scheme, is its only
+# direct reader) -- an earlier version of this fix scoped it that way,
+# and that was wrong: parse_any_filename tries the CURRENT scheme
+# FIRST, falling back to legacy only if it doesn't match. A separator
+# value that happens to already appear in a legacy-scheme filename can
+# make parse_filename newly match a file that previously only matched
+# parse_legacy_filename -- silently RECLASSIFYING a legacy decision as
+# current-scheme, under a different number/title, with zero warning.
+# Confirmed live: a legacy-only repository's `separator` change was
+# incorrectly ALLOWED by the scoped version, and the file's own scheme
+# flipped on the next scan. `migrationpattern` has no mirror risk --
+# parse_filename never reads it, so a current-scheme file can never be
+# reclassified legacy by a migrationpattern change, confirmed by
+# reading naming.py directly. `separator` is blanket again as a result;
+# only `migrationpattern` is genuinely safe to scope.
 _STATUS_LABEL_GUARD_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
-# `separator` is only ever read by naming.py's parse_filename (the
-# CURRENT scheme) -- parse_legacy_filename never references it.
-_CURRENT_SCHEME_GUARD_FIELDS = ("separator",)
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_GUARD_FIELDS + ("separator",)
 # `migrationpattern` is only ever read by naming.py's
 # parse_legacy_filename (the LEGACY scheme) -- parse_filename never
-# references it. ADR004V01 originally dismissed this field on a
-# write-dependency argument ("not a value this tool's own writes depend
-# on staying stable") that never addressed its READ/recognition
-# dependency -- confirmed live and in naming.py's own source; corrected
-# in ADR004V02.
+# references it, and (unlike separator) there is no reverse
+# reclassification risk (see the note above). ADR004V01 originally
+# dismissed this field on a write-dependency argument ("not a value
+# this tool's own writes depend on staying stable") that never
+# addressed its READ/recognition dependency -- confirmed live and in
+# naming.py's own source; corrected in ADR004V02.
 _LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
 
 
@@ -174,32 +190,26 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     labels and `separator` (a changed statusnew/statusacc/statusrej/
     statussup label stops core/header.py's own label-text match from
     recognizing an existing, marker-less status cell; a changed
-    separator stops core/naming.py's own current-scheme filename parse
-    from recognizing an existing file at all), and by direct code
-    reading for `migrationpattern` (core/naming.py's own
+    separator can stop core/naming.py's own current-scheme filename
+    parse from recognizing an existing file at all, OR silently
+    reclassify a legacy-scheme file as current-scheme -- see the note
+    on _BLANKET_GUARD_FIELDS above for why `separator` is blanket, not
+    scoped, despite only being read by one scheme's own parser), and by
+    direct code reading for `migrationpattern` (core/naming.py's own
     parse_legacy_filename re-derives every legacy-scheme file's number/
     version/revision/prefix by POSITION and LENGTH from
     `config.migrationpattern`, read fresh on every call -- nothing
     stored in the file itself pins its own identity).
 
-    Scheme-aware (ADR004V02, corrected from V01's blanket check): status
-    labels block on ANY recognized decision (current or legacy scheme --
-    the header format is identical either way); `separator` blocks only
-    if a CURRENT-scheme decision exists; `migrationpattern` blocks only
-    if a LEGACY-scheme decision exists. Blocking a `separator` change in
-    a legacy-only repository (or a `migrationpattern` change in a
-    current-scheme-only repository) would refuse something objectively
-    harmless -- confirmed by reading naming.py's own two parse
-    functions, neither of which references the other scheme's guarded
-    field at all.
-
-    Still unconditional WITHIN the scheme(s) it actually affects --
-    unlike the ADR004V01 marker itself, this does not check whether a
-    given file is already marker-protected against a status-label
-    change specifically (no marker-based equivalent exists for
-    `separator`/`migrationpattern` at all). Same blanket-within-scope
-    shape reject_folderadr_change_if_decisions_exist above already uses,
-    not a per-file analysis.
+    `migrationpattern` blocks only if a LEGACY-scheme decision exists;
+    every other guarded field blocks on ANY recognized decision, any
+    scheme. Still unconditional WITHIN the scheme(s) it actually
+    affects -- unlike the ADR004V01 marker itself, this does not check
+    whether a given file is already marker-protected against a
+    status-label change specifically (no marker-based equivalent exists
+    for `separator`/`migrationpattern` at all). Same blanket-within-
+    scope shape reject_folderadr_change_if_decisions_exist above
+    already uses, not a per-file analysis.
 
     Scans against `old_config` (never `new_config`): the existing files
     were written/named under the OLD rules, not the new ones -- same
@@ -208,17 +218,20 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     The scan-incomplete fail-closed check below is NOT scheme-scoped --
     an unreadable subdirectory's own contents (and therefore scheme) are
     unknowable, so any guarded field change fails closed regardless of
-    which scheme it would otherwise only need to protect."""
-    status_fields_changed = [
-        field for field in _STATUS_LABEL_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
-    ]
-    current_scheme_fields_changed = [
-        field for field in _CURRENT_SCHEME_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
+    which scheme it would otherwise only need to protect. `existing_
+    decisions` in the blocked-error's own data is scoped to exactly what
+    the blocking field(s) actually affect: every recognized decision
+    (any scheme) when a blanket field is blocking, or only the legacy-
+    scheme subset when migrationpattern is the sole blocking field --
+    never an inflated total that includes decisions the blocking
+    field(s) have no bearing on."""
+    blanket_fields_changed = [
+        field for field in _BLANKET_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
     ]
     legacy_scheme_fields_changed = [
         field for field in _LEGACY_SCHEME_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
     ]
-    changed_fields = status_fields_changed + current_scheme_fields_changed + legacy_scheme_fields_changed
+    changed_fields = blanket_fields_changed + legacy_scheme_fields_changed
     if not changed_fields:
         return
 
@@ -234,18 +247,26 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
         )
 
     existing = scan_decisions(old_folder, old_config, warnings=warnings)
-    blocking_fields = list(status_fields_changed) if (status_fields_changed and existing) else []
-    if current_scheme_fields_changed and any(scheme == "current" for scheme, _, _ in existing):
-        blocking_fields += current_scheme_fields_changed
-    if legacy_scheme_fields_changed and any(scheme == "legacy" for scheme, _, _ in existing):
+    legacy_existing_count = sum(1 for scheme, _, _ in existing if scheme == "legacy")
+
+    blocking_fields = []
+    if blanket_fields_changed and existing:
+        blocking_fields += blanket_fields_changed
+    if legacy_scheme_fields_changed and legacy_existing_count:
         blocking_fields += legacy_scheme_fields_changed
 
     if blocking_fields:
+        # A blanket field blocking means every recognized decision (any
+        # scheme) is genuinely at risk -- len(existing) is correct even
+        # when migrationpattern is ALSO blocking, since that set is
+        # always a subset. Only when migrationpattern is the SOLE
+        # blocking field does the narrower legacy-only count apply.
+        affected_count = len(existing) if blanket_fields_changed and existing else legacy_existing_count
         raise CommandError(
             "status-or-separator-change-blocked-by-existing-decisions",
-            f"Cannot change {', '.join(blocking_fields)}: {len(existing)} existing decision(s) would no "
+            f"Cannot change {', '.join(blocking_fields)}: {affected_count} existing decision(s) would no "
             "longer be recognized.",
-            data={"changed_fields": blocking_fields, "existing_decisions": len(existing)},
+            data={"changed_fields": blocking_fields, "existing_decisions": affected_count},
             warnings=warnings,
         )
 

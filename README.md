@@ -117,7 +117,7 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 | [`log`](doc/commands/log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 | [`help`](doc/commands/help.md) | Lists every command, or describes one of them in full. |
 
-Bare `adrpy help` (or running `adrpy` with no arguments at all) lists every command's name and a one-line summary only, plus a curated preview of the config values a fresh `init` on this machine would actually produce (`defaults`, sourced from this machine's own `installconfig` when one is set up, or the built-in default otherwise — not every field, just the ones that matter most day to day; `adrpy installconfig`/`adrpy config` return every field) -- kept short on purpose, since the full contract of all 14 commands at once is a lot to read. A specific command's full argument list, types, and every failure code it can return is available at any time via:
+Bare `adrpy help` (or running `adrpy` with no arguments at all) lists every command's name and a one-line summary only, plus a curated preview of the config values a fresh `init` on this machine would actually produce (`defaults`, sourced from this machine's own `installconfig` when one is set up, or the built-in default otherwise — not every field; `template`, `migrationpattern`, `headerdisclaimer`, the 11 header-row labels, and the plugin fields are all left out of this quick-glance preview on purpose, `adrpy installconfig`/`adrpy config` return every field including those) -- kept short on purpose, since the full contract of all 14 commands at once is a lot to read. A specific command's full argument list, types, and every failure code it can return is available at any time via:
 
 ```bash
 adrpy help <command>

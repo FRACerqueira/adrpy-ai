@@ -289,6 +289,28 @@ def test_config_rejects_multiple_guarded_fields_changed_at_once_naming_all_of_th
     assert set(excinfo.value.data["changed_fields"]) == {"statusacc", "separator"}
 
 
+def test_config_rejects_separator_and_migrationpattern_together_on_a_mixed_scheme_repo(tmp_path):
+    """ADR004V02: the guard's blanket check (separator, among others) and
+    its legacy-scoped check (migrationpattern) must be evaluated
+    independently, not short-circuited against each other -- a round-20
+    test-adequacy pass found that mutating the two checks into an
+    if/elif chain (so the legacy check is skipped once the blanket
+    check already matched) left the full suite green, since no existing
+    test combined a mixed-scheme repository with changing both fields
+    at once. Both fields must be named here."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])  # current-scheme
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0002T02.md")  # legacy-scheme
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--separator", "_", "--migrationpattern", "N00:05T05"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert set(excinfo.value.data["changed_fields"]) == {"separator", "migrationpattern"}
+    assert excinfo.value.data["existing_decisions"] == 2  # both decisions genuinely at risk (separator is blanket)
+
+
 def test_config_rejects_a_statusrej_change_when_decisions_already_exist(tmp_path):
     """Same guard as statusnew's own test, but for statusrej -- the
     guard's own field tuple must cover all 4 status labels
@@ -332,6 +354,25 @@ def test_config_reports_the_correct_count_with_more_than_one_existing_decision(t
     assert excinfo.value.data == {"changed_fields": ["statusnew"], "existing_decisions": 3}
 
 
+def test_config_migrationpattern_only_block_counts_only_legacy_scheme_decisions(tmp_path):
+    """A round-20 test-adequacy pass found the prior version of this
+    count test used a scheme-homogeneous fixture (all current-scheme),
+    so it could not distinguish 'a real total count' from 'a real count
+    scoped to the right scheme' -- a scheme-miscounting regression would
+    have slipped through undetected. This test uses a MIXED-scheme
+    repository and changes ONLY migrationpattern, so the count must
+    reflect just the legacy-scheme subset (1), never the total (2)."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Current scheme decision"])
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0002T02.md")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--migrationpattern", "N00:05T05"])
+
+    assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
+
+
 def test_config_allows_a_migrationpattern_change_when_only_current_scheme_decisions_exist(tmp_path):
     """ADR004V02: migrationpattern is only ever read by naming.py's
     parse_legacy_filename -- a repository with only current-scheme
@@ -363,20 +404,49 @@ def test_config_rejects_a_migrationpattern_change_when_a_legacy_decision_already
     assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
 
 
-def test_config_allows_a_separator_change_when_only_legacy_scheme_decisions_exist(tmp_path):
-    """ADR004V02: separator is only ever read by naming.py's
-    parse_filename (the current scheme) -- a repository with only
-    legacy-scheme decisions has nothing that a separator change could
-    break. This is the pre-existing imprecision ADR004V01 shipped with
-    (confirmed live before this fix: this exact scenario used to be
-    refused)."""
+def test_config_rejects_a_separator_change_when_only_legacy_scheme_decisions_exist(tmp_path):
+    """ADR004V02 (corrected): separator is only ever READ by naming.py's
+    parse_filename (the current scheme), but that is not enough to scope
+    the guard to current-scheme decisions only -- parse_any_filename
+    tries the current scheme FIRST, so a separator value that happens to
+    already appear in a legacy filename can make it newly match under
+    parse_filename, silently reclassifying a legacy decision as
+    current-scheme with a different number/title. A round-20 audit
+    found this live (a scoped version of this guard incorrectly allowed
+    this exact scenario, and the file's own scheme flipped on the next
+    scan) -- separator is blanket again as a result; only
+    migrationpattern is genuinely safe to scope (naming.py's
+    parse_filename never reads it, so it has no mirror reclassification
+    risk)."""
     tmp_path = _init_repo(tmp_path)
     config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
     _write_legacy_file(tmp_path, "0001T01.md")
 
-    result = config.run(["--path", str(tmp_path), "--separator", "_"])
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--separator", "_"])
 
-    assert result["updated_fields"] == ["separator"]
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["separator"], "existing_decisions": 1}
+
+
+def test_config_separator_change_does_not_silently_reclassify_a_legacy_file_as_current_scheme(tmp_path):
+    """Direct regression test for the round-20 finding itself, not just
+    the guard's own refusal: even bypassing the guard's own check (by
+    changing a field the guard does NOT protect against this exact
+    risk) would be dangerous -- this test locks in that the guard DOES
+    block the one live reproduction that exposed the bug, end to end
+    through explore, not just via the raised error code."""
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0001_MyTitle.md")
+
+    with pytest.raises(CommandError):
+        config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    # Nothing committed -- the file is still recognized under its
+    # original scheme/identity, not silently reclassified.
+    config_after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert config_after.separator == "-"
 
 
 def test_config_status_or_separator_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
