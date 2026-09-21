@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Closed 3 confirmed bypasses of the `folderadr`/`folderlog` containment guard's schema-time string comparison: a `../` traversal, a backslash-separated nesting on Windows, and a bare case difference, each resolving to the same or a nested real directory despite comparing unequal as raw strings — the comparison now normalizes to the host's own path components (`.`/`..` collapsed, case-folded) before comparing.
 - Closed a real-filesystem junction/symlink aliasing bypass of the `folderadr`/`folderlog` containment guard: the schema-time check alone cannot see a junction or symlink planted inside the repository tree that makes two configured paths alias the identical real directory — `reject_aliased_repo_folders` now additionally resolves both fields for real and compares the resolved paths, wired into `init`, `config`, and `log`.
 - Narrowed a check-then-use TOCTOU window in that same real-filesystem guard: each of its 3 call sites now re-verifies immediately before committing its write, not just before starting, closing the gap between the check passing and the write landing.
 
