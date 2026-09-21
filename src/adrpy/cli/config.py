@@ -121,9 +121,12 @@ def _field_description(field):
         )
     if field in _INT_FIELD_BOUNDS:
         low, high = _INT_FIELD_BOUNDS[field]
-        return f"Integer between {low} and {high} (inclusive)."
+        return (
+            f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
+            "field-not-an-integer."
+        )
     if field == "disableplugins":
-        return "'true' or 'false'."
+        return "'true' or 'false'; anything else fails with field-not-a-boolean."
     # Unreachable today -- every field in _EDITABLE_FIELDS hits a branch
     # above. A silent, generic fallback here (a tautological "New value
     # for '<field>'." an agent can't learn anything from) would return
@@ -138,6 +141,9 @@ def describe():
         "summary": "Reads or updates an existing repository's own adr-config.adrplus.",
         "description": (
             "Reads or updates fields of an existing repository's adr-config.adrplus. "
+            "May fail with target-directory-not-found if --path does not point to an existing directory, "
+            "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
+            "either way. "
             "With no field flags, reads the current config back (read-only, no write). "
             "`activeplugins` is never included in that read result or accepted as a field to update -- "
             "the plugin system is out of scope for now (see the `init` command's own note) -- "

@@ -31,7 +31,8 @@ def describe():
             "for the complete contract. --full "
             "returns every command's full description and argument list in one call, the same shape "
             "this command always returned before summaries existed. Naming a specific `command` "
-            "always returns its full description and argument list, regardless of --full."
+            "always returns its full description and argument list, regardless of --full. Fails with "
+            "unknown-command if the named `command` doesn't match any registered command."
         ),
         "arguments": [
             {

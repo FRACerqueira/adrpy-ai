@@ -49,6 +49,9 @@ def describe():
         "summary": "Marks an Accepted decision Superseded and creates its successor.",
         "description": (
             "Marks an Accepted decision as Superseded and creates its successor. "
+            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
+            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
+            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
             "Refuses with family-member-superseded if another member of the same family has "
             "already been superseded, or family-member-pending if another member is still "
             "unresolved (Proposed) -- no write is made either way. "
@@ -74,7 +77,14 @@ def describe():
             "filename component, not just a header-table cell), or consists entirely of "
             "whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a "
             "value raw, which can collide with the filename's own separator and produce a successor the "
-            "tool can never recognize again; no write is made."
+            "tool can never recognize again; no write is made. Fails with one of still-proposed, "
+            "already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own "
+            "current status makes Superseded unreachable from here) if the target isn't eligible -- no "
+            "write is made. Fails with file-already-exists (data.file names it) if the successor's own "
+            "resulting filename already exists on disk -- no write is made either. If the PREDECESSOR's "
+            "own write (marking it Superseded, the FIRST of the two writes) fails with an OSError, that "
+            "surfaces as supersede-write-failed instead of a generic io-error, for discoverability -- "
+            "nothing was written in that case."
         ),
         "arguments": [
             {

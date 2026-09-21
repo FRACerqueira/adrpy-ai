@@ -51,6 +51,9 @@ def describe():
         "summary": "Adds an adrpy-compliant header to existing, hand-written decision files.",
         "description": (
             "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
+            "May fail with target-directory-not-found if --path does not point to an existing directory, "
+            "or config-not-found if that directory has no adr-config.adrplus -- no file is touched either "
+            "way. "
             "Requires the repository's migrationpattern to be set, either directly (see the `config` "
             "command) or via the install-level config's own fallback (see the `installconfig` command); "
             "fails with migration-pattern-not-configured only when both are empty -- true for any "

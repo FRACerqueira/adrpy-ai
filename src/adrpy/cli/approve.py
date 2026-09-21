@@ -34,6 +34,9 @@ def describe():
         "summary": "Marks a Proposed decision Accepted.",
         "description": (
             "Marks a Proposed decision as Accepted. "
+            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
+            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
+            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "
             "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
             "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
@@ -43,7 +46,11 @@ def describe():
             "can't be trusted from an incomplete scan; no write was made. May also fail with "
             "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
             "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
-            "the same reasoning as an unreadable subdirectory; no write was made."
+            "the same reasoning as an unreadable subdirectory; no write was made. Fails with one of "
+            "already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
+            "(the target's own current status makes Accepted unreachable from here) if the target isn't "
+            "eligible, or family-member-superseded if another member of the same family has already been "
+            "superseded -- no write is made in any of these cases."
         ),
         "arguments": [
             {

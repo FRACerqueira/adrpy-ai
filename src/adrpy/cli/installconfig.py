@@ -142,9 +142,12 @@ def _field_description(field):
         )
     if field in _INT_FIELD_BOUNDS:
         low, high = _INT_FIELD_BOUNDS[field]
-        return f"Integer between {low} and {high} (inclusive)."
+        return (
+            f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
+            "field-not-an-integer."
+        )
     if field == "disableplugins":
-        return "'true' or 'false'."
+        return "'true' or 'false'; anything else fails with field-not-a-boolean."
     # Same fail-loud guard as config.py's own _field_description, and for
     # the same reason: a newly added schema field with no matching branch
     # here must be caught immediately, not silently fall through to a
@@ -189,7 +192,9 @@ def describe():
                 "required": False,
                 "description": (
                     "Path to a config JSON to replace the install-level config with wholesale, instead of "
-                    "merging individual field flags -- same semantics as `init --seed`. The install-level "
+                    "merging individual field flags -- same semantics as `init --seed`. Fails with "
+                    "config-file-not-found if this path itself does not point to an existing file. "
+                    "The install-level "
                     "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
                     "this also covers importing one from a real installation of the reference tool's own "
                     "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "

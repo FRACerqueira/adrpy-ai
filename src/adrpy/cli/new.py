@@ -37,13 +37,19 @@ def describe():
         "summary": "Creates a new decision, status Proposed.",
         "description": (
             "Creates a new decision with status Proposed. "
+            "May fail with target-directory-not-found if --path does not point to an existing directory, "
+            "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
+            "either way. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "
             "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
             "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
             "made either way; retry. May also fail with new-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and "
-            "next-number allocation can't be trusted from an incomplete scan; no write was made."
+            "next-number allocation can't be trusted from an incomplete scan; no write was made. Once the "
+            "scan itself succeeds, fails with title-already-exists (data.existing_file names it) if "
+            "another decision already has this exact title, or file-already-exists (data.file names it) "
+            "if the resulting filename happens to already exist on disk -- neither write is made."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},

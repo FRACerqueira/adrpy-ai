@@ -14,7 +14,7 @@ Reads or updates the per-user install-level config (ADR002V01) -- used by `init`
 
 ### `--seed` *(optional, string)*
 
-Path to a config JSON to replace the install-level config with wholesale, instead of merging individual field flags -- same semantics as `init --seed`. The install-level config's schema is byte-compatible with a repository's own adr-config.adrplus, so this also covers importing one from a real installation of the reference tool's own template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises usage-error -- pass one or the other -- same as `init`'s own incompatible flag combination (--seed with --language).
+Path to a config JSON to replace the install-level config with wholesale, instead of merging individual field flags -- same semantics as `init --seed`. Fails with config-file-not-found if this path itself does not point to an existing file. The install-level config's schema is byte-compatible with a repository's own adr-config.adrplus, so this also covers importing one from a real installation of the reference tool's own template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises usage-error -- pass one or the other -- same as `init`'s own incompatible flag combination (--seed with --language).
 
 ### `--language` *(optional, string)*
 
@@ -110,19 +110,19 @@ Header row label, max 40 characters; cannot be empty, contain '|', or contain a 
 
 ### `--lenseq` *(optional, integer)*
 
-Integer between 3 and 6 (inclusive).
+Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer.
 
 ### `--lenversion` *(optional, integer)*
 
-Integer between 2 and 4 (inclusive).
+Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer.
 
 ### `--lenrevision` *(optional, integer)*
 
-Integer between 0 and 3 (inclusive).
+Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer.
 
 ### `--disableplugins` *(optional, boolean)*
 
-'true' or 'false'.
+'true' or 'false'; anything else fails with field-not-a-boolean.
 
 ## Example
 

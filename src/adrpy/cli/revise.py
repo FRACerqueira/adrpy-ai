@@ -48,6 +48,9 @@ def describe():
         "summary": "Creates a new revision (wording fix) of an Accepted/Rejected decision.",
         "description": (
             "Creates a new revision (wording fix) of an Accepted/Rejected decision. "
+            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
+            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
+            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
             "Requires the repository's lenrevision to be > 0 (see the `config` command); "
             "fails with revision-not-configured otherwise -- true for any freshly-init'd repository. "
             "May fail with repository-locked if the repository lock could not be acquired in time, or "
@@ -67,7 +70,17 @@ def describe():
             "character; title lands inside an actual filename component, not just a header-table cell), or "
             "title consists entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step "
             "falls back to echoing such a value raw, which can collide with the filename's own separator "
-            "and produce a file the tool can never recognize again."
+            "and produce a file the tool can never recognize again. Fails with family-not-found if this "
+            "decision's own family can't be resolved, or lenrevision-too-small-for-new-revision "
+            "(data.new_revision/data.lenrevision) if the next revision number doesn't fit the configured "
+            "width -- no write is made either way. If this isn't the latest version/revision in its "
+            "family (and isn't the one documented branch-off-a-rejected-latest exception), fails with "
+            "not-latest-version (data names the actual latest member). Fails with one of still-proposed, "
+            "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
+            "family-member-superseded/family-member-pending if another member of the same family has "
+            "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
+            "(data.file names it) if the resulting filename already exists on disk. No write is made in "
+            "any of these cases."
         ),
         "arguments": [
             {

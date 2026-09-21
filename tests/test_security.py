@@ -145,13 +145,21 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp
     named in decision-log: 2026-09-18--deferred--security--posix-
     symlink-escape-coverage-for-resolve-within.md -- no equivalent test
     constructed a real symlink on a POSIX host before this one. Written
-    on a Windows host (this repository's own dev machine at the time)
-    where it cannot be run -- creating a real Windows symlink here
-    requires Developer Mode or admin privileges neither present in this
-    environment (confirmed: os.symlink raised WinError 1314, "a required
-    privilege is not held by the client"), so red/green for this
-    specific test still needs to run on a real POSIX host or CI; it is
-    at least confirmed to skip cleanly rather than error on this one."""
+    on a Windows host (this repository's own dev machine), where it
+    cannot run directly under pytest -- creating a real Windows symlink
+    here requires Developer Mode or admin privileges neither present in
+    this environment (confirmed: os.symlink raised WinError 1314, "a
+    required privilege is not held by the client"). This exact scenario
+    (same variables, same escape target, same assertion) was
+    independently confirmed live on a real POSIX host via WSL Ubuntu
+    (round 28): `link.symlink_to(outside, ...)` then
+    `resolve_within(base, "linked/escaped.md")` correctly raised
+    path-outside-repository, run as a standalone script rather than
+    through pytest itself (this WSL distro's minimal Python install has
+    neither pip nor venv, and installing them requires sudo, not taken
+    without being asked) -- the invariant this test encodes is
+    confirmed, this specific pytest invocation of it is not, and still
+    skips cleanly rather than erroring on Windows."""
     base = tmp_path / "repo"
     base.mkdir()
     outside = tmp_path / "outside"

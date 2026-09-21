@@ -40,6 +40,10 @@ def describe():
         "summary": "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder.",
         "description": (
             "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
+            "May fail with target-directory-not-found if --path does not point to an existing directory "
+            "-- no write is attempted. Fails with config-already-exists if adr-config.adrplus is already "
+            "there and no --seed was given -- use `config` to edit an existing repository's settings "
+            "instead, or pass --seed to overwrite it outright. "
             "With no --seed and no --language, seeds from the install-level config (see the "
             "installconfig command; ADR002V01) if one has been set up on this machine, or from the "
             "built-in default otherwise -- the install-level config not existing is the normal state "
@@ -57,7 +61,13 @@ def describe():
             "lenseq/lenversion/lenrevision must fit, can't be trusted from an incomplete scan. Unlike "
             "every other failure documented on the --seed argument below, this one is NOT scoped to the "
             "already-existing-repository path -- it can also fire on a genuinely fresh `init` if a "
-            "decisions folder with an unreadable subdirectory already exists under the target path."
+            "decisions folder with an unreadable subdirectory already exists under the target path. "
+            "Once that scan itself succeeds, may also fail with lenseq-too-small-for-existing-decisions/"
+            "lenversion-too-small-for-existing-decisions/lenrevision-too-small-for-existing-decisions "
+            "(each names the offending existing number and the configured length in `data`) if the "
+            "resulting lenseq/lenversion/lenrevision is too narrow for a decision that already exists on "
+            "disk -- same scoping as the scan-incomplete check above (can fire on a genuinely fresh "
+            "`init` too, not just --seed on an existing repository)."
         ),
         "arguments": [
             {
@@ -81,7 +91,8 @@ def describe():
                 # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the install-level "
-                    "config (see the installconfig command) or the built-in default. "
+                    "config (see the installconfig command) or the built-in default. Fails with "
+                    "config-file-not-found if this path itself does not point to an existing file. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
                     "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. "
                     "If the seed's own folderadr differs from the current one AND the OLD folder already has "

@@ -53,6 +53,76 @@ def test_config_and_init_document_folderadr_change_scan_incomplete():
         assert "folderadr-change-scan-incomplete" in text, f"{name}'s describe() never mentions it"
 
 
+def test_every_path_based_command_documents_target_directory_not_found():
+    """A round-27 deferred-item closure: target-directory-not-found
+    (core.lifecycle.resolve_target_and_config, raised for EVERY --path-
+    taking command, including init with require_config=False) was
+    reachable everywhere but documented nowhere -- the exact class of
+    gap doc/commands/INDEX.md's own absolute claim ('every failure code
+    a command can return is documented inline') was checkably false
+    for, per the 2026-09-21 deferred entry this test closes."""
+    for name in ("config", "explore", "init", "log", "migrate", "new"):
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "target-directory-not-found" in text, f"{name}'s describe() never mentions it"
+
+
+def test_every_path_based_command_except_init_documents_config_not_found():
+    """config-not-found (resolve_target_and_config's other failure,
+    raised only when require_config=True -- every --path-taking command
+    except init, which decides for itself whether a missing config is
+    an error) was also undocumented everywhere."""
+    for name in ("config", "explore", "log", "migrate", "new"):
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "config-not-found" in text, f"{name}'s describe() never mentions it"
+
+
+def test_every_per_file_command_documents_file_not_found_and_cannot_determine_root_path():
+    """file-not-found/cannot-determine-root-path
+    (core.lifecycle.resolve_repo_and_target, the --file-based sibling of
+    resolve_target_and_config above) were also undocumented on every one
+    of the 6 commands that take --file instead of --path."""
+    for name in _PER_FILE_COMMANDS:
+        info = COMMANDS[name].describe()
+        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+        assert "file-not-found" in text, f"{name}'s describe() never mentions file-not-found"
+        assert "cannot-determine-root-path" in text, f"{name}'s describe() never mentions cannot-determine-root-path"
+
+
+def test_init_documents_config_already_exists_and_config_file_not_found():
+    """config-already-exists was only ever documented as 'NOT raised
+    when --seed is given', never stated positively for the bare-init
+    path it actually protects; config-file-not-found (a bad --seed path
+    itself) was undocumented entirely."""
+    info = COMMANDS["init"].describe()
+    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+    assert "config-already-exists" in text
+    assert "config-file-not-found" in text
+
+
+def test_init_documents_the_three_length_too_small_codes():
+    """lenseq/lenversion/lenrevision-too-small-for-existing-decisions
+    (init.py, fired once the existing-numbers scan itself succeeds) were
+    reachable but never named in describe(), despite the surrounding
+    text explicitly setting up the reader to expect them ('...which
+    lenseq/lenversion/lenrevision must fit...')."""
+    info = COMMANDS["init"].describe()
+    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+    assert "lenseq-too-small-for-existing-decisions" in text
+    assert "lenversion-too-small-for-existing-decisions" in text
+    assert "lenrevision-too-small-for-existing-decisions" in text
+
+
+def test_config_documents_field_not_an_integer_and_field_not_a_boolean():
+    """field-not-an-integer (lenseq/lenversion/lenrevision) and
+    field-not-a-boolean (disableplugins) were reachable but undocumented."""
+    info = COMMANDS["config"].describe()
+    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
+    assert "field-not-an-integer" in text
+    assert "field-not-a-boolean" in text
+
+
 def test_new_supersede_and_version_document_the_forbidden_character_constraint():
     """reject_embedded_
     delimiter (core/security.py) is enforced on title/domain/scope in

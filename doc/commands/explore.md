@@ -8,7 +8,7 @@ Lists every decision file in the repository, on a best-effort basis.
 
 ## Description
 
-Lists every decision file in the repository, recognized or not, on a best-effort basis: a file excluded for escaping the repository boundary, a subdirectory that could not be scanned, or a single file that could not be read are all reported via `warnings` instead of silently missing from `decisions` or failing the whole command.
+Lists every decision file in the repository, recognized or not, on a best-effort basis: a file excluded for escaping the repository boundary, a subdirectory that could not be scanned, or a single file that could not be read are all reported via `warnings` instead of silently missing from `decisions` or failing the whole command. May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- these two are hard failures, not part of the best-effort reporting above, since there is no repository to scan at all yet.
 
 ## Arguments
 

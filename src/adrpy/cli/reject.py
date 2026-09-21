@@ -39,7 +39,11 @@ def describe():
         "name": "reject",
         "summary": "Marks a Proposed decision Rejected.",
         "description": (
-            "Marks a Proposed decision as Rejected. If this decision is itself a successor "
+            "Marks a Proposed decision as Rejected. "
+            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
+            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
+            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
+            "If this decision is itself a successor "
             "(created by `supersede`), also reverts the predecessor's Superseded status -- the "
             "result's `undone_predecessor` names that file when this happens, or is null otherwise. "
             "This is two writes in sequence, not one: a failure reverting the predecessor "
@@ -57,7 +61,11 @@ def describe():
             "family-scan-unreliable-encoding BEFORE the first write (this decision's own family scan, "
             "unrelated to the predecessor lookup above) if a subdirectory under the decisions folder could "
             "not be scanned, or a sibling needed a lossy UTF-8 decode whose parsed header can't be trusted "
-            "for a safety decision -- no write made in that case."
+            "for a safety decision -- no write made in that case. BEFORE the first write, fails with one "
+            "of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
+            "(the target's own current status makes Rejected unreachable from here) if the target isn't "
+            "eligible, or family-member-superseded if another member of the same family has already been "
+            "superseded -- no write is made in any of these cases."
         ),
         "arguments": [
             {
