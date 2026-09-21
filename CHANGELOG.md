@@ -20,4 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - A repository-wide lock covering the full critical section of every mutating command, with a documented failure boundary (see [ADR001](doc/adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md)).
 - Public project scaffolding: `LICENSE` (MIT), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, this changelog.
 
+### Security
+
+- Closed a real-filesystem junction/symlink aliasing bypass of the `folderadr`/`folderlog` containment guard: the schema-time check alone cannot see a junction or symlink planted inside the repository tree that makes two configured paths alias the identical real directory — `reject_aliased_repo_folders` now additionally resolves both fields for real and compares the resolved paths, wired into `init`, `config`, and `log`.
+- Narrowed a check-then-use TOCTOU window in that same real-filesystem guard: each of its 3 call sites now re-verifies immediately before committing its write, not just before starting, closing the gap between the check passing and the write landing.
+
 [Unreleased]: https://github.com/FRACerqueira/adrpy-ai/commits/main
