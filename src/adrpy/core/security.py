@@ -1,6 +1,7 @@
 """Adversarial-input safety checks."""
 
 import os
+import re
 from pathlib import Path
 
 from adrpy.core.errors import CommandError
@@ -178,3 +179,29 @@ def reject_filesystem_unsafe_title(value, field_name):
                 f"Field '{field_name}' cannot contain a filesystem-unsafe character "
                 f"({''.join(sorted(_FILENAME_UNSAFE_CHARACTERS))!r} or a control character).",
             )
+
+
+_NO_WORD_CONTENT_PATTERN = re.compile(r"[\s_-]+")
+
+
+def reject_title_with_no_case_transform_content(value, field_name):
+    """`title` only -- `to_case` (core/casing.py) word-splits on
+    whitespace/'_'/'-' and falls back to echoing its RAW input unchanged
+    when that split finds nothing left to transform, which happens
+    exactly when the value consists entirely of those same
+    whitespace/'_'/'-' characters. That raw echo lands in
+    naming.build_filename verbatim and can collide with the filename's
+    own separator -- confirmed live: a title of '-' with the default '-'
+    separator produced 'ADR001V01--.md', which naming.parse_filename can
+    no longer recognize at all (permanently unreachable by every other
+    command: approve/reject/undo/supersede/version/revise all fail
+    filename-not-recognized), and its own sequence number was silently
+    reallocated to the very next decision created, duplicating it across
+    two different files. Rejected outright -- the same class of problem
+    as a blank title (reject_embedded_delimiter's own check), just one
+    that is not literally blank."""
+    if value and not _NO_WORD_CONTENT_PATTERN.sub("", value):
+        raise CommandError(
+            "field-contains-forbidden-character",
+            f"Field '{field_name}' must contain at least one character other than whitespace, '_', or '-'.",
+        )

@@ -22,7 +22,12 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -48,8 +53,11 @@ def describe():
             "can't be trusted from an incomplete scan; no write was made. The target's own title (re-read "
             "from its header cell, not a flag) is re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
-            "'|', a line-break-like character, or a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
-            "character; title lands inside an actual filename component, not just a header-table cell)."
+            "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
+            "character; title lands inside an actual filename component, not just a header-table cell), or "
+            "consists entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls "
+            "back to echoing such a value raw, which can collide with the filename's own separator and "
+            "produce a successor file the tool can never recognize again."
         ),
         "arguments": [
             {
@@ -235,6 +243,7 @@ def run(args):
             # propagate into a real write attempt.
             reject_embedded_delimiter(header.title, "title")
             reject_filesystem_unsafe_title(header.title, "title")
+            reject_title_with_no_case_transform_content(header.title, "title")
 
             template = config.template if flags.get("empty") else read_body(lines)
 

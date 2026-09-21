@@ -11,6 +11,7 @@ from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_status_marker_forgery_characters,
+    reject_title_with_no_case_transform_content,
     resolve_within,
 )
 
@@ -266,6 +267,19 @@ def test_reject_filesystem_unsafe_title_rejects_forbidden_characters(value):
 
 def test_reject_filesystem_unsafe_title_accepts_clean_value():
     reject_filesystem_unsafe_title("A normal title", "title")
+
+
+@pytest.mark.parametrize("value", ["-", "---", "___", "   ", " - _ ", "--------"])
+def test_reject_title_with_no_case_transform_content_rejects_separator_only_titles(value):
+    with pytest.raises(CommandError) as excinfo:
+        reject_title_with_no_case_transform_content(value, "title")
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+@pytest.mark.parametrize("value", ["A normal title", "!!!", "a", "-a-", "a-b-c"])
+def test_reject_title_with_no_case_transform_content_accepts_titles_with_real_content(value):
+    reject_title_with_no_case_transform_content(value, "title")
 
 
 def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine(tmp_path):

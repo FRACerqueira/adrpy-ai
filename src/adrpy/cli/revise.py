@@ -26,7 +26,12 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -55,8 +60,11 @@ def describe():
             "domain (all re-read from its header cells, not flags -- this command has none for scope/"
             "domain) are re-validated before use -- may fail with field-contains-forbidden-character if a "
             "hand-edited or migrated source file carries '|', a line-break-like character in any of the "
-            "three, or a filesystem-unsafe character in title specifically (`<>:\"/\\|?*` or a control "
-            "character; title lands inside an actual filename component, not just a header-table cell)."
+            "three, a filesystem-unsafe character in title specifically (`<>:\"/\\|?*` or a control "
+            "character; title lands inside an actual filename component, not just a header-table cell), or "
+            "title consists entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step "
+            "falls back to echoing such a value raw, which can collide with the filename's own separator "
+            "and produce a file the tool can never recognize again."
         ),
         "arguments": [
             {
@@ -191,6 +199,7 @@ def run(args):
             # NTFS Alternate-Data-Stream separator) at build_filename below.
             reject_embedded_delimiter(header.title, "title")
             reject_filesystem_unsafe_title(header.title, "title")
+            reject_title_with_no_case_transform_content(header.title, "title")
             reject_embedded_delimiter(header.scope, "scope")
             reject_embedded_delimiter(header.domain, "domain")
 

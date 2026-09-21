@@ -242,6 +242,44 @@ def test_migrate_rejects_a_title_with_a_filesystem_unsafe_character_as_a_per_fil
     assert "filesystem-unsafe" in bad_error.lower()
 
 
+def test_migrate_rejects_a_title_made_only_of_separator_characters_as_a_per_file_failure(tmp_path, monkeypatch):
+    """A round-23 security finding: to_case (core/casing.py) falls back to
+    echoing its raw input unchanged when word-splitting finds nothing to
+    transform, which happens exactly when the title is made entirely of
+    whitespace/'_'/'-' -- reachable here via a raw, untrusted legacy
+    filename whose title segment has this shape, same technique as the
+    filesystem-unsafe-character test above. Must be a per-file failure
+    (migrate is best-effort), not a whole-batch abort."""
+    _init_repo_with_pattern(tmp_path)
+    good_path = _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
+    bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
+
+    from adrpy.cli import migrate as migrate_module
+    from adrpy.core.naming import ParsedFileName
+
+    real_parse_any_filename = migrate_module.parse_any_filename
+
+    def flaky_parse(filename, config):
+        found = real_parse_any_filename(filename, config)
+        if found is None:
+            return None
+        scheme, parsed = found
+        if parsed.number == 2:
+            parsed = ParsedFileName(number=parsed.number, version=parsed.version, revision=parsed.revision, title="---")
+        return scheme, parsed
+
+    monkeypatch.setattr(migrate_module, "parse_any_filename", flaky_parse)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-write-failed"
+    results = excinfo.value.data["results"]
+    statuses = {r["file"]: r["status"] for r in results}
+    assert statuses[str(good_path)] == "migrated"
+    assert statuses[str(bad_path)] == "failed"
+
+
 def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, monkeypatch):
     """Design decision (2026-09-15), superseding the earlier fail-fast fix:
     migrate is best-effort per file -- one file's OSError must not block

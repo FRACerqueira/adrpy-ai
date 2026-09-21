@@ -319,6 +319,29 @@ def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_
     assert list(adr_dir.iterdir()) == []  # no orphan left behind
 
 
+@pytest.mark.parametrize("value", ["-", "---", "___", "- _ -"])
+def test_new_rejects_a_title_made_only_of_separator_characters(tmp_path, value):
+    """A round-23 security finding, confirmed live before this fix
+    existed: to_case (core/casing.py) falls back to echoing its RAW
+    input unchanged when word-splitting finds nothing to transform, which
+    happens exactly when the title is made entirely of
+    whitespace/'_'/'-'. That raw echo collided with the default '-'
+    separator: `new --title "-"` created 'ADR001V01--.md', a file
+    naming.parse_filename could never recognize again -- permanently
+    unreachable by approve/reject/undo/supersede/version/revise (all
+    fail filename-not-recognized), while its own sequence number was
+    silently reallocated to the very next decision created, duplicating
+    it across two different files with zero warning."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", value])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+    adr_dir = tmp_path / "doc" / "adr"
+    assert list(adr_dir.iterdir()) == []  # no orphan left behind
+
+
 def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """This scan feeds both
     title-uniqueness (find_by_unique_title) and next-number allocation

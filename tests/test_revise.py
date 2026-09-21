@@ -500,6 +500,35 @@ def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_tar
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_path):
+    """A round-23 security finding: to_case (core/casing.py) falls back to
+    echoing its raw input unchanged when word-splitting finds nothing to
+    transform, which happens exactly when the title is made entirely of
+    whitespace/'_'/'-' -- reachable here via a hand-edited or migrated
+    source file's header cell, same as the path-traversal case above."""
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
+    record = DecisionRecord(
+        number=1,
+        title="---",
+        version=1,
+        revision=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_revise_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS

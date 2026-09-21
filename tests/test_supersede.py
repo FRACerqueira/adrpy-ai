@@ -172,6 +172,33 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
+def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters(tmp_path, monkeypatch):
+    """A round-23 security finding: to_case (core/casing.py) falls back to
+    echoing its raw input unchanged when word-splitting finds nothing to
+    transform, which happens exactly when the title is made entirely of
+    whitespace/'_'/'-' -- reachable here via a hand-edited or migrated
+    predecessor filename, same technique as the filesystem-unsafe-
+    character test above."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    real_read_target = supersede_module.read_target
+
+    def flaky_read_target(path, config, warnings=None):
+        filename_info, header, lines, encoding_repaired = real_read_target(path, config, warnings=warnings)
+        from dataclasses import replace as replace_fields
+
+        return replace_fields(filename_info, title="---"), header, lines, encoding_repaired
+
+    monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_supersede_can_override_scope_and_domain(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

@@ -39,6 +39,7 @@ from adrpy.core.security import (
     is_within,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
     resolve_within,
 )
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
@@ -67,12 +68,14 @@ def describe():
             "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
             "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
             "A candidate whose title -- sourced from the raw legacy filename itself, unlike every other "
-            "command's own title -- carries '|', a line-break-like character, or a filesystem-unsafe "
+            "command's own title -- carries '|', a line-break-like character, a filesystem-unsafe "
             "character (`<>:\"/\\|?*` or a control character; the new header this write is about to build "
             "would otherwise embed it verbatim, or -- for the filesystem-unsafe set -- this file's own "
             "existing name already avoided them, since none of them survive as a real filename component "
-            "on this platform) is one such per-file failure (field-contains-forbidden-character), never a "
-            "silent write. "
+            "on this platform), or consists entirely of whitespace/'_'/'-' (e.g. a legacy title segment of "
+            "'---') -- the case-transform step falls back to echoing such a value raw, which can collide "
+            "with the filename's own separator and produce a file the tool can never recognize again -- is "
+            "one such per-file failure (field-contains-forbidden-character), never a silent write. "
             "If the repository lock is lost partway through (a different process reclaimed it), the whole run "
             "aborts immediately instead of continuing unprotected, with migration-lock-lost -- its own "
             "`data.results` names only the candidates actually attempted before the loss; none after. "
@@ -333,6 +336,7 @@ def run(args):
                     # a per-file failure, not a whole-batch abort.
                     reject_embedded_delimiter(title, "title")
                     reject_filesystem_unsafe_title(title, "title")
+                    reject_title_with_no_case_transform_content(title, "title")
                     record = DecisionRecord(number=parsed.number, title=title, version=0)
                     header_text = build_header(config, record, migrated=True)
                     attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)

@@ -22,7 +22,12 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 
@@ -51,7 +56,10 @@ def describe():
                     "Title of the new decision. Cannot contain '|' or a line-break-like character, or a "
                     "filesystem-unsafe character (`<>:\"/\\|?*` or a control character -- unlike every other "
                     "free-text field, title lands inside an actual filename component, not just a "
-                    "header-table cell) (field-contains-forbidden-character), or be blank (field-is-blank)."
+                    "header-table cell); also cannot consist entirely of whitespace/'_'/'-' (e.g. '-' or "
+                    "'---') -- the case-transform step falls back to echoing such a value raw, which can "
+                    "collide with the filename's own separator and produce a file the tool can never "
+                    "recognize again (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -104,6 +112,7 @@ def run(args):
 
     reject_embedded_delimiter(title, "title")
     reject_filesystem_unsafe_title(title, "title")
+    reject_title_with_no_case_transform_content(title, "title")
     reject_embedded_delimiter(domain, "domain")
     reject_embedded_delimiter(scope, "scope")
 

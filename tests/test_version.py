@@ -445,6 +445,32 @@ def test_version_rejects_path_traversal_via_header_title(tmp_path):
     assert not (tmp_path.parent / "outside.md").exists()
 
 
+def test_version_rejects_a_header_title_made_only_of_separator_characters(tmp_path):
+    """A round-23 security finding: to_case (core/casing.py) falls back to
+    echoing its raw input unchanged when word-splitting finds nothing to
+    transform, which happens exactly when the title is made entirely of
+    whitespace/'_'/'-' -- reachable here via a hand-edited or migrated
+    source file's header cell, the same as the path-traversal case above."""
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
+    record = DecisionRecord(
+        number=1,
+        title="---",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_version_accepts_relative_file_path(tmp_path, monkeypatch):
     """Regression: `latest_path != path` must resolve both sides -- a
     relative --file argument must still be recognized as the latest."""
