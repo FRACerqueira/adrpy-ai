@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -243,7 +244,13 @@ def test_absolute_folderlog_is_rejected(folderlog):
         ("doc/adr", "doc"),  # folderadr nested inside folderlog
         ("doc/adr", "doc/other/../adr"),  # ".." traversal resolves to the same real directory
         ("doc/adr", "DOC/ADR"),  # case difference resolves to the same real directory on Windows/macOS
-        (r"doc\adr", r"doc\adr\sub"),  # backslash-separated nesting, never split by PurePosixPath
+        pytest.param(
+            r"doc\adr",
+            r"doc\adr\sub",
+            marks=pytest.mark.skipif(
+                sys.platform != "win32", reason="backslash is only a path separator on Windows"
+            ),
+        ),
     ],
 )
 def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
