@@ -8,10 +8,8 @@ not silently either.
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import split_real_lines
 from adrpy.core.header import parse_header
-from adrpy.core.io_retry import read_with_permission_retry
-from adrpy.core.lifecycle import resolve_target_and_config
+from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
 from adrpy.core.warnings import excluded_candidate_warning
@@ -111,20 +109,19 @@ def _build_entry(path, config):
     found = parse_any_filename(path.name, config)
     scheme, parsed = found if found else (None, None)
 
-    # Tolerates invalid bytes rather than raising. Retries a transient
-    # PermissionError the same way every other decision-file read in this
-    # codebase already does
-    # (core/lifecycle.py's read_lines_with_report); a persistent failure
-    # still propagates, for run()'s own per-candidate try/except to catch
-    # and report as best-effort.
-    raw_bytes = read_with_permission_retry(path.read_bytes)
-    try:
-        text = raw_bytes.decode("utf-8")
-        encoding_repaired = False
-    except UnicodeDecodeError:
-        text = raw_bytes.decode("utf-8", errors="replace")
-        encoding_repaired = True
-    header = parse_header(split_real_lines(text), config)
+    # A round-25 security finding: this used to read and decode the
+    # file's ENTIRE content (path.read_bytes()) even though parse_header
+    # only ever consumes the first 12 lines -- for a large or hostile
+    # file (explore is the natural "safe first look" an agent runs
+    # against an unfamiliar repository, with no size warning), that's an
+    # unbounded memory read for zero benefit. Confirmed live: an 800MB
+    # matching file drove peak traced memory to ~2.5GB for this single
+    # candidate. Uses the same bounded header read every other bulk scan
+    # in this codebase already relies on (family_members, migrate's scan
+    # phase) -- same PermissionError-retry tolerance, same lossy-decode
+    # detection, just never loading the body.
+    header_lines, encoding_repaired = read_header_lines_with_report(path)
+    header = parse_header(header_lines, config)
 
     return {
         "filename": path.name,

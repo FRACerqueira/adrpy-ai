@@ -286,15 +286,15 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
-    """`_build_entry`'s own
-    raw_bytes = path.read_bytes() had no tolerance at all, transient or
-    persistent -- unlike every other decision-file read in this codebase
-    (read_header_lines, read_lines_with_report), which retries a
-    transient PermissionError via the shared io_retry helper. One
-    genuinely unreadable file (locked by an editor, backup tool, or
-    antivirus -- an ordinary occurrence in a folder of Markdown files
-    people also open by hand) must not kill the ENTIRE inventory with a
-    bare io-error, discarding every other, perfectly readable file too --
+    """`_build_entry`'s own bounded header read
+    (round-25: switched from an unbounded path.read_bytes()) had no
+    tolerance at all, transient or persistent -- unlike every other
+    decision-file read in this codebase, which retries a transient
+    PermissionError via the shared io_retry helper. One genuinely
+    unreadable file (locked by an editor, backup tool, or antivirus --
+    an ordinary occurrence in a folder of Markdown files people also
+    open by hand) must not kill the ENTIRE inventory with a bare
+    io-error, discarding every other, perfectly readable file too --
     the same failure class already guarded against for unreadable
     *subdirectories*; explore should be just as best-effort about a
     single unreadable *file*."""
@@ -308,16 +308,17 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
         },
     )
 
-    from pathlib import Path as PathType
+    import builtins
 
-    real_read_bytes = PathType.read_bytes
+    real_open = builtins.open
+    locked_path = tmp_path / config_for_text.folderadr / "ADR002V01-locked.md"
 
-    def flaky_read_bytes(self, *args, **kwargs):
-        if self.name == "ADR002V01-locked.md":
+    def flaky_open(path, *args, **kwargs):
+        if str(path) == str(locked_path) and "rb" in args:
             raise PermissionError("Access is denied")
-        return real_read_bytes(self, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(PathType, "read_bytes", flaky_read_bytes)
+    monkeypatch.setattr(builtins, "open", flaky_open)
 
     payload = explore.run(["--path", str(tmp_path)])
 
@@ -342,19 +343,20 @@ def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_fi
         },
     )
 
-    from pathlib import Path as PathType
+    import builtins
 
-    real_read_bytes = PathType.read_bytes
+    real_open = builtins.open
+    flaky_path = tmp_path / config_for_text.folderadr / "ADR001V01-flaky.md"
     calls = {"count": 0}
 
-    def flaky_read_bytes(self, *args, **kwargs):
-        if self.name == "ADR001V01-flaky.md":
+    def flaky_open(path, *args, **kwargs):
+        if str(path) == str(flaky_path) and "rb" in args:
             calls["count"] += 1
             if calls["count"] < 3:
                 raise PermissionError("Access is denied")
-        return real_read_bytes(self, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(PathType, "read_bytes", flaky_read_bytes)
+    monkeypatch.setattr(builtins, "open", flaky_open)
 
     payload = explore.run(["--path", str(tmp_path)])
 
@@ -362,6 +364,59 @@ def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_fi
     assert filenames == {"ADR001V01-flaky.md"}
     assert payload["warnings"] == []
     assert calls["count"] == 3
+
+
+def test_explore_does_not_read_the_whole_file(tmp_path, monkeypatch):
+    """A round-25 security finding, confirmed live before this fix
+    existed: `_build_entry` used to read and decode a candidate's ENTIRE
+    content (path.read_bytes()) even though parse_header only ever
+    consumes the first 12 lines -- explore is the natural "safe first
+    look" an AI agent would run against an unfamiliar/external
+    repository, with no indication a matching file could be huge.
+    Confirmed live: an 800MB matching file drove peak traced memory to
+    ~2.5GB for that single candidate. Now uses the same bounded header
+    read every other bulk scan in this codebase already relies on --
+    same technique as read_header_lines' own
+    test_read_header_lines_does_not_read_the_whole_file (test_lifecycle.py):
+    Path.read_bytes/read_text must never be called at all, not merely
+    "called with a small size" (a size-based guard alone would not
+    catch a regression back to path.read_bytes(), which bypasses
+    builtins.open entirely and would otherwise slip past a
+    read-size-only check unnoticed)."""
+    config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
+    _write_repo(
+        tmp_path,
+        _default_config_dict(),
+        {
+            "ADR001V01-big.md": _decision_text(config_for_text, number=1, title="Big", version=1),
+        },
+    )
+    big_path = tmp_path / config_for_text.folderadr / "ADR001V01-big.md"
+    with open(big_path, "ab") as handle:
+        handle.write(b"x" * (5 * 1024 * 1024))  # 5MB body
+
+    from pathlib import Path as PathType
+
+    real_read_bytes = PathType.read_bytes
+    real_read_text = PathType.read_text
+
+    def boom_read_bytes(self, *args, **kwargs):
+        if str(self) == str(big_path):
+            raise AssertionError(f"explore must not read the whole file via {self!r}")
+        return real_read_bytes(self, *args, **kwargs)
+
+    def boom_read_text(self, *args, **kwargs):
+        if str(self) == str(big_path):
+            raise AssertionError(f"explore must not read the whole file via {self!r}")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(PathType, "read_bytes", boom_read_bytes)
+    monkeypatch.setattr(PathType, "read_text", boom_read_text)
+
+    payload = explore.run(["--path", str(tmp_path)])
+
+    filenames = {entry["filename"] for entry in payload["decisions"]}
+    assert filenames == {"ADR001V01-big.md"}
 
 
 def test_explore_end_to_end_through_main(tmp_path):
