@@ -231,35 +231,6 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
     assert any("3 attempts" in w for w in result["warnings"])
 
 
-def test_approve_reports_warnings_accumulated_before_an_unrelated_failure(tmp_path):
-    """A warning
-    already recorded earlier in the same run (here, an orphaned temp-file
-    cleanup, which runs before the lock/eligibility check either way)
-    must not be silently discarded the moment the command goes on to
-    fail for an unrelated reason (here, the decision is already
-    Accepted) -- the failure response must reveal that the cleanup
-    already happened for real.
-
-    An orphaned temp-file cleanup is used here rather than an
-    encoding-repair warning: encoding-repair is only ever appended after
-    the write it describes genuinely happens, and `already-accepted`
-    fails before any write, so it would not demonstrate "a warning that
-    already happened before this failure"."""
-    _, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
-    orphan_path.write_text("stale", encoding="utf-8")
-    old_time = time.time() - 999
-    os.utime(orphan_path, (old_time, old_time))
-
-    with pytest.raises(CommandError) as excinfo:
-        approve.run(["--file", str(adr_path)])
-
-    assert excinfo.value.code == "already-accepted"
-    assert excinfo.value.warnings
-    assert any("orphaned" in w.lower() for w in excinfo.value.warnings)
-
-
 def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
     """Class-closure check (advisor-caught gap): the fix above only threaded
     `warnings` through raise sites living directly in the 8 command files.

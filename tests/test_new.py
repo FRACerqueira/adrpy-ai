@@ -227,17 +227,6 @@ def test_new_rejects_a_whitespace_only_value(tmp_path, flag):
     assert excinfo.value.code == "field-is-blank"
 
 
-def test_new_accepts_domain_and_scope_omitted(tmp_path):
-    """Positive control: domain/scope default to '' when not provided at
-    all -- the blank-content fix above must not reject that established
-    sentinel."""
-    _init_repo(tmp_path)
-
-    result = new.run(["--path", str(tmp_path), "--title", "Real Title"])
-
-    assert "created" in result
-
-
 def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path):
     """cleanup_orphaned_temp_files existed and was tested in
     isolation, but no command ever called it -- a

@@ -304,26 +304,6 @@ def test_template_at_exactly_the_limit_is_accepted():
     assert len(config.template) == 10_000
 
 
-def test_header_label_too_long_is_rejected():
-    data = _valid_config_dict()
-    data["headertitlefile"] = "d" * 41
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-headertitlefile-too-long"
-
-
-def test_status_label_too_long_is_rejected():
-    data = _valid_config_dict()
-    data["statusnew"] = "d" * 26
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-statusnew-too-long"
-
-
 @pytest.mark.parametrize(
     ("field", "too_long_length"),
     [
@@ -347,11 +327,10 @@ def test_status_label_too_long_is_rejected():
 def test_every_too_long_field_raises_its_own_matching_code(field, too_long_length):
     """ADR005V01: these 15 codes used to be built as f"config-{name}-too-long"
     at raise time; now looked up from core.config's _TOO_LONG_CODES mapping
-    instead. test_header_label_too_long_is_rejected/test_status_label_too_long_
-    is_rejected above already spot-check one field of each kind -- this
-    covers all 15, the concrete regression guard for the lookup-mapping
-    migration itself (a mismatch here wouldn't show up as an import error,
-    only as a silently-wrong code at runtime)."""
+    instead. Covers all 15 (11 header-label fields + 4 status-label fields),
+    the concrete regression guard for the lookup-mapping migration itself
+    (a mismatch here wouldn't show up as an import error, only as a
+    silently-wrong code at runtime)."""
     data = _valid_config_dict()
     data[field] = "d" * too_long_length
 
@@ -587,37 +566,6 @@ def test_valid_migrationpattern_is_accepted(pattern):
         "headermigrated",
     ],
 )
-def test_header_label_field_too_long_is_rejected(field):
-    """Only headertitlefile was
-    tested among the 11 header-label fields sharing this same 40-char
-    bound -- asymmetric with the sibling embedded-delimiter check
-    (test_header_cell_field_with_embedded_pipe_is_rejected above), which
-    correctly parametrizes over all 16 applicable fields."""
-    data = _valid_config_dict()
-    data[field] = "d" * 41
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == f"config-{field}-too-long"
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
-        "headertitlefile",
-        "headerversion",
-        "headerrevision",
-        "headerscope",
-        "headerdomain",
-        "headertitlestatuscreated",
-        "headertitlestatuschanged",
-        "headertitlestatussuperseded",
-        "headertablefields",
-        "headertablevalues",
-        "headermigrated",
-    ],
-)
 def test_header_label_field_at_exact_max_length_is_accepted(field):
     """No field confirmed the
     exact max value is ACCEPTED, only that max+1 is rejected -- the
@@ -629,19 +577,6 @@ def test_header_label_field_at_exact_max_length_is_accepted(field):
     config = parse_repo_config(json.dumps(data))
 
     assert getattr(config, field) == "d" * 40
-
-
-@pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
-def test_status_label_field_too_long_is_rejected(field):
-    """Same asymmetry as the header-label fields above, for the 4
-    status-label fields."""
-    data = _valid_config_dict()
-    data[field] = "d" * 26
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == f"config-{field}-too-long"
 
 
 @pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
