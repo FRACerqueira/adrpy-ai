@@ -16,7 +16,12 @@ from adrpy.core.lifecycle import (
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
-from adrpy.core.security import resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -46,7 +51,13 @@ def describe():
             "can't be trusted from an incomplete scan; no write was made. May also fail with "
             "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
             "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
-            "the same reasoning as an unreadable subdirectory; no write was made. Fails with one of "
+            "the same reasoning as an unreadable subdirectory; no write was made. The target's own title/scope/"
+            "domain (re-read from its header cells, not flags) are re-validated before use -- may fail with "
+            "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
+            "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
+            "character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file "
+            "itself, but rewrites its header with the same fields a later rename-capable command "
+            "(version/revise/supersede) would also need to trust. Fails with one of "
             "already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Accepted unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
@@ -102,7 +113,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # approval -- already-accepted/already-rejected/already-
@@ -128,19 +139,35 @@ def run(args):
             if header.date_create is not None:
                 validate_refdate_not_before(refdate, header.date_create)
 
+            # Round 28: title/scope/domain are re-read from the SOURCE
+            # file's own header cells, not flags -- a hand-edited or
+            # migrated file could carry a filesystem-unsafe character
+            # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
+            # validated until this rewrite. Same defensive re-validation
+            # version/revise/supersede/migrate already apply.
+            reject_embedded_delimiter(header.title, "title")
+            reject_filesystem_unsafe_title(header.title, "title")
+            reject_title_with_no_case_transform_content(header.title, "title")
+            reject_embedded_delimiter(header.scope, "scope")
+            reject_embedded_delimiter(header.domain, "domain")
+
             # ADR001, part 3: the lease can still be reclaimed out from
             # under a legitimately slow holder -- this can't prevent that,
             # but guarantees the write below never commits blindly if it
             # already happened.
             lock.verify_still_held()
-            _record, _content, attempts = rewrite_status_field(
-                path, config, lines, header, filename_info, field="update", status="Accepted", refdate=refdate
+            _record, body_encoding_repaired, attempts = rewrite_status_field(
+                path, config, header, filename_info, field="update", status="Accepted", refdate=refdate, lock=lock
             )
             # encoding_repaired_warning claims "the file has been rewritten
             # ... bytes are now lost" -- only true once the write above has
             # actually happened, not at read time (an eligibility check
-            # could still have failed first).
-            if encoding_repaired:
+            # could still have failed first). ADR006V01: combines the
+            # header's own flag (known since read_target, above) with the
+            # body's own (only known now, once the streamed write has
+            # actually read it) -- either half being lossy loses bytes on
+            # this rewrite.
+            if encoding_repaired or body_encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:

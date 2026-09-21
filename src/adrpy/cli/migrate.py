@@ -23,14 +23,14 @@ silently overwritten by a stale fallback decision.
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_bytes, atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.install_config import read_install_config_text
-from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
@@ -43,6 +43,42 @@ from adrpy.core.security import (
     resolve_within,
 )
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
+
+# ADR006V01: the candidate's own content has no schema-imposed size bound
+# (unlike a header) -- streamed in fixed-size chunks straight from the
+# source file into the destination temp file (via atomic_write_chunks),
+# never assembled as one in-memory bytes object.
+_MIGRATE_STREAM_CHUNK_SIZE = 65536
+
+
+def _stream_migrated_candidate(candidate_path, header_text, lock):
+    """The new header (already fully built, schema-bounded), followed by
+    the candidate's own content streamed through unmodified -- except a
+    leading UTF-8 BOM, stripped from the very first chunk only, matching
+    the reference tool's own confirmed behavior (see this module's own
+    docstring).
+
+    `lock.verify_still_held()` runs again as the very last thing here,
+    right before this generator exhausts (i.e. right before
+    atomic_write_chunks proceeds to its committing os.replace) -- the
+    per-candidate pre-call check in the loop below only proves the lock
+    was held before THIS candidate's streamed read/write began, and a
+    large legacy file can now take genuinely non-trivial time to stream.
+    Same reasoning, and the same live-confirmed regression, as
+    core/lifecycle.py's _rewrite_with_streamed_body."""
+    yield header_text.encode("utf-8")
+    with Path(candidate_path).open("rb") as source:
+        first_chunk = True
+        while True:
+            chunk = source.read(_MIGRATE_STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            if first_chunk:
+                if chunk.startswith(b"\xef\xbb\xbf"):
+                    chunk = chunk[3:]
+                first_chunk = False
+            yield chunk
+    lock.verify_still_held()
 
 
 def describe():
@@ -305,26 +341,6 @@ def run(args):
                     # every candidate's write, not just once, since this
                     # loop can run for a while.
                     lock.verify_still_held()
-                    # Raw bytes, not text: the original content's own line
-                    # endings (and anything else about its bytes) must pass
-                    # through completely untouched -- only the header text is
-                    # new. The one exception, confirmed live: the reference tool
-                    # discards a leading UTF-8 BOM when reading, so it never
-                    # appears in the migrated result -- pass it through here
-                    # and it lands stranded in the middle of the file, after
-                    # the new header.
-                    #
-                    # Retries a transient PermissionError the same way this
-                    # command's own SCAN-phase read of this exact file
-                    # already does (read_header_lines_with_report, a few
-                    # dozen lines above) -- without this, a transient blip
-                    # here would permanently misclassify the candidate as
-                    # "failed" in a one-time, largely irreversible operation,
-                    # instead of retrying like its sibling read of the same
-                    # file already would.
-                    raw_bytes = read_with_permission_retry(candidate_path.read_bytes)
-                    if raw_bytes.startswith(b"\xef\xbb\xbf"):
-                        raw_bytes = raw_bytes[3:]
                     title = (parsed.title or "").strip()
                     # Unlike every other command's own title, this one is
                     # sourced from a raw, untrusted legacy filename, sliced
@@ -342,7 +358,23 @@ def run(args):
                     reject_title_with_no_case_transform_content(title, "title")
                     record = DecisionRecord(number=parsed.number, title=title, version=0)
                     header_text = build_header(config, record, migrated=True)
-                    attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
+                    # ADR006V01: streams the candidate's own content
+                    # straight from disk into the destination temp file --
+                    # never assembled as one in-memory bytes object (the
+                    # original content's own line endings, and anything
+                    # else about its bytes, still pass through completely
+                    # untouched; only the header text is new). Retries a
+                    # transient PermissionError on EITHER the source read
+                    # or the destination write via one shared retry budget
+                    # (atomic_write_chunks' own loop calls the chunk
+                    # generator, which does the source read, from inside
+                    # the same try/except as the destination write) --
+                    # deliberately combined, not two independent budgets;
+                    # see ADR006V01's own "Negative Consequences".
+                    attempts = atomic_write_chunks(
+                        candidate_path,
+                        lambda: _stream_migrated_candidate(candidate_path, header_text, lock),
+                    )
                     warning = retry_warning(attempts)
                     if warning:
                         warnings.append(warning)

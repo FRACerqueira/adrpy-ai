@@ -201,6 +201,27 @@ def test_headerdisclaimer_too_long_is_rejected():
     assert excinfo.value.code == "config-headerdisclaimer-too-long"
 
 
+def test_template_too_long_is_rejected():
+    """Round 28: template was the one _STRING_FIELDS field with no length
+    limit at all in the schema -- unlike every other field, unbounded."""
+    data = _valid_config_dict()
+    data["template"] = "d" * 10_001
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-template-too-long"
+
+
+def test_template_at_exactly_the_limit_is_accepted():
+    data = _valid_config_dict()
+    data["template"] = "d" * 10_000
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert len(config.template) == 10_000
+
+
 def test_header_label_too_long_is_rejected():
     data = _valid_config_dict()
     data["headertitlefile"] = "d" * 41
@@ -618,6 +639,53 @@ def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
     assert excinfo.value.code == "config-invalid-encoding"
 
 
+def test_read_config_text_does_not_read_the_whole_file(tmp_path):
+    """Round 28: read_config_text (loaded on EVERY single command
+    invocation, plus init/installconfig --seed) had no size cap at all,
+    unlike core/lifecycle.py's already-bounded header reader -- a
+    150MB config file measured a ~300MB peak-memory read before this fix."""
+    from unittest.mock import patch
+
+    config_path = tmp_path / "adr-config.adrplus"
+    huge = json.dumps(_valid_config_dict())
+    huge += " " * (200 * 1024 * 1024)  # 200MB of trailing whitespace, still invalid JSON either way
+    config_path.write_text(huge, encoding="utf-8")
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("read_config_text must not read the whole file")
+
+    with patch.object(Path, "read_text", boom), patch.object(Path, "read_bytes", boom):
+        with pytest.raises(CommandError) as excinfo:
+            load_repo_config(config_path)
+
+    assert excinfo.value.code == "config-file-too-large"
+
+
+def test_read_config_text_accepts_a_normal_sized_config(tmp_path):
+    config_path = tmp_path / "adr-config.adrplus"
+    config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
+
+    config = load_repo_config(config_path)
+
+    assert config.folderadr == _valid_config_dict()["folderadr"]
+
+
+def test_read_config_text_accepts_a_config_at_exactly_the_cap_boundary(tmp_path):
+    """Positive control at the boundary itself -- a config file whose own
+    JSON text is comfortably under the cap (padded with whitespace, still
+    valid JSON) must parse correctly, not be treated as too-large."""
+    config_path = tmp_path / "adr-config.adrplus"
+    data = _valid_config_dict()
+    data["template"] = "t" * config_module.TEMPLATE_MAX_LENGTH  # the field's own real max
+    text = json.dumps(data)
+    assert len(text.encode("utf-8")) < config_module.CONFIG_READ_MAX_BYTES  # comfortably under the cap
+    config_path.write_text(text, encoding="utf-8")
+
+    config = load_repo_config(config_path)
+
+    assert len(config.template) == config_module.TEMPLATE_MAX_LENGTH
+
+
 def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """read_config_text had
     no PermissionError tolerance at all, unlike every other read in this
@@ -633,16 +701,16 @@ def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeyp
     config_path = tmp_path / "adr-config.adrplus"
     config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
 
-    real_read_text = config_module.Path.read_text
+    real_open = config_module.Path.open
     calls = {"count": 0}
 
-    def flaky_read_text(self, *args, **kwargs):
+    def flaky_open(self, *args, **kwargs):
         calls["count"] += 1
         if calls["count"] < 3:
             raise PermissionError("Access is denied")
-        return real_read_text(self, *args, **kwargs)
+        return real_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(config_module.Path, "read_text", flaky_read_text)
+    monkeypatch.setattr(config_module.Path, "open", flaky_open)
 
     config = load_repo_config(config_path)
 

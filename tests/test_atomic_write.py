@@ -7,6 +7,7 @@ import pytest
 
 from adrpy.core.atomic_write import (
     atomic_write_bytes,
+    atomic_write_chunks,
     atomic_write_text,
     cleanup_orphaned_temp_files,
     normalize_newlines,
@@ -111,6 +112,29 @@ def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monke
         atomic_write_text(target, "content")
 
     assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_atomic_write_chunks_cleans_up_orphan_when_the_chunk_producer_raises_a_non_oserror(tmp_path):
+    """ADR006V01's chunk producer can raise LockLostError (core/lock.py)
+    from inside the generator -- not an OSError, so it never hit the
+    existing `except OSError` cleanup branch, leaking the temp file
+    (found via live reproduction against `rewrite_status_field`, not
+    inferred from reading the code alone). Any exception escaping the
+    chunk producer, not just OSError, must still leave no orphan behind."""
+    target = tmp_path / "decision.md"
+
+    class _SimulatedLockLoss(Exception):
+        pass
+
+    def failing_chunks():
+        yield b"partial content"
+        raise _SimulatedLockLoss("lock stolen mid-stream")
+
+    with pytest.raises(_SimulatedLockLoss):
+        atomic_write_chunks(target, failing_chunks)
+
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert not target.exists()
 
 
 def test_atomic_write_failure_before_replace_leaves_target_untouched(tmp_path, monkeypatch):

@@ -389,6 +389,37 @@ def test_reclaim_if_abandoned_returns_false_when_only_the_second_read_lock_call_
     assert lock_path.exists()  # abstained -- never reached _unlink_with_retry
 
 
+def test_read_lock_does_not_read_the_whole_file(tmp_path):
+    """Round 28: _read_lock had no size cap at all, unlike
+    core/lifecycle.py's already-bounded header reader -- a 100MB lock
+    file measured a ~400MB peak-memory read before this fix. The lock
+    file is only ever tool-written (a uuid4 token + a timestamp, well
+    under 100 bytes) -- anything this large is corrupted or adversarial,
+    already treated as "unparseable" (returns None) either way."""
+    from unittest.mock import patch
+
+    lock_path = tmp_path / ".adrpy.lock"
+    huge = "token\n" + ("9" * (50 * 1024 * 1024))  # not a valid float either way
+    lock_path.write_text(huge, encoding="utf-8")
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("_read_lock must not read the whole file")
+
+    with patch.object(Path, "read_text", boom), patch.object(Path, "read_bytes", boom):
+        result = lock_module._read_lock(lock_path)
+
+    assert result is None
+
+
+def test_read_lock_accepts_a_normal_sized_lock_file(tmp_path):
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_text("sometoken\n123.5", encoding="utf-8")
+
+    result = lock_module._read_lock(lock_path)
+
+    assert result == ("sometoken", 123.5)
+
+
 def test_read_lock_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """_read_lock had no
     PermissionError tolerance at all, unlike _unlink_with_retry/
@@ -400,16 +431,16 @@ def test_read_lock_retries_a_transient_permission_error(tmp_path, monkeypatch):
     lock_path = tmp_path / ".adrpy.lock"
     lock_path.write_text("token\n123")
 
-    real_read_text = lock_module.Path.read_text
+    real_open = lock_module.Path.open
     calls = {"count": 0}
 
-    def flaky_read_text(self, *args, **kwargs):
+    def flaky_open(self, *args, **kwargs):
         calls["count"] += 1
         if calls["count"] < 3:
             raise PermissionError("Access is denied")
-        return real_read_text(self, *args, **kwargs)
+        return real_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(lock_module.Path, "read_text", flaky_read_text)
+    monkeypatch.setattr(lock_module.Path, "open", flaky_open)
 
     result = lock_module._read_lock(lock_path)
 
@@ -424,7 +455,7 @@ def test_read_lock_raises_when_the_permission_error_persists(tmp_path, monkeypat
     def always_denied(self, *args, **kwargs):
         raise PermissionError("Access is denied")
 
-    monkeypatch.setattr(lock_module.Path, "read_text", always_denied)
+    monkeypatch.setattr(lock_module.Path, "open", always_denied)
 
     with pytest.raises(PermissionError):
         lock_module._read_lock(lock_path)

@@ -9,7 +9,7 @@ not the latest member's. --open is permanently not implemented (see
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
     family_members,
     has_pending_sibling,
@@ -17,9 +17,9 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
     parse_refdate,
-    read_body,
     read_target,
     resolve_repo_and_target,
+    stream_normalized_body_chunks,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
@@ -135,11 +135,10 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
             # revise never rewrites its own source either -- see version.py's
-            # own comment for why this fires right away, not after a write.
-            if encoding_repaired:
-                warnings.append(encoding_repaired_source_warning(path))
+            # own comment: ADR006V01 defers this warning until after the
+            # write below, since the body is no longer read until then.
 
             # One scan shared by all three checks below, avoiding a
             # duplicate scan_decisions call each.
@@ -242,11 +241,27 @@ def run(args):
                     warnings=warnings,
                 )
 
-            content = build_header(config, record) + read_body(lines)
             # ADR001, part 3: guarantees this write never commits blindly
             # if the lease was reclaimed.
             lock.verify_still_held()
-            attempts = atomic_write_text(new_path, content)
+            # ADR006V01: streams the source's own body straight from
+            # `path` into the new file, without ever holding it in memory.
+            header_text = build_header(config, record)
+            body_report = {}
+
+            def _chunks(path=path, header_text=header_text, body_report=body_report, lock=lock):
+                yield header_text.encode("utf-8")
+                yield from stream_normalized_body_chunks(path, body_report)
+                # Re-verify right before this generator exhausts -- see
+                # core/lifecycle.py's _rewrite_with_streamed_body for why
+                # (the pre-call check above alone no longer closes the
+                # check-to-commit gap once the write is a real stream, not
+                # an in-memory write).
+                lock.verify_still_held()
+
+            attempts = atomic_write_chunks(new_path, _chunks)
+            if encoding_repaired or body_report["encoding_repaired"]:
+                warnings.append(encoding_repaired_source_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

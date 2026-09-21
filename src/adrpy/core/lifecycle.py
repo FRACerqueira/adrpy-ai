@@ -4,13 +4,14 @@ mechanics every status-transition command
 (approve/reject/undo/supersede/version/revise) shares -- one function per
 concern, not copies."""
 
+import codecs
 import os
 import re
 from dataclasses import replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_text, split_real_lines
+from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, split_real_lines
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
@@ -447,12 +448,22 @@ def _read_header_bytes(path, count):
     doesn't fit in one (the config schema's own field-length limits keep
     a real header well under a single chunk in practice).
 
-    Counts newlines within each newly-read chunk only, not by re-scanning
-    the whole accumulated buffer -- a round-27 finding confirmed live:
-    the original re-scan-everything-every-chunk version was O(n^2) (a
-    4MB pathological file took ~11s), reachable via family_members (every
-    per-file mutating command) and migrate's own repo-wide scan phase,
-    both while holding the repository lock.
+    Re-scans the whole accumulated buffer (never just the newest chunk in
+    isolation) on every iteration -- a round-28 finding confirmed live:
+    counting newlines within each freshly-read chunk ALONE double-counts
+    a `\r\n` pair that straddles exactly on a chunk boundary (the `\r` as
+    one chunk's own last byte, matched as a lone CR by that chunk's own
+    isolated scan; the `\n` as the next chunk's own first byte, matched
+    again as a lone LF by ITS isolated scan), which can make the loop
+    believe it already found `count` real newlines one chunk-read too
+    early, silently truncating the returned buffer before the file's
+    true `count`-th line is ever read. Re-scanning the whole buffer each
+    time lets the regex see both halves of a straddling CRLF together,
+    correctly counted as one match. This is now safe from the O(n^2)
+    behavior round 27 fixed: the buffer is still hard-capped at
+    `_HEADER_READ_MAX_BYTES` (16KB), so a rescan is at most ~4 passes over
+    at most 16KB each -- O(1) relative to the file's own total size,
+    never the unbounded-file quadratic blowup round 27 closed.
 
     This read tolerates a transient PermissionError, the same contention
     window the write side (atomic_write.py) and the lock-file read side
@@ -471,7 +482,7 @@ def _read_header_bytes(path, count):
                     break
                 chunks.append(more)
                 total_bytes += len(more)
-                newline_count += len(_REAL_NEWLINE_BYTES.findall(more))
+                newline_count = len(_REAL_NEWLINE_BYTES.findall(b"".join(chunks)))
             return b"".join(chunks)
 
     return read_with_permission_retry(_open_and_read)
@@ -540,6 +551,106 @@ def read_body(lines):
     return os.linesep.join(body_lines) + os.linesep
 
 
+def _body_start_offset(header_buffer, count):
+    """The exact byte offset in the ORIGINAL FILE where the body begins
+    -- the end of the `count`-th real line terminator within
+    `header_buffer` (a byte-exact prefix of that file, from
+    _read_header_bytes). None if `header_buffer` doesn't contain that
+    many real terminators (the file is too-short/malformed -- the same
+    condition parse_header's own existing check already handles; no new
+    handling needed here)."""
+    matches = list(_REAL_NEWLINE_BYTES.finditer(header_buffer))
+    if len(matches) < count:
+        return None
+    return matches[count - 1].end()
+
+
+_BODY_STREAM_CHUNK_SIZE = 65536
+_BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
+
+
+def stream_normalized_body_chunks(source_path, report):
+    """Streams `source_path`'s own BODY (everything past its 12-line
+    header), reproducing `read_body(read_lines_with_report(source_path))`'s
+    historical output byte-for-byte (ADR006V01) -- every real line
+    terminator converted to this host's os.linesep, invalid UTF-8 bytes
+    replaced with U+FFFD, exactly one trailing terminator ensured for a
+    non-empty body -- without ever holding the whole body in memory. The
+    header itself is located via the already-bounded _read_header_bytes
+    (schema-bounded, a few KB at most); only the body, which has no such
+    bound, is read in fixed-size chunks.
+
+    `report` is a caller-provided dict that receives
+    `report["encoding_repaired"]` once this generator is fully exhausted
+    -- meaningless to read before then (e.g. check it only after
+    atomic_write_chunks, which fully consumes its chunk factory, returns).
+
+    Newline normalization runs at the BYTE level, before UTF-8 decoding:
+    a real terminator byte (0x0D/0x0A) can never appear as part of a
+    valid multi-byte UTF-8 continuation byte (0x80-0xBF), so this is safe
+    regardless of, and independent from, the encoding-repair step that
+    follows it. A lone `\\r` as the very last byte of a chunk is held
+    back (not yet convertible -- the next chunk's first byte could still
+    complete a `\\r\\n` pair) rather than converted immediately.
+
+    Not reentrant across concurrent calls within the same process (the
+    error-handler name is re-registered, closing over THIS call's own
+    `report`, immediately before use) -- safe for this project's own
+    single-threaded-per-command-invocation model; never call this a
+    second time before the first call's generator has been fully
+    consumed."""
+    report["encoding_repaired"] = False
+
+    def _replace_and_flag(error):
+        report["encoding_repaired"] = True
+        return codecs.replace_errors(error)
+
+    codecs.register_error(_BODY_DECODE_ERROR_HANDLER_NAME, _replace_and_flag)
+    decoder = codecs.getincrementaldecoder("utf-8")(_BODY_DECODE_ERROR_HANDLER_NAME)
+
+    header_buffer = _read_header_bytes(source_path, HEADER_LINE_COUNT)
+    offset = _body_start_offset(header_buffer, HEADER_LINE_COUNT)
+    # Unreachable in practice: every caller has already validated (via
+    # read_target's own header.is_valid check) that this file's header is
+    # structurally valid -- a valid header always has >= HEADER_LINE_COUNT
+    # real lines, so this can never be None here.
+    assert offset is not None, "stream_normalized_body_chunks called against an invalid/too-short header"
+
+    linesep_bytes = os.linesep.encode("ascii")
+    pending_cr = False
+    ends_with_terminator = False
+    saw_any_byte = False
+
+    with open(source_path, "rb") as handle:
+        handle.seek(offset)
+        while True:
+            raw_chunk = handle.read(_BODY_STREAM_CHUNK_SIZE)
+            if not raw_chunk:
+                break
+            saw_any_byte = True
+            data = (b"\r" if pending_cr else b"") + raw_chunk
+            pending_cr = False
+            if data.endswith(b"\r"):
+                pending_cr = True
+                data = data[:-1]
+            if not data:
+                continue
+            normalized = _REAL_NEWLINE_BYTES.sub(linesep_bytes, data)
+            ends_with_terminator = data[-1:] in (b"\r", b"\n")
+            piece = decoder.decode(normalized, False)
+            if piece:
+                yield piece.encode("utf-8")
+
+    if pending_cr:
+        yield linesep_bytes
+        ends_with_terminator = True
+    final_piece = decoder.decode(b"", True)
+    if final_piece:
+        yield final_piece.encode("utf-8")
+    if saw_any_byte and not ends_with_terminator:
+        yield linesep_bytes
+
+
 def resolve_repo_and_target(fileadr):
     """The non-content-dependent half of load_target (ADR001,
     doc/adr/ADR001V01-...): resolve the extension default, find the
@@ -597,14 +708,24 @@ def read_target(path, config, warnings=None):
     on this exact file (ADR004V01) -- informational about a pre-existing
     condition of the file, same as excluded_candidate_warning's own
     convention, not gated behind whether this command's own write later
-    succeeds."""
-    lines, encoding_repaired = read_lines_with_report(path)
+    succeeds.
+
+    ADR006V01: reads only the bounded header (parse_header never looks
+    past line HEADER_LINE_COUNT) -- no longer returns the file's own
+    `lines` at all. A caller that goes on to preserve/carry forward the
+    BODY streams it directly from `path` at write time (see
+    stream_normalized_body_chunks), instead of holding it in memory
+    between this read and that later write. `encoding_repaired` here
+    reflects the HEADER portion only -- combine it (via `or`) with the
+    body stream's own `report["encoding_repaired"]`, known only once
+    that generator is fully consumed, before deciding whether to warn."""
+    header_lines, encoding_repaired = read_header_lines_with_report(path)
     found = parse_any_filename(path.name, config)
     if found is None:
         raise CommandError("filename-not-recognized", f"Filename matches no naming scheme: {path.name}")
     _, filename_info = found
 
-    header = parse_header(lines, config)
+    header = parse_header(header_lines, config)
     if not header.is_valid:
         # header.error is already the specific, correctly-computed reason
         # (adr-file-empty, adr-header-title-not-found,
@@ -617,7 +738,7 @@ def read_target(path, config, warnings=None):
         if warning:
             warnings.append(warning)
 
-    return filename_info, header, lines, encoding_repaired
+    return filename_info, header, encoding_repaired
 
 
 def load_target(fileadr):
@@ -629,10 +750,14 @@ def load_target(fileadr):
 
     Kept as a single call for any caller that doesn't need the lock-then-
     read split (ADR001) -- see resolve_repo_and_target/read_target above
-    for that split, now used by every command that goes on to write."""
+    for that split, now used by every command that goes on to write.
+
+    ADR006V01: no longer returns the file's own `lines` -- see
+    read_target's own updated note; `encoding_repaired` here reflects
+    the HEADER portion only."""
     config, root, path = resolve_repo_and_target(fileadr)
-    filename_info, header, lines, encoding_repaired = read_target(path, config)
-    return config, root, path, filename_info, header, lines, encoding_repaired
+    filename_info, header, encoding_repaired = read_target(path, config)
+    return config, root, path, filename_info, header, encoding_repaired
 
 
 def family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None):
@@ -869,32 +994,78 @@ def _record_from_header(config, filename_info, header):
     )
 
 
-def rewrite_status_field(path, config, lines, header, filename_info, *, field, status, refdate):
+def _rewrite_with_streamed_body(path, config, record, migrated, lock):
+    """Shared by rewrite_status_field/mark_superseded (ADR006V01): builds
+    the new header (schema-bounded, safe in memory) and streams the
+    ORIGINAL body straight from `path` into the atomic write -- the file
+    being rewritten is also the source of its own preserved body, safe
+    because both the read and the write happen inside the same
+    critical section as the caller's already-held repository lock, and
+    atomic_write_chunks never opens the destination in a way that could
+    be observed mid-write by the same read.
+
+    `lock.verify_still_held()` runs a SECOND time here, as the last thing
+    the chunk generator does before it exhausts -- i.e. right before
+    atomic_write_chunks proceeds to its committing os.replace. The
+    caller's own pre-call check (ADR001, part 3) only proves the lock was
+    held before this streamed read+write began; unlike the whole-buffer
+    write this replaced, streaming a real body can now take genuinely
+    non-trivial time, reopening the same check-to-commit gap ADR001
+    always required be kept shut (confirmed live: without this second
+    check, a lock stolen mid-stream was silently ignored and the write
+    committed anyway). Raises LockLostError (via `lock.verify_still_held`)
+    if the lock was lost during the stream -- every caller of
+    rewrite_status_field/mark_superseded already treats a LockLostError
+    from this exact write the same as an OSError from it.
+
+    Returns (attempts, body_encoding_repaired) -- `content` is no longer
+    returned at all: streaming this write means the full content is
+    never assembled as one in-memory value. Every real caller already
+    discarded the old `content` return (confirmed by reading every call
+    site before this change)."""
+    header_text = build_header(config, record, migrated=migrated)
+    report = {}
+
+    def _chunks(path=path, header_text=header_text, report=report, lock=lock):
+        yield header_text.encode("utf-8")
+        yield from stream_normalized_body_chunks(path, report)
+        lock.verify_still_held()
+
+    attempts = atomic_write_chunks(path, _chunks)
+    return attempts, report["encoding_repaired"]
+
+
+def rewrite_status_field(path, config, header, filename_info, *, field, status, refdate, lock):
     """Mutates exactly one status+date pair (`field="update"` or
     `field="change"`) on the already-parsed header, rebuilds via
-    build_header preserving every other field and the original body
-    verbatim, and writes the file. Returns the write's own attempt count
-    too -- callers can surface it as a warning when it's more than 1."""
+    build_header preserving every other field, streams the original body
+    verbatim from `path` (ADR006V01), and writes the file. Returns the
+    write's own attempt count too -- callers can surface it as a warning
+    when it's more than 1 -- and the BODY's own encoding_repaired signal
+    (combine with the header's own, from read_target, via `or`). `lock`
+    is the caller's already-acquired repository lock -- re-verified right
+    before this write commits, not just before it starts (see
+    _rewrite_with_streamed_body)."""
     record = _record_from_header(config, filename_info, header)
     setattr(record, f"status_{field}", status)
     setattr(record, f"date_{field}", refdate if status is not None else None)
 
-    content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
-    attempts = atomic_write_text(path, content)
-    return record, content, attempts
+    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated, lock)
+    return record, body_encoding_repaired, attempts
 
 
-def mark_superseded(path, config, lines, header, filename_info, successor_number, refdate):
+def mark_superseded(path, config, header, filename_info, successor_number, refdate, lock):
     """Like rewrite_status_field's "change" field, but also stamps the
     successor's own zero-padded sequence number into the Superseded row.
     NOT a filename, despite DecisionRecord's `superseded_by_file` name
     (kept as-is to match the reference tool's own header row) -- confirmed the
-    real value is a bare padded number, not a filename."""
+    real value is a bare padded number, not a filename. `lock` is the
+    caller's already-acquired repository lock -- see rewrite_status_field's
+    own note on why it's re-verified at commit time, not just call time."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate
     record.superseded_by_file = f"{successor_number:0{config.lenseq}d}"
 
-    content = build_header(config, record, migrated=header.is_migrated) + read_body(lines)
-    attempts = atomic_write_text(path, content)
-    return record, content, attempts
+    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated, lock)
+    return record, body_encoding_repaired, attempts

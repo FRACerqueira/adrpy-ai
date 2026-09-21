@@ -27,6 +27,7 @@ from adrpy.core.lifecycle import (
     resolve_target_and_config,
     rewrite_status_field,
     scan_decisions,
+    stream_normalized_body_chunks,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
@@ -174,26 +175,153 @@ def test_load_target_reports_no_encoding_repair_for_a_clean_file(tmp_path):
     assert encoding_repaired is False
 
 
-def test_load_target_reports_encoding_repair_when_body_has_invalid_utf8_bytes(tmp_path):
-    """Reading a file with invalid UTF-8 bytes (Fase
-    4: tolerated, confirmed live to match the reference tool) silently replaces
-    them with U+FFFD -- nothing told the caller this happened, even though
-    it's a real, permanent loss of the original bytes the moment the file
-    is rewritten."""
+def test_load_target_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(tmp_path):
+    """Reading a file with invalid UTF-8 bytes WITHIN its 12-line header
+    (Fase 4: tolerated, confirmed live to match the reference tool)
+    silently replaces them with U+FFFD -- nothing told the caller this
+    happened, even though it's a real, permanent loss of the original
+    bytes the moment the file is rewritten.
+
+    ADR006V01: load_target/read_target now read ONLY the bounded header
+    (never the body) -- invalid bytes WITHIN THE BODY are no longer
+    detectable from this call alone; that signal now comes from
+    stream_normalized_body_chunks' own `report["encoding_repaired"]` at
+    write time, combined by each CLI command with this header-level flag
+    (see test_status_transitions.py's own
+    test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool
+    for the end-to-end, body-corruption case)."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
     record = DecisionRecord(number=1, title="Dirty", version=1, status_create="Proposed")
     target = adr_dir / "ADR001V01-dirty.md"
-    with open(target, "w", encoding="utf-8", newline="") as handle:
-        handle.write(build_header(config, record) + "# body\n")
-    with open(target, "ab") as handle:
-        handle.write(b"Invalid byte here: \xa4 end.\n")
+    header_text = build_header(config, record)
+    # Corrupt a byte WITHIN the header itself (inside the title cell),
+    # not past it -- the only case load_target's own bounded header read
+    # can still see.
+    corrupted_header = header_text.encode("utf-8").replace(b"Dirty", b"Dir\xa4ty")
+    with open(target, "wb") as handle:
+        handle.write(corrupted_header)
+        handle.write(b"# body\n")
     (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
     *_rest, encoding_repaired = load_target(target)
 
     assert encoding_repaired is True
+
+
+_BODY_MATRIX_CASES = [
+    b"",
+    b"line1",
+    b"line1\n",
+    b"line1\r\nline2",
+    b"line1\n\n\n",
+    b"line1\nline2",
+    b"\n",
+    b"a\r\nb\rc\nd",
+    b"line1\ninvalid byte here: \xa4 end\n",
+    b"line1\r\ninvalid byte here: \xa4end",
+    "línea\n".encode("utf-8") + b"\xa4" + b"more\n",
+    b"x" * 5000 + b"\r\n" + b"y" * 5000,
+    ("é" * 3000).encode("utf-8"),
+    b"a" * 100 + "ééé".encode("utf-8") + b"b" * 100 + b"\r\n" + b"c" * 100,
+    b"a" * 50 + b"\xa4" + b"b" * 50,
+]
+
+
+@pytest.mark.parametrize("body_bytes", _BODY_MATRIX_CASES)
+def test_stream_normalized_body_chunks_matches_read_body_byte_for_byte(tmp_path, body_bytes):
+    """ADR006V01: the streaming replacement must reproduce
+    read_body(read_lines_with_report(path))'s own historical output
+    byte-for-byte, including its encoding_repaired signal, for every
+    line-ending combination and invalid-UTF-8 placement -- verified
+    against the STILL-PRESENT, unmodified reference implementation
+    (read_lines_with_report + read_body), not a hand-derived
+    expectation."""
+    from adrpy.core.lifecycle import read_lines_with_report
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Matrix", version=1, status_create="Proposed")
+    target = adr_dir / "ADR001V01-matrix.md"
+    header_text = build_header(config, record)
+    with open(target, "wb") as handle:
+        handle.write(header_text.encode("utf-8"))
+        handle.write(body_bytes)
+
+    lines, expected_repaired = read_lines_with_report(target)
+    expected_text = read_body(lines)
+
+    report = {}
+    actual_bytes = b"".join(stream_normalized_body_chunks(target, report))
+
+    assert actual_bytes == expected_text.encode("utf-8")
+    assert report["encoding_repaired"] is expected_repaired
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 4, 7, 16, 64])
+def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monkeypatch, chunk_size):
+    """The straddling-boundary logic (a CRLF or a multi-byte UTF-8
+    sequence split across a chunk read) must produce the identical result
+    regardless of where the boundary falls -- forced here with
+    deliberately tiny chunk sizes to guarantee every case straddles."""
+    import adrpy.core.lifecycle as lifecycle_module
+    from adrpy.core.lifecycle import read_lines_with_report
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Straddle", version=1, status_create="Proposed")
+    target = adr_dir / "ADR001V01-straddle.md"
+    body_bytes = b"a" * 20 + "ééé".encode("utf-8") + b"b" * 20 + b"\r\n" + b"c" * 20 + b"\xa4" + b"d" * 20
+    header_text = build_header(config, record)
+    with open(target, "wb") as handle:
+        handle.write(header_text.encode("utf-8"))
+        handle.write(body_bytes)
+
+    lines, expected_repaired = read_lines_with_report(target)
+    expected_text = read_body(lines)
+
+    monkeypatch.setattr(lifecycle_module, "_BODY_STREAM_CHUNK_SIZE", chunk_size)
+    report = {}
+    actual_bytes = b"".join(stream_normalized_body_chunks(target, report))
+
+    assert actual_bytes == expected_text.encode("utf-8")
+    assert report["encoding_repaired"] is expected_repaired
+
+
+def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(tmp_path):
+    """Round 28 / ADR006V01's own reason for existing: a 20MB body must
+    never be assembled as one in-memory bytes/str object."""
+    import tracemalloc
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Big", version=1, status_create="Proposed")
+    target = adr_dir / "ADR001V01-big.md"
+    header_text = build_header(config, record)
+    huge_body = (b"line\n") * (4 * 1024 * 1024)  # ~20MB
+    with open(target, "wb") as handle:
+        handle.write(header_text.encode("utf-8"))
+        handle.write(huge_body)
+
+    report = {}
+    tracemalloc.start()
+    total_bytes = 0
+    for chunk in stream_normalized_body_chunks(target, report):
+        total_bytes += len(chunk)
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # os.linesep may expand each bare '\n' (e.g. to CRLF on Windows) --
+    # not a 1:1 byte count, but always within a small constant factor.
+    assert len(huge_body) <= total_bytes <= len(huge_body) * 2
+    # Peak traced memory stays a small fraction of the ~20MB body --
+    # confirms no whole-body buffer, without pinning an exact multiple of
+    # the chunk size (regex/decoder scratch overhead is real but bounded).
+    assert peak < len(huge_body) / 4
 
 
 def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
@@ -208,16 +336,20 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     with open(target, "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body")
     from adrpy.core.header import parse_header
-    from adrpy.core.lifecycle import read_lines_with_report
+    from adrpy.core.lifecycle import read_header_lines_with_report
     from adrpy.core.naming import parse_any_filename
 
-    lines, _encoding_repaired = read_lines_with_report(target)
-    header = parse_header(lines, config)
+    header_lines, _encoding_repaired = read_header_lines_with_report(target)
+    header = parse_header(header_lines, config)
     _, filename_info = parse_any_filename(target.name, config)
 
-    _record, _content, attempts = rewrite_status_field(
-        target, config, lines, header, filename_info, field="update", status="Accepted", refdate=date(2026, 1, 2)
-    )
+    from adrpy.core.lock import acquire_repo_lock
+
+    with acquire_repo_lock(adr_dir) as lock:
+        _record, _body_encoding_repaired, attempts = rewrite_status_field(
+            target, config, header, filename_info, field="update", status="Accepted", refdate=date(2026, 1, 2),
+            lock=lock,
+        )
 
     assert attempts == 1
 
@@ -415,6 +547,68 @@ def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_nev
     assert total_read["bytes"] <= 64 * 1024  # generous cap, far below the 2MB blob
     assert elapsed < 1.0  # would take several seconds under the old O(n^2) behavior
     assert len(lines) == 1  # no real newline anywhere in what was actually read
+
+
+def test_read_header_lines_handles_a_crlf_straddling_a_chunk_boundary(tmp_path):
+    """Round 28: _read_header_bytes counted real newlines within each
+    freshly-read 4096-byte chunk IN ISOLATION. A `\\r\\n` pair straddling
+    exactly on a chunk boundary (the `\\r` as the chunk's own last byte,
+    the `\\n` as the next chunk's own first byte) gets counted TWICE by
+    two separate isolated per-chunk scans -- once for the lone trailing
+    `\\r` in the first chunk's own scan, once more for the lone leading
+    `\\n` in the second chunk's own scan -- even though together they are
+    exactly ONE real terminator. This double-count can make the loop
+    believe it already found `count` real newlines one chunk-read too
+    early, stopping before the file's true 12th line is ever read."""
+    chunk_size = 4096
+    prefix_lines = b"".join(f"L{i}\n".encode() for i in range(9))  # 9 real newlines
+    pad = b"x" * (4095 - len(prefix_lines))  # bring the prefix to exactly 4095 bytes
+    # byte 4095 = '\r' (chunk 1's own last byte), byte 4096 = '\n' (chunk 2's own
+    # first byte) -- terminator #10, straddling the boundary exactly.
+    straddling_crlf = b"\r\n"
+    # Push well past the chunk-1/chunk-2 boundary before the genuine 12th line,
+    # as its own line (terminator #11) -- so a premature stop after chunk 2
+    # provably misses the real line 12, without merging into it.
+    filler = b"y" * (chunk_size * 2) + b"\n"
+    real_line_12 = b"REALLINE12\n"  # terminator #12
+    target = tmp_path / "straddle.md"
+    target.write_bytes(prefix_lines + pad + straddling_crlf + filler + real_line_12)
+
+    lines = read_header_lines(target, count=12)
+
+    assert len(lines) == 12
+    assert lines[11] == "REALLINE12"
+
+
+def test_read_header_lines_unaffected_by_a_header_within_one_chunk(tmp_path):
+    """Positive control: the overwhelmingly common case (a real, schema-
+    bounded header, well under one 4096-byte chunk) must be unaffected by
+    the boundary fix above."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Small", version=1, status_create="Proposed")
+    target = adr_dir / "ADR001V01-small.md"
+    with open(target, "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+
+    lines = read_header_lines(target, count=12)
+
+    assert len(lines) == 12
+
+
+def test_read_header_lines_handles_a_genuine_multi_chunk_header_with_no_straddle(tmp_path):
+    """Sanity check: a header that legitimately needs more than one
+    4096-byte chunk, with no CRLF anywhere near a chunk boundary, must
+    still return the correct 12 lines after the fix."""
+    lines_content = [f"line{i}-" + ("z" * 500) for i in range(11)]  # far over one chunk, lone \n only
+    target = tmp_path / "multichunk.md"
+    target.write_bytes(("\n".join(lines_content) + "\nREALLINE12\n").encode())
+
+    lines = read_header_lines(target, count=12)
+
+    assert len(lines) == 12
+    assert lines[11] == "REALLINE12"
 
 
 def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tmp_path):

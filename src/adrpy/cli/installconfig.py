@@ -111,9 +111,11 @@ def _field_description(field):
         )
     if field == "template":
         return (
-            "Default template content a newly init'd repository using this as its seed will get; the "
-            "stored value may be empty, but this flag can't set it to an empty string here (parse_flags "
-            "rejects any empty optional value outright) -- use `installconfig --seed` for that."
+            f"Default template content a newly init'd repository using this as its seed will get, max "
+            f"{config_schema.TEMPLATE_MAX_LENGTH} characters; a too-long value fails with "
+            "config-template-too-long. The stored value may be empty, but this flag can't set it to an "
+            "empty string here (parse_flags rejects any empty optional value outright) -- use "
+            "`installconfig --seed` for that."
         )
     if field == "prefix":
         return (

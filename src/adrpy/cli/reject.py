@@ -13,7 +13,6 @@ from adrpy.core.lifecycle import (
     has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
     parse_refdate,
-    read_lines_with_report,
     read_target,
     resolve_repo_and_target,
     rewrite_status_field,
@@ -22,7 +21,12 @@ from adrpy.core.lifecycle import (
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import LockLostError, acquire_repo_lock
-from adrpy.core.security import resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -61,7 +65,12 @@ def describe():
             "family-scan-unreliable-encoding BEFORE the first write (this decision's own family scan, "
             "unrelated to the predecessor lookup above) if a subdirectory under the decisions folder could "
             "not be scanned, or a sibling needed a lossy UTF-8 decode whose parsed header can't be trusted "
-            "for a safety decision -- no write made in that case. BEFORE the first write, fails with one "
+            "for a safety decision -- no write made in that case. The target's own title/scope/domain "
+            "(re-read from its header cells, not flags) are re-validated before use -- may fail with "
+            "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
+            "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
+            "character), or consists entirely of whitespace/'_'/'-'; no write made in that case either. "
+            "BEFORE the first write, fails with one "
             "of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Rejected unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
@@ -111,7 +120,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # rejection, so the caller knows which recovery action applies.
@@ -136,15 +145,30 @@ def run(args):
             if header.date_create is not None:
                 validate_refdate_not_before(refdate, header.date_create)
 
+            # Round 28: title/scope/domain are re-read from the SOURCE
+            # file's own header cells, not flags -- a hand-edited or
+            # migrated file could carry a filesystem-unsafe character
+            # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
+            # validated until this rewrite. Same defensive re-validation
+            # version/revise/supersede/migrate already apply.
+            reject_embedded_delimiter(header.title, "title")
+            reject_filesystem_unsafe_title(header.title, "title")
+            reject_title_with_no_case_transform_content(header.title, "title")
+            reject_embedded_delimiter(header.scope, "scope")
+            reject_embedded_delimiter(header.domain, "domain")
+
             # ADR001, part 3: guarantees this write (and the predecessor's,
             # below) never commit blindly if the lease was reclaimed.
             lock.verify_still_held()
-            _record, _content, attempts = rewrite_status_field(
-                path, config, lines, header, filename_info, field="update", status="Rejected", refdate=refdate
+            _record, body_encoding_repaired, attempts = rewrite_status_field(
+                path, config, header, filename_info, field="update", status="Rejected", refdate=refdate, lock=lock
             )
             # Accurate only because the write above already succeeded --
-            # the warning claims the file was rewritten.
-            if encoding_repaired:
+            # the warning claims the file was rewritten. ADR006V01:
+            # combines the header's own flag (known since read_target)
+            # with the body's own (only known now, from the streamed
+            # write).
+            if encoding_repaired or body_encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:
@@ -208,25 +232,33 @@ def run(args):
                         warnings=warnings,
                     )
                 pred_parsed, pred_header, pred_path = predecessor
-                pred_lines, pred_encoding_repaired = read_lines_with_report(pred_path)
+                # pred_header already comes from pred_members' own scan
+                # (family_members, via read_header_lines_with_report) --
+                # no separate read needed for the header portion. That
+                # same scan's own fail-closed check (family-scan-
+                # unreliable-encoding) already guarantees this exact
+                # header wasn't lossy-decoded, or this call would never
+                # have reached here -- only the BODY's own encoding
+                # status (ADR006V01, known only once the streamed write
+                # below has read it) can still need the warning.
                 try:
                     # ADR001, part 3: this is this command's SECOND write --
                     # guarantees it never commits blindly either, on its own,
                     # even though the first write above already succeeded.
                     lock.verify_still_held()
-                    _record, _content, attempts = rewrite_status_field(
+                    _record, pred_body_encoding_repaired, attempts = rewrite_status_field(
                         pred_path,
                         config,
-                        pred_lines,
                         pred_header,
                         pred_parsed,
                         field="change",
                         status=None,
                         refdate=None,
+                        lock=lock,
                     )
                     # Accurate only because this second write already
                     # succeeded.
-                    if pred_encoding_repaired:
+                    if pred_body_encoding_repaired:
                         warnings.append(encoding_repaired_warning(pred_path))
                 except (OSError, LockLostError) as error:
                     # By this point the primary write above has already

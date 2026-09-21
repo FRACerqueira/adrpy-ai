@@ -139,17 +139,19 @@ def test_revise_happy_path(tmp_path):
 
 def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage."""
+    "succeeded only after N attempts" message had no end-to-end coverage.
+    ADR006V01: revise's own write goes through atomic_write_chunks, not
+    atomic_write_text."""
     from adrpy.cli import revise as revise_module
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
-    real_atomic_write_text = revise_module.atomic_write_text
+    real_atomic_write_chunks = revise_module.atomic_write_chunks
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(revise_module, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(revise_module, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 

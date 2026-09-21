@@ -79,9 +79,10 @@ def _field_description(field):
         )
     if field == "template":
         return (
-            "Default template content for a new decision's body; the stored value may be empty, but this "
-            "flag can't set it to an empty string here (parse_flags rejects any empty optional value "
-            "outright) -- use `init --seed` for that."
+            f"Default template content for a new decision's body, max {config_schema.TEMPLATE_MAX_LENGTH} "
+            "characters; a too-long value fails with config-template-too-long. The stored value may be "
+            "empty, but this flag can't set it to an empty string here (parse_flags rejects any empty "
+            "optional value outright) -- use `init --seed` for that."
         )
     if field == "prefix":
         return (

@@ -49,6 +49,13 @@ FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
 HEADER_DISCLAIMER_MAX_LENGTH = 100
 HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
 STATUS_LABEL_MAX_LENGTH = 25
+# Round 28: the reference tool's own wizard has no equivalent bound for
+# this field at all (it's free-form body content, not a single prompt-
+# edit-text field) -- a deliberate divergence, not a fidelity gap, added
+# specifically so a bounded read of the config file itself (core/config.py's
+# own read_config_text) can trust a fixed byte cap without risking a
+# false rejection of a legitimate, if unusually long, template.
+TEMPLATE_MAX_LENGTH = 10_000
 
 _HEADER_LABEL_FIELDS_MAX_40 = (
     "headertitlefile",
@@ -207,11 +214,43 @@ def default_repo_config_text_for_language(language):
     return json.dumps(base, indent=2, ensure_ascii=False)
 
 
+# Round 28: this file is read on EVERY single command invocation
+# (resolve_repo_and_target's own initial config load), plus init/
+# installconfig --seed, with no size cap at all before this fix -- a
+# 150MB config file measured a ~300MB peak-memory read. 64KB is
+# generous relative to the schema's own worst case: every length-bounded
+# field (including TEMPLATE_MAX_LENGTH, the one field this project added
+# a bound to specifically to make this cap safe) summed at its own
+# maximum, JSON-escaped, stays well under this. Deliberately NOT
+# configurable -- a config-read cap can never be sourced from the
+# config it is itself bounding (the value would have to be read first).
+CONFIG_READ_MAX_BYTES = 65536
+_CONFIG_READ_CHUNK_SIZE = 4096
+
+
+def _read_config_bytes(path):
+    """Reads at most `CONFIG_READ_MAX_BYTES` (plus at most one chunk's
+    worth of overrun, used only to detect that the real file is larger,
+    never returned) -- never the whole file regardless of its true size."""
+    chunks = []
+    total = 0
+    with Path(path).open("rb") as handle:
+        while total <= CONFIG_READ_MAX_BYTES:
+            more = handle.read(_CONFIG_READ_CHUNK_SIZE)
+            if not more:
+                break
+            chunks.append(more)
+            total += len(more)
+    return b"".join(chunks)
+
+
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must
     become a structured CommandError, not a raw UnicodeDecodeError with
-    empty stdout.
+    empty stdout. Bounded to CONFIG_READ_MAX_BYTES (see its own note) --
+    raises config-file-too-large instead of reading further when the
+    real file exceeds it.
 
     Retries a transient PermissionError the same way every other read in
     this codebase
@@ -222,7 +261,20 @@ def read_config_text(path):
     (resolve_repo_and_target's own initial config load), most of it
     BEFORE any lock or attach_warnings safety net is entered."""
     try:
-        return read_with_permission_retry(lambda: Path(path).read_text(encoding="utf-8"))
+        raw_bytes = read_with_permission_retry(lambda: _read_config_bytes(Path(path)))
+        if len(raw_bytes) > CONFIG_READ_MAX_BYTES:
+            raise CommandError(
+                "config-file-too-large",
+                f"{path}: exceeds the {CONFIG_READ_MAX_BYTES}-byte config file size limit.",
+            )
+        # Path.read_text's own default (universal newlines) silently
+        # translates CRLF/lone-CR to '\n' on read -- a plain bytes.decode
+        # does not, which would otherwise change this function's own
+        # observable output (confirmed live: broke a CRLF-fixture-comparing
+        # test). Replicated explicitly so every caller (JSON parsing is
+        # itself newline-agnostic, but read_install_config_text's own
+        # pass-through contract is not) sees the exact same text as before.
+        return raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError as error:
         raise CommandError("config-invalid-encoding", f"{path}: {error}") from error
 
@@ -304,6 +356,11 @@ def parse_repo_config(text):
         raise CommandError(
             "config-folderadr-not-relative",
             "folderadr must be a relative path (a hostile config must never point outside the repository).",
+        )
+
+    if len(lowered["template"]) > TEMPLATE_MAX_LENGTH:
+        raise CommandError(
+            "config-template-too-long", f"template must be <= {TEMPLATE_MAX_LENGTH} characters."
         )
 
     if len(lowered["headerdisclaimer"]) > HEADER_DISCLAIMER_MAX_LENGTH:

@@ -159,10 +159,10 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
     real_read_target = supersede_module.read_target
 
     def flaky_read_target(path, config, warnings=None):
-        filename_info, header, lines, encoding_repaired = real_read_target(path, config, warnings=warnings)
+        filename_info, header, encoding_repaired = real_read_target(path, config, warnings=warnings)
         from dataclasses import replace as replace_fields
 
-        return replace_fields(filename_info, title="evil:hidden"), header, lines, encoding_repaired
+        return replace_fields(filename_info, title="evil:hidden"), header, encoding_repaired
 
     monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
 
@@ -186,10 +186,10 @@ def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters
     real_read_target = supersede_module.read_target
 
     def flaky_read_target(path, config, warnings=None):
-        filename_info, header, lines, encoding_repaired = real_read_target(path, config, warnings=warnings)
+        filename_info, header, encoding_repaired = real_read_target(path, config, warnings=warnings)
         from dataclasses import replace as replace_fields
 
-        return replace_fields(filename_info, title="---"), header, lines, encoding_repaired
+        return replace_fields(filename_info, title="---"), header, encoding_repaired
 
     monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
 

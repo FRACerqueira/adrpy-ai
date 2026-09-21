@@ -30,6 +30,12 @@ POLL_INTERVAL_SECONDS = 0.2
 # of Windows "pending delete"/sharing-violation failure.
 LOCK_IO_RETRY_ATTEMPTS = 3
 LOCK_IO_RETRY_DELAY_SECONDS = 0.05
+# Round 28: _read_lock had no size cap at all. The lock file is only ever
+# tool-written (a uuid4 token + "\n" + a float timestamp, well under 100
+# bytes) -- 4KB is generous headroom while keeping memory use bounded
+# regardless of what a corrupted or adversarial file at this exact path
+# might contain.
+LOCK_READ_MAX_BYTES = 4096
 
 
 class LockTimeoutError(CommandError):
@@ -91,15 +97,32 @@ def _read_lock(path):
     own decision-file reads instead of being a second independent copy --
     this call passes this module's own LOCK_IO_RETRY_* tuning explicitly,
     so a future change to either site's numbers can't silently drift the
-    other."""
+    other.
+
+    Bounded to LOCK_READ_MAX_BYTES (see its own note) -- never raises on
+    an oversized or invalid-UTF-8 file; a lossy/truncated decode falls
+    through to the existing float()-parse-failure path below and returns
+    None, the same "unparseable, treat as no lock" outcome this function
+    already has for a malformed lock file."""
+    def _read_bounded():
+        with path.open("rb") as handle:
+            return handle.read(LOCK_READ_MAX_BYTES)
+
     try:
-        raw = read_with_permission_retry(
-            lambda: path.read_text(encoding="utf-8"),
+        raw_bytes = read_with_permission_retry(
+            _read_bounded,
             attempts=LOCK_IO_RETRY_ATTEMPTS,
             delay=LOCK_IO_RETRY_DELAY_SECONDS,
         )
     except FileNotFoundError:
         return None
+    # Path.read_text's own default (universal newlines) silently translated
+    # CRLF/lone-CR to '\n' on read -- a plain bytes.decode does not (round
+    # 28, confirmed live: a Windows-written CRLF lock file's own token came
+    # back with a trailing '\r' attached instead of the bare token).
+    # Replicated explicitly so this function's own observable output is
+    # unchanged.
+    raw = raw_bytes.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     token, _, timestamp_text = raw.partition("\n")
     try:
         timestamp = float(timestamp_text)

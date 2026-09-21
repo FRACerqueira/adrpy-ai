@@ -163,7 +163,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # supersede, so the caller knows which recovery action applies.
@@ -250,11 +250,14 @@ def run(args):
                 # ADR001, part 3: guarantees the predecessor write below
                 # never commits blindly if the lease was reclaimed.
                 lock.verify_still_held()
-                _record, _content, attempts = mark_superseded(
-                    path, config, lines, header, filename_info, successor_number, refdate
+                _record, body_encoding_repaired, attempts = mark_superseded(
+                    path, config, header, filename_info, successor_number, refdate, lock=lock
                 )
                 # Accurate only because the write above already succeeded.
-                if encoding_repaired:
+                # ADR006V01: combines the header's own flag (known since
+                # read_target) with the body's own (only known now, from
+                # the streamed write).
+                if encoding_repaired or body_encoding_repaired:
                     warnings.append(encoding_repaired_warning(path))
             except OSError as error:
                 # Nothing has been written yet at this point (the

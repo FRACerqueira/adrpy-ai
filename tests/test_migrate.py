@@ -294,16 +294,16 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
 
     from adrpy.cli import migrate as migrate_module
 
-    real_atomic_write_bytes = migrate_module.atomic_write_bytes
+    real_atomic_write_chunks = migrate_module.atomic_write_chunks
     processed = []
 
-    def flaky_write(path, content):
+    def flaky_write(path, chunks_factory):
         processed.append(str(path))
         if len(processed) == 2:
             raise OSError("simulated disk failure")
-        return real_atomic_write_bytes(path, content)
+        return real_atomic_write_chunks(path, chunks_factory)
 
-    monkeypatch.setattr(migrate_module, "atomic_write_bytes", flaky_write)
+    monkeypatch.setattr(migrate_module, "atomic_write_chunks", flaky_write)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -335,26 +335,54 @@ def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path,
     Without the fix, a transient blip here permanently misclassifies the
     candidate as "failed" instead of retrying transparently like its
     sibling read already would -- in a one-time, largely irreversible
-    operation."""
+    operation. ADR006V01: the write-phase read is now a stream opened via
+    Path.open, sharing atomic_write_chunks' own single retry loop with
+    the destination write -- each retried ATTEMPT re-opens the source
+    fresh, so this still recovers from a transient PermissionError on the
+    source open, just via one combined budget instead of two."""
     _init_repo_with_pattern(tmp_path)
     target = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
 
-    real_read_bytes = Path.read_bytes
+    real_open = Path.open
     calls = {"count": 0}
 
-    def flaky_read_bytes(self, *args, **kwargs):
-        if self.name == target.name:
+    def flaky_open(self, *args, **kwargs):
+        if self.name == target.name and "rb" in args:
             calls["count"] += 1
             if calls["count"] < 3:
                 raise PermissionError("Access is denied")
-        return real_read_bytes(self, *args, **kwargs)
+        return real_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
+    monkeypatch.setattr(Path, "open", flaky_open)
 
     result = migrate.run(["--path", str(tmp_path)])
 
     assert result["migrated"] == [str(target)]
     assert calls["count"] == 3
+
+
+def test_migrate_write_does_not_read_the_whole_candidate_into_memory(tmp_path):
+    """Round 28 / ADR006V01: migrate's write phase read the WHOLE
+    candidate file into memory (`candidate_path.read_bytes()`) before
+    concatenating a header onto it and writing the result -- a 150MB
+    candidate measured a ~300MB peak-memory read. The header is already
+    known to be schema-bounded (a few KB at most); only the candidate's
+    own body content, unbounded, needs to stream."""
+    from unittest.mock import patch
+
+    _init_repo_with_pattern(tmp_path)
+    huge_body = "x" * (20 * 1024 * 1024)  # 20MB, well past any reasonable chunk size
+    legacy_path = _write_legacy_file(tmp_path, "0001Huge.md", huge_body)
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("migrate's write phase must not read the whole candidate at once")
+
+    with patch.object(Path, "read_bytes", boom), patch.object(Path, "read_text", boom):
+        result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy_path)]
+    text = legacy_path.read_text(encoding="utf-8")
+    assert huge_body in text
 
 
 def test_migrate_happy_path_preserves_original_content(tmp_path):
@@ -381,16 +409,16 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
 def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
-    migrate.py calls atomic_write_BYTES, not atomic_write_text."""
+    migrate.py calls atomic_write_CHUNKS (ADR006V01), not atomic_write_text."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001UsePostgreSQL.md", "# Use PostgreSQL\n")
-    real_atomic_write_bytes = migrate.atomic_write_bytes
+    real_atomic_write_chunks = migrate.atomic_write_chunks
 
-    def flaky_atomic_write_bytes(*args, **kwargs):
-        real_atomic_write_bytes(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(migrate, "atomic_write_bytes", flaky_atomic_write_bytes)
+    monkeypatch.setattr(migrate, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = migrate.run(["--path", str(tmp_path)])
 
@@ -650,18 +678,18 @@ def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_lo
     _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
     _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
 
-    real_write = migrate.atomic_write_bytes
+    real_write = migrate.atomic_write_chunks
     calls = {"n": 0}
 
-    def write_then_steal_lock(path, data):
-        attempts = real_write(path, data)
+    def write_then_steal_lock(path, chunks_factory):
+        attempts = real_write(path, chunks_factory)
         calls["n"] += 1
         if calls["n"] == 1:
             lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
             lock_path.write_text(f"someone-else-entirely\n{time.time()}")
         return attempts
 
-    monkeypatch.setattr(migrate, "atomic_write_bytes", write_then_steal_lock)
+    monkeypatch.setattr(migrate, "atomic_write_chunks", write_then_steal_lock)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])

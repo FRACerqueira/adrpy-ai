@@ -17,7 +17,12 @@ from adrpy.core.lifecycle import (
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
-from adrpy.core.security import resolve_within
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -45,7 +50,11 @@ def describe():
             "can't be trusted from an incomplete scan; no write was made. May also fail with "
             "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
             "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
-            "the same reasoning as an unreadable subdirectory; no write was made. Fails with one of "
+            "the same reasoning as an unreadable subdirectory; no write was made. The target's own title/"
+            "scope/domain (re-read from its header cells, not flags) are re-validated before use -- may fail "
+            "with field-contains-forbidden-character if a hand-edited or migrated source file's title "
+            "carries '|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a "
+            "control character), or consists entirely of whitespace/'_'/'-'. Fails with one of "
             "still-proposed, already-superseded, or not-proposed if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
             "already been superseded or is still unresolved (Proposed) -- no write is made in any of "
@@ -84,7 +93,7 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-undo,
             # so the caller knows which recovery action applies.
@@ -110,13 +119,28 @@ def run(args):
                     warnings=warnings,
                 )
 
+            # Round 28: title/scope/domain are re-read from the SOURCE
+            # file's own header cells, not flags -- a hand-edited or
+            # migrated file could carry a filesystem-unsafe character
+            # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
+            # validated until this rewrite. Same defensive re-validation
+            # version/revise/supersede/migrate already apply.
+            reject_embedded_delimiter(header.title, "title")
+            reject_filesystem_unsafe_title(header.title, "title")
+            reject_title_with_no_case_transform_content(header.title, "title")
+            reject_embedded_delimiter(header.scope, "scope")
+            reject_embedded_delimiter(header.domain, "domain")
+
             lock.verify_still_held()
-            _record, _content, attempts = rewrite_status_field(
-                path, config, lines, header, filename_info, field="update", status=None, refdate=None
+            _record, body_encoding_repaired, attempts = rewrite_status_field(
+                path, config, header, filename_info, field="update", status=None, refdate=None, lock=lock
             )
             # Accurate only because the write above already succeeded --
-            # the warning claims the file was rewritten.
-            if encoding_repaired:
+            # the warning claims the file was rewritten. ADR006V01:
+            # combines the header's own flag (known since read_target)
+            # with the body's own (only known now, from the streamed
+            # write).
+            if encoding_repaired or body_encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
             warning = retry_warning(attempts)
             if warning:

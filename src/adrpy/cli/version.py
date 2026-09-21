@@ -5,7 +5,7 @@ decision. `--open` is permanently not implemented (see `new.py`'s note).
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
     family_members,
     has_pending_sibling,
@@ -13,9 +13,9 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
     parse_refdate,
-    read_body,
     read_target,
     resolve_repo_and_target,
+    stream_normalized_body_chunks,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
@@ -166,14 +166,17 @@ def run(args):
             config = verify_folderadr_unchanged_since_lock(
                 root / "adr-config.adrplus", config.folderadr, warnings=warnings
             )
-            filename_info, header, lines, encoding_repaired = read_target(path, config, warnings=warnings)
+            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
             # version never rewrites its own source (only its BODY is
             # carried into a newly created file) -- encoding_repaired_
-            # warning's "the file has been rewritten" claim is never true
-            # here; this stays accurate regardless of whether the command
-            # goes on to succeed, so it fires right away, not after a write.
-            if encoding_repaired:
-                warnings.append(encoding_repaired_source_warning(path))
+            # source_warning's "the file has been rewritten" claim is never
+            # true here. ADR006V01: the body is no longer read at all
+            # unless/until the write below actually streams it, so this
+            # warning (which is specifically about the BODY's own decode,
+            # not just the header's) can only be finalized once that
+            # streamed write has happened -- combined with `encoding_
+            # repaired` (the header's own flag, already known here) right
+            # after the write, not right away.
 
             # One scan shared by all three checks below, avoiding a
             # duplicate scan_decisions call each.
@@ -263,8 +266,6 @@ def run(args):
             reject_filesystem_unsafe_title(header.title, "title")
             reject_title_with_no_case_transform_content(header.title, "title")
 
-            template = config.template if flags.get("empty") else read_body(lines)
-
             record = DecisionRecord(
                 number=filename_info.number,
                 title=header.title,
@@ -286,11 +287,38 @@ def run(args):
                     warnings=warnings,
                 )
 
-            content = build_header(config, record) + template
             # ADR001, part 3: guarantees this write never commits blindly
             # if the lease was reclaimed.
             lock.verify_still_held()
-            attempts = atomic_write_text(new_path, content)
+            # ADR006V01: --empty uses config.template (schema-bounded, safe
+            # in memory, unchanged); otherwise the SOURCE's own body is
+            # streamed straight from `path` into the new file, without
+            # ever holding it in memory. body_encoding_repaired stays
+            # False (the default a fresh report dict would carry) when
+            # --empty means the body is never read at all.
+            header_text = build_header(config, record)
+            if flags.get("empty"):
+                attempts = atomic_write_text(new_path, header_text + config.template)
+                body_encoding_repaired = False
+            else:
+                body_report = {}
+
+                def _chunks(path=path, header_text=header_text, body_report=body_report, lock=lock):
+                    yield header_text.encode("utf-8")
+                    yield from stream_normalized_body_chunks(path, body_report)
+                    # Re-verify right before this generator exhausts (i.e.
+                    # right before atomic_write_chunks's own commit) -- the
+                    # pre-call check above only proves the lock was held
+                    # before this now-potentially-slow streamed read/write
+                    # began. See core/lifecycle.py's
+                    # _rewrite_with_streamed_body for the same reasoning and
+                    # the live-confirmed regression this closes.
+                    lock.verify_still_held()
+
+                attempts = atomic_write_chunks(new_path, _chunks)
+                body_encoding_repaired = body_report["encoding_repaired"]
+            if encoding_repaired or body_encoding_repaired:
+                warnings.append(encoding_repaired_source_warning(path))
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)

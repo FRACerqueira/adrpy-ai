@@ -26,7 +26,7 @@ Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##
 
 ### `--template` *(optional, string)*
 
-Default template content for a new decision's body; the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that.
+Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that.
 
 ### `--prefix` *(optional, string)*
 

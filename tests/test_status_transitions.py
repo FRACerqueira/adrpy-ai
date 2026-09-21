@@ -77,6 +77,26 @@ def test_approve_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text  # untouched
 
 
+def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+    """Round 28 pass B: approve (unlike version/revise/supersede/migrate)
+    never re-validated header.title/scope/domain before reusing them in
+    its own rewrite -- inert only because _extract_cell structurally
+    prevents an embedded '|' or real newline from ever reaching a parsed
+    header value, but a colon (a genuine NTFS Alternate-Data-Stream
+    separator, not blocked by parse_header's own extraction) survives
+    untouched. A hand-edited file's title, never touched by any
+    validation until this write, would otherwise embed it into the
+    rewritten header with no error at all."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
     """ADR004V01: end-to-end through a real write command (approve is
     representative of all 6 -- read_target's own warning is shared code),
@@ -192,19 +212,19 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
     proving it actually reaches a command's own result (only approve.py's
     encoding-repair warning, and new.py's happy path, were ever checked
     for warnings content at all). approve/reject/undo write through
-    core.lifecycle.rewrite_status_field, which calls atomic_write_text
-    from ITS OWN module namespace -- patching approve.py's own (absent)
-    reference would silently no-op."""
+    core.lifecycle.rewrite_status_field, which calls atomic_write_chunks
+    (ADR006V01) from ITS OWN module namespace -- patching approve.py's own
+    (absent) reference would silently no-op."""
     from adrpy.core import lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
-    real_atomic_write_text = lifecycle.atomic_write_text
+    real_atomic_write_chunks = lifecycle.atomic_write_chunks
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(lifecycle, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = approve.run(["--file", str(adr_path)])
 
@@ -407,7 +427,17 @@ def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the
     write -- it must not bypass reject-predecessor-write-failed's handler
     (which only catches OSError), or it would report a generic, dataless
     lock-lost even though the target was already, for real, committed to
-    Rejected."""
+    Rejected.
+
+    ADR006V01: the predecessor's body is now streamed directly from disk
+    (core/lifecycle.py's stream_normalized_body_chunks) instead of being
+    read up front into `pred_lines` before the write -- so the lock steal
+    now has to happen DURING that stream, not before it, to land in the
+    same check-to-commit window `lock.verify_still_held()` is meant to
+    close (see core/lifecycle.py's _rewrite_with_streamed_body, which
+    re-verifies the lock a second time right before this exact write
+    commits, specifically to keep this window shut now that streaming a
+    real body can take non-trivial time)."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -415,16 +445,23 @@ def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the
     result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     successor_path = Path(result["created"])
 
+    import adrpy.core.lifecycle as lifecycle_module
     from adrpy.cli import reject as reject_module
 
-    real_read = reject_module.read_lines_with_report
+    real_stream = lifecycle_module.stream_normalized_body_chunks
+    calls = {"n": 0}
 
-    def steal_lock_then_read(*args, **kwargs):
-        lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
-        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
-        return real_read(*args, **kwargs)
+    def steal_lock_then_stream(source_path, report):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            # The FIRST call streams the target's own (primary) write,
+            # which must succeed normally -- only the SECOND call, the
+            # predecessor's write, is where this test steals the lock.
+            lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
+            lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        yield from real_stream(source_path, report)
 
-    monkeypatch.setattr(reject_module, "read_lines_with_report", steal_lock_then_read)
+    monkeypatch.setattr(lifecycle_module, "stream_normalized_body_chunks", steal_lock_then_stream)
 
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
@@ -553,6 +590,18 @@ def test_reject_happy_path(tmp_path):
     assert "|Changed|Rejected (2026-01-02) <!-- Rejected -->|" in text
 
 
+def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+    """See approve's own equivalent test -- reject shares the same gap."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """See approve's own
     equivalent test -- this is reject's OWN family scan (its own family,
@@ -649,13 +698,13 @@ def test_reject_reports_a_retry_warning_when_the_write_needed_several_attempts(t
     from adrpy.core import lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
-    real_atomic_write_text = lifecycle.atomic_write_text
+    real_atomic_write_chunks = lifecycle.atomic_write_chunks
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(lifecycle, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = reject.run(["--file", str(adr_path)])
 
@@ -927,6 +976,21 @@ def test_undo_happy_path(tmp_path):
     assert "|Changed||" in text
 
 
+def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+    """See approve's own equivalent test -- undo shares the same gap."""
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    _write_raw(
+        adr_path, config, number=1, title="Hostile:Title", version=1,
+        status_create="Proposed", status_update="Accepted", date_update=date(2026, 1, 2),
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """See approve's own
     equivalent test."""
@@ -985,13 +1049,13 @@ def test_undo_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
-    real_atomic_write_text = lifecycle.atomic_write_text
+    real_atomic_write_chunks = lifecycle.atomic_write_chunks
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(lifecycle, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(lifecycle, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = undo.run(["--file", str(adr_path)])
 

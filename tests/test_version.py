@@ -134,17 +134,19 @@ def test_version_happy_path(tmp_path):
 
 def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage."""
+    "succeeded only after N attempts" message had no end-to-end coverage.
+    ADR006V01: version's own (non---empty) write goes through
+    atomic_write_chunks, not atomic_write_text."""
     from adrpy.cli import version as version_module
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    real_atomic_write_text = version_module.atomic_write_text
+    real_atomic_write_chunks = version_module.atomic_write_chunks
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_atomic_write_chunks(*args, **kwargs):
+        real_atomic_write_chunks(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(version_module, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(version_module, "atomic_write_chunks", flaky_atomic_write_chunks)
 
     result = version.run(["--file", str(adr_path)])
 

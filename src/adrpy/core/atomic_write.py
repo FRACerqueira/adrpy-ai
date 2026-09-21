@@ -108,6 +108,55 @@ def atomic_write_bytes(path, content_bytes):
     raise last_error
 
 
+def atomic_write_chunks(path, chunks_factory):
+    """Same atomicity guarantees as atomic_write_bytes (temp file in the
+    same directory, then an atomic os.replace, with the identical
+    transient-PermissionError retry), but streams content from
+    `chunks_factory()` -- a zero-arg callable returning a fresh iterable
+    of bytes chunks -- instead of requiring the whole content already
+    assembled in memory (ADR006V01: a decision's body, or a legacy
+    file's own content during `migrate`, has no schema-imposed size
+    bound the way header content does).
+
+    `chunks_factory` is called again on every retry attempt, not reused
+    across attempts -- a transient PermissionError on the destination
+    write must not resume from an already-exhausted source iterator.
+    When the chunk producer itself reads from a source file (as
+    `migrate`'s own caller does), this means the source read and the
+    destination write now share ONE combined retry budget
+    (RETRY_ATTEMPTS) instead of two independently-budgeted retries --
+    deliberate (ADR006V01's own "Negative Consequences"), not an
+    oversight."""
+    path = Path(path)
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+
+    last_error = None
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            with open(temp_path, "wb") as handle:
+                for chunk in chunks_factory():
+                    handle.write(chunk)
+            os.replace(temp_path, path)
+            return attempt + 1
+        except OSError as error:
+            last_error = error
+            temp_path.unlink(missing_ok=True)
+            if not isinstance(error, PermissionError):
+                raise
+            time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
+        except BaseException:
+            # A chunk producer can raise something other than OSError --
+            # LockLostError (core/lock.py), from ADR006V01's mid-stream
+            # lock re-verification -- which the OSError branch above
+            # never catches, leaking this temp file (found live: a
+            # LockLostError raised from inside rewrite_status_field's own
+            # generator left an orphaned .tmp file the OSError-only
+            # cleanup never touched).
+            temp_path.unlink(missing_ok=True)
+            raise
+    raise last_error
+
+
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
     """Removes leftover `*.tmp` files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed
