@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `explore` — best-effort listing of every decision file in a repository.
 - `config` — reads or updates an existing repository's own `adr-config.adrplus`.
 - `installconfig` — per-user, install-level default configuration, seeding new repositories and supplying a `migrate` fallback for `migrationpattern`.
+- `log` — writes a decision-log entry, the lighter-weight sibling of a formal ADR (see [ADR003](doc/adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
+- `supersede --title` — optionally gives a successor its own title instead of always carrying the predecessor's own forward.
+- `folderlog` — the decision-log directory is now an independently configurable, recursively-scanned `adr-config.adrplus` field, decoupled from `folderadr` (see [ADR007](doc/adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr.md)).
+- A single, central `FailureCodes` registry for every failure code this tool can return, replacing scattered string literals (see [ADR005](doc/adr/ADR005V01-failure-codes-and-shared-constants-gain-dedicated,-closed-registry-classes.md)).
 - A repository-wide lock covering the full critical section of every mutating command, with a documented failure boundary (see [ADR001](doc/adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md)).
 - Public project scaffolding: `LICENSE` (MIT), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, this changelog.
 

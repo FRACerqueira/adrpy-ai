@@ -358,6 +358,28 @@ def test_every_too_long_field_raises_its_own_matching_code(field, too_long_lengt
     assert excinfo.value.code == f"config-{field}-too-long"
 
 
+def test_too_long_codes_mapping_has_exactly_one_entry_per_schema_field():
+    """Round 29 (Test-Adequacy pass, round 29): the test above's own
+    parametrize list is a hand-maintained static list -- it only
+    protects fields that already have their own tuple in it. A future
+    field added to the schema (and to _TOO_LONG_CODES) with no matching
+    new parametrize entry would get zero test signal, surfacing only in
+    production as a raw KeyError instead of a clean CommandError. This
+    test derives its own expectations from the schema/registry
+    themselves (not a second hand-maintained list) so it stays correct
+    automatically as fields are added or removed, closing the class
+    instead of the one instance."""
+    from adrpy.core.config import _HEADER_LABEL_FIELDS_MAX_40, _STATUS_LABEL_FIELDS, _TOO_LONG_CODES
+    from adrpy.core.errors import FailureCodes
+
+    expected_fields = set(_HEADER_LABEL_FIELDS_MAX_40) | set(_STATUS_LABEL_FIELDS)
+    assert set(_TOO_LONG_CODES.keys()) == expected_fields
+
+    for field, code in _TOO_LONG_CODES.items():
+        assert code == getattr(FailureCodes, f"CONFIG_{field.upper()}_TOO_LONG")
+        assert code == f"config-{field}-too-long"
+
+
 @pytest.mark.parametrize(
     "field",
     [
