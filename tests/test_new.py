@@ -283,18 +283,40 @@ def test_new_reports_no_warnings_on_a_clean_run(tmp_path):
 def test_new_rejects_path_traversal_via_title(tmp_path):
     """build_filename embeds the (case-transformed)
     title verbatim into the filename, and case transforms don't touch '/'
-    or '..' -- confirmed live, a hostile --title escaped the repository
-    entirely (e.g. 5 levels of "../" landed a file next to the sandbox
-    root). The final path must be checked with the same resolve_within
-    guard already used for the folder itself."""
+    or '..'. Caught by reject_filesystem_unsafe_title before build_filename
+    is ever called (a round-22 security finding: '/' is a filesystem-unsafe
+    character in its own right, not just a path-traversal vector) -- the
+    resolve_within guard used for the folder itself remains a second,
+    independent line of defense against anything that check might miss."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path), "--title", "../../../outside"])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "field-contains-forbidden-character"
     assert not (tmp_path.parent / "outside.md").exists()
     assert not (tmp_path.parent.parent / "outside.md").exists()
+
+
+def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_path):
+    """A round-22 security finding, confirmed live before this fix existed:
+    ':' is not an invalid Windows filename character, it is the NTFS
+    Alternate-Data-Stream separator -- the temp file WRITE succeeds (it's
+    interpreted as a stream on a base file NTFS auto-creates), only the
+    final rename to the real name fails, and the error-path cleanup only
+    removes the named stream it just wrote, leaving that auto-created base
+    file behind as a permanent, 0-byte, un-cleanable orphan
+    (cleanup_orphaned_temp_files only globs '*.tmp', which this leftover's
+    name never matches, and it lacks '.md' too, so scan_decisions/explore
+    never see it either). Now caught before any write is attempted."""
+    _init_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(tmp_path), "--title", "evil:hidden"])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+    adr_dir = tmp_path / "doc" / "adr"
+    assert list(adr_dir.iterdir()) == []  # no orphan left behind
 
 
 def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):

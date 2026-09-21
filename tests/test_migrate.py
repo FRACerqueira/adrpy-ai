@@ -194,6 +194,54 @@ def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result
     assert statuses[str(bad_path)] == "failed"
 
 
+def test_migrate_rejects_a_title_with_a_filesystem_unsafe_character_as_a_per_file_failure(tmp_path, monkeypatch):
+    """A round-22 security finding: migrate's title is sourced from a raw,
+    untrusted legacy filename, sliced positionally with zero character
+    filtering (naming.parse_legacy_filename) -- unlike every other
+    command's own title, it was never validated at all. A hostile legacy
+    filename's own name could embed a filesystem-unsafe character (e.g.
+    ':', an NTFS Alternate-Data-Stream separator, confirmed live via
+    `new`/`version`/`revise`/`supersede` to leave a permanent orphan) --
+    but such a character can't be embedded in a REAL filename on this
+    platform (creating it collapses into a stream, confirmed live), so
+    this drives the exact code path a hostile POSIX-sourced filename
+    would, via a monkeypatched parse result, the same technique already
+    used above for a non-OSError mid-loop failure. Must be a per-file
+    failure (migrate is best-effort), not a whole-batch abort."""
+    _init_repo_with_pattern(tmp_path)
+    good_path = _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
+    bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
+
+    from adrpy.cli import migrate as migrate_module
+    from adrpy.core.naming import ParsedFileName
+
+    real_parse_any_filename = migrate_module.parse_any_filename
+
+    def flaky_parse(filename, config):
+        found = real_parse_any_filename(filename, config)
+        if found is None:
+            return None
+        scheme, parsed = found
+        if parsed.number == 2:
+            parsed = ParsedFileName(
+                number=parsed.number, version=parsed.version, revision=parsed.revision, title="evil:hidden"
+            )
+        return scheme, parsed
+
+    monkeypatch.setattr(migrate_module, "parse_any_filename", flaky_parse)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-write-failed"
+    results = excinfo.value.data["results"]
+    statuses = {r["file"]: r["status"] for r in results}
+    assert statuses[str(good_path)] == "migrated"
+    assert statuses[str(bad_path)] == "failed"
+    bad_error = results[[r["file"] for r in results].index(str(bad_path))]["error"]
+    assert "filesystem-unsafe" in bad_error.lower()
+
+
 def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, monkeypatch):
     """Design decision (2026-09-15), superseding the earlier fail-fast fix:
     migrate is best-effort per file -- one file's OSError must not block

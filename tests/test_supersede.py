@@ -139,6 +139,39 @@ def test_supersede_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in successor_text
 
 
+def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_character(tmp_path, monkeypatch):
+    """A round-22 security finding: the successor's title comes from the
+    predecessor's own FILENAME segment (filename_info.title), never
+    delimiter-checked on read, feeding build_filename below the exact same
+    way a hostile --title on `new` would. On this platform, none of the
+    forbidden characters can actually appear in a real predecessor
+    filename in the first place (each either fails outright or, for ':',
+    collapses into an NTFS Alternate-Data-Stream instead of a literal
+    filename -- confirmed live), so this drives the exact scenario a
+    corrupted predecessor filename (from a different OS, or a future code
+    path) would, via a monkeypatched read_target, the same technique
+    already used for migrate's own equivalent gap. Must be a per-call
+    failure, not a silent forgery."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    real_read_target = supersede_module.read_target
+
+    def flaky_read_target(path, config, warnings=None):
+        filename_info, header, lines, encoding_repaired = real_read_target(path, config, warnings=warnings)
+        from dataclasses import replace as replace_fields
+
+        return replace_fields(filename_info, title="evil:hidden"), header, lines, encoding_repaired
+
+    monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_supersede_can_override_scope_and_domain(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 

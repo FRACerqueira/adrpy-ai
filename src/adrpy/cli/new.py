@@ -22,7 +22,7 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 
@@ -48,8 +48,10 @@ def describe():
                 "type": "string",
                 "required": True,
                 "description": (
-                    "Title of the new decision. Cannot contain '|' or a line-break-like character "
-                    "(field-contains-forbidden-character), or be blank (field-is-blank)."
+                    "Title of the new decision. Cannot contain '|' or a line-break-like character, or a "
+                    "filesystem-unsafe character (`<>:\"/\\|?*` or a control character -- unlike every other "
+                    "free-text field, title lands inside an actual filename component, not just a "
+                    "header-table cell) (field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
             {
@@ -101,6 +103,7 @@ def run(args):
     target, config_path, config = resolve_target_and_config(flags["path"])
 
     reject_embedded_delimiter(title, "title")
+    reject_filesystem_unsafe_title(title, "title")
     reject_embedded_delimiter(domain, "domain")
     reject_embedded_delimiter(scope, "scope")
 

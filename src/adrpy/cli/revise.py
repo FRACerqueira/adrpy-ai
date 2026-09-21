@@ -26,7 +26,7 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import resolve_within
+from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
 from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -51,7 +51,11 @@ def describe():
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
             "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made."
+            "can't be trusted from an incomplete scan; no write was made. The target's own title (re-read "
+            "from its header cell, not a flag) is re-validated before use -- may fail with "
+            "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
+            "'|', a line-break-like character, or a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
+            "character; title lands inside an actual filename component, not just a header-table cell)."
         ),
         "arguments": [
             {
@@ -174,6 +178,14 @@ def run(args):
             not_before = latest_header.date_update or latest_header.date_create
             if not_before is not None:
                 validate_refdate_not_before(refdate, not_before)
+
+            # `title` is re-read from the SOURCE file's own header cell, not a
+            # live flag -- a hand-edited or migrated file could already carry
+            # a filesystem-unsafe character (e.g. ':', an NTFS Alternate-Data-
+            # Stream separator), which build_filename below would otherwise
+            # propagate into a real write attempt.
+            reject_embedded_delimiter(header.title, "title")
+            reject_filesystem_unsafe_title(header.title, "title")
 
             record = DecisionRecord(
                 number=filename_info.number,

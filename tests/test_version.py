@@ -418,10 +418,12 @@ def test_version_rejects_a_whitespace_only_value(tmp_path, flag):
 def test_version_rejects_path_traversal_via_header_title(tmp_path):
     """Unlike --title on `new`, version/revise/supersede
     source the new record's title from the target's already-parsed header
-    cell (never delimiter-checked on read) -- a crafted header title
-    reaches build_filename the exact same way a hostile --title does.
-    Confirmed live: a hand-crafted header with '../../../../HDR-PWNED' as
-    its title made the real `version` write a file outside the repo."""
+    cell -- a crafted header title reaches build_filename the exact same
+    way a hostile --title does. Caught by reject_filesystem_unsafe_title/
+    reject_embedded_delimiter before build_filename is ever called (a
+    round-22 security finding); resolve_within remains a second,
+    independent line of defense against anything those checks might
+    miss."""
     init.run(["--path", str(tmp_path)])
     config = load_repo_config(tmp_path / "adr-config.adrplus")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
@@ -439,7 +441,7 @@ def test_version_rejects_path_traversal_via_header_title(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "field-contains-forbidden-character"
     assert not (tmp_path.parent / "outside.md").exists()
 
 

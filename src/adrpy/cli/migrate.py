@@ -34,7 +34,13 @@ from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
+from adrpy.core.security import (
+    find_unreadable_subdirectories,
+    is_within,
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
 
 
@@ -60,6 +66,13 @@ def describe():
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
             "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
             "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
+            "A candidate whose title -- sourced from the raw legacy filename itself, unlike every other "
+            "command's own title -- carries '|', a line-break-like character, or a filesystem-unsafe "
+            "character (`<>:\"/\\|?*` or a control character; the new header this write is about to build "
+            "would otherwise embed it verbatim, or -- for the filesystem-unsafe set -- this file's own "
+            "existing name already avoided them, since none of them survive as a real filename component "
+            "on this platform) is one such per-file failure (field-contains-forbidden-character), never a "
+            "silent write. "
             "If the repository lock is lost partway through (a different process reclaimed it), the whole run "
             "aborts immediately instead of continuing unprotected, with migration-lock-lost -- its own "
             "`data.results` names only the candidates actually attempted before the loss; none after. "
@@ -306,7 +319,21 @@ def run(args):
                     raw_bytes = read_with_permission_retry(candidate_path.read_bytes)
                     if raw_bytes.startswith(b"\xef\xbb\xbf"):
                         raw_bytes = raw_bytes[3:]
-                    record = DecisionRecord(number=parsed.number, title=(parsed.title or "").strip(), version=0)
+                    title = (parsed.title or "").strip()
+                    # Unlike every other command's own title, this one is
+                    # sourced from a raw, untrusted legacy filename, sliced
+                    # positionally with zero character filtering
+                    # (naming.parse_legacy_filename) -- never validated
+                    # before, so a hostile legacy file's own name could embed
+                    # '|'/a line-break (forging the header table this write
+                    # is about to build) or a filesystem-unsafe character
+                    # (e.g. ':', an NTFS Alternate-Data-Stream separator,
+                    # which fails the rename below and leaves a permanent
+                    # orphan). Caught below alongside OSError/UnicodeError --
+                    # a per-file failure, not a whole-batch abort.
+                    reject_embedded_delimiter(title, "title")
+                    reject_filesystem_unsafe_title(title, "title")
+                    record = DecisionRecord(number=parsed.number, title=title, version=0)
                     header_text = build_header(config, record, migrated=True)
                     attempts = atomic_write_bytes(candidate_path, header_text.encode("utf-8") + raw_bytes)
                     warning = retry_warning(attempts)
@@ -329,12 +356,17 @@ def run(args):
                         data={"results": results},
                         warnings=warnings,
                     )
-                except (OSError, UnicodeError) as error:
+                except (OSError, UnicodeError, CommandError) as error:
                     # UnicodeError (e.g. a UnicodeEncodeError from a title
                     # containing a lone surrogate) is not an OSError, but is
                     # just as plausible here as a real per-file failure --
                     # catching only OSError would let it escape the whole
                     # loop, discarding every result already collected.
+                    # CommandError is the title-validation check just above
+                    # (a hostile legacy filename) -- same per-file treatment,
+                    # not a whole-batch abort; LockLostError, itself a
+                    # CommandError subclass, is already caught by the more
+                    # specific clause above and never reaches this one.
                     results.append({"file": str(candidate_path), "status": "failed", "error": str(error)})
 
             failed = [entry for entry in results if entry["status"] == "failed"]

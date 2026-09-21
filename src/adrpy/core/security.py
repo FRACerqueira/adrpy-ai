@@ -145,3 +145,36 @@ def reject_status_marker_forgery_characters(value, field_name):
                 "field-contains-forbidden-character",
                 f"Field '{field_name}' cannot contain '(', ')', '<!--', or '-->'.",
             )
+
+
+_FILENAME_UNSAFE_CHARACTERS = frozenset('<>:"/\\|?*')
+
+
+def reject_filesystem_unsafe_title(value, field_name):
+    """`title` only -- unlike every other free-text field, it lands inside
+    an actual filename component (naming.build_filename), not just a
+    header-table cell, so reject_embedded_delimiter's own blacklist (built
+    for a table cell) is not enough. ':' is the sharpest case: it is not
+    an invalid Windows filename character, it is the NTFS Alternate-Data-
+    Stream separator, so the write of the temp file SUCCEEDS -- only the
+    final rename to the real (also colon-containing) name fails, and the
+    error-path cleanup only removes the named stream it just wrote,
+    leaving the base file NTFS auto-created as a permanent, 0-byte,
+    un-cleanable orphan (confirmed live: cleanup_orphaned_temp_files only
+    globs '*.tmp', which this leftover's name never matches, and it lacks
+    '.md' too, so scan_decisions/explore never see it either -- silent,
+    unbounded repository pollution across repeated calls). The other
+    Windows-reserved characters (`<>"*?`) fail atomically with no
+    leftover, but are rejected here anyway for the same reason `/`/`\\`
+    are: this project declares itself OS-independent (pyproject.toml),
+    and every one of these is an unremarkable, legal filename byte on a
+    POSIX host, where `build_filename`'s output is used exactly the same
+    way. Control characters (below 0x20) are rejected outright too, the
+    same reasoning as reject_embedded_delimiter's own line-break check."""
+    for char in value:
+        if char in _FILENAME_UNSAFE_CHARACTERS or ord(char) < 0x20:
+            raise CommandError(
+                "field-contains-forbidden-character",
+                f"Field '{field_name}' cannot contain a filesystem-unsafe character "
+                f"({''.join(sorted(_FILENAME_UNSAFE_CHARACTERS))!r} or a control character).",
+            )

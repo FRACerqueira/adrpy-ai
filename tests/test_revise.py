@@ -429,7 +429,11 @@ def test_revise_rejects_refdate_in_future(tmp_path):
 def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     """Same class as version's own finding -- revise's
     new record's title also comes straight from the target's already-
-    parsed header cell (never delimiter-checked on read)."""
+    parsed header cell. Caught by reject_filesystem_unsafe_title/
+    reject_embedded_delimiter before build_filename is ever called (a
+    round-22 security finding); resolve_within remains a second,
+    independent line of defense against anything those checks might
+    miss."""
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
@@ -450,7 +454,7 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "field-contains-forbidden-character"
     assert not (tmp_path.parent / "outside.md").exists()
 
 

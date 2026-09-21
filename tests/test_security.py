@@ -9,6 +9,7 @@ from adrpy.core.security import (
     find_unreadable_subdirectories,
     is_within,
     reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
     reject_status_marker_forgery_characters,
     resolve_within,
 )
@@ -239,6 +240,32 @@ def test_reject_status_marker_forgery_characters_rejects_forbidden_characters(va
 
 def test_reject_status_marker_forgery_characters_accepts_clean_value():
     reject_status_marker_forgery_characters("Proposed", "statusnew")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "evil:hidden",
+        "has<char",
+        "has>char",
+        'has"char',
+        "has/char",
+        "has\\char",
+        "has?char",
+        "has*char",
+        "has\x00null",
+        "has\x1fcontrol",
+    ],
+)
+def test_reject_filesystem_unsafe_title_rejects_forbidden_characters(value):
+    with pytest.raises(CommandError) as excinfo:
+        reject_filesystem_unsafe_title(value, "title")
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
+def test_reject_filesystem_unsafe_title_accepts_clean_value():
+    reject_filesystem_unsafe_title("A normal title", "title")
 
 
 def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine(tmp_path):

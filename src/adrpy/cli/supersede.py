@@ -26,7 +26,7 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import LockLostError, acquire_repo_lock
 from adrpy.core.naming import build_filename
-from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.security import reject_embedded_delimiter, reject_filesystem_unsafe_title, resolve_within
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
 
 _INELIGIBILITY_DETAILS = {
@@ -59,7 +59,11 @@ def describe():
             "family-scan-incomplete or supersede-successor-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "and successor-number allocation can't be trusted from an incomplete scan; no write was made "
-            "either way."
+            "either way. The predecessor's own title (re-read from its filename, not a flag) is "
+            "re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited "
+            "or migrated predecessor's title carries '|', a line-break-like character, or a "
+            "filesystem-unsafe character (`<>:\"/\\|?*` or a control character; the successor's title "
+            "lands inside an actual filename component, not just a header-table cell); no write is made."
         ),
         "arguments": [
             {
@@ -175,6 +179,13 @@ def run(args):
             domain = flags["domain"] if "domain" in flags else (header.domain or "")
             reject_embedded_delimiter(scope, "scope")
             reject_embedded_delimiter(domain, "domain")
+            # `title` below is re-read from the PREDECESSOR's own filename
+            # segment, not a live flag -- a hand-edited or migrated file
+            # could already carry a filesystem-unsafe character (e.g. ':',
+            # an NTFS Alternate-Data-Stream separator), which build_filename
+            # below would otherwise propagate into a real write attempt.
+            reject_embedded_delimiter(filename_info.title, "title")
+            reject_filesystem_unsafe_title(filename_info.title, "title")
 
             # strict=True: an unreadable subdirectory hiding a
             # higher-numbered decision must never be silently treated as

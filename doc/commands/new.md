@@ -18,7 +18,7 @@ Repository root directory.
 
 ### `--title` / `-t` *(required, string)*
 
-Title of the new decision. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
+Title of the new decision. Cannot contain '|' or a line-break-like character, or a filesystem-unsafe character (`<>:"/\|?*` or a control character -- unlike every other free-text field, title lands inside an actual filename component, not just a header-table cell) (field-contains-forbidden-character), or be blank (field-is-blank).
 
 ### `--domain` / `-d` *(optional, string)*
 
