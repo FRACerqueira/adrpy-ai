@@ -614,7 +614,7 @@ def load_target(fileadr):
     return config, root, path, filename_info, header, lines, encoding_repaired
 
 
-def family_members(folder, config, number, warnings=None):
+def family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None):
     """Every decision (current or legacy scheme) sharing `number` that
     actually counts as a family member, with its parsed header attached
     -- filtered through `counts_as_family_member` before ever including a
@@ -627,21 +627,49 @@ def family_members(folder, config, number, warnings=None):
     `warnings`, when given, is forwarded to scan_decisions -- see its own
     note.
 
+    `exclude_from_encoding_check`, when given (every real caller passes
+    the file it's already reading via `read_target`), is the one path
+    exempt from the fail-closed lossy-decode check below -- that file's
+    own encoding reliability is already surfaced separately as a warning
+    by `read_target`, and the command's own write is expected to heal it,
+    the same tolerated behavior this project has always had for the file
+    actually being acted on. A genuine SIBLING needing a lossy decode is a
+    different, unhandled hazard -- see the check itself.
+
     Scans strict -- every consumer of family membership
     (has_superseded_sibling, has_pending_sibling, latest_in_family, and
     so every per-file command's own family guard) is a safety decision;
     an incomplete scan here is never safe to treat as "no such member"
     the way explore's own best-effort listing can."""
     members = []
+    unreliable_files = []
     for _, parsed, path in scan_decisions(
         folder, config, warnings=warnings, strict=True, incomplete_code="family-scan-incomplete"
     ):
         if parsed.number != number:
             continue
-        # Only the header (12 lines) decides membership --
-        # read_header_lines never loads the (potentially large) body
-        # just to check that.
-        header = parse_header(read_header_lines(path), config)
+        # Only the header (12 lines) decides membership -- neither variant
+        # loads the (potentially large) body just to check that. Uses the
+        # WITH-REPORT variant (unlike the rest of this function's own
+        # history) specifically so a sibling needing a lossy decode is
+        # never silently treated as "not a member" below -- see the
+        # fail-closed check after this loop.
+        header_lines, encoding_repaired = read_header_lines_with_report(path)
+        # `encoding_repaired` alone is too blunt: the bounded read's own
+        # chunk (4096 bytes) commonly covers a small file's ENTIRE
+        # content, so a replacement character landing only in the BODY --
+        # well past line `count` -- would otherwise be misread as header
+        # corruption. Only a replacement character genuinely WITHIN the
+        # returned header lines threatens parse_header's own
+        # determination; body-only corruption is the already-tolerated,
+        # self-healing-on-next-write case every read_target caller relies
+        # on (encoding_repaired_warning), unaffected by this check.
+        header_actually_corrupted = encoding_repaired and any("�" in line for line in header_lines)
+        is_excluded = exclude_from_encoding_check is not None and path.resolve() == exclude_from_encoding_check.resolve()
+        if header_actually_corrupted and not is_excluded:
+            unreliable_files.append(str(path))
+            continue
+        header = parse_header(header_lines, config)
         # Deliberately does not surface header.marker_label_mismatches
         # (ADR004V01) here -- a mismatch on a SIBLING would misattribute a
         # warning about that other file to whatever command (e.g.
@@ -651,6 +679,23 @@ def family_members(folder, config, number, warnings=None):
         if not counts_as_family_member(header):
             continue
         members.append((parsed, header, path))
+    if unreliable_files:
+        # A sibling that needed a lossy decode has an unreliable, possibly
+        # wrong, parsed header -- `not counts_as_family_member(header)`
+        # above would silently exclude a genuine (if corrupted) member,
+        # defeating has_superseded_sibling/has_pending_sibling, the exact
+        # guard every per-file command relies on to prevent two live
+        # successors (confirmed live: a corrupted-but-genuinely-Superseded
+        # sibling let `version` on its own family proceed and create a
+        # duplicate). Fails closed instead, mirroring migrate's own
+        # migration-scan-unreliable-encoding for the identical hazard.
+        raise CommandError(
+            "family-scan-unreliable-encoding",
+            f"{len(unreliable_files)} family member(s) could not be decoded cleanly as UTF-8; family "
+            "membership can't be trusted from a lossy decode.",
+            data={"unreliable_files": unreliable_files},
+            warnings=warnings,
+        )
     return members
 
 

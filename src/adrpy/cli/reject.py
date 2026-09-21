@@ -44,17 +44,20 @@ def describe():
             "result's `undone_predecessor` names that file when this happens, or is null otherwise. "
             "This is two writes in sequence, not one: a failure reverting the predecessor "
             "(superseded-predecessor-not-found, reject-predecessor-write-failed, or -- if the scan for the "
-            "predecessor's own family hits an unreadable subdirectory -- family-scan-incomplete) means "
+            "predecessor's own family hits an unreadable subdirectory or a sibling needing a lossy UTF-8 "
+            "decode -- family-scan-incomplete/family-scan-unreliable-encoding) means "
             "success=false even though this decision's OWN status was already committed to Rejected -- "
-            "each of those three codes' own `data.file`/`data.status` names the file already mutated "
+            "each of those four codes' own `data.file`/`data.status` names the file already mutated "
             "despite the overall failure (a lock lost before this SECOND write also surfaces "
             "reject-predecessor-write-failed, not lock-lost). May instead fail with repository-locked "
             "(lock never acquired) or lock-lost (lost before the FIRST write) -- in both of those cases no "
             "write was made at all. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write "
-            "was made either way; retry. May also fail with family-scan-incomplete BEFORE the first write "
-            "(this decision's own family scan, unrelated to the predecessor lookup above) if a "
-            "subdirectory under the decisions folder could not be scanned -- no write made in that case."
+            "was made either way; retry. May also fail with family-scan-incomplete or "
+            "family-scan-unreliable-encoding BEFORE the first write (this decision's own family scan, "
+            "unrelated to the predecessor lookup above) if a subdirectory under the decisions folder could "
+            "not be scanned, or a sibling needed a lossy UTF-8 decode whose parsed header can't be trusted "
+            "for a safety decision -- no write made in that case."
         ),
         "arguments": [
             {
@@ -110,7 +113,9 @@ def run(args):
 
             # Pre-fetching members here is also how the scan's own warnings
             # (an excluded is_within candidate) reach this command.
-            members = family_members(folder, config, filename_info.number, warnings=warnings)
+            members = family_members(
+                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+            )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
                     "family-member-superseded",
@@ -147,14 +152,16 @@ def run(args):
                     # This scan runs AFTER the primary write above already
                     # committed -- unlike every other family_members call in
                     # this codebase, all of which run before their command's
-                    # own first write. family_members' own
-                    # family-scan-incomplete carries no `data.file`/
+                    # own first write. Neither of family_members' own two
+                    # scan-safety codes (family-scan-incomplete,
+                    # family-scan-unreliable-encoding) carries `data.file`/
                     # `data.status`, unlike this command's other two
                     # second-phase codes -- re-raise with that same
                     # partial-success shape, merging in the original error's
-                    # own `data` (`folder`/`unreadable`) rather than
-                    # discarding it, so this second-phase failure keeps both
-                    # diagnostic payloads, not just this command's own.
+                    # own `data` (`folder`/`unreadable`, or
+                    # `unreliable_files`) rather than discarding it, so this
+                    # second-phase failure keeps both diagnostic payloads,
+                    # not just this command's own.
                     raise CommandError(
                         error.code,
                         str(error),

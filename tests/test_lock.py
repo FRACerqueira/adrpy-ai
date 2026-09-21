@@ -152,6 +152,34 @@ def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
     assert not lock_path.exists()
 
 
+def test_lock_reclaims_a_lock_file_whose_timestamp_overflows_to_infinity(tmp_path):
+    """A round-24 security finding, confirmed live before this fix existed:
+    `float()` silently overflows to `inf` for a numeric string past
+    ~1.8e308 (e.g. a several-hundred-digit run) -- no exception, so this
+    was NOT caught by _read_lock's own `except ValueError: return None`.
+    _reclaim_if_abandoned's own check (`time.time() - timestamp <=
+    abandon_after`) becomes `-inf <= abandon_after`, which is ALWAYS
+    True, for any abandon_after including 0 -- the lock could never be
+    judged abandoned again, a permanent, repository-wide denial of
+    service (every write command times out indefinitely, with no
+    automatic recovery, unlike the documented 30s stale-lock reclaim for
+    an ordinary crash). Requires local write access to the decisions
+    folder already (e.g. a lock file synced/restored from elsewhere with
+    a garbage timestamp) -- same prerequisite as corrupting a decision
+    file directly. Now treated the same as an unparseable timestamp:
+    falls back to the file's own mtime, which still advances toward
+    reclaim over real time."""
+    lock_path = tmp_path / ".adrpy.lock"
+    lock_path.write_text("stale-token\n" + "9" * 400)  # overflows float() to inf
+    old = time.time() - 999
+    os.utime(lock_path, (old, old))
+
+    with acquire_repo_lock(tmp_path, abandon_after=1, wait_ceiling=2, poll_interval=0.05):
+        pass
+
+    assert not lock_path.exists()
+
+
 def test_reclaim_if_abandoned_returns_false_when_the_unlink_itself_fails(tmp_path, monkeypatch):
     """_reclaim_if_abandoned must not unconditionally return True
     regardless of whether the unlink actually succeeded -- that would

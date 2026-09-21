@@ -12,6 +12,7 @@ a report, nor be mistaken for a candidate under either naming scheme.
 """
 
 import contextlib
+import math
 import os
 import time
 import uuid
@@ -101,9 +102,19 @@ def _read_lock(path):
         return None
     token, _, timestamp_text = raw.partition("\n")
     try:
-        return token, float(timestamp_text)
+        timestamp = float(timestamp_text)
     except ValueError:
         return None
+    # float() silently overflows to inf for a numeric string past
+    # ~1.8e308 -- not a ValueError, so the guard above alone lets it
+    # through. `_reclaim_if_abandoned`'s own comparison, `time.time() -
+    # timestamp <= abandon_after`, becomes -inf <= abandon_after (always
+    # True) for an inf timestamp, so a lock could never be judged
+    # abandoned again -- treated the same as an unparseable timestamp
+    # instead, falling back to the file's own mtime.
+    if not math.isfinite(timestamp):
+        return None
+    return token, timestamp
 
 
 def _try_create(path, token):

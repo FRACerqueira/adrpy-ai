@@ -56,7 +56,10 @@ def describe():
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
             "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made. The target's own title/scope/"
+            "can't be trusted from an incomplete scan; no write was made. May also fail with "
+            "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
+            "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
+            "the same reasoning as an unreadable subdirectory; no write was made. The target's own title/scope/"
             "domain (all re-read from its header cells, not flags -- this command has none for scope/"
             "domain) are re-validated before use -- may fail with field-contains-forbidden-character if a "
             "hand-edited or migrated source file carries '|', a line-break-like character in any of the "
@@ -127,7 +130,9 @@ def run(args):
 
             # One scan shared by all three checks below, avoiding a
             # duplicate scan_decisions call each.
-            members = family_members(folder, config, filename_info.number, warnings=warnings)
+            members = family_members(
+                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+            )
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
                 raise CommandError(

@@ -40,7 +40,10 @@ def describe():
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
             "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made."
+            "can't be trusted from an incomplete scan; no write was made. May also fail with "
+            "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
+            "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
+            "the same reasoning as an unreadable subdirectory; no write was made."
         ),
         "arguments": [
             {
@@ -103,7 +106,9 @@ def run(args):
 
             # Pre-fetching members here is also how the scan's own warnings
             # (an excluded is_within candidate) reach this command.
-            members = family_members(folder, config, filename_info.number, warnings=warnings)
+            members = family_members(
+                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+            )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
                     "family-member-superseded",

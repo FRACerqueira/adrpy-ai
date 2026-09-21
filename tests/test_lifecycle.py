@@ -503,6 +503,72 @@ def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
     assert members[0][0].title == "existing-decision"
 
 
+def test_family_members_fails_closed_when_a_sibling_needs_a_lossy_decode(tmp_path):
+    """A round-24 security finding, confirmed live before this fix
+    existed: family_members used the no-report header read, so a sibling
+    with invalid UTF-8 bytes in its header (e.g. a corrupted or
+    hostile-migrated file) silently decoded lossily, failed to parse,
+    and was EXCLUDED from the family with zero signal -- not merely
+    unwarned about, but invisible to has_superseded_sibling/
+    has_pending_sibling, the exact guard every per-file command relies
+    on to prevent two live successors (ADR001's own concern). Reproduced
+    live end-to-end: a genuinely Superseded V01 with 2 corrupted bytes
+    in its status row made `version` on V02 succeed and create a V03,
+    duplicating the family, with `warnings: []`. `family_members` can no
+    longer trust `existing == []`/a member-list omission to mean
+    "genuinely not a member" when the scan that produced it needed a
+    lossy decode -- fails closed instead, mirroring migrate's own
+    migration-scan-unreliable-encoding for the identical hazard."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
+    good_path = adr_dir / "ADR001V01-existing-decision.md"
+    with open(good_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+
+    raw = good_path.read_bytes()
+    corrupted = raw.replace(b"Proposed", b"Prop\xffsed", 1)
+    good_path.write_bytes(corrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        family_members(adr_dir, config, 1)
+
+    assert excinfo.value.code == "family-scan-unreliable-encoding"
+    assert str(good_path) in excinfo.value.data["unreliable_files"][0]
+
+
+def test_family_members_exempts_only_the_excluded_path_from_the_encoding_check(tmp_path):
+    """`exclude_from_encoding_check` exists specifically for the file every
+    real caller is already reading via `read_target` -- that file's own
+    encoding reliability is separately surfaced as a warning there, and
+    the command's own write is expected to heal it (the same tolerated
+    behavior this project has always had for the file actually being
+    acted on). Confirmed both directions with the SAME corruption
+    shape: excluded, the scan still succeeds and includes the file;
+    not excluded (a genuine, unidentified sibling), the exact same
+    corruption still fails closed -- this is not a blanket bypass."""
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
+    corrupted_path = adr_dir / "ADR001V01-existing-decision.md"
+    with open(corrupted_path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(config, record) + "# body")
+    raw = corrupted_path.read_bytes()
+    corrupted_path.write_bytes(raw.replace(b"Proposed", b"Prop\xffsed", 1))
+
+    members = family_members(adr_dir, config, 1, exclude_from_encoding_check=corrupted_path)
+
+    assert len(members) == 1
+    assert members[0][2] == corrupted_path
+
+    with pytest.raises(CommandError) as excinfo:
+        family_members(adr_dir, config, 1, exclude_from_encoding_check=adr_dir / "some-other-unrelated-file.md")
+
+    assert excinfo.value.code == "family-scan-unreliable-encoding"
+
+
 def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):
     """LOCK_FILE_NAME must never appear as an "unrecognized file" nor be
     mistaken for a naming-scheme candidate.

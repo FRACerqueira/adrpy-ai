@@ -882,10 +882,12 @@ def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_inco
     real_family_members = reject_module.family_members
     calls = {"count": 0}
 
-    def flaky_family_members(folder, config, number, warnings=None):
+    def flaky_family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None):
         calls["count"] += 1
         if calls["count"] == 1:
-            return real_family_members(folder, config, number, warnings=warnings)
+            return real_family_members(
+                folder, config, number, warnings=warnings, exclude_from_encoding_check=exclude_from_encoding_check
+            )
         raise CommandError(
             "family-scan-incomplete",
             "Cannot safely scan: 1 subdirectory could not be scanned.",
