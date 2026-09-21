@@ -438,6 +438,45 @@ def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, mon
     assert live_path.read_text(encoding="utf-8") == original_content  # never orphaned
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_init_seed_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
+    """reject_aliased_repo_folders's own first check (right after
+    folderlog's own escape-path validation) leaves a window before the
+    real commit -- on the --seed-over-an-existing-repository path, only
+    the lock re-verification runs in between. A filesystem-level racer
+    with write access could swap folderlog for a junction onto folderadr
+    in that window. Simulates the race deterministically (a real
+    junction, planted mid-call, no actual threading) instead of relying
+    on timing."""
+    init.run(["--path", str(tmp_path)])
+    folderadr_dir = tmp_path / "doc" / "adr"
+    folderlog_dir = tmp_path / "doc" / "decision-log"
+
+    from adrpy.core.lock import RepoLock
+
+    real_verify = RepoLock.verify_still_held
+
+    def racing_verify(self):
+        assert not folderlog_dir.exists()
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        return real_verify(self)
+
+    monkeypatch.setattr(RepoLock, "verify_still_held", racing_verify)
+
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(_default_config_text(), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
+
+
 def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """_max_existing_numbers
     feeds a real safety decision (lenseq/lenversion/lenrevision must fit

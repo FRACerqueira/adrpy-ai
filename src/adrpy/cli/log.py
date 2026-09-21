@@ -333,6 +333,18 @@ def run(args):
             )
 
             lock.verify_still_held()
+            # Re-verified here too, immediately before the real write --
+            # the first check above (right after the lock/freshness
+            # re-check) leaves a window between then and this commit
+            # (round/filename/content assembly) that a filesystem-level
+            # racer could exploit by swapping folderlog for a junction
+            # onto folderadr in between. Narrows the window to the same
+            # order of magnitude as lock.verify_still_held's own re-check
+            # just above -- not a formal atomicity guarantee (no portable
+            # primitive here ties the check to the write in one syscall),
+            # but consistent with this project's existing narrowing
+            # pattern for this class of gap.
+            reject_aliased_repo_folders(target, config)
             # Same TOCTOU reasoning as init's own folder creation: two
             # concurrent first-ever `log` calls both want this directory to
             # exist, with no conflicting content to lose -- exist_ok=True

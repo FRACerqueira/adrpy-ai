@@ -371,6 +371,11 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         # ADR001, part 3: guarantees this write never commits blindly if
         # the lease was reclaimed.
         lock.verify_still_held()
+    # Re-verified here too, immediately before the real commit -- the
+    # check above (before folder_adr's own mkdir) leaves a window a
+    # filesystem-level racer could exploit between then and this write.
+    # Same narrowing rationale as log.py's own pre-commit re-check.
+    reject_aliased_repo_folders(target, config)
     # atomic_write_text normalizes to this host's line separator (the real
     # terminator is host-OS-dependent, not fixed) -- config_text is
     # otherwise written verbatim, never re-serialized from `config`.

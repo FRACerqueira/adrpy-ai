@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 from adrpy.cli import init, log
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
@@ -286,6 +289,45 @@ def test_log_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypat
 
     assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
     assert not (tmp_path / "doc" / "decision-log").exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_log_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
+    """reject_aliased_repo_folders's own first check (right after the
+    lock/freshness re-check) leaves a window before the real write --
+    everything from round/filename/content assembly through log_dir's
+    own mkdir. A filesystem-level racer with write access could swap
+    folderlog for a junction onto folderadr in that window. Simulates
+    the race deterministically (a real junction, planted mid-call, no
+    actual threading) instead of relying on timing."""
+    _init_repo(tmp_path)
+    folderadr_dir = tmp_path / "doc" / "adr"
+    folderlog_dir = tmp_path / "doc" / "decision-log"
+
+    real_build_filename = log.build_filename
+
+    def racing_build_filename(*args, **kwargs):
+        assert not folderlog_dir.exists()
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        return real_build_filename(*args, **kwargs)
+
+    monkeypatch.setattr(log, "build_filename", racing_build_filename)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            [
+                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--summary", "x", "--body", "x",
+            ]
+        )
+
+    assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
+    assert list(folderadr_dir.glob("*.md")) == []
 
 
 def test_log_refdate_defaults_to_today(tmp_path):

@@ -386,6 +386,12 @@ def run(args):
             # ADR001, part 3: guarantees this write never commits blindly
             # if the lease was reclaimed.
             lock.verify_still_held()
+            # Re-verified here too, immediately before the real commit --
+            # the check above (before new_folder's own mkdir) leaves a
+            # window a filesystem-level racer could exploit between then
+            # and this write. Same narrowing rationale as log.py's own
+            # pre-commit re-check.
+            reject_aliased_repo_folders(target, new_config)
             attempts = atomic_write_text(config_path, merged_text)
             warning = retry_warning(attempts)
             if warning:

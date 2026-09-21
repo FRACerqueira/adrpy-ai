@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import threading
 
@@ -52,6 +53,41 @@ def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkey
 
     assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
     assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_config_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
+    """reject_aliased_repo_folders's own first check (right after the
+    folderadr freshness re-check) leaves a window before the real write
+    -- the status/separator guard, new_folder's own mkdir, and the lock
+    re-verification below. A filesystem-level racer with write access
+    could swap folderlog for a junction onto folderadr in that window.
+    Simulates the race deterministically (a real junction, planted
+    mid-call, no actual threading) instead of relying on timing."""
+    tmp_path = _init_repo(tmp_path)
+    folderadr_dir = tmp_path / "doc" / "adr"
+    folderlog_dir = tmp_path / "doc" / "decision-log"
+
+    real_check = config.reject_status_or_separator_change_if_decisions_exist
+
+    def racing_check(*args, **kwargs):
+        assert not folderlog_dir.exists()
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        return real_check(*args, **kwargs)
+
+    monkeypatch.setattr(config, "reject_status_or_separator_change_if_decisions_exist", racing_check)
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--lenseq", "5"])
+
+    assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["lenseq"] == 3  # never committed
 
 
 def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
