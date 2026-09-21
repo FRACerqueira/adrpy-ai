@@ -59,6 +59,31 @@ def normalize_newlines(text):
     return normalized
 
 
+# The single source of truth for "what does a line terminator look like on
+# this host" at the byte level -- every generated-file writer that works in
+# bytes (not text) reuses this constant instead of computing its own
+# os.linesep.encode() copy.
+LINESEP_BYTES = os.linesep.encode("ascii")
+
+
+def join_lines_with_trailing_terminator(lines):
+    """Joins `lines` with THIS host's own os.linesep, always ensuring
+    exactly one trailing terminator when there's any content at all --
+    the shared "list of lines back to file content" shape used by both
+    build_header (core/header.py) and read_body (core/lifecycle.py), so
+    the host-OS line-ending decision lives in exactly one place instead
+    of being duplicated at each call site. Distinct from
+    normalize_newlines above, which normalizes already-joined text and
+    only adds a trailing terminator when the SOURCE text already had
+    one; this always adds one for a non-empty `lines`, matching how a
+    header/body is reconstructed from a list of logical lines. Empty
+    input returns "" -- no synthetic terminator for genuinely empty
+    content."""
+    if not lines:
+        return ""
+    return os.linesep.join(lines) + os.linesep
+
+
 def atomic_write_text(path, content):
     """Returns the number of attempts the underlying write actually took
     (see atomic_write_bytes) -- 1 in the overwhelming majority of calls,

@@ -4,10 +4,11 @@ positionally -- the row *label* text is never inspected on read, only its
 position and the surrounding pipe characters.
 """
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import date as date_cls
+
+from adrpy.core.atomic_write import join_lines_with_trailing_terminator
 
 HEADER_LINE_COUNT = 12
 
@@ -115,7 +116,7 @@ def build_header(config, record, migrated=False):
         ),
         disclaimer,
     ]
-    return os.linesep.join(lines) + os.linesep
+    return join_lines_with_trailing_terminator(lines)
 
 
 def _status_row(config, row_label, status, date_value, suffix=""):

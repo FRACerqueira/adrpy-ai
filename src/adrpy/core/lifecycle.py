@@ -5,13 +5,18 @@ mechanics every status-transition command
 concern, not copies."""
 
 import codecs
-import os
 import re
 from dataclasses import replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, split_real_lines
+from adrpy.core.atomic_write import (
+    LINESEP_BYTES,
+    atomic_write_chunks,
+    atomic_write_text,
+    join_lines_with_trailing_terminator,
+    split_real_lines,
+)
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
@@ -545,10 +550,7 @@ def read_body(lines):
     separator (discarding whatever per-line terminator the source had),
     plus exactly one trailing terminator when there is any body content
     at all."""
-    body_lines = lines[HEADER_LINE_COUNT:]
-    if not body_lines:
-        return ""
-    return os.linesep.join(body_lines) + os.linesep
+    return join_lines_with_trailing_terminator(lines[HEADER_LINE_COUNT:])
 
 
 def _body_start_offset(header_buffer, count):
@@ -616,7 +618,6 @@ def stream_normalized_body_chunks(source_path, report):
     # real lines, so this can never be None here.
     assert offset is not None, "stream_normalized_body_chunks called against an invalid/too-short header"
 
-    linesep_bytes = os.linesep.encode("ascii")
     pending_cr = False
     ends_with_terminator = False
     saw_any_byte = False
@@ -635,20 +636,20 @@ def stream_normalized_body_chunks(source_path, report):
                 data = data[:-1]
             if not data:
                 continue
-            normalized = _REAL_NEWLINE_BYTES.sub(linesep_bytes, data)
+            normalized = _REAL_NEWLINE_BYTES.sub(LINESEP_BYTES, data)
             ends_with_terminator = data[-1:] in (b"\r", b"\n")
             piece = decoder.decode(normalized, False)
             if piece:
                 yield piece.encode("utf-8")
 
     if pending_cr:
-        yield linesep_bytes
+        yield LINESEP_BYTES
         ends_with_terminator = True
     final_piece = decoder.decode(b"", True)
     if final_piece:
         yield final_piece.encode("utf-8")
     if saw_any_byte and not ends_with_terminator:
-        yield linesep_bytes
+        yield LINESEP_BYTES
 
 
 def resolve_repo_and_target(fileadr):
