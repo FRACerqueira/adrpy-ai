@@ -307,6 +307,42 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_superseded_row(
     assert parsed.marker_label_mismatches == ("status_change",)
 
 
+def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
+    """A round-21 test-adequacy pass found every existing mismatch test
+    hand-edits exactly ONE row at a time -- never two or three in the
+    same file. Mutation-confirmed real gap: changing `mismatches.append(
+    "status_create")` to `mismatches = ["status_create"]` (overwrite
+    instead of accumulate -- exactly the shape of bug that would drop an
+    earlier row's mismatch once a later row also mismatches) left the
+    full suite green. Hand-edits both the Created and Changed rows'
+    labels, leaving their markers untouched, and asserts BOTH survive in
+    `marker_label_mismatches`, in row order."""
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Two simultaneous mismatches",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    header_text = build_header(config, record)
+    lines = header_text.split(os.linesep)[:-1]
+    created_index, changed_index = 8, 9
+    assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in lines[created_index]
+    assert f"{config.statusacc} (2026-01-02) <!-- Accepted -->" in lines[changed_index]
+    lines[created_index] = lines[created_index].replace(config.statusnew, config.statusrej, 1)
+    lines[changed_index] = lines[changed_index].replace(config.statusacc, config.statusrej, 1)
+
+    parsed = parse_header(lines, config)
+
+    assert parsed.is_valid
+    assert parsed.status_create == "Proposed"  # the marker wins, for both rows
+    assert parsed.status_update == "Accepted"
+    assert parsed.marker_label_mismatches == ("status_create", "status_update")
+
+
 def test_marker_matches_case_insensitively():
     """ADR004V02: a hand-edited marker with different case (e.g. someone
     retyped it) must still resolve via the marker, not silently fall

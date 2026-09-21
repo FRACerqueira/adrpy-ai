@@ -475,16 +475,79 @@ def test_config_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecog
     assert config_after.separator == "-"
 
 
-def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path):
+def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path, monkeypatch):
     """Companion to the rejection test above: a separator change with no
     unrelated file anywhere that would newly parse under the new value
     must still go through -- this guard must not become a blanket
-    refusal to ever change separator at all."""
+    refusal to ever change separator at all.
+
+    A round-21 test-adequacy pass found the original, plain version of
+    this test (an empty decisions folder, asserting only the call
+    succeeds) could not distinguish "the adoption scan ran and
+    correctly found nothing new" from "the adoption scan never ran at
+    all" -- mutation-confirmed: disabling the check entirely still left
+    that version green, since an empty folder has nothing to adopt
+    either way. A file guaranteed to stay unrecognized under both
+    separators has the exact same problem for the same reason. Proven
+    instead via a call-count spy on scan_decisions -- the guard scans
+    twice for a successful separator change (once for `existing` under
+    old_config, once for the adoption check under the separator-only
+    config); a disabled adoption check would only scan once."""
     tmp_path = _init_repo(tmp_path)
+    from adrpy.core import lifecycle as lifecycle_module
+
+    real_scan_decisions = lifecycle_module.scan_decisions
+    calls = []
+
+    def counting_scan_decisions(*args, **kwargs):
+        calls.append((args, kwargs))
+        return real_scan_decisions(*args, **kwargs)
+
+    monkeypatch.setattr(lifecycle_module, "scan_decisions", counting_scan_decisions)
 
     result = config.run(["--path", str(tmp_path), "--separator", "_"])
 
     assert result["updated_fields"] == ["separator"]
+    assert len(calls) == 2  # existing (old_config) + the adoption check (separator-only config)
+
+
+def test_config_separator_and_migrationpattern_change_together_does_not_cross_attribute_adoption(tmp_path):
+    """A round-21 stability finding, confirmed live and fixed: the
+    adoption check used to scan with the FULL new config, so a call
+    changing both --separator and --migrationpattern at once could get
+    wrongly refused over files only migrationpattern's own (intentional)
+    adoption would newly recognize -- blaming separator for something
+    it had no part in. This file's own name contains no "_" anywhere,
+    so separator alone provably adopts nothing; only migrationpattern
+    does, which must not trigger the separator-only adoption check."""
+    tmp_path = _init_repo(tmp_path)
+    _write_legacy_file(tmp_path, "0001UsePostgreSQL.md")
+
+    result = config.run(["--path", str(tmp_path), "--separator", "_", "--migrationpattern", "N00:04T04"])
+
+    assert set(result["updated_fields"]) == {"separator", "migrationpattern"}
+
+
+def test_config_blocking_fields_check_wins_over_the_adoption_check_when_both_could_apply(tmp_path):
+    """A round-21 test-adequacy finding: the adoption check is only ever
+    reached once the blocking-fields check above it has already passed
+    -- pins this precedence explicitly, since nothing did before. An
+    existing recognized decision blocks --statusnew outright; an
+    unrelated file that WOULD genuinely be newly adopted by the same
+    --separator change sits in the same folder (proven separately: it
+    contains a digit run followed by "_", which parses as current-scheme
+    only once separator becomes "_") -- but the call never reaches the
+    adoption check at all, since blocking_fields already raises first,
+    so only the blocking-fields error is ever seen."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])  # blocks statusnew unconditionally
+    adr_dir = tmp_path / "doc" / "adr"
+    (adr_dir / "0002_SomeTitle.md").write_bytes(b"not a decision\n")  # would be adopted by --separator _ alone
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusnew", "Draft", "--separator", "_"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
 
 
 def test_config_migrationpattern_change_still_intentionally_adopts_legacy_files(tmp_path):

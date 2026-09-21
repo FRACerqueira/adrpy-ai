@@ -6,6 +6,7 @@ concern, not copies."""
 
 import os
 import re
+from dataclasses import replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -293,12 +294,28 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     # whose whole documented purpose IS to newly recognize pre-existing
     # legacy files -- see ADR002V01 -- so this check is deliberately
     # NOT applied to it). Reuses `existing` (already scanned, no need
-    # to rescan with old_config again) -- only one more scan, with
-    # new_config, is needed.
+    # to rescan with old_config again) -- only one more scan is needed.
+    #
+    # Scans with a config that has ONLY separator changed, every other
+    # field (migrationpattern in particular) still at its OLD value --
+    # NOT the full `new_config`. A round-21 stability pass found the
+    # full-new_config version cross-attributes: parse_filename reads
+    # only separator, parse_legacy_filename reads only migrationpattern
+    # (naming.py), so scanning with new_config's migrationpattern too
+    # would also pick up files ONLY newly recognized because of that
+    # field's own, separately-evaluated, intentionally-allowed adoption
+    # -- and blame the block on separator, wrongly refusing a call that
+    # changes both fields at once even when separator itself adopts
+    # nothing at all. Confirmed live before this fix.
     if "separator" in blanket_fields_changed:
         old_recognized_paths = {path for _, _, path in existing}
+        separator_only_config = replace_fields(old_config, separator=new_config.separator)
         adopted = sorted(
-            (path for _, _, path in scan_decisions(old_folder, new_config) if path not in old_recognized_paths),
+            (
+                path
+                for _, _, path in scan_decisions(old_folder, separator_only_config)
+                if path not in old_recognized_paths
+            ),
             key=str,
         )
         if adopted:
