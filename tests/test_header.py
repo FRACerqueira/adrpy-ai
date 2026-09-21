@@ -308,7 +308,7 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_superseded_row(
 
 
 def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
-    """A round-21 test-adequacy pass found every existing mismatch test
+    """Every existing mismatch test elsewhere in this file
     hand-edits exactly ONE row at a time -- never two or three in the
     same file. Mutation-confirmed real gap: changing `mismatches.append(
     "status_create")` to `mismatches = ["status_create"]` (overwrite

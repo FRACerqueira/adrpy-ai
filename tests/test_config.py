@@ -241,9 +241,9 @@ def test_absolute_folderlog_is_rejected(folderlog):
         ("doc/adr", "doc/adr"),  # equal
         ("doc/adr", "doc/adr/sub"),  # folderlog nested inside folderadr
         ("doc/adr", "doc"),  # folderadr nested inside folderlog
-        ("doc/adr", "doc/other/../adr"),  # Round 29: ".." traversal resolves to the same real directory
-        ("doc/adr", "DOC/ADR"),  # Round 29: case difference resolves to the same real directory on Windows/macOS
-        (r"doc\adr", r"doc\adr\sub"),  # Round 29: backslash-separated nesting, never split by PurePosixPath
+        ("doc/adr", "doc/other/../adr"),  # ".." traversal resolves to the same real directory
+        ("doc/adr", "DOC/ADR"),  # case difference resolves to the same real directory on Windows/macOS
+        (r"doc\adr", r"doc\adr\sub"),  # backslash-separated nesting, never split by PurePosixPath
     ],
 )
 def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
@@ -277,7 +277,7 @@ def test_folderadr_and_folderlog_near_miss_is_accepted():
 
 
 def test_folderlog_overlap_check_normalizes_for_comparison_only_not_storage():
-    """Round 29: the containment guard's host-normalization (native
+    """The containment guard's host-normalization (native
     separator, ./.. collapsed, case-folded) must be comparison-only --
     the field's own STORED value stays exactly as the config text gave
     it, matching this project's established forward-slash convention,
@@ -302,7 +302,7 @@ def test_headerdisclaimer_too_long_is_rejected():
 
 
 def test_template_too_long_is_rejected():
-    """Round 28: template was the one _STRING_FIELDS field with no length
+    """template is the one _STRING_FIELDS field with no length
     limit at all in the schema -- unlike every other field, unbounded."""
     data = _valid_config_dict()
     data["template"] = "d" * 10_001
@@ -359,7 +359,7 @@ def test_every_too_long_field_raises_its_own_matching_code(field, too_long_lengt
 
 
 def test_too_long_codes_mapping_has_exactly_one_entry_per_schema_field():
-    """Round 29 (Test-Adequacy pass, round 29): the test above's own
+    """The test above's own
     parametrize list is a hand-maintained static list -- it only
     protects fields that already have their own tuple in it. A future
     field added to the schema (and to _TOO_LONG_CODES) with no matching
@@ -428,8 +428,7 @@ def test_status_label_with_marker_forgery_characters_is_rejected(field, payload)
     containing '(', ')', '<!--', or '-->' can forge a date/marker the tool
     never wrote (confirmed live: a statusnew of
     '(20200101)<!--Rejected-->' made a decision created today read back
-    as Rejected/2020-01-01). A round-27 finding added ':' to this same
-    blacklist: the Superseded row's own suffix parsing
+    as Rejected/2020-01-01). ':' is also blacklisted: the Superseded row's own suffix parsing
     (`superseded_text.find(":")`, core/header.py) finds the FIRST colon
     anywhere in the cell, not necessarily the real one the tool itself
     writes after the marker -- a statussup of 'Status: Superseded'
@@ -463,7 +462,7 @@ def test_header_label_fields_are_not_scoped_by_the_status_marker_forgery_check()
 @pytest.mark.parametrize("field", ["headertablefields", "headertablevalues"])
 @pytest.mark.parametrize("payload", ["Values <!-- x -->", "has<!--x", "hasx-->"])
 def test_headertable_fields_with_marker_comment_characters_are_rejected(field, payload):
-    """A round-27 security finding, confirmed live: parse_header's own
+    """Confirmed live: parse_header's own
     is_migrated detection (core/header.py) is pure substring matching on
     the raw table-fields row -- `lines[1].rstrip().endswith(' -->|') and
     '<!-- ' in lines[1]` -- built directly from headertablefields/
@@ -734,10 +733,10 @@ def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
 
 
 def test_read_config_text_does_not_read_the_whole_file(tmp_path):
-    """Round 28: read_config_text (loaded on EVERY single command
-    invocation, plus init/installconfig --seed) had no size cap at all,
-    unlike core/lifecycle.py's already-bounded header reader -- a
-    150MB config file measured a ~300MB peak-memory read before this fix."""
+    """read_config_text (loaded on EVERY single command
+    invocation, plus init/installconfig --seed) is bounded -- without
+    that cap, a 150MB config file would drive a ~300MB peak-memory
+    read on every single command invocation."""
     from unittest.mock import patch
 
     config_path = tmp_path / "adr-config.adrplus"

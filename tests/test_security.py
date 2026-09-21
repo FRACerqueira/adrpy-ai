@@ -176,14 +176,14 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_reject_aliased_repo_folders_rejects_a_junction_aliasing_folderlog_onto_folderadr(tmp_path):
-    """Round 30: core/config.py's own folderadr/folderlog containment
+    """core/config.py's own folderadr/folderlog containment
     guard runs at schema-PARSE time, on the config's own text alone --
     it can never see a junction/symlink planted inside the repo tree
     that makes two strings sharing NO path-component prefix (here,
     'adr' and 'other') alias the identical real directory. Confirmed
-    live before this fix existed: a hostile repo can ship both such a
-    config and such a junction, and `init` + `new` + `log` would
-    silently corrupt the same physical directory. This targets
+    live: without a real-filesystem-resolution guard, a hostile repo can
+    ship both such a config and such a junction, and `init` + `new` +
+    `log` would silently corrupt the same physical directory. This targets
     reject_aliased_repo_folders directly, the real-filesystem-
     resolution counterpart the schema-time guard cannot be."""
     from types import SimpleNamespace

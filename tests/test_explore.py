@@ -287,8 +287,7 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
     """`_build_entry`'s own bounded header read
-    (round-25: switched from an unbounded path.read_bytes()) had no
-    tolerance at all, transient or persistent -- unlike every other
+    has no tolerance at all, transient or persistent -- unlike every other
     decision-file read in this codebase, which retries a transient
     PermissionError via the shared io_retry helper. One genuinely
     unreadable file (locked by an editor, backup tool, or antivirus --
@@ -367,16 +366,15 @@ def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_fi
 
 
 def test_explore_does_not_read_the_whole_file(tmp_path, monkeypatch):
-    """A round-25 security finding, confirmed live before this fix
-    existed: `_build_entry` used to read and decode a candidate's ENTIRE
-    content (path.read_bytes()) even though parse_header only ever
-    consumes the first 12 lines -- explore is the natural "safe first
-    look" an AI agent would run against an unfamiliar/external
-    repository, with no indication a matching file could be huge.
-    Confirmed live: an 800MB matching file drove peak traced memory to
-    ~2.5GB for that single candidate. Now uses the same bounded header
-    read every other bulk scan in this codebase already relies on --
-    same technique as read_header_lines' own
+    """parse_header only ever consumes the first 12 lines of a
+    candidate -- reading and decoding its ENTIRE content
+    (path.read_bytes()) would be wasteful, and explore is the natural
+    "safe first look" an AI agent would run against an unfamiliar/
+    external repository, with no indication a matching file could be
+    huge. Confirmed live: an 800MB matching file drove peak traced
+    memory to ~2.5GB for that single candidate when read whole. Uses
+    the same bounded header read every other bulk scan in this
+    codebase already relies on -- same technique as read_header_lines' own
     test_read_header_lines_does_not_read_the_whole_file (test_lifecycle.py):
     Path.read_bytes/read_text must never be called at all, not merely
     "called with a small size" (a size-based guard alone would not

@@ -55,13 +55,12 @@ def test_config_and_init_document_folderadr_change_scan_incomplete():
 
 
 def test_every_path_based_command_documents_target_directory_not_found():
-    """A round-27 deferred-item closure: target-directory-not-found
+    """target-directory-not-found
     (core.lifecycle.resolve_target_and_config, raised for EVERY --path-
-    taking command, including init with require_config=False) was
-    reachable everywhere but documented nowhere -- the exact class of
-    gap doc/commands/INDEX.md's own absolute claim ('every failure code
-    a command can return is documented inline') was checkably false
-    for, per the 2026-09-21 deferred entry this test closes."""
+    taking command, including init with require_config=False) is
+    reachable everywhere -- doc/commands/INDEX.md makes the absolute
+    claim that every failure code a command can return is documented
+    inline, so this must hold for every one of those commands."""
     for name in ("config", "explore", "init", "log", "migrate", "new"):
         info = COMMANDS[name].describe()
         text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))

@@ -185,7 +185,7 @@ def test_supersede_rejects_embedded_delimiter_in_title_flag(tmp_path):
 
 
 def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_character(tmp_path, monkeypatch):
-    """A round-22 security finding: the successor's title comes from the
+    """The successor's title comes from the
     predecessor's own FILENAME segment (filename_info.title), never
     delimiter-checked on read, feeding build_filename below the exact same
     way a hostile --title on `new` would. On this platform, none of the
@@ -218,7 +218,7 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
 
 
 def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters(tmp_path, monkeypatch):
-    """A round-23 security finding: to_case (core/casing.py) falls back to
+    """to_case (core/casing.py) falls back to
     echoing its raw input unchanged when word-splitting finds nothing to
     transform, which happens exactly when the title is made entirely of
     whitespace/'_'/'-' -- reachable here via a hand-edited or migrated

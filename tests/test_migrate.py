@@ -195,7 +195,7 @@ def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result
 
 
 def test_migrate_rejects_a_title_with_a_filesystem_unsafe_character_as_a_per_file_failure(tmp_path, monkeypatch):
-    """A round-22 security finding: migrate's title is sourced from a raw,
+    """migrate's title is sourced from a raw,
     untrusted legacy filename, sliced positionally with zero character
     filtering (naming.parse_legacy_filename) -- unlike every other
     command's own title, it was never validated at all. A hostile legacy
@@ -243,7 +243,7 @@ def test_migrate_rejects_a_title_with_a_filesystem_unsafe_character_as_a_per_fil
 
 
 def test_migrate_rejects_a_title_made_only_of_separator_characters_as_a_per_file_failure(tmp_path, monkeypatch):
-    """A round-23 security finding: to_case (core/casing.py) falls back to
+    """to_case (core/casing.py) falls back to
     echoing its raw input unchanged when word-splitting finds nothing to
     transform, which happens exactly when the title is made entirely of
     whitespace/'_'/'-' -- reachable here via a raw, untrusted legacy
@@ -362,10 +362,10 @@ def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path,
 
 
 def test_migrate_write_does_not_read_the_whole_candidate_into_memory(tmp_path):
-    """Round 28 / ADR006V01: migrate's write phase read the WHOLE
-    candidate file into memory (`candidate_path.read_bytes()`) before
-    concatenating a header onto it and writing the result -- a 150MB
-    candidate measured a ~300MB peak-memory read. The header is already
+    """ADR006V01: without streaming, migrate's write phase would read
+    the WHOLE candidate file into memory (`candidate_path.read_bytes()`)
+    before concatenating a header onto it and writing the result -- a
+    150MB candidate would measure a ~300MB peak-memory read. The header is already
     known to be schema-bounded (a few KB at most); only the candidate's
     own body content, unbounded, needs to stream."""
     from unittest.mock import patch
@@ -638,11 +638,10 @@ def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
-    """Migrate's scan phase used to
-    read a candidate's ENTIRE content (read_lines_with_report) just to
-    parse its 12-line header and check its encoding -- the same class of
-    waste the round-1 performance fix already closed for family_members.
-    Now wired to core.lifecycle.read_header_lines_with_report, the
+    """Reading a candidate's ENTIRE content (read_lines_with_report) just to
+    parse its 12-line header and check its encoding would be wasteful --
+    the same class of waste already closed for family_members. Wired
+    instead to core.lifecycle.read_header_lines_with_report, the
     bounded equivalent."""
     _init_repo_with_pattern(tmp_path)
     legacy_path = _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")

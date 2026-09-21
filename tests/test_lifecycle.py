@@ -292,7 +292,7 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
 
 
 def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(tmp_path):
-    """Round 28 / ADR006V01's own reason for existing: a 20MB body must
+    """ADR006V01's own reason for existing: a 20MB body must
     never be assembled as one in-memory bytes/str object."""
     import tracemalloc
 
@@ -498,17 +498,17 @@ def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
 
 
 def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_never_arrive(tmp_path):
-    """A round-27 security finding, confirmed live before this fix
-    existed: `_read_header_bytes`'s loop re-scanned the ENTIRE
-    accumulated buffer for newlines on every 4096-byte chunk (O(n) regex
-    work per chunk, O(n^2) total) and grew the buffer via `buffer +=
-    more` (O(n) copy per chunk, also O(n^2) total). A file that never
-    accumulates `count` real newlines -- a single unstructured blob,
-    plausible for corrupted content or a file from an untrusted migrated
-    repo -- made the loop run to EOF, so this shared helper (used by
-    family_members for every per-file mutating command, AND by
-    migrate's own scan phase, AND by explore since round 26) quadratically
-    re-scanned and re-copied the file's entire content. Confirmed live:
+    """Without a cap, `_read_header_bytes`'s loop would re-scan the
+    ENTIRE accumulated buffer for newlines on every 4096-byte chunk
+    (O(n) regex work per chunk, O(n^2) total) and grow the buffer via
+    `buffer += more` (O(n) copy per chunk, also O(n^2) total). A file
+    that never accumulates `count` real newlines -- a single
+    unstructured blob, plausible for corrupted content or a file from
+    an untrusted migrated repo -- would make the loop run to EOF, so
+    this shared helper (used by family_members for every per-file
+    mutating command, AND by migrate's own scan phase, AND by explore)
+    would quadratically re-scan and re-copy the file's entire content.
+    Confirmed live (before this cap existed):
     1MB=0.6s, 2MB=2.5s, 4MB=10.9s (~4x per doubling). Now bounded to a
     fixed number of chunks regardless of newline count -- a genuine
     header is always a few KB at most (the config schema's own
@@ -550,8 +550,9 @@ def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_nev
 
 
 def test_read_header_lines_handles_a_crlf_straddling_a_chunk_boundary(tmp_path):
-    """Round 28: _read_header_bytes counted real newlines within each
-    freshly-read 4096-byte chunk IN ISOLATION. A `\\r\\n` pair straddling
+    """Without re-scanning the whole accumulated buffer, _read_header_bytes
+    would count real newlines within each freshly-read 4096-byte chunk
+    IN ISOLATION. A `\\r\\n` pair straddling
     exactly on a chunk boundary (the `\\r` as the chunk's own last byte,
     the `\\n` as the next chunk's own first byte) gets counted TWICE by
     two separate isolated per-chunk scans -- once for the lone trailing
@@ -750,11 +751,11 @@ def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
 
 
 def test_family_members_fails_closed_when_a_sibling_needs_a_lossy_decode(tmp_path):
-    """A round-24 security finding, confirmed live before this fix
-    existed: family_members used the no-report header read, so a sibling
+    """Confirmed live: `family_members` using the no-report header
+    read instead of the with-report variant would let a sibling
     with invalid UTF-8 bytes in its header (e.g. a corrupted or
-    hostile-migrated file) silently decoded lossily, failed to parse,
-    and was EXCLUDED from the family with zero signal -- not merely
+    hostile-migrated file) silently decode lossily, fail to parse,
+    and get EXCLUDED from the family with zero signal -- not merely
     unwarned about, but invisible to has_superseded_sibling/
     has_pending_sibling, the exact guard every per-file command relies
     on to prevent two live successors (ADR001's own concern). Reproduced
@@ -1028,7 +1029,7 @@ def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incom
 def test_reject_folderadr_change_if_decisions_exist_rejects_a_new_folder_that_would_adopt_an_unrelated_file(
     tmp_path,
 ):
-    """A round-22 stability finding: every check above is keyed on the OLD
+    """Every check above is keyed on the OLD
     folder -- none of them catch the NEW folderadr already containing an
     unrelated pre-existing file that happens to match the naming scheme.
     Confirmed live: pointing folderadr at such a directory silently

@@ -432,8 +432,8 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     """Same class as version's own finding -- revise's
     new record's title also comes straight from the target's already-
     parsed header cell. Caught by reject_filesystem_unsafe_title/
-    reject_embedded_delimiter before build_filename is ever called (a
-    round-22 security finding); resolve_within remains a second,
+    reject_embedded_delimiter before build_filename is ever called;
+    resolve_within remains a second,
     independent line of defense against anything those checks might
     miss."""
     config_file = tmp_path / "seed-config.json"
@@ -503,7 +503,7 @@ def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_tar
 
 
 def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_path):
-    """A round-23 security finding: to_case (core/casing.py) falls back to
+    """to_case (core/casing.py) falls back to
     echoing its raw input unchanged when word-splitting finds nothing to
     transform, which happens exactly when the title is made entirely of
     whitespace/'_'/'-' -- reachable here via a hand-edited or migrated

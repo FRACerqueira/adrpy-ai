@@ -78,8 +78,8 @@ def test_approve_happy_path(tmp_path):
 
 
 def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
-    """Round 28 pass B: approve (unlike version/revise/supersede/migrate)
-    never re-validated header.title/scope/domain before reusing them in
+    """approve (unlike version/revise/supersede/migrate)
+    must re-validate header.title/scope/domain before reusing them in
     its own rewrite -- inert only because _extract_cell structurally
     prevents an embedded '|' or real newline from ever reaching a parsed
     header value, but a colon (a genuine NTFS Alternate-Data-Stream
@@ -576,8 +576,7 @@ def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """See approve's own
     equivalent test -- this is reject's OWN family scan (its own family,
-    not the predecessor lookup covered by the round-9 usability fix
-    above), which runs before any write."""
+    not the predecessor lookup covered above), which runs before any write."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"

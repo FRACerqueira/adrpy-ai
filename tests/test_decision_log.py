@@ -366,8 +366,7 @@ def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path)
 
 
 def test_parse_entry_does_not_read_the_whole_file(tmp_path):
-    """A round-27 security finding: _parse_entry read the ENTIRE entry
-    file (path.read_text().splitlines()) even though it only ever uses
+    """_parse_entry only ever uses
     lines[0] (heading) and, for audit-finding/doc-drift entries,
     lines[1:5] (the structured line) -- unlike every bounded read
     elsewhere in this codebase (core/lifecycle.py's own header reads).

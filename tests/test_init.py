@@ -279,8 +279,8 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
 
 
 def test_init_seed_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tmp_path):
-    """Same class as config.py's own --folderadr adoption-check
-    (round-22 stability finding): --seed repointing folderadr at a
+    """Same class as config.py's own --folderadr adoption-check:
+    --seed repointing folderadr at a
     directory that already has an unrelated file matching the naming
     scheme is exactly as capable of silently adopting it as `config` is."""
     init.run(["--path", str(tmp_path)])
@@ -847,9 +847,7 @@ def test_init_accepts_every_supported_language(tmp_path, language):
 
 
 def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(tmp_path, tmp_path_factory):
-    """Pre-existing quirk found during a round-11 usability pass (not
-    introduced by ADR002V01, neither resource file was touched this
-    session): default_repo_config.json's own `template` field used CRLF
+    """default_repo_config.json's own `template` field used CRLF
     line endings while every one of the 11 language packs (including
     en-us.json, "Defaults to en-us" per init's own describe()) used bare
     LF -- so a bare `init` and an explicit `init --language en-us`

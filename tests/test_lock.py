@@ -153,7 +153,7 @@ def test_lock_reclaims_a_malformed_lock_file_left_by_a_crash(tmp_path):
 
 
 def test_lock_reclaims_a_lock_file_whose_timestamp_overflows_to_infinity(tmp_path):
-    """A round-24 security finding, confirmed live before this fix existed:
+    """Confirmed live:
     `float()` silently overflows to `inf` for a numeric string past
     ~1.8e308 (e.g. a several-hundred-digit run) -- no exception, so this
     was NOT caught by _read_lock's own `except ValueError: return None`.
@@ -390,9 +390,10 @@ def test_reclaim_if_abandoned_returns_false_when_only_the_second_read_lock_call_
 
 
 def test_read_lock_does_not_read_the_whole_file(tmp_path):
-    """Round 28: _read_lock had no size cap at all, unlike
-    core/lifecycle.py's already-bounded header reader -- a 100MB lock
-    file measured a ~400MB peak-memory read before this fix. The lock
+    """_read_lock is bounded, unlike
+    core/lifecycle.py's already-bounded header reader would otherwise
+    have no counterpart for -- without a cap, a 100MB lock file would
+    measure a ~400MB peak-memory read. The lock
     file is only ever tool-written (a uuid4 token + a timestamp, well
     under 100 bytes) -- anything this large is corrupted or adversarial,
     already treated as "unparseable" (returns None) either way."""

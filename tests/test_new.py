@@ -273,7 +273,7 @@ def test_new_rejects_path_traversal_via_title(tmp_path):
     """build_filename embeds the (case-transformed)
     title verbatim into the filename, and case transforms don't touch '/'
     or '..'. Caught by reject_filesystem_unsafe_title before build_filename
-    is ever called (a round-22 security finding: '/' is a filesystem-unsafe
+    is ever called ('/' is a filesystem-unsafe
     character in its own right, not just a path-traversal vector) -- the
     resolve_within guard used for the folder itself remains a second,
     independent line of defense against anything that check might miss."""
@@ -288,16 +288,17 @@ def test_new_rejects_path_traversal_via_title(tmp_path):
 
 
 def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_path):
-    """A round-22 security finding, confirmed live before this fix existed:
-    ':' is not an invalid Windows filename character, it is the NTFS
-    Alternate-Data-Stream separator -- the temp file WRITE succeeds (it's
+    """Confirmed live: ':' is not an invalid Windows filename character,
+    it is the NTFS Alternate-Data-Stream separator -- without this
+    check, the temp file WRITE would succeed (it's
     interpreted as a stream on a base file NTFS auto-creates), only the
-    final rename to the real name fails, and the error-path cleanup only
-    removes the named stream it just wrote, leaving that auto-created base
-    file behind as a permanent, 0-byte, un-cleanable orphan
-    (cleanup_orphaned_temp_files only globs '*.tmp', which this leftover's
-    name never matches, and it lacks '.md' too, so scan_decisions/explore
-    never see it either). Now caught before any write is attempted."""
+    final rename to the real name would fail, and the error-path cleanup
+    would only remove the named stream it just wrote, leaving that
+    auto-created base file behind as a permanent, 0-byte, un-cleanable
+    orphan (cleanup_orphaned_temp_files only globs '*.tmp', which this
+    leftover's name never matches, and it lacks '.md' too, so
+    scan_decisions/explore never see it either). Caught before any write
+    is attempted."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -310,8 +311,7 @@ def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_
 
 @pytest.mark.parametrize("value", ["-", "---", "___", "- _ -"])
 def test_new_rejects_a_title_made_only_of_separator_characters(tmp_path, value):
-    """A round-23 security finding, confirmed live before this fix
-    existed: to_case (core/casing.py) falls back to echoing its RAW
+    """Confirmed live: to_case (core/casing.py) falls back to echoing its RAW
     input unchanged when word-splitting finds nothing to transform, which
     happens exactly when the title is made entirely of
     whitespace/'_'/'-'. That raw echo collided with the default '-'

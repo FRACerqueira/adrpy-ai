@@ -7,7 +7,7 @@ def test_emit_failure_omits_warnings_key_when_warnings_is_none(capsys):
     """warnings=None means the run never even started accumulating (e.g.
     an OSError/internal-error caught in __main__ before any command's own
     attach_warnings region began) -- there is nothing to report, so the
-    key stays absent, same as before this fix."""
+    key stays absent."""
     emit_failure("some-failure", "detail")
 
     payload = json.loads(capsys.readouterr().out)

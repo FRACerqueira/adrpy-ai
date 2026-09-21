@@ -276,7 +276,7 @@ def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
 
 
 def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tmp_path):
-    """A round-22 stability finding, confirmed live: pointing folderadr at
+    """Confirmed live: pointing folderadr at
     a directory that already has an unrelated file matching the naming
     scheme silently adopted it as a decision, corrupting the next `new`
     call's own number allocation (ADR008V01 instead of ADR001V01 in the
@@ -485,12 +485,12 @@ def test_config_rejects_multiple_guarded_fields_changed_at_once_naming_all_of_th
 def test_config_rejects_separator_and_migrationpattern_together_on_a_mixed_scheme_repo(tmp_path):
     """ADR004V02: the guard's blanket check (separator, among others) and
     its legacy-scoped check (migrationpattern) must be evaluated
-    independently, not short-circuited against each other -- a round-20
-    test-adequacy pass found that mutating the two checks into an
-    if/elif chain (so the legacy check is skipped once the blanket
-    check already matched) left the full suite green, since no existing
-    test combined a mixed-scheme repository with changing both fields
-    at once. Both fields must be named here."""
+    independently, not short-circuited against each other -- mutating
+    the two checks into an if/elif chain (so the legacy check is
+    skipped once the blanket check already matched) would leave the
+    full suite green, since no existing test combined a mixed-scheme
+    repository with changing both fields at once. Both fields must be
+    named here."""
     tmp_path = _init_repo(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "First decision"])  # current-scheme
     config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
@@ -548,11 +548,10 @@ def test_config_reports_the_correct_count_with_more_than_one_existing_decision(t
 
 
 def test_config_migrationpattern_only_block_counts_only_legacy_scheme_decisions(tmp_path):
-    """A round-20 test-adequacy pass found the prior version of this
-    count test used a scheme-homogeneous fixture (all current-scheme),
-    so it could not distinguish 'a real total count' from 'a real count
-    scoped to the right scheme' -- a scheme-miscounting regression would
-    have slipped through undetected. This test uses a MIXED-scheme
+    """A scheme-homogeneous fixture (all current-scheme) could not
+    distinguish 'a real total count' from 'a real count scoped to the
+    right scheme' -- a scheme-miscounting regression would slip through
+    undetected. This test uses a MIXED-scheme
     repository and changes ONLY migrationpattern, so the count must
     reflect just the legacy-scheme subset (1), never the total (2)."""
     tmp_path = _init_repo(tmp_path)
@@ -571,8 +570,7 @@ def test_config_allows_a_migrationpattern_change_when_only_current_scheme_decisi
     parse_legacy_filename -- a repository with only current-scheme
     decisions has nothing that a migrationpattern change could break.
     This was ADR004V01's own gap: a blanket guard would have refused
-    this harmless change for no reason (confirmed via mutation before
-    the fix -- see the audit finding this test closes)."""
+    this harmless change for no reason (confirmed via mutation testing)."""
     tmp_path = _init_repo(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "First decision"])
 
@@ -604,10 +602,10 @@ def test_config_rejects_a_separator_change_when_only_legacy_scheme_decisions_exi
     tries the current scheme FIRST, so a separator value that happens to
     already appear in a legacy filename can make it newly match under
     parse_filename, silently reclassifying a legacy decision as
-    current-scheme with a different number/title. A round-20 audit
-    found this live (a scoped version of this guard incorrectly allowed
-    this exact scenario, and the file's own scheme flipped on the next
-    scan) -- separator is blanket again as a result; only
+    current-scheme with a different number/title. Confirmed live: a
+    scoped version of this guard incorrectly allowed this exact
+    scenario, and the file's own scheme flipped on the next scan --
+    separator is blanket again as a result; only
     migrationpattern is genuinely safe to scope (naming.py's
     parse_filename never reads it, so it has no mirror reclassification
     risk)."""
@@ -623,8 +621,8 @@ def test_config_rejects_a_separator_change_when_only_legacy_scheme_decisions_exi
 
 
 def test_config_separator_change_does_not_silently_reclassify_a_legacy_file_as_current_scheme(tmp_path):
-    """Direct regression test for the round-20 finding itself, not just
-    the guard's own refusal: even bypassing the guard's own check (by
+    """Direct regression test for the reclassification risk itself, not
+    just the guard's own refusal: even bypassing the guard's own check (by
     changing a field the guard does NOT protect against this exact
     risk) would be dangerous -- this test locks in that the guard DOES
     block the one live reproduction that exposed the bug, end to end
@@ -643,8 +641,7 @@ def test_config_separator_change_does_not_silently_reclassify_a_legacy_file_as_c
 
 
 def test_config_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecognized_file(tmp_path):
-    """A deferred finding (found by a post-round-20 verification pass,
-    confirmed live, then fixed): every check above is keyed on
+    """Confirmed live: every check above is keyed on
     decisions already recognized under the OLD config -- none of them
     catch a file that ISN'T currently recognized by any scheme becoming
     newly recognized. An unrelated hand-written .md file (never created
@@ -674,13 +671,12 @@ def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path, monkeypa
     must still go through -- this guard must not become a blanket
     refusal to ever change separator at all.
 
-    A round-21 test-adequacy pass found the original, plain version of
-    this test (an empty decisions folder, asserting only the call
-    succeeds) could not distinguish "the adoption scan ran and
-    correctly found nothing new" from "the adoption scan never ran at
-    all" -- mutation-confirmed: disabling the check entirely still left
-    that version green, since an empty folder has nothing to adopt
-    either way. A file guaranteed to stay unrecognized under both
+    A plain version of this test (an empty decisions folder, asserting
+    only the call succeeds) could not distinguish "the adoption scan
+    ran and correctly found nothing new" from "the adoption scan never
+    ran at all" -- mutation-confirmed: disabling the check entirely
+    still left that version green, since an empty folder has nothing to
+    adopt either way. A file guaranteed to stay unrecognized under both
     separators has the exact same problem for the same reason. Proven
     instead via a call-count spy on scan_decisions -- the guard scans
     twice for a successful separator change (once for `existing` under
@@ -705,9 +701,9 @@ def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path, monkeypa
 
 
 def test_config_separator_and_migrationpattern_change_together_does_not_cross_attribute_adoption(tmp_path):
-    """A round-21 stability finding, confirmed live and fixed: the
-    adoption check used to scan with the FULL new config, so a call
-    changing both --separator and --migrationpattern at once could get
+    """Confirmed live: an adoption check that scans with the FULL new
+    config, instead of a separator-only one, would let a call
+    changing both --separator and --migrationpattern at once get
     wrongly refused over files only migrationpattern's own (intentional)
     adoption would newly recognize -- blaming separator for something
     it had no part in. This file's own name contains no "_" anywhere,
@@ -722,9 +718,9 @@ def test_config_separator_and_migrationpattern_change_together_does_not_cross_at
 
 
 def test_config_blocking_fields_check_wins_over_the_adoption_check_when_both_could_apply(tmp_path):
-    """A round-21 test-adequacy finding: the adoption check is only ever
+    """The adoption check is only ever
     reached once the blocking-fields check above it has already passed
-    -- pins this precedence explicitly, since nothing did before. An
+    -- pins this precedence explicitly. An
     existing recognized decision blocks --statusnew outright; an
     unrelated file that WOULD genuinely be newly adopted by the same
     --separator change sits in the same folder (proven separately: it
