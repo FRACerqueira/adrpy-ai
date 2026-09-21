@@ -359,7 +359,7 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     # eagerly created here -- `adrpy log` already creates it lazily on
     # first write, and nothing else needs it to exist before then.
     resolve_within(target, config.folderlog)
-    # Round 30: catches a junction/symlink planted inside the repo tree
+    # Catches a junction/symlink planted inside the repo tree
     # BEFORE init ever runs, making folderadr and folderlog alias the
     # same real directory despite configured strings sharing no path
     # component -- the schema-time guard in core/config.py can never see

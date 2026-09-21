@@ -119,7 +119,7 @@ def run(args):
                     warnings=warnings,
                 )
 
-            # Round 28: title/scope/domain are re-read from the SOURCE
+            # title/scope/domain are re-read from the SOURCE
             # file's own header cells, not flags -- a hand-edited or
             # migrated file could carry a filesystem-unsafe character
             # (e.g. ':', an NTFS Alternate-Data-Stream separator) never

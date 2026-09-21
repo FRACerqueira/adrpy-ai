@@ -139,7 +139,7 @@ def run(args):
             if header.date_create is not None:
                 validate_refdate_not_before(refdate, header.date_create)
 
-            # Round 28: title/scope/domain are re-read from the SOURCE
+            # title/scope/domain are re-read from the SOURCE
             # file's own header cells, not flags -- a hand-edited or
             # migrated file could carry a filesystem-unsafe character
             # (e.g. ':', an NTFS Alternate-Data-Stream separator) never

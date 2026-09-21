@@ -278,7 +278,7 @@ def run(args):
             warnings.extend(lock.warnings)
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
             folder = resolve_within(target, config.folderadr)
-            # Round 30: the schema-time containment guard (core/config.py's
+            # The schema-time containment guard (core/config.py's
             # own parse_repo_config) can never see a junction/symlink
             # planted inside the repo tree -- this re-checks against the
             # REAL, resolved directories, right before folderlog is

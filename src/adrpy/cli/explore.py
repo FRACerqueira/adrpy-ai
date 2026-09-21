@@ -113,12 +113,12 @@ def _build_entry(path, config):
     found = parse_any_filename(path.name, config)
     scheme, parsed = found if found else (None, None)
 
-    # A round-25 security finding: this used to read and decode the
-    # file's ENTIRE content (path.read_bytes()) even though parse_header
-    # only ever consumes the first 12 lines -- for a large or hostile
-    # file (explore is the natural "safe first look" an agent runs
-    # against an unfamiliar repository, with no size warning), that's an
-    # unbounded memory read for zero benefit. Confirmed live: an 800MB
+    # Reading and decoding the file's ENTIRE content (path.read_bytes())
+    # would be wasteful -- parse_header only ever consumes the first 12
+    # lines, and for a large or hostile file (explore is the natural
+    # "safe first look" an agent runs against an unfamiliar repository,
+    # with no size warning), that's an unbounded memory read for zero
+    # benefit. Confirmed live: an 800MB
     # matching file drove peak traced memory to ~2.5GB for this single
     # candidate. Uses the same bounded header read every other bulk scan
     # in this codebase already relies on (family_members, migrate's scan

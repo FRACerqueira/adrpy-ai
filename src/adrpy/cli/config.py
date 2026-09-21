@@ -347,7 +347,7 @@ def run(args):
             # validates the new folderlog value can't escape the
             # repository, the same order as folderadr's own check above.
             resolve_within(target, new_config.folderlog)
-            # Round 30: the schema-time guard in core/config.py's own
+            # The schema-time guard in core/config.py's own
             # parse_repo_config can never see a junction/symlink planted
             # inside the repo tree -- re-checked here, against the real,
             # resolved directories, before either the folderlog-change
