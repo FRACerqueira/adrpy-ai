@@ -31,7 +31,12 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.lock import acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
+from adrpy.core.security import (
+    find_unreadable_subdirectories,
+    is_within,
+    reject_aliased_repo_folders,
+    resolve_within,
+)
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, no_install_level_config_warning, retry_warning
 
 
@@ -354,6 +359,13 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     # eagerly created here -- `adrpy log` already creates it lazily on
     # first write, and nothing else needs it to exist before then.
     resolve_within(target, config.folderlog)
+    # Round 30: catches a junction/symlink planted inside the repo tree
+    # BEFORE init ever runs, making folderadr and folderlog alias the
+    # same real directory despite configured strings sharing no path
+    # component -- the schema-time guard in core/config.py can never see
+    # this (it never touches the filesystem). This is the first point
+    # either folder's real, resolved location is knowable.
+    reject_aliased_repo_folders(target, config)
 
     if lock is not None:
         # ADR001, part 3: guarantees this write never commits blindly if

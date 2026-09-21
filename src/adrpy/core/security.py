@@ -37,6 +37,42 @@ def resolve_within(base_dir, candidate):
     return resolved
 
 
+def reject_aliased_repo_folders(target, config):
+    """Round 30: `core/config.py`'s own folderadr/folderlog containment
+    guard runs at schema-PARSE time, on the config's own text alone --
+    it can never see a Windows junction or symlink planted inside the
+    repository tree that makes two strings sharing no path-component
+    prefix at all (e.g. 'doc/adr' and 'doc/other') alias the identical
+    real directory. Confirmed live: a hostile repo can ship both such a
+    config and such a junction; `init` accepted it silently, and a
+    later `new` + `log` call collided on one physical directory, the
+    exact corruption class the schema-time guard exists to prevent, via
+    a vector it's structurally unable to see (it never touches the
+    filesystem).
+
+    This is the real-filesystem-resolution counterpart to that check --
+    called wherever `folderadr` and `folderlog` are BOTH about to be
+    used for real (folder creation at `init`, a folderadr/folderlog
+    change at `config`, and `log`, the only command that reads
+    `folderlog` for its own normal work) -- resolving both through the
+    already-proven `resolve_within` and comparing the RESOLVED paths,
+    not the configured strings. Checks both directions (equal, or
+    either one nested inside the other) -- a junction pointing at a
+    PARENT of the other folder aliases just as destructively as one
+    pointing at the same directory."""
+    folderadr_resolved = resolve_within(target, config.folderadr)
+    folderlog_resolved = resolve_within(target, config.folderlog)
+    if folderadr_resolved == folderlog_resolved or folderadr_resolved.is_relative_to(
+        folderlog_resolved
+    ) or folderlog_resolved.is_relative_to(folderadr_resolved):
+        raise CommandError(
+            FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY,
+            f"folderadr ('{config.folderadr}') and folderlog ('{config.folderlog}') resolve to the same "
+            "real directory (or one nested inside the other) -- likely a symlink or junction planted "
+            "inside the repository, not just a coincidentally-similar configured path.",
+        )
+
+
 def is_within(base_dir, candidate, *, resolved_base=None):
     """True if `candidate`'s REAL path (following symlinks/junctions) is
     inside `base_dir`'s real path -- used to filter directory-scan results

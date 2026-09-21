@@ -38,7 +38,7 @@ from adrpy.core.lifecycle import (
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import LockLostError, acquire_repo_lock
-from adrpy.core.security import reject_embedded_delimiter, resolve_within
+from adrpy.core.security import reject_aliased_repo_folders, reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
 
 _STRUCTURED_FIELDS = ("front", "severity", "resolution")
@@ -278,6 +278,13 @@ def run(args):
             warnings.extend(lock.warnings)
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
             folder = resolve_within(target, config.folderadr)
+            # Round 30: the schema-time containment guard (core/config.py's
+            # own parse_repo_config) can never see a junction/symlink
+            # planted inside the repo tree -- this re-checks against the
+            # REAL, resolved directories, right before folderlog is
+            # actually used, inside the same lock/freshness window as the
+            # folderadr re-check just above.
+            reject_aliased_repo_folders(target, config)
             log_dir = decision_log_dir_for(target, config)
 
             round_ = None

@@ -8,6 +8,7 @@ from adrpy.core.errors import CommandError
 from adrpy.core.security import (
     find_unreadable_subdirectories,
     is_within,
+    reject_aliased_repo_folders,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_status_marker_forgery_characters,
@@ -171,6 +172,53 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp
         resolve_within(base, "linked/escaped.md")
 
     assert excinfo.value.code == "path-outside-repository"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_reject_aliased_repo_folders_rejects_a_junction_aliasing_folderlog_onto_folderadr(tmp_path):
+    """Round 30: core/config.py's own folderadr/folderlog containment
+    guard runs at schema-PARSE time, on the config's own text alone --
+    it can never see a junction/symlink planted inside the repo tree
+    that makes two strings sharing NO path-component prefix (here,
+    'adr' and 'other') alias the identical real directory. Confirmed
+    live before this fix existed: a hostile repo can ship both such a
+    config and such a junction, and `init` + `new` + `log` would
+    silently corrupt the same physical directory. This targets
+    reject_aliased_repo_folders directly, the real-filesystem-
+    resolution counterpart the schema-time guard cannot be."""
+    from types import SimpleNamespace
+
+    target = tmp_path
+    adr_dir = target / "adr"
+    adr_dir.mkdir()
+    other = target / "other"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(other), str(adr_dir)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    config = SimpleNamespace(folderadr="adr", folderlog="other")
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_aliased_repo_folders(target, config)
+
+    assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
+
+
+def test_reject_aliased_repo_folders_accepts_genuinely_separate_directories(tmp_path):
+    """The required adversarial positive control: two directories that
+    are NOT aliased at all (no junction, no shared prefix, no nesting)
+    must not trip this check."""
+    from types import SimpleNamespace
+
+    target = tmp_path
+    (target / "adr").mkdir()
+    (target / "decision-log").mkdir()
+    config = SimpleNamespace(folderadr="adr", folderlog="decision-log")
+
+    reject_aliased_repo_folders(target, config)  # no raise
 
 
 def test_resolve_within_rejects_absolute_path_outside_repo(tmp_path, tmp_path_factory):

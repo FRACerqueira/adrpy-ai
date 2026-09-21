@@ -31,7 +31,7 @@ from adrpy.core.lifecycle import (
     verify_folderadr_unchanged_since_lock,
 )
 from adrpy.core.lock import acquire_repo_lock
-from adrpy.core.security import resolve_within
+from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
 
 _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
@@ -347,6 +347,12 @@ def run(args):
             # validates the new folderlog value can't escape the
             # repository, the same order as folderadr's own check above.
             resolve_within(target, new_config.folderlog)
+            # Round 30: the schema-time guard in core/config.py's own
+            # parse_repo_config can never see a junction/symlink planted
+            # inside the repo tree -- re-checked here, against the real,
+            # resolved directories, before either the folderlog-change
+            # guard below or the folderadr directory gets created.
+            reject_aliased_repo_folders(target, new_config)
             reject_folderlog_change_if_entries_exist(
                 decision_log_dir_for(target, current),
                 current.folderlog,

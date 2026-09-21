@@ -71,6 +71,7 @@ class FailureCodes:
     PATH_OUTSIDE_REPOSITORY = "path-outside-repository"
     FIELD_IS_BLANK = "field-is-blank"
     FIELD_CONTAINS_FORBIDDEN_CHARACTER = "field-contains-forbidden-character"
+    FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY = "folderadr-folderlog-alias-same-directory"
 
     # src/adrpy/core/config.py
     LANGUAGE_NOT_SUPPORTED = "language-not-supported"
