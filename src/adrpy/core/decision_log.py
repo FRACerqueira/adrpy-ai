@@ -17,7 +17,7 @@ repository lock marker file from every decisions-folder scan.
 import re
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_bytes
+from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError
 from adrpy.core.lifecycle import read_header_lines
 
@@ -374,8 +374,8 @@ def regenerate_index(decision_log_dir):
     # Atomic, like every other writer in this project (core/atomic_write.py):
     # a plain write_text() truncates on open, so a concurrent reader (or a
     # process that dies mid-write) can observe -- or permanently leave on
-    # disk -- an empty INDEX.md. atomic_write_bytes (not atomic_write_text)
-    # deliberately skips newline normalization, matching this function's own
-    # explicit LF-only convention regardless of host OS.
-    atomic_write_bytes(decision_log_dir / _INDEX_FILENAME, "\n".join(lines).encode("utf-8"))
+    # disk -- an empty INDEX.md. atomic_write_text normalizes to THIS host's
+    # own os.linesep, matching every other CRLF-on-Windows doc in this
+    # project instead of a hardcoded LF regardless of host OS.
+    atomic_write_text(decision_log_dir / _INDEX_FILENAME, "\n".join(lines))
     return len(entries)

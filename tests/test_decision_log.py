@@ -347,15 +347,13 @@ def test_parse_entry_does_not_read_the_whole_file(tmp_path):
     assert result == 0  # scope-note carries no Round; just proving the read stayed bounded
 
 
-def test_regenerate_index_writes_lf_only_on_a_normal_successful_run(tmp_path):
-    """This function's explicit LF-only convention must hold regardless
-    of host OS (real, load-bearing: the committed
-    doc/decision-log/INDEX.md is genuinely LF-only on disk), including on
-    a normal SUCCESSFUL regeneration -- not just on the FAILURE path
-    (original file untouched), which every other test of the atomic-write
-    behavior already covers. Reverting atomic_write_bytes to
-    atomic_write_text (which normalizes to os.linesep) would pass every
-    other test in this file silently."""
+def test_regenerate_index_writes_this_hosts_own_line_ending_on_a_normal_successful_run(tmp_path):
+    """regenerate_index now normalizes to THIS host's own os.linesep
+    (matching every other CRLF-on-Windows doc in this project), not a
+    hardcoded LF regardless of host OS -- confirmed on a normal
+    SUCCESSFUL regeneration, not just the FAILURE path (original file
+    untouched), which every other test of the atomic-write behavior
+    already covers."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-09-18--scope-note--lock--first.md").write_text(
@@ -364,7 +362,11 @@ def test_regenerate_index_writes_lf_only_on_a_normal_successful_run(tmp_path):
 
     regenerate_index(log_dir)
 
-    assert b"\r\n" not in (log_dir / "INDEX.md").read_bytes()
+    with open(log_dir / "INDEX.md", encoding="utf-8", newline="") as handle:
+        text = handle.read()
+    lines = text.split(os.linesep)
+    assert len(lines) > 1  # the file actually has more than one line to prove the join
+    assert os.linesep.join(lines) == text  # every terminator is exactly this host's own
 
 
 def test_regenerate_index_sorts_multiple_entries_by_date_classification_scope(tmp_path):
