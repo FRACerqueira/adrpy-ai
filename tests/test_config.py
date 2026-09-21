@@ -241,6 +241,9 @@ def test_absolute_folderlog_is_rejected(folderlog):
         ("doc/adr", "doc/adr"),  # equal
         ("doc/adr", "doc/adr/sub"),  # folderlog nested inside folderadr
         ("doc/adr", "doc"),  # folderadr nested inside folderlog
+        ("doc/adr", "doc/other/../adr"),  # Round 29: ".." traversal resolves to the same real directory
+        ("doc/adr", "DOC/ADR"),  # Round 29: case difference resolves to the same real directory on Windows/macOS
+        (r"doc\adr", r"doc\adr\sub"),  # Round 29: backslash-separated nesting, never split by PurePosixPath
     ],
 )
 def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
@@ -271,6 +274,21 @@ def test_folderadr_and_folderlog_near_miss_is_accepted():
 
     assert config.folderadr == "doc/adr"
     assert config.folderlog == "doc/adr2"
+
+
+def test_folderlog_overlap_check_normalizes_for_comparison_only_not_storage():
+    """Round 29: the containment guard's host-normalization (native
+    separator, ./.. collapsed, case-folded) must be comparison-only --
+    the field's own STORED value stays exactly as the config text gave
+    it, matching this project's established forward-slash convention,
+    not whatever the current host's own path separator happens to be."""
+    data = _valid_config_dict()
+    data["folderadr"] = "doc/adr"
+    data["folderlog"] = "doc/other/../decision-log"
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderlog == "doc/other/../decision-log"
 
 
 def test_headerdisclaimer_too_long_is_rejected():

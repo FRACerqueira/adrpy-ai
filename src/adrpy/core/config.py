@@ -13,6 +13,7 @@ before this field existed keeps parsing unchanged.
 """
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -132,6 +133,24 @@ def _is_relative_path(value):
     if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\\\", "//")):
         return False
     return True
+
+
+def _normalized_repo_path_parts(value):
+    """THIS host's own view of `value`'s path components (native
+    separator, `.`/`..` collapsed via os.path.normpath, each component
+    case-folded) -- used ONLY for the folderadr/folderlog mutual-overlap
+    comparison below, never for what actually gets stored in the parsed
+    config: the field's own stored/displayed value stays exactly as the
+    config text gave it (this project's own established forward-slash
+    convention, matching the reference tool), and only this transient,
+    comparison-only view is host-normalized. Round 29: the overlap check
+    used to compare un-normalized strings, missing 3 real bypasses
+    confirmed live (a `../` traversal, a backslash-separated nesting on
+    Windows, and a bare case difference) that each resolve to the
+    identical or a genuinely nested real directory -- normalizing this
+    comparison-only view closes all three, without changing what the
+    field's own value looks like anywhere else in the project."""
+    return tuple(part.casefold() for part in Path(os.path.normpath(value)).parts)
 
 
 def _validate_relative_repo_path_field(value, field_name, max_length, too_long_code, not_relative_code):
@@ -444,11 +463,15 @@ def parse_repo_config(text):
     # nested inside, the other, each one's own scan would start seeing the
     # other's files (the same class of misrecognition hazard ADR004V02
     # already closed for --separator, applied here to a directory-
-    # placement change instead of a naming-rule change). Compared by path
-    # COMPONENT, not string prefix, so "doc/adr" vs "doc/adr2" never
-    # false-matches.
-    folderadr_parts = PurePosixPath(lowered["folderadr"]).parts
-    folderlog_parts = PurePosixPath(lowered["folderlog"]).parts
+    # placement change instead of a naming-rule change). Round 29:
+    # compared via _normalized_repo_path_parts (native separator, `.`/`..`
+    # collapsed, case-folded) instead of a raw string-prefix/PurePosixPath
+    # split -- closes 3 confirmed-live bypasses (a `../` traversal, a
+    # backslash-separated nesting on Windows, a bare case difference) that
+    # each resolve to the identical or a genuinely nested real directory.
+    # Comparison-only: neither field's own STORED value changes here.
+    folderadr_parts = _normalized_repo_path_parts(lowered["folderadr"])
+    folderlog_parts = _normalized_repo_path_parts(lowered["folderlog"])
     shorter, longer = (
         (folderadr_parts, folderlog_parts)
         if len(folderadr_parts) <= len(folderlog_parts)
