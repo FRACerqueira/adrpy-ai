@@ -30,11 +30,10 @@ POLL_INTERVAL_SECONDS = 0.2
 # of Windows "pending delete"/sharing-violation failure.
 LOCK_IO_RETRY_ATTEMPTS = 3
 LOCK_IO_RETRY_DELAY_SECONDS = 0.05
-# Round 28: _read_lock had no size cap at all. The lock file is only ever
-# tool-written (a uuid4 token + "\n" + a float timestamp, well under 100
-# bytes) -- 4KB is generous headroom while keeping memory use bounded
-# regardless of what a corrupted or adversarial file at this exact path
-# might contain.
+# The lock file is only ever tool-written (a uuid4 token + "\n" + a float
+# timestamp, well under 100 bytes) -- 4KB is generous headroom while
+# keeping memory use bounded regardless of what a corrupted or
+# adversarial file at this exact path might contain.
 LOCK_READ_MAX_BYTES = 4096
 
 
@@ -117,8 +116,8 @@ def _read_lock(path):
     except FileNotFoundError:
         return None
     # Path.read_text's own default (universal newlines) silently translated
-    # CRLF/lone-CR to '\n' on read -- a plain bytes.decode does not (round
-    # 28, confirmed live: a Windows-written CRLF lock file's own token came
+    # CRLF/lone-CR to '\n' on read -- a plain bytes.decode does not
+    # (confirmed live: a Windows-written CRLF lock file's own token came
     # back with a trailing '\r' attached instead of the bare token).
     # Replicated explicitly so this function's own observable output is
     # unchanged.

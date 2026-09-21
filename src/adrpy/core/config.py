@@ -40,8 +40,8 @@ VALID_CASE_TRANSFORMS = tuple(CASE_TRANSFORMS.keys())
 # limits them (lenseq 3-5, lenversion 2-3, lenrevision 0-3), and
 # hand-editing the config file bypasses that slider entirely even there.
 # Without a wizard here, nothing else would ever guard these values, so
-# this project adds them explicitly -- confirmed with the user, who chose
-# slightly wider bounds than the wizard's own.
+# this project adds them explicitly, using bounds slightly wider than the
+# wizard's own.
 LENSEQ_MIN, LENSEQ_MAX = 3, 6
 LENVERSION_MIN, LENVERSION_MAX = 2, 4
 LENREVISION_MIN, LENREVISION_MAX = 0, 3
@@ -69,16 +69,16 @@ FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
 FOLDERLOG_MAX_LENGTH = 50
 # headerdisclaimer and status labels: wizard's own real values are 200 and
 # 15 (PromptEditFieldHeaderText(headerdisclaimer, 200, ...); PromptEditFieldStatus's
-# MaxLength(15)) -- user chose 100/25 instead, same as the lenseq-family bounds.
+# MaxLength(15)) -- this project uses 100/25 instead, same as the lenseq-family bounds.
 HEADER_DISCLAIMER_MAX_LENGTH = 100
 HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
 STATUS_LABEL_MAX_LENGTH = 25
-# Round 28: the reference tool's own wizard has no equivalent bound for
-# this field at all (it's free-form body content, not a single prompt-
-# edit-text field) -- a deliberate divergence, not a fidelity gap, added
-# specifically so a bounded read of the config file itself (core/config.py's
-# own read_config_text) can trust a fixed byte cap without risking a
-# false rejection of a legitimate, if unusually long, template.
+# The reference tool's own wizard has no equivalent bound for this field
+# at all (it's free-form body content, not a single prompt-edit-text
+# field) -- a deliberate divergence, not a fidelity gap, added specifically
+# so a bounded read of the config file itself (core/config.py's own
+# read_config_text) can trust a fixed byte cap without risking a false
+# rejection of a legitimate, if unusually long, template.
 TEMPLATE_MAX_LENGTH = 10_000
 
 _HEADER_LABEL_FIELDS_MAX_40 = (
@@ -143,13 +143,10 @@ def _normalized_repo_path_parts(value):
     config: the field's own stored/displayed value stays exactly as the
     config text gave it (this project's own established forward-slash
     convention, matching the reference tool), and only this transient,
-    comparison-only view is host-normalized. Round 29: the overlap check
-    used to compare un-normalized strings, missing 3 real bypasses
-    confirmed live (a `../` traversal, a backslash-separated nesting on
-    Windows, and a bare case difference) that each resolve to the
-    identical or a genuinely nested real directory -- normalizing this
-    comparison-only view closes all three, without changing what the
-    field's own value looks like anywhere else in the project."""
+    comparison-only view is host-normalized. Without this, a `../`
+    traversal, a backslash-separated nesting on Windows, or a bare case
+    difference could each resolve to the identical or a genuinely nested
+    real directory while comparing unequal as raw strings."""
     return tuple(part.casefold() for part in Path(os.path.normpath(value)).parts)
 
 
@@ -296,10 +293,10 @@ def default_repo_config_text_for_language(language):
     return json.dumps(base, indent=2, ensure_ascii=False)
 
 
-# Round 28: this file is read on EVERY single command invocation
+# This file is read on EVERY single command invocation
 # (resolve_repo_and_target's own initial config load), plus init/
-# installconfig --seed, with no size cap at all before this fix -- a
-# 150MB config file measured a ~300MB peak-memory read. 64KB is
+# installconfig --seed -- with no size cap, a 150MB config file measures
+# a ~300MB peak-memory read. 64KB is
 # generous relative to the schema's own worst case: every length-bounded
 # field (including TEMPLATE_MAX_LENGTH, the one field this project added
 # a bound to specifically to make this cap safe) summed at its own
@@ -380,7 +377,7 @@ def parse_repo_config(text):
     if extra:
         raise CommandError(FailureCodes.CONFIG_UNEXPECTED_FIELD, f"Unexpected field(s): {', '.join(extra)}")
 
-    # ADR007V01: folderlog defaults to today's exact computed sibling-of-
+    # ADR007V01: folderlog defaults to the exact computed sibling-of-
     # folderadr location when absent, so an adr-config.adrplus written
     # before this field existed keeps parsing unchanged. Guarded against a
     # non-string folderadr (not yet type-checked at this point) so this
@@ -463,13 +460,10 @@ def parse_repo_config(text):
     # nested inside, the other, each one's own scan would start seeing the
     # other's files (the same class of misrecognition hazard ADR004V02
     # already closed for --separator, applied here to a directory-
-    # placement change instead of a naming-rule change). Round 29:
-    # compared via _normalized_repo_path_parts (native separator, `.`/`..`
-    # collapsed, case-folded) instead of a raw string-prefix/PurePosixPath
-    # split -- closes 3 confirmed-live bypasses (a `../` traversal, a
-    # backslash-separated nesting on Windows, a bare case difference) that
-    # each resolve to the identical or a genuinely nested real directory.
-    # Comparison-only: neither field's own STORED value changes here.
+    # placement change instead of a naming-rule change). Compared via
+    # _normalized_repo_path_parts (see its own docstring for what that
+    # guards against). Comparison-only: neither field's own STORED value
+    # changes here.
     folderadr_parts = _normalized_repo_path_parts(lowered["folderadr"])
     folderlog_parts = _normalized_repo_path_parts(lowered["folderlog"])
     shorter, longer = (

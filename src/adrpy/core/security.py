@@ -38,9 +38,9 @@ def resolve_within(base_dir, candidate):
 
 
 def reject_aliased_repo_folders(target, config):
-    """Round 30: `core/config.py`'s own folderadr/folderlog containment
-    guard runs at schema-PARSE time, on the config's own text alone --
-    it can never see a Windows junction or symlink planted inside the
+    """`core/config.py`'s own folderadr/folderlog containment guard runs
+    at schema-PARSE time, on the config's own text alone -- it can never
+    see a Windows junction or symlink planted inside the
     repository tree that makes two strings sharing no path-component
     prefix at all (e.g. 'doc/adr' and 'doc/other') alias the identical
     real directory. Confirmed live: a hostile repo can ship both such a
@@ -177,7 +177,7 @@ def reject_status_marker_forgery_characters(value, field_name):
     reject_embedded_delimiter's own blacklist -- scoped to just these four
     fields, since no other field is read by this parsing path.
 
-    Also rejects ':' (a round-27 finding): the Superseded row's own
+    Also rejects ':': the Superseded row's own
     successor-reference suffix parsing (`superseded_text.find(":")`,
     core/header.py) finds the FIRST colon anywhere in the cell, not
     necessarily the real one the tool itself writes after the marker --
@@ -249,8 +249,8 @@ def reject_title_with_no_case_transform_content(value, field_name):
     is never an optional/sentinel field anywhere this function is
     called (new/version/revise/supersede/migrate all require a real
     title), and `to_case("")` degenerates the exact same way as a
-    whitespace/'_'/'-'-only title does -- a round-27 finding, confirmed
-    live: migrate's own title (parse_legacy_filename can genuinely
+    whitespace/'_'/'-'-only title does -- confirmed live: migrate's own
+    title (parse_legacy_filename can genuinely
     return "" for a legacy filename with no title segment) slipped
     through the old `if value and ...` guard, then a later `supersede`
     on that migrated file produced an unrecognizable filename with no
@@ -267,7 +267,7 @@ def reject_marker_comment_syntax(value, field_name):
     is_migrated detection (core/header.py) is pure substring matching
     for an HTML-comment-shaped tail on the table-fields row this pair of
     fields builds (`lines[1].rstrip().endswith(' -->|') and '<!-- ' in
-    lines[1]`). A round-27 finding, confirmed live: a hostile config
+    lines[1]`). Confirmed live: a hostile config
     setting headertablevalues to e.g. 'Values <!-- x -->' made
     is_migrated=True on the header of every ordinary, non-migrated file
     ever written under that config -- that flag feeds

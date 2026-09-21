@@ -123,10 +123,10 @@ def reject_folderadr_change_if_decisions_exist(
     path -- an orphaned-data risk no amount of "also create the new
     folder" can fix on its own, and a split-lock-scope race no test could
     reliably reproduce (two commands straddling the change would lock
-    different directories, never excluding each other). Confirmed with
-    the user: a folderadr change is only ever valid when the OLD folder
-    has no recognized decisions yet -- otherwise this raises a
-    structured, mappable error instead of silent data loss/a race.
+    different directories, never excluding each other). A folderadr
+    change is only ever valid when the OLD folder has no recognized
+    decisions yet -- otherwise this raises a structured, mappable error
+    instead of silent data loss/a race.
 
     Scans against `old_config` (never the new one): the existing files
     were written under the OLD naming rules, not the new ones.
@@ -138,8 +138,8 @@ def reject_folderadr_change_if_decisions_exist(
     it was actually complete. Fails closed instead of allowing an
     orphaning it could not actually rule out.
 
-    Also guards the opposite direction (a round-22 stability finding,
-    confirmed live): `new_folderadr` may already point at a directory
+    Also guards the opposite direction (confirmed live): `new_folderadr`
+    may already point at a directory
     holding unrelated pre-existing content. Any of it that would be newly
     recognized as a decision under `new_config` -- the rules that govern
     every future scan of that directory -- gets silently adopted with no
@@ -271,8 +271,7 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
     never an inflated total that includes decisions the blocking
     field(s) have no bearing on.
 
-    A second, independent check (ADR004V0x, closing a deferred finding
-    from a post-round-20 verification pass): every check above is keyed
+    A second, independent check (ADR004V0x): every check above is keyed
     on decisions already recognized under `old_config` -- none of them
     catch the opposite direction, a file NOT currently recognized by
     either scheme becoming newly recognized. Confirmed live: an
@@ -330,27 +329,27 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             warnings=warnings,
         )
 
-    # Deferred finding, closed here: every check above is keyed on
-    # decisions already recognized under OLD_config -- none of them
-    # catch the opposite direction, a file NOT currently recognized (by
-    # either scheme) becoming newly recognized. `separator` has no
-    # legitimate reason to ever do this (unlike `migrationpattern`,
-    # whose whole documented purpose IS to newly recognize pre-existing
-    # legacy files -- see ADR002V01 -- so this check is deliberately
-    # NOT applied to it). Reuses `existing` (already scanned, no need
-    # to rescan with old_config again) -- only one more scan is needed.
+    # Every check above is keyed on decisions already recognized under
+    # OLD_config -- none of them catch the opposite direction, a file
+    # NOT currently recognized (by either scheme) becoming newly
+    # recognized. `separator` has no legitimate reason to ever do this
+    # (unlike `migrationpattern`, whose whole documented purpose IS to
+    # newly recognize pre-existing legacy files -- see ADR002V01 -- so
+    # this check is deliberately NOT applied to it). Reuses `existing`
+    # (already scanned, no need to rescan with old_config again) -- only
+    # one more scan is needed.
     #
     # Scans with a config that has ONLY separator changed, every other
     # field (migrationpattern in particular) still at its OLD value --
-    # NOT the full `new_config`. A round-21 stability pass found the
-    # full-new_config version cross-attributes: parse_filename reads
-    # only separator, parse_legacy_filename reads only migrationpattern
-    # (naming.py), so scanning with new_config's migrationpattern too
-    # would also pick up files ONLY newly recognized because of that
-    # field's own, separately-evaluated, intentionally-allowed adoption
-    # -- and blame the block on separator, wrongly refusing a call that
-    # changes both fields at once even when separator itself adopts
-    # nothing at all. Confirmed live before this fix.
+    # NOT the full `new_config`: the full-new_config version cross-
+    # attributes -- parse_filename reads only separator,
+    # parse_legacy_filename reads only migrationpattern (naming.py), so
+    # scanning with new_config's migrationpattern too would also pick up
+    # files ONLY newly recognized because of that field's own,
+    # separately-evaluated, intentionally-allowed adoption -- and blame
+    # the block on separator, wrongly refusing a call that changes both
+    # fields at once even when separator itself adopts nothing at all
+    # (confirmed live).
     if "separator" in blanket_fields_changed:
         old_recognized_paths = {path for _, _, path in existing}
         separator_only_config = replace_fields(old_config, separator=new_config.separator)
@@ -433,14 +432,14 @@ def find_repo_root(file_path):
 
 
 _HEADER_READ_CHUNK_SIZE = 4096
-# A round-27 security finding: the old loop had no cap at all, reading to
-# EOF whenever a pathological/corrupted file never accumulated `count`
-# real newlines -- a single-chunk-per-iteration bound would still let
-# such a file be read in full, just one chunk at a time. 4 chunks (16KB)
-# is generous relative to a genuine header (a few KB at most, per the
-# config schema's own field-length limits) -- a file that still doesn't
-# have `count` real newlines within this cap is treated as too-short/
-# malformed by parse_header's own existing check, never read further.
+# Without this cap, the read loop would continue to EOF whenever a
+# pathological/corrupted file never accumulates `count` real newlines --
+# a single-chunk-per-iteration bound would still let such a file be read
+# in full, just one chunk at a time. 4 chunks (16KB) is generous relative
+# to a genuine header (a few KB at most, per the config schema's own
+# field-length limits) -- a file that still doesn't have `count` real
+# newlines within this cap is treated as too-short/malformed by
+# parse_header's own existing check, never read further.
 _HEADER_READ_MAX_BYTES = _HEADER_READ_CHUNK_SIZE * 4
 _REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
 
@@ -455,21 +454,20 @@ def _read_header_bytes(path, count):
     a real header well under a single chunk in practice).
 
     Re-scans the whole accumulated buffer (never just the newest chunk in
-    isolation) on every iteration -- a round-28 finding confirmed live:
-    counting newlines within each freshly-read chunk ALONE double-counts
-    a `\r\n` pair that straddles exactly on a chunk boundary (the `\r` as
-    one chunk's own last byte, matched as a lone CR by that chunk's own
-    isolated scan; the `\n` as the next chunk's own first byte, matched
-    again as a lone LF by ITS isolated scan), which can make the loop
-    believe it already found `count` real newlines one chunk-read too
-    early, silently truncating the returned buffer before the file's
-    true `count`-th line is ever read. Re-scanning the whole buffer each
-    time lets the regex see both halves of a straddling CRLF together,
-    correctly counted as one match. This is now safe from the O(n^2)
-    behavior round 27 fixed: the buffer is still hard-capped at
-    `_HEADER_READ_MAX_BYTES` (16KB), so a rescan is at most ~4 passes over
-    at most 16KB each -- O(1) relative to the file's own total size,
-    never the unbounded-file quadratic blowup round 27 closed.
+    isolation) on every iteration: counting newlines within each
+    freshly-read chunk ALONE double-counts a `\r\n` pair that straddles
+    exactly on a chunk boundary (the `\r` as one chunk's own last byte,
+    matched as a lone CR by that chunk's own isolated scan; the `\n` as
+    the next chunk's own first byte, matched again as a lone LF by ITS
+    isolated scan), which can make the loop believe it already found
+    `count` real newlines one chunk-read too early, silently truncating
+    the returned buffer before the file's true `count`-th line is ever
+    read. Re-scanning the whole buffer each time lets the regex see both
+    halves of a straddling CRLF together, correctly counted as one
+    match. The buffer is still hard-capped at `_HEADER_READ_MAX_BYTES`
+    (16KB), so a rescan is at most ~4 passes over at most 16KB each --
+    O(1) relative to the file's own total size, never an unbounded-file
+    quadratic blowup.
 
     This read tolerates a transient PermissionError, the same contention
     window the write side (atomic_write.py) and the lock-file read side
