@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 from adrpy.core.decision_log import (
     build_entry_content,
@@ -313,6 +314,37 @@ def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path)
     with pytest.raises(CommandError) as excinfo:
         regenerate_index(log_dir)
     assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
+def test_parse_entry_does_not_read_the_whole_file(tmp_path):
+    """A round-27 security finding: _parse_entry read the ENTIRE entry
+    file (path.read_text().splitlines()) even though it only ever uses
+    lines[0] (heading) and, for audit-finding/doc-drift entries,
+    lines[1:5] (the structured line) -- unlike every bounded read
+    elsewhere in this codebase (core/lifecycle.py's own header reads).
+    No field written via `log` has a length limit (confirmed: only
+    config-schema fields like folderadr/headerdisclaimer/status labels
+    have _MAX_LENGTH constants -- --body/--summary/--front/--reopenwhen
+    have none), so a single oversized --body persists an entry whose
+    cost is then re-paid by every future `log` call scanning the whole
+    directory, on every classification, not just the oversized one's
+    own."""
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    huge_body = "x" * (2 * 1024 * 1024)  # 2MB, well past any real 5-line prefix
+    (log_dir / "2026-01-01--scope-note--lock--big.md").write_text(
+        build_entry_content("Big entry", huge_body), encoding="utf-8"
+    )
+
+    from pathlib import Path as PathType
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError(f"_parse_entry must not read the whole file via {self!r}")
+
+    with patch.object(PathType, "read_text", boom), patch.object(PathType, "read_bytes", boom):
+        result = max_existing_round(log_dir)
+
+    assert result == 0  # scope-note carries no Round; just proving the read stayed bounded
 
 
 def test_regenerate_index_writes_lf_only_on_a_normal_successful_run(tmp_path):

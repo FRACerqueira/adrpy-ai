@@ -1,6 +1,9 @@
 import json
 
+import pytest
+
 from adrpy.core.config import load_repo_config, parse_repo_config
+from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord
 from adrpy.core.naming import (
     build_filename,
@@ -268,6 +271,72 @@ def test_build_filename_appends_supersede_suffix_unconditionally():
     filename = build_filename(config, record)
 
     assert filename == "ADR005V01-new-decision--002.md"
+
+
+def test_build_filename_rejects_a_title_that_collides_with_a_dot_separator(tmp_path):
+    """A round-27 security finding, confirmed live before this fix
+    existed: with separator='.', a title starting with (or consisting
+    only of) a '.' survives to_case almost verbatim under every
+    casetransform (the word-splitter only consumes whitespace/'_'/'-',
+    never '.'), producing a filename like 'ADR001V01..x.md' --
+    naming.parse_filename's own double-separator supersede-suffix split
+    treats the leading '..' as that suffix marker, and the remainder
+    isn't all-digits, so the file build_filename just wrote can never be
+    parsed again by ANY other command -- permanently orphaned, its
+    sequence number silently reallocated to the next decision. This is
+    the third distinct collision shape found this session (after an
+    all-separator title and an empty title, both fixed separately) --
+    closed as a class here instead of a fourth narrow character
+    blacklist: build_filename now re-parses its own output and refuses
+    to produce a filename that doesn't round-trip back to the same
+    number/version/revision/superseded identity."""
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data["separator"] = "."
+    config = parse_repo_config(json.dumps(data))
+    record = DecisionRecord(number=1, title=".x", version=1)
+
+    with pytest.raises(CommandError) as excinfo:
+        build_filename(config, record)
+
+    assert excinfo.value.code == "title-produces-unrecognizable-filename"
+
+
+def test_build_filename_rejects_an_empty_title(tmp_path):
+    """A round-27 security finding: an empty title (reachable only
+    through migrate, whose title comes from parse_legacy_filename and
+    can genuinely be '' for a legacy filename with no title segment)
+    bypassed reject_title_with_no_case_transform_content's own `if
+    value and ...` guard, then collapsed the separator that normally
+    precedes the title together with a supersede suffix's own
+    double-separator marker -- confirmed live end-to-end: migrating such
+    a file then calling `supersede` on it produced 'ADR002V01---001.md',
+    unrecognized by either naming scheme, with `supersede` reporting
+    total success and no warning at all."""
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(number=2, title="", version=1, superseded=1)
+
+    with pytest.raises(CommandError) as excinfo:
+        build_filename(config, record)
+
+    assert excinfo.value.code == "title-produces-unrecognizable-filename"
+
+
+def test_build_filename_still_accepts_a_title_with_a_mid_word_dot():
+    """Companion to the rejection test above: an ordinary title that
+    happens to contain a '.' in the MIDDLE of otherwise-real content
+    (not at a position that could be mistaken for the separator
+    boundary) must still round-trip and succeed -- this fix must not
+    become a blanket refusal of any '.' in a title."""
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data["separator"] = "."
+    config = parse_repo_config(json.dumps(data))
+    record = DecisionRecord(number=1, title="Upgrade to v1.2.3", version=1)
+
+    filename = build_filename(config, record)  # must not raise
+
+    parsed = parse_filename(filename, config)
+    assert parsed is not None
+    assert parsed.number == 1
 
 
 def test_parse_filename_strips_supersede_suffix_and_reports_it():

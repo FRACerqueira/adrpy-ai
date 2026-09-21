@@ -13,7 +13,11 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from adrpy.core.errors import CommandError
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_migration_pattern
-from adrpy.core.security import reject_embedded_delimiter, reject_status_marker_forgery_characters
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_marker_comment_syntax,
+    reject_status_marker_forgery_characters,
+)
 
 VALID_SEPARATORS = ("-", "_", ".")
 VALID_CASE_TRANSFORMS = ("CamelCase", "PascalCase", "SnakeCase", "KebabCase")
@@ -346,6 +350,16 @@ def parse_repo_config(text):
     for name in _STATUS_LABEL_FIELDS:
         try:
             reject_status_marker_forgery_characters(lowered[name], name)
+        except CommandError as error:
+            raise CommandError("config-field-contains-forbidden-character", error.detail) from error
+
+    # parse_header's own is_migrated detection (core/header.py) is pure
+    # substring matching for an HTML-comment-shaped tail on the row these
+    # two fields build -- a hostile '<!--'/'-->' in either one forges
+    # is_migrated=True on every ordinary file's header (confirmed live).
+    for name in ("headertablefields", "headertablevalues"):
+        try:
+            reject_marker_comment_syntax(lowered[name], name)
         except CommandError as error:
             raise CommandError("config-field-contains-forbidden-character", error.detail) from error
 

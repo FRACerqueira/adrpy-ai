@@ -426,16 +426,33 @@ def find_repo_root(file_path):
 
 
 _HEADER_READ_CHUNK_SIZE = 4096
+# A round-27 security finding: the old loop had no cap at all, reading to
+# EOF whenever a pathological/corrupted file never accumulated `count`
+# real newlines -- a single-chunk-per-iteration bound would still let
+# such a file be read in full, just one chunk at a time. 4 chunks (16KB)
+# is generous relative to a genuine header (a few KB at most, per the
+# config schema's own field-length limits) -- a file that still doesn't
+# have `count` real newlines within this cap is treated as too-short/
+# malformed by parse_header's own existing check, never read further.
+_HEADER_READ_MAX_BYTES = _HEADER_READ_CHUNK_SIZE * 4
 _REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
 
 
 def _read_header_bytes(path, count):
     """Shared by read_header_lines/read_header_lines_with_report: reads
     only enough of `path` to recover the first `count` real lines (see
-    split_real_lines) -- never the whole file. Reads in bounded chunks,
-    growing only if the header genuinely doesn't fit in one (the config
-    schema's own field-length limits keep a real header well under a
-    single chunk in practice).
+    split_real_lines) -- never the whole file, and never past
+    `_HEADER_READ_MAX_BYTES` even if `count` real newlines never appear.
+    Reads in bounded chunks, growing only if the header genuinely
+    doesn't fit in one (the config schema's own field-length limits keep
+    a real header well under a single chunk in practice).
+
+    Counts newlines within each newly-read chunk only, not by re-scanning
+    the whole accumulated buffer -- a round-27 finding confirmed live:
+    the original re-scan-everything-every-chunk version was O(n^2) (a
+    4MB pathological file took ~11s), reachable via family_members (every
+    per-file mutating command) and migrate's own repo-wide scan phase,
+    both while holding the repository lock.
 
     This read tolerates a transient PermissionError, the same contention
     window the write side (atomic_write.py) and the lock-file read side
@@ -445,13 +462,17 @@ def _read_header_bytes(path, count):
 
     def _open_and_read():
         with open(path, "rb") as handle:
-            buffer = handle.read(_HEADER_READ_CHUNK_SIZE)
-            while len(_REAL_NEWLINE_BYTES.findall(buffer)) < count:
+            chunks = []
+            total_bytes = 0
+            newline_count = 0
+            while newline_count < count and total_bytes < _HEADER_READ_MAX_BYTES:
                 more = handle.read(_HEADER_READ_CHUNK_SIZE)
                 if not more:
                     break
-                buffer += more
-            return buffer
+                chunks.append(more)
+                total_bytes += len(more)
+                newline_count += len(_REAL_NEWLINE_BYTES.findall(more))
+            return b"".join(chunks)
 
     return read_with_permission_retry(_open_and_read)
 

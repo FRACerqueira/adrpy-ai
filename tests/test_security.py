@@ -269,7 +269,7 @@ def test_reject_filesystem_unsafe_title_accepts_clean_value():
     reject_filesystem_unsafe_title("A normal title", "title")
 
 
-@pytest.mark.parametrize("value", ["-", "---", "___", "   ", " - _ ", "--------"])
+@pytest.mark.parametrize("value", ["-", "---", "___", "   ", " - _ ", "--------", ""])
 def test_reject_title_with_no_case_transform_content_rejects_separator_only_titles(value):
     with pytest.raises(CommandError) as excinfo:
         reject_title_with_no_case_transform_content(value, "title")

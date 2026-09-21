@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass
 
 from adrpy.core.casing import to_case
+from adrpy.core.errors import CommandError
 
 _ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$")
 _MIGRATION_PATTERN = re.compile(
@@ -191,4 +192,37 @@ def build_filename(config, record):
         if record.superseded
         else ""
     )
-    return f"{base}{version_part}{revision_part}{config.separator}{title_part}{supersede_part}.md"
+    filename = f"{base}{version_part}{revision_part}{config.separator}{title_part}{supersede_part}.md"
+
+    # A round-27 security finding: title, once case-transformed, can
+    # collide with this filename's own separator-delimited grammar in
+    # ways no single character blacklist has fully enumerated -- three
+    # distinct collision shapes were found and fixed this session alone
+    # (a title made entirely of separator-like characters; an empty
+    # title, reachable only through migrate; and a title containing the
+    # CONFIGURED separator itself, e.g. a leading '.' when separator is
+    # '.'). Rather than a fourth narrow guard for the next shape nobody's
+    # found yet, this re-parses its own output and refuses to return a
+    # filename that doesn't round-trip back to exactly the identity just
+    # encoded -- closes the whole class, not just the instances already
+    # found. Checks number/version/revision/superseded_from specifically
+    # (not the title text itself, which parse_filename never needs to
+    # match exactly -- a title with a separator character safely in its
+    # MIDDLE, e.g. "v1.2.3" with separator=".", still round-trips fine;
+    # only a collision at the number/title BOUNDARY actually breaks
+    # anything).
+    reparsed = parse_filename(filename, config)
+    if (
+        reparsed is None
+        or reparsed.number != record.number
+        or reparsed.version != record.version
+        or reparsed.revision != record.revision
+        or reparsed.superseded_from != record.superseded
+    ):
+        raise CommandError(
+            "title-produces-unrecognizable-filename",
+            f"Cannot use this title: the resulting filename ('{filename}') would not be recognized as "
+            "this same decision when read back, which would permanently orphan it.",
+            data={"filename": filename},
+        )
+    return filename

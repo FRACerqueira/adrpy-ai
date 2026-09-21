@@ -259,14 +259,26 @@ def test_header_cell_field_with_embedded_pipe_is_rejected(field):
 
 
 @pytest.mark.parametrize("field", ["statusnew", "statusacc", "statusrej", "statussup"])
-@pytest.mark.parametrize("payload", ["(20200101)<!--Rejected-->", "has(paren", "has)paren", "has<!--x", "hasx-->"])
+@pytest.mark.parametrize(
+    "payload",
+    ["(20200101)<!--Rejected-->", "has(paren", "has)paren", "has<!--x", "hasx-->", "Status: Superseded"],
+)
 def test_status_label_with_marker_forgery_characters_is_rejected(field, payload):
     """These four fields alone land inside _parse_status_cell's own
     parenthesized-date-then-marker grammar (core/header.py) -- a label
     containing '(', ')', '<!--', or '-->' can forge a date/marker the tool
     never wrote (confirmed live: a statusnew of
     '(20200101)<!--Rejected-->' made a decision created today read back
-    as Rejected/2020-01-01)."""
+    as Rejected/2020-01-01). A round-27 finding added ':' to this same
+    blacklist: the Superseded row's own suffix parsing
+    (`superseded_text.find(":")`, core/header.py) finds the FIRST colon
+    anywhere in the cell, not necessarily the real one the tool itself
+    writes after the marker -- a statussup of 'Status: Superseded'
+    (19 chars, otherwise valid) made the label's own colon win instead,
+    corrupting `superseded_by_file` into the whole cell remainder
+    (confirmed live: `reject` on the resulting successor failed with
+    superseded-predecessor-not-found even though its own primary write
+    had already committed)."""
     data = _valid_config_dict()
     data[field] = payload  # short enough to fit every field's own length bound
 
@@ -277,12 +289,51 @@ def test_status_label_with_marker_forgery_characters_is_rejected(field, payload)
 
 
 def test_header_label_fields_are_not_scoped_by_the_status_marker_forgery_check():
-    """The marker-forgery check above must stay scoped to the four status
-    label fields -- header-row labels are never read by
-    _parse_status_cell, so a '(' in one of them is not part of this
+    """The '(' /')' half of the marker-forgery check above must stay
+    scoped to the four status label fields -- header-row labels (other
+    than headertablefields/headertablevalues, which get their OWN,
+    narrower '<!--'/'-->' check below) are never read by
+    _parse_status_cell, so a '(' in one of them is not part of that
     vulnerability's own attack surface and must still be accepted."""
     data = _valid_config_dict()
     data["headertitlestatuscreated"] = "Status (new)"
+
+    parse_repo_config(json.dumps(data))  # must not raise
+
+
+@pytest.mark.parametrize("field", ["headertablefields", "headertablevalues"])
+@pytest.mark.parametrize("payload", ["Values <!-- x -->", "has<!--x", "hasx-->"])
+def test_headertable_fields_with_marker_comment_characters_are_rejected(field, payload):
+    """A round-27 security finding, confirmed live: parse_header's own
+    is_migrated detection (core/header.py) is pure substring matching on
+    the raw table-fields row -- `lines[1].rstrip().endswith(' -->|') and
+    '<!-- ' in lines[1]` -- built directly from headertablefields/
+    headertablevalues. Neither field was ever run through the
+    marker-forgery check (only the 4 status-label fields were), so a
+    hostile config setting headertablevalues to e.g. 'Values <!-- x -->'
+    made is_migrated=True on the header of EVERY ordinary,
+    non-migrated file ever written under that config -- confirmed live
+    with an otherwise-normal `new` decision reading back as
+    is_migrated: true. That flag feeds counts_as_family_member and
+    several lifecycle eligibility exceptions."""
+    data = _valid_config_dict()
+    data[field] = payload
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-field-contains-forbidden-character"
+
+
+def test_headertable_fields_still_accept_a_value_with_no_marker_comment_syntax():
+    """Companion to the rejection test above: an ordinary label with no
+    '<!--'/'-->' -- even one containing '(' or ')', which ISN'T part of
+    this specific vulnerability's own attack surface (is_migrated
+    detection only ever looks for the HTML-comment-shaped substring, not
+    parentheses) -- must still be accepted."""
+    data = _valid_config_dict()
+    data["headertablefields"] = "Fields (raw)"
+    data["headertablevalues"] = "Values"
 
     parse_repo_config(json.dumps(data))  # must not raise
 

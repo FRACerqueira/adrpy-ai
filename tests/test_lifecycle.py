@@ -365,6 +365,58 @@ def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
     assert encoding_repaired is False
 
 
+def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_never_arrive(tmp_path):
+    """A round-27 security finding, confirmed live before this fix
+    existed: `_read_header_bytes`'s loop re-scanned the ENTIRE
+    accumulated buffer for newlines on every 4096-byte chunk (O(n) regex
+    work per chunk, O(n^2) total) and grew the buffer via `buffer +=
+    more` (O(n) copy per chunk, also O(n^2) total). A file that never
+    accumulates `count` real newlines -- a single unstructured blob,
+    plausible for corrupted content or a file from an untrusted migrated
+    repo -- made the loop run to EOF, so this shared helper (used by
+    family_members for every per-file mutating command, AND by
+    migrate's own scan phase, AND by explore since round 26) quadratically
+    re-scanned and re-copied the file's entire content. Confirmed live:
+    1MB=0.6s, 2MB=2.5s, 4MB=10.9s (~4x per doubling). Now bounded to a
+    fixed number of chunks regardless of newline count -- a genuine
+    header is always a few KB at most (the config schema's own
+    field-length limits keep it there), so this cap can never truncate a
+    real header, only a pathological one, which then correctly falls
+    through to parse_header's own existing adr-file-too-short handling."""
+    newline_free_blob = b"x" * (2 * 1024 * 1024)  # 2MB, well past the new cap, zero real newlines
+    target = tmp_path / "pathological.md"
+    target.write_bytes(newline_free_blob)
+
+    import builtins
+
+    real_open = builtins.open
+    total_read = {"bytes": 0}
+
+    def counting_open(path, *args, **kwargs):
+        handle = real_open(path, *args, **kwargs)
+        if str(path) == str(target) and args and "rb" in args:
+            real_read = handle.read
+
+            def counting_read(size=-1, *read_args, **read_kwargs):
+                data = real_read(size, *read_args, **read_kwargs)
+                total_read["bytes"] += len(data)
+                return data
+
+            handle.read = counting_read
+        return handle
+
+    import time
+
+    start = time.time()
+    with patch.object(builtins, "open", counting_open):
+        lines, encoding_repaired = read_header_lines_with_report(target, count=12)
+    elapsed = time.time() - start
+
+    assert total_read["bytes"] <= 64 * 1024  # generous cap, far below the 2MB blob
+    assert elapsed < 1.0  # would take several seconds under the old O(n^2) behavior
+    assert len(lines) == 1  # no real newline anywhere in what was actually read
+
+
 def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tmp_path):
     target = tmp_path / "corrupt.md"
     with open(target, "wb") as handle:

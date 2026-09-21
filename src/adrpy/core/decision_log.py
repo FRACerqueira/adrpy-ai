@@ -19,6 +19,7 @@ from pathlib import Path
 
 from adrpy.core.atomic_write import atomic_write_bytes
 from adrpy.core.errors import CommandError
+from adrpy.core.lifecycle import read_header_lines
 
 CLASSIFICATIONS = (
     "audit-finding",
@@ -189,7 +190,16 @@ def _parse_entry(path):
             "compute the next Round or regenerate INDEX.md while this file is present.",
             data={"file": path.name},
         )
-    lines = path.read_text(encoding="utf-8").splitlines()
+    # A round-27 security finding: this used to read the ENTIRE entry
+    # file (path.read_text().splitlines()) even though only lines[0]
+    # (heading) and, for a structured classification, lines[1:5] are
+    # ever used. No field written via `log` has a length limit, so a
+    # single oversized --body persisted once made every future `log`
+    # call re-pay the cost of reading it in full, for every entry in the
+    # directory, on every classification. Uses the same bounded read
+    # every scan elsewhere in this codebase already relies on for
+    # exactly this reason (core/lifecycle.py's own header reads).
+    lines = read_header_lines(path, count=5)
     if not lines:
         # Same fail-closed treatment as an unparseable filename shape or
         # an unrecognized classification above -- an empty (or otherwise

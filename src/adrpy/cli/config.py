@@ -103,9 +103,11 @@ def _field_description(field):
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
             "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
-            "contain '(', ')', '<!--', or '-->' -- these four fields alone land inside the status cell's own "
-            "parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker), so one of these "
-            "characters could otherwise forge a date/marker the tool never wrote."
+            "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
+            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
+            "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
+            "corrupt which successor a Superseded row points to."
         )
     if field == "headerdisclaimer":
         return (
