@@ -6,9 +6,9 @@
 |Revision||
 |Scope|decision-log|
 |Domain|tooling|
-|Created|Proposed (2026-09-18)|
-|Changed|Accepted (2026-09-18)|
-|Superseded||
+|Created|Proposed (2026-09-18) <!-- Proposed -->|
+|Changed|Accepted (2026-09-18) <!-- Accepted -->|
+|Superseded|Superseded (2026-09-21) <!-- Superseded --> : 007|
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---
 # Decision-log entries separate human-reviewed judgment from tool-executed mechanics via a future adrpy log command
