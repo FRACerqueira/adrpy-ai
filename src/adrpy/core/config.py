@@ -1,8 +1,15 @@
 """Repository configuration schema: the single source of
-truth for a repo's `adr-config.adrplus`, byte-compatible with AdrPlus's
-own schema -- no field is ever added to it. Always read live from disk,
+truth for a repo's `adr-config.adrplus`. Always read live from disk,
 never cached across invocations, so the two tools never see a stale copy
 of each other's writes.
+
+ADR007V01 (superseding ADR003V01's own driver on this point): `folderlog`
+is a deliberate, confirmed divergence from AdrPlus's own schema -- byte-
+compatible round-tripping with the reference tool no longer holds for a
+config carrying this field. It is also this schema's first field with a
+computed default instead of being strictly required (see the `folderlog`
+handling in `parse_repo_config`), so an `adr-config.adrplus` written
+before this field existed keeps parsing unchanged.
 """
 
 import json
@@ -56,6 +63,9 @@ PREFIX_MAX_LENGTH = 5
 _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 
 FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
+# ADR007V01: no reference-tool wizard field to cite -- folderlog doesn't
+# exist there. Same bound as folderadr's own for consistency, not fidelity.
+FOLDERLOG_MAX_LENGTH = 50
 # headerdisclaimer and status labels: wizard's own real values are 200 and
 # 15 (PromptEditFieldHeaderText(headerdisclaimer, 200, ...); PromptEditFieldStatus's
 # MaxLength(15)) -- user chose 100/25 instead, same as the lenseq-family bounds.
@@ -123,8 +133,24 @@ def _is_relative_path(value):
         return False
     return True
 
+
+def _validate_relative_repo_path_field(value, field_name, max_length, too_long_code, not_relative_code):
+    """Shared by folderadr and folderlog (ADR007V01) -- both are a
+    relative-path-to-a-repo-subfolder field with the exact same length
+    and escape-path validation shape, differing only in their own max
+    length and failure codes."""
+    if len(value) > max_length:
+        raise CommandError(too_long_code, f"{field_name} must be <= {max_length} characters.")
+    if not _is_relative_path(value):
+        raise CommandError(
+            not_relative_code,
+            f"{field_name} must be a relative path (a hostile config must never point outside the repository).",
+        )
+
+
 _STRING_FIELDS = (
     "folderadr",
+    "folderlog",
     "migrationpattern",
     "template",
     "prefix",
@@ -162,6 +188,7 @@ _NON_EMPTY_STRING_FIELDS = tuple(
 @dataclass
 class RepoConfig:
     folderadr: str
+    folderlog: str
     migrationpattern: str
     template: str
     prefix: str
@@ -326,13 +353,27 @@ def parse_repo_config(text):
 
     lowered = {key.lower(): value for key, value in raw.items()}
 
-    missing = [name for name in ALL_FIELDS if name not in lowered]
+    missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]
     if missing:
         raise CommandError(FailureCodes.CONFIG_MISSING_FIELD, f"Missing required field(s): {', '.join(missing)}")
 
     extra = [key for key in raw if key.lower() not in ALL_FIELDS]
     if extra:
         raise CommandError(FailureCodes.CONFIG_UNEXPECTED_FIELD, f"Unexpected field(s): {', '.join(extra)}")
+
+    # ADR007V01: folderlog defaults to today's exact computed sibling-of-
+    # folderadr location when absent, so an adr-config.adrplus written
+    # before this field existed keeps parsing unchanged. Guarded against a
+    # non-string folderadr (not yet type-checked at this point) so this
+    # never raises an uncaught TypeError instead of the real
+    # config-wrong-type error the loop right below already reports for it.
+    if "folderlog" not in lowered:
+        folderadr_value = lowered.get("folderadr")
+        lowered["folderlog"] = (
+            str(PurePosixPath(folderadr_value).parent / "decision-log")
+            if isinstance(folderadr_value, str)
+            else ""
+        )
 
     for name in _STRING_FIELDS:
         if not isinstance(lowered[name], str):
@@ -383,15 +424,41 @@ def parse_repo_config(text):
             f"prefix must be ASCII letters only, max {PREFIX_MAX_LENGTH} characters.",
         )
 
-    if len(lowered["folderadr"]) > FOLDERADR_MAX_LENGTH:
-        raise CommandError(
-            FailureCodes.CONFIG_FOLDERADR_TOO_LONG, f"folderadr must be <= {FOLDERADR_MAX_LENGTH} characters."
-        )
+    _validate_relative_repo_path_field(
+        lowered["folderadr"],
+        "folderadr",
+        FOLDERADR_MAX_LENGTH,
+        FailureCodes.CONFIG_FOLDERADR_TOO_LONG,
+        FailureCodes.CONFIG_FOLDERADR_NOT_RELATIVE,
+    )
+    _validate_relative_repo_path_field(
+        lowered["folderlog"],
+        "folderlog",
+        FOLDERLOG_MAX_LENGTH,
+        FailureCodes.CONFIG_FOLDERLOG_TOO_LONG,
+        FailureCodes.CONFIG_FOLDERLOG_NOT_RELATIVE,
+    )
 
-    if not _is_relative_path(lowered["folderadr"]):
+    # ADR007V01: folderadr and folderlog are independently configurable and
+    # each recursively scanned -- if either is the same directory as, or
+    # nested inside, the other, each one's own scan would start seeing the
+    # other's files (the same class of misrecognition hazard ADR004V02
+    # already closed for --separator, applied here to a directory-
+    # placement change instead of a naming-rule change). Compared by path
+    # COMPONENT, not string prefix, so "doc/adr" vs "doc/adr2" never
+    # false-matches.
+    folderadr_parts = PurePosixPath(lowered["folderadr"]).parts
+    folderlog_parts = PurePosixPath(lowered["folderlog"]).parts
+    shorter, longer = (
+        (folderadr_parts, folderlog_parts)
+        if len(folderadr_parts) <= len(folderlog_parts)
+        else (folderlog_parts, folderadr_parts)
+    )
+    if longer[: len(shorter)] == shorter:
         raise CommandError(
-            FailureCodes.CONFIG_FOLDERADR_NOT_RELATIVE,
-            "folderadr must be a relative path (a hostile config must never point outside the repository).",
+            FailureCodes.CONFIG_FOLDERADR_FOLDERLOG_OVERLAP,
+            f"folderadr ('{lowered['folderadr']}') and folderlog ('{lowered['folderlog']}') must not be the "
+            "same directory, or nested inside one another.",
         )
 
     if len(lowered["template"]) > TEMPLATE_MAX_LENGTH:

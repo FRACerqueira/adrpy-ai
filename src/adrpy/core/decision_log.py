@@ -8,10 +8,14 @@ doc/decision-log-workflow.md for that authoring process.
 
 Filename convention is this project's own, date-first, established
 independently of ADR003 (see doc/decision-log/INDEX.md's own header and
-every real entry): {ISO date}--{classification}--{scope}--{slug}.md,
-in a directory sibling to the repository's decisions folder, never
-nested inside it -- the same structural reasoning that excludes the
-repository lock marker file from every decisions-folder scan.
+every real entry): {ISO date}--{classification}--{scope}--{slug}.md.
+
+ADR007V01 (superseding ADR003V01's own driver on this point): the
+decision-log directory lives at `config.folderlog`, an independently
+configurable, recursively-scanned field -- no longer a fixed, non-
+recursive sibling of `folderadr`. Defaults to that exact sibling
+location ('decision-log' next to folderadr) when a repository's own
+config predates this field (see core/config.py's own parse_repo_config).
 """
 
 import re
@@ -20,6 +24,7 @@ from pathlib import Path
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import read_header_lines
+from adrpy.core.security import find_unreadable_subdirectories, resolve_within
 
 CLASSIFICATIONS = (
     "audit-finding",
@@ -54,8 +59,11 @@ _INDEX_FILENAME = "INDEX.md"
 _NON_ENTRY_FILES = {_INDEX_FILENAME, "CYCLES.md"}
 
 
-def decision_log_dir_for(decisions_folder):
-    return Path(decisions_folder).parent / "decision-log"
+def decision_log_dir_for(target, config):
+    """ADR007V01: resolved from `config.folderlog`, the same way
+    `folderadr` itself is resolved everywhere else (`resolve_within`) --
+    no longer derived from `folderadr`'s own path."""
+    return resolve_within(target, config.folderlog)
 
 
 def validate_classification(value):
@@ -246,18 +254,81 @@ def _parse_entry(path):
     }
 
 
-def _existing_entries(decision_log_dir):
+def _existing_entries(decision_log_dir, *, warnings=None):
+    """ADR007V01: recursive (`rglob`, matching `folderadr`'s own scan
+    convention), now that `folderlog` is independently placeable and no
+    longer guaranteed flat by construction. Fails closed on an unreadable
+    subdirectory instead of silently under-reporting -- every real caller
+    of this function makes a safety decision from the result (Round
+    allocation, index correctness, the change guard below), the same
+    reasoning core/lifecycle.py's scan_decisions applies with
+    strict=True; unlike that function, this one has no read-only/warn-
+    only caller to also support, so it always fails closed."""
     decision_log_dir = Path(decision_log_dir)
     if not decision_log_dir.is_dir():
         return []
+    unreadable = find_unreadable_subdirectories(decision_log_dir)
+    if unreadable:
+        raise CommandError(
+            FailureCodes.LOG_SCAN_INCOMPLETE,
+            f"Cannot safely scan {decision_log_dir}: {len(unreadable)} subdirectory/subdirectories could "
+            "not be scanned (permission denied or similar).",
+            data={"folder": str(decision_log_dir), "unreadable": unreadable},
+            warnings=warnings,
+        )
     return [
         _parse_entry(path)
-        for path in sorted(decision_log_dir.glob("*.md"))
+        for path in sorted(decision_log_dir.rglob("*.md"))
         if path.name not in _NON_ENTRY_FILES
     ]
 
 
-def max_existing_round(decision_log_dir):
+def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_folderlog, *, target, warnings=None):
+    """The folderlog counterpart to core/lifecycle.py's
+    reject_folderadr_change_if_decisions_exist (ADR007V01) -- changing
+    folderlog on a repository that already has decision-log entries makes
+    every one of them invisible at their old, still-real path. Unlike the
+    folderadr guard, no separate scan-incomplete code is needed here:
+    _existing_entries above already fails closed on an unreadable
+    subdirectory (LOG_SCAN_INCOMPLETE) or an unrecognized filename
+    (LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE) on its own, and those
+    errors propagate through this function unchanged -- exactly the
+    fail-closed behavior the folderadr guard's own separate code exists
+    to provide there.
+
+    Also guards the opposite direction, the same adoption hazard
+    ADR004V02/the folderadr guard already close: `new_folderlog` may
+    already hold unrelated content that would silently become
+    recognized decision-log history (round allocation, INDEX.md) the
+    moment anything scans it. Skipped entirely when the new directory
+    does not exist yet."""
+    if new_folderlog == old_folderlog:
+        return
+    existing = _existing_entries(old_log_dir, warnings=warnings)
+    if existing:
+        raise CommandError(
+            FailureCodes.FOLDERLOG_CHANGE_BLOCKED_BY_EXISTING_ENTRIES,
+            f"Cannot change folderlog from '{old_folderlog}' to '{new_folderlog}': "
+            f"{len(existing)} existing decision-log entry/entries under '{old_folderlog}' would become "
+            "invisible.",
+            data={"folderlog": old_folderlog, "existing_entries": len(existing)},
+            warnings=warnings,
+        )
+
+    new_log_dir = resolve_within(target, new_folderlog)
+    if new_log_dir.is_dir():
+        adopted = _existing_entries(new_log_dir, warnings=warnings)
+        if adopted:
+            raise CommandError(
+                FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
+                f"Cannot change folderlog to '{new_folderlog}': {len(adopted)} file(s) already there would "
+                "silently become recognized decision-log entries.",
+                data={"folderlog": new_folderlog, "adopted_files": sorted(entry["path"] for entry in adopted)},
+                warnings=warnings,
+            )
+
+
+def max_existing_round(decision_log_dir, *, warnings=None):
     """0 if no audit-finding/doc-drift entry carries a Round yet, else the
     highest one found -- the single source of truth both next_round's own
     default and an explicit --round's own lower-bound check are built on.
@@ -270,7 +341,7 @@ def max_existing_round(decision_log_dir):
     one already on that file -- the same risk an unrecognized
     classification poses, just triggered by a malformed Round instead."""
     rounds = []
-    for entry in _existing_entries(decision_log_dir):
+    for entry in _existing_entries(decision_log_dir, warnings=warnings):
         if entry["classification"] not in STRUCTURED_CLASSIFICATIONS:
             continue
         try:
@@ -286,21 +357,21 @@ def max_existing_round(decision_log_dir):
     return max(rounds, default=0)
 
 
-def next_round(decision_log_dir):
+def next_round(decision_log_dir, *, warnings=None):
     """The default Round when none is given explicitly: always the start
     of a NEW round (max existing + 1) -- the same class of allocation as
     an ADR's own next_number. Reusing an already-open round instead
     requires passing --round explicitly (ADR003V01); this function is
     never the only way to pick a Round, only the safe default."""
-    return max_existing_round(decision_log_dir) + 1
+    return max_existing_round(decision_log_dir, warnings=warnings) + 1
 
 
-def regenerate_index(decision_log_dir):
+def regenerate_index(decision_log_dir, *, warnings=None):
     """Rebuilds INDEX.md from the entry files themselves -- always
     generated, never hand-maintained prose (see that file's own header).
     Returns the number of entries indexed."""
     decision_log_dir = Path(decision_log_dir)
-    entries = _existing_entries(decision_log_dir)
+    entries = _existing_entries(decision_log_dir, warnings=warnings)
     entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"]))
 
     lines = [

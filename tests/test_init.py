@@ -195,6 +195,32 @@ def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(t
     assert final["prefix"] == "SEED"
 
 
+def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
+    """ADR007V01: the folderlog counterpart to
+    test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist
+    -- --seed changing folderlog on an already-existing repository can
+    orphan existing decision-log entries the same way."""
+    from adrpy.cli import log
+
+    init.run(["--path", str(tmp_path)])
+    log.run(
+        ["--path", str(tmp_path), "--classification", "scope-note", "--scope", "test", "--slug", "x",
+         "--summary", "s", "--body", "b"]
+    )
+
+    seed = json.loads(init.default_repo_config_text())
+    seed["folderlog"] = "other-log"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
+    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert on_disk["folderlog"] == "doc/decision-log"
+
+
 def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path):
     """Same class as config.py's own --folderadr guard -- --seed changing
     folderadr on an already-existing repository can orphan existing
@@ -709,7 +735,12 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
     subsequent `init` on that machine (no --seed/--language given)
     silently create a repository whose own decisions folder equals its
     own root. The existing-decisions guard never engages either, since a
-    fresh repo has zero decisions."""
+    fresh repo has zero decisions.
+
+    ADR007V01: '.' has zero path components, a prefix of any folderlog
+    value (explicit or computed-default) by construction -- the schema-
+    level folderadr/folderlog containment guard now catches this even
+    earlier than resolve_within's own path-outside-repository check."""
     from importlib import resources
 
     default_text = resources.files("adrpy.resources").joinpath("default_repo_config.json").read_text(encoding="utf-8")
@@ -720,7 +751,7 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path)])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "config-folderadr-folderlog-overlap"
     assert not (tmp_path / "adr-config.adrplus").exists()
 
 

@@ -262,6 +262,125 @@ def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tm
     assert after.folderadr == before.folderadr  # nothing was written
 
 
+def test_config_folderlog_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
+    """The folderlog counterpart to
+    test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable
+    -- log-scan-incomplete (decision_log._existing_entries' own
+    fail-closed path), reached through the CLI command, not just at the
+    core level."""
+    tmp_path = _init_repo(tmp_path)
+    log_dir = tmp_path / "doc" / "decision-log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    blocked = log_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderlog", "other-log"])
+
+    assert excinfo.value.code == "log-scan-incomplete"
+
+
+def test_config_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
+    """ADR007V01: the folderlog counterpart to
+    test_config_rejects_a_folderadr_change_when_decisions_already_exist
+    above -- an existing decision-log entry would become invisible at
+    its old, still-real path."""
+    from adrpy.cli import log
+
+    tmp_path = _init_repo(tmp_path)
+    log.run(
+        ["--path", str(tmp_path), "--classification", "scope-note", "--scope", "test", "--slug", "x",
+         "--summary", "s", "--body", "b"]
+    )
+    before = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderlog", "doc/other-log"])
+
+    assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
+    assert excinfo.value.data == {"folderlog": "doc/decision-log", "existing_entries": 1}
+    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert after.folderlog == before.folderlog  # nothing was written
+
+
+def test_config_allows_a_folderlog_change_when_no_entries_exist_yet(tmp_path):
+    """Companion to the rejection test above: no decision-log entries
+    yet means nothing to orphan, so the change must still go through."""
+    tmp_path = _init_repo(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--folderlog", "doc/other-log"])
+
+    assert result["updated_fields"] == ["folderlog"]
+
+
+def test_config_rejects_a_folderlog_change_that_would_adopt_an_unrelated_file(tmp_path):
+    """The folderlog counterpart to
+    test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file
+    -- pointing folderlog at a directory that already has a real-looking
+    decision-log entry would silently adopt it into round allocation and
+    INDEX.md."""
+    from adrpy.cli import log as log_module
+
+    tmp_path = _init_repo(tmp_path)
+    unrelated = tmp_path / "unrelated-log"
+    unrelated.mkdir(parents=True)
+    (unrelated / "2026-09-18--scope-note--lock--first.md").write_text(
+        log_module.build_entry_content("First", "Body."), encoding="utf-8"
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderlog", "unrelated-log"])
+
+    assert excinfo.value.code == "folderlog-change-would-adopt-unrelated-files"
+    assert len(excinfo.value.data["adopted_files"]) == 1
+
+
+def test_config_allows_a_folderlog_change_onto_a_directory_with_no_matching_content(tmp_path):
+    """Companion to the rejection test above: a new folder that already
+    exists but has nothing _existing_entries would even look at (its own
+    scan is *.md only) must still go through. Unlike folderadr's own
+    scan (which silently ignores a non-decision-shaped .md file),
+    decision-log's own scan fails LOUDLY on any .md file it can't parse
+    -- so a non-.md file is the true "no matching content" analog here,
+    not an oddly-named .md one (see the sibling
+    test_config_rejects_a_folderlog_change_onto_a_directory_with_an_unrecognized_md_file
+    for that stricter case)."""
+    tmp_path = _init_repo(tmp_path)
+    unrelated = tmp_path / "unrelated-log"
+    unrelated.mkdir(parents=True)
+    (unrelated / "readme.txt").write_bytes(b"not even a .md file\n")
+
+    result = config.run(["--path", str(tmp_path), "--folderlog", "unrelated-log"])
+
+    assert result["updated_fields"] == ["folderlog"]
+
+
+def test_config_rejects_a_folderlog_change_onto_a_directory_with_an_unrecognized_md_file(tmp_path):
+    """decision-log's own scan (_existing_entries) is stricter than
+    folderadr's: it fails LOUDLY (log-directory-contains-unrecognized-
+    file) on any .md file that doesn't match the entry naming shape,
+    rather than silently ignoring it -- confirmed this propagates
+    correctly through the change guard, not just the scan itself."""
+    tmp_path = _init_repo(tmp_path)
+    unrelated = tmp_path / "unrelated-log"
+    unrelated.mkdir(parents=True)
+    (unrelated / "readme.md").write_bytes(b"not entry-shaped at all\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderlog", "unrelated-log"])
+
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
 def test_config_allows_a_folderadr_change_onto_a_directory_with_no_matching_content(tmp_path):
     """Companion to the rejection test above: a new folder that already
     exists but has nothing that would newly parse as a decision must
@@ -775,14 +894,24 @@ def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_pa
     repository root -- resolve_within must not accept that as 'not
     outside,' or folderadr would become indistinguishable from the repo
     root and every subsequent write would land next to
-    adr-config.adrplus itself."""
+    adr-config.adrplus itself.
+
+    ADR007V01: '.' now fails EARLIER and via a different, also-correct
+    code -- folderadr='.' has zero path components, which is a prefix of
+    ANY folderlog value by construction, so the schema-level
+    folderadr/folderlog containment guard (config-folderadr-folderlog-
+    overlap) fires before resolve_within's own path-outside-repository
+    check ever runs. The whitespace-only case has one (non-empty) path
+    component, so it does not trip the containment guard and still
+    surfaces via path-outside-repository, unchanged."""
     tmp_path = _init_repo(tmp_path)
     before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", folderadr])
 
-    assert excinfo.value.code == "path-outside-repository"
+    expected_code = "config-folderadr-folderlog-overlap" if folderadr == "." else "path-outside-repository"
+    assert excinfo.value.code == expected_code
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
 
 

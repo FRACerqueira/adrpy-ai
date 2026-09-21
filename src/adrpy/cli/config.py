@@ -22,6 +22,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
+from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
@@ -55,6 +56,14 @@ def _field_description(field):
         return (
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
             "cannot be empty, absolute, or escape the repository."
+        )
+    if field == "folderlog":
+        return (
+            f"Relative path to the decision-log directory (ADR007V01), max "
+            f"{config_schema.FOLDERLOG_MAX_LENGTH} characters; cannot be empty, absolute, escape the "
+            "repository, or be the same as (or nested inside/around) folderadr "
+            "(config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling "
+            "'decision-log' when omitted from a hand-edited config written before this field existed."
         )
     # "may be empty" describes the STORED value's own schema rule (no
     # cannot-be-empty validation for these 3) -- it does NOT mean this
@@ -158,6 +167,20 @@ def describe():
             "(data.adopted_files lists the file paths) instead of silently absorbing it and corrupting "
             "next-number allocation -- the same scan-incomplete code above covers an unreadable subdirectory "
             "under the new folder too. Skipped entirely when the new folder does not exist yet. "
+            "--folderlog (ADR007V01, deliberately not byte-compatible with the reference tool's own schema) "
+            "is validated and change-guarded the same way -- cannot overlap with (equal, or be nested inside "
+            "or around) folderadr, fails with config-folderadr-folderlog-overlap otherwise; can only be "
+            "changed while the OLD directory has no decision-log entries yet, otherwise fails with "
+            "folderlog-change-blocked-by-existing-entries (data.existing_entries names the count); the NEW "
+            "directory is checked too, failing with folderlog-change-would-adopt-unrelated-files "
+            "(data.adopted_files) if it already holds a file that would newly parse as an entry -- unlike "
+            "folderadr's own scan, decision-log's own scan additionally fails LOUDLY "
+            "(log-directory-contains-unrecognized-file) on any .md file there that does NOT parse as a valid "
+            "entry, rather than silently ignoring it, since that scan can never tell 'unrelated' apart from "
+            "'malformed' the way folderadr's naming-scheme recognition can. Both directions fail closed with "
+            "log-scan-incomplete if a subdirectory can't be scanned. Omitted from a hand-edited config "
+            "written before this field existed, folderlog defaults to folderadr's own parent sibling "
+            "'decision-log' -- this command's own read/write both honor that default transparently. "
             "--statusnew/--statusacc/--statusrej/--statussup/--separator/--migrationpattern can likewise only "
             "be changed while doing so would not break recognition of an existing decision (ADR004V01/V02) -- "
             "otherwise fails with status-or-separator-change-blocked-by-existing-decisions "
@@ -314,6 +337,21 @@ def run(args):
                 current,
                 target=target,
                 new_config=new_config,
+                warnings=warnings,
+            )
+
+            # ADR007V01: the folderlog counterpart to the folderadr guard
+            # just above -- same reasoning (an existing decision-log
+            # entry becoming invisible at its old, still-real path), same
+            # pre-edit `current`/fresh-inside-the-lock state. Also
+            # validates the new folderlog value can't escape the
+            # repository, the same order as folderadr's own check above.
+            resolve_within(target, new_config.folderlog)
+            reject_folderlog_change_if_entries_exist(
+                decision_log_dir_for(target, current),
+                current.folderlog,
+                new_config.folderlog,
+                target=target,
                 warnings=warnings,
             )
 

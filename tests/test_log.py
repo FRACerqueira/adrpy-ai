@@ -311,7 +311,7 @@ def test_log_reports_the_entry_already_written_when_index_regeneration_fails(tmp
     second-write failures, not a dataless generic error."""
     _init_repo(tmp_path)
 
-    def flaky_regenerate_index(_log_dir):
+    def flaky_regenerate_index(_log_dir, **_kwargs):
         raise OSError("simulated disk failure")
 
     monkeypatch.setattr(log, "regenerate_index", flaky_regenerate_index)
@@ -354,7 +354,7 @@ def test_log_reports_lock_lost_the_same_way_as_an_oserror_during_index_regenerat
     both, not just the one exercised by the sibling OSError test above."""
     _init_repo(tmp_path)
 
-    def flaky_regenerate_index(_log_dir):
+    def flaky_regenerate_index(_log_dir, **_kwargs):
         raise LockLostError("simulated lock loss")
 
     monkeypatch.setattr(log, "regenerate_index", flaky_regenerate_index)

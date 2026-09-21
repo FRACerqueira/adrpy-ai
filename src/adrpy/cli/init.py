@@ -20,6 +20,7 @@ from adrpy.core.config import (
     parse_repo_config,
     read_config_text,
 )
+from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
@@ -105,7 +106,10 @@ def describe():
                     "fails with folderadr-change-would-adopt-unrelated-files (data.adopted_files lists the "
                     "file paths) instead of silently absorbing it and corrupting next-number allocation -- "
                     "the same scan-incomplete code above covers an unreadable subdirectory under the new "
-                    "folder too; skipped entirely when the new folder does not exist yet. Likewise, if the "
+                    "folder too; skipped entirely when the new folder does not exist yet. The seed's own "
+                    "folderlog (ADR007V01) gets the same treatment: folderlog-change-blocked-by-existing-"
+                    "entries / folderlog-change-would-adopt-unrelated-files / log-scan-incomplete, same rule "
+                    "as the `config` command's own --folderlog guard. Likewise, if the "
                     "seed's own statusnew/statusacc/statusrej/statussup/separator/"
                     "migrationpattern differ from the current ones in a way that would break recognition of "
                     "an existing decision, fails with status-or-separator-change-blocked-by-existing-decisions "
@@ -285,6 +289,18 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
         # same pre-edit `old_folder`/`old_config`.
         reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, config, warnings=warnings)
 
+        # ADR007V01: the folderlog counterpart to the folderadr guard
+        # above -- --seed replacing folderlog on an already-existing
+        # repository is exactly as capable of orphaning existing
+        # decision-log entries as `config --folderlog` is.
+        reject_folderlog_change_if_entries_exist(
+            decision_log_dir_for(target, old_config),
+            old_config.folderlog,
+            config.folderlog,
+            target=target,
+            warnings=warnings,
+        )
+
     # Same as scan_decisions/explore/migrate -- an is_within-excluded
     # candidate is reported, not dropped with zero signal, since these are
     # the very numbers these three checks are about to gate a fresh init on.
@@ -331,6 +347,13 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     # io-error until someone noticed.
     folder_already_existed = folder_adr.is_dir()
     folder_adr.mkdir(parents=True, exist_ok=True)
+
+    # ADR007V01: same escape-path validation as folderadr above -- fails
+    # fast on a hostile/malformed folderlog at init time, rather than
+    # deferring to the first `adrpy log` call. Unlike folderadr, never
+    # eagerly created here -- `adrpy log` already creates it lazily on
+    # first write, and nothing else needs it to exist before then.
+    resolve_within(target, config.folderlog)
 
     if lock is not None:
         # ADR001, part 3: guarantees this write never commits blindly if

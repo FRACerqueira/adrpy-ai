@@ -24,6 +24,10 @@ Built-in default language pack for header/status labels and the default template
 
 Relative path to the decisions folder that a newly init'd repository using this as its seed will get by default, max 50 characters; cannot be empty or absolute. Unlike the `config` command's own --folderadr, this one does NOT check whether the value would escape a repository once applied -- there is no repository yet at the point this file is written; that check happens later, in whichever command consumes this file as a seed (currently `init`).
 
+### `--folderlog` *(optional, string)*
+
+Relative path to the decision-log directory (ADR007V01) that a newly init'd repository using this as its seed will get by default, max 50 characters; cannot be empty or absolute, or the same as (or nested inside/around) --folderadr (config-folderadr-folderlog-overlap, checked even here). Defaults to --folderadr's own parent sibling 'decision-log' when omitted.
+
 ### `--migrationpattern` *(optional, string)*
 
 Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `installconfig --seed` for that.

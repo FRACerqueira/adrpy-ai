@@ -77,7 +77,11 @@ def describe():
             "AFTER the entry write already committed, so this surfaces as log-index-regeneration-failed instead "
             "(same as any other index-regeneration failure, e.g. a permission error) -- data.file (the full "
             "path, unlike log-entry-already-exists' bare filename above) names the entry that was already "
-            "committed to disk despite the overall failure; the offending file's own name is in the detail text."
+            "committed to disk despite the overall failure; the offending file's own name is in the detail text. "
+            "The decision-log directory (config.folderlog, ADR007V01) is scanned recursively -- an unreadable "
+            "subdirectory under it fails closed the same way, as log-scan-incomplete (before any write, or "
+            "wrapped into log-index-regeneration-failed after, following the exact same before/after split as "
+            "log-directory-contains-unrecognized-file above)."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -274,11 +278,11 @@ def run(args):
             warnings.extend(lock.warnings)
             config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
             folder = resolve_within(target, config.folderadr)
-            log_dir = decision_log_dir_for(folder)
+            log_dir = decision_log_dir_for(target, config)
 
             round_ = None
             if classification in STRUCTURED_CLASSIFICATIONS:
-                current_max = max_existing_round(log_dir)
+                current_max = max_existing_round(log_dir, warnings=warnings)
                 if explicit_round is not None:
                     validate_round_not_regressing(explicit_round, current_max)
                     round_ = explicit_round
@@ -336,16 +340,18 @@ def run(args):
                 # Second write in the same critical section -- re-verified
                 # for the same reason as the entry write above.
                 lock.verify_still_held()
-                regenerate_index(log_dir)
+                regenerate_index(log_dir, warnings=warnings)
             except (OSError, LockLostError, CommandError) as error:
                 # The entry above is already committed to disk for real --
                 # `data.file` names that partial success explicitly, the
                 # same shape reject/supersede already use for their own
-                # second-write failures. CommandError here is always
-                # log-directory-contains-unrecognized-file (the only one
-                # regenerate_index itself can raise) -- its own detail
-                # text already names the offending file, so it isn't
-                # duplicated into `data` alongside the entry's own path.
+                # second-write failures. CommandError here is either
+                # log-directory-contains-unrecognized-file or (ADR007V01,
+                # folderlog now recursively scanned) log-scan-incomplete
+                # -- both are the only ones regenerate_index itself can
+                # raise, and each one's own detail text already names the
+                # offending file/subdirectory, so it isn't duplicated into
+                # `data` alongside the entry's own path.
                 raise CommandError(
                     FailureCodes.LOG_INDEX_REGENERATION_FAILED,
                     f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",

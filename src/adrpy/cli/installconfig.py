@@ -96,6 +96,14 @@ def _field_description(field):
             "the point this file is written; that check happens later, in whichever command consumes "
             "this file as a seed (currently `init`)."
         )
+    if field == "folderlog":
+        return (
+            "Relative path to the decision-log directory (ADR007V01) that a newly init'd repository "
+            f"using this as its seed will get by default, max {config_schema.FOLDERLOG_MAX_LENGTH} "
+            "characters; cannot be empty or absolute, or the same as (or nested inside/around) "
+            "--folderadr (config-folderadr-folderlog-overlap, checked even here). Defaults to "
+            "--folderadr's own parent sibling 'decision-log' when omitted."
+        )
     if field == "migrationpattern":
         return (
             "Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' "

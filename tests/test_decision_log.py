@@ -22,13 +22,15 @@ from adrpy.core.errors import CommandError
 import pytest
 
 
-def test_decision_log_dir_for_is_a_sibling_of_the_decisions_folder():
-    """Never nested inside the decisions folder -- the same structural
-    reasoning that excludes the repository lock marker file from every
-    decisions-folder scan (ADR003V01)."""
-    result = decision_log_dir_for(Path("/repo/doc/adr"))
+def test_decision_log_dir_for_resolves_configs_own_folderlog(tmp_path):
+    """ADR007V01: resolved from config.folderlog (independently
+    configurable), via resolve_within -- no longer derived from
+    folderadr's own path at all."""
+    from types import SimpleNamespace
 
-    assert result == Path("/repo/doc/decision-log")
+    result = decision_log_dir_for(tmp_path, SimpleNamespace(folderlog="doc/decision-log"))
+
+    assert result == (tmp_path / "doc" / "decision-log").resolve()
 
 
 def test_validate_classification_accepts_every_documented_value():
@@ -161,6 +163,53 @@ def test_regenerate_index_content_matches_build_entry_contents_own_structured_li
     index_text = (log_dir / "INDEX.md").read_text(encoding="utf-8")
     assert "| 2026-09-18 | audit-finding | lock | x | Low | Direct | 7 |  | First |" in index_text
     assert next_round(log_dir) == 8
+
+
+def test_regenerate_index_and_max_existing_round_are_recursive(tmp_path):
+    """ADR007V01: folderlog's own scan is now recursive (rglob, matching
+    folderadr's own convention) -- an entry placed in a subfolder (e.g. a
+    human organizing past entries by year) must still be picked up, not
+    silently invisible to round allocation/INDEX.md the way it would
+    have been under the old, flat-only glob."""
+    log_dir = tmp_path / "decision-log"
+    (log_dir / "2026").mkdir(parents=True)
+    (log_dir / "2026" / "2026-01-05--audit-finding--lock--archived.md").write_text(
+        build_entry_content("Archived", "Body.", front="x", severity="Low", resolution="Direct", round_=3),
+        encoding="utf-8",
+    )
+
+    assert max_existing_round(log_dir) == 3
+    count = regenerate_index(log_dir)
+    assert count == 1
+    index_text = (log_dir / "INDEX.md").read_text(encoding="utf-8")
+    assert "Archived" in index_text
+
+
+def test_existing_entries_fails_closed_on_an_unreadable_subdirectory(tmp_path, monkeypatch):
+    """The core-level counterpart to
+    test_config_folderlog_change_fails_closed_when_a_subdirectory_is_unreadable
+    (tests/test_config_command.py) -- log-scan-incomplete, confirmed
+    directly against _existing_entries' own callers (max_existing_round
+    here), not just through the CLI command."""
+    import os
+
+    log_dir = tmp_path / "decision-log"
+    blocked = log_dir / "restricted"
+    blocked.mkdir(parents=True)
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+
+    assert excinfo.value.code == "log-scan-incomplete"
 
 
 def test_regenerate_index_excludes_itself_and_cycles_md(tmp_path):

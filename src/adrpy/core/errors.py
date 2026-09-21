@@ -92,6 +92,11 @@ class FailureCodes:
     CONFIG_PREFIX_INVALID = "config-prefix-invalid"
     CONFIG_FOLDERADR_TOO_LONG = "config-folderadr-too-long"
     CONFIG_FOLDERADR_NOT_RELATIVE = "config-folderadr-not-relative"
+    # ADR007V01: folderlog, the first optional-with-computed-default field
+    # in this schema.
+    CONFIG_FOLDERLOG_TOO_LONG = "config-folderlog-too-long"
+    CONFIG_FOLDERLOG_NOT_RELATIVE = "config-folderlog-not-relative"
+    CONFIG_FOLDERADR_FOLDERLOG_OVERLAP = "config-folderadr-folderlog-overlap"
     CONFIG_TEMPLATE_TOO_LONG = "config-template-too-long"
     CONFIG_HEADERDISCLAIMER_TOO_LONG = "config-headerdisclaimer-too-long"
     CONFIG_FIELD_IS_BLANK = "config-field-is-blank"
@@ -164,6 +169,12 @@ class FailureCodes:
     LOG_ROUND_INVALID = "log-round-invalid"
     LOG_ROUND_TOO_LOW = "log-round-too-low"
     LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE = "log-directory-contains-unrecognized-file"
+    # ADR007V01: folderlog is now recursively scanned, gaining the same
+    # fail-closed-on-unreadable-subdirectory handling folderadr's own scan
+    # already had.
+    LOG_SCAN_INCOMPLETE = "log-scan-incomplete"
+    FOLDERLOG_CHANGE_BLOCKED_BY_EXISTING_ENTRIES = "folderlog-change-blocked-by-existing-entries"
+    FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "folderlog-change-would-adopt-unrelated-files"
 
     # src/adrpy/cli/reject.py
     SUPERSEDED_PREDECESSOR_NOT_FOUND = "superseded-predecessor-not-found"

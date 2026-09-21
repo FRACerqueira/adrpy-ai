@@ -191,6 +191,88 @@ def test_relative_folderadr_is_accepted(folderadr):
     assert config.folderadr == folderadr
 
 
+def test_folderlog_defaults_to_folderadrs_own_sibling_when_omitted():
+    """ADR007V01: the concrete proof of the backward-compatibility
+    promise -- an adr-config.adrplus written before folderlog existed
+    (no key at all, exactly what _valid_config_dict/the shared test
+    fixture already look like) must keep parsing unchanged, with
+    folderlog defaulting to today's exact computed sibling location."""
+    data = _valid_config_dict()
+    assert "folderlog" not in data
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderlog == "doc/decision-log"
+
+
+def test_folderlog_explicit_value_is_honored():
+    data = _valid_config_dict()
+    data["folderlog"] = "audit-log"
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderlog == "audit-log"
+
+
+def test_folderlog_too_long_is_rejected():
+    data = _valid_config_dict()
+    data["folderlog"] = "d" * 51
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-folderlog-too-long"
+
+
+@pytest.mark.parametrize("folderlog", [r"C:\Windows\System32", "/etc/passwd", r"C:foo"])
+def test_absolute_folderlog_is_rejected(folderlog):
+    data = _valid_config_dict()
+    data["folderlog"] = folderlog
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-folderlog-not-relative"
+
+
+@pytest.mark.parametrize(
+    ("folderadr", "folderlog"),
+    [
+        ("doc/adr", "doc/adr"),  # equal
+        ("doc/adr", "doc/adr/sub"),  # folderlog nested inside folderadr
+        ("doc/adr", "doc"),  # folderadr nested inside folderlog
+    ],
+)
+def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
+    """ADR007V01's containment guard -- both directories are
+    independently configurable and each recursively scanned, so either
+    one nesting inside (or equaling) the other would make each scan see
+    the other's files."""
+    data = _valid_config_dict()
+    data["folderadr"] = folderadr
+    data["folderlog"] = folderlog
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == "config-folderadr-folderlog-overlap"
+
+
+def test_folderadr_and_folderlog_near_miss_is_accepted():
+    """The required adversarial positive control for the containment
+    guard: 'doc/adr' and 'doc/adr2' share a string prefix but are NOT
+    nested -- compared by path component, not string prefix, so this
+    must NOT trip the guard."""
+    data = _valid_config_dict()
+    data["folderadr"] = "doc/adr"
+    data["folderlog"] = "doc/adr2"
+
+    config = parse_repo_config(json.dumps(data))
+
+    assert config.folderadr == "doc/adr"
+    assert config.folderlog == "doc/adr2"
+
+
 def test_headerdisclaimer_too_long_is_rejected():
     data = _valid_config_dict()
     data["headerdisclaimer"] = "d" * 101
