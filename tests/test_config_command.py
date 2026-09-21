@@ -15,6 +15,15 @@ def _init_repo(tmp_path):
     return tmp_path
 
 
+def _write_legacy_file(tmp_path, filename, content="Legacy content\n"):
+    # Raw bytes, not new.run -- legacy-scheme files predate the tool and
+    # are never created by it; mirrors test_migrate.py's own helper.
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / filename).write_bytes(content.encode("utf-8"))
+    return adr_dir / filename
+
+
 def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
     """Config's own comment claimed `current`
     (fresh, inside the lock) and `folder` (this same lock's own
@@ -278,6 +287,96 @@ def test_config_rejects_multiple_guarded_fields_changed_at_once_naming_all_of_th
 
     assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
     assert set(excinfo.value.data["changed_fields"]) == {"statusacc", "separator"}
+
+
+def test_config_rejects_a_statusrej_change_when_decisions_already_exist(tmp_path):
+    """Same guard as statusnew's own test, but for statusrej -- the
+    guard's own field tuple must cover all 4 status labels
+    independently, not just the one field its first test happened to
+    pick."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusrej", "Denied"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["statusrej"], "existing_decisions": 1}
+
+
+def test_config_rejects_a_statussup_change_when_decisions_already_exist(tmp_path):
+    """Same as the statusrej test above, for statussup -- closes the
+    guard's field coverage for all 4 status labels."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statussup", "Replaced"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["statussup"], "existing_decisions": 1}
+
+
+def test_config_reports_the_correct_count_with_more_than_one_existing_decision(tmp_path):
+    """Every prior guard test creates exactly one decision, so
+    `existing_decisions` was never proven to be a real count rather than
+    a hardcoded 1."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    new.run(["--path", str(tmp_path), "--title", "Second decision"])
+    new.run(["--path", str(tmp_path), "--title", "Third decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
+
+    assert excinfo.value.data == {"changed_fields": ["statusnew"], "existing_decisions": 3}
+
+
+def test_config_allows_a_migrationpattern_change_when_only_current_scheme_decisions_exist(tmp_path):
+    """ADR004V02: migrationpattern is only ever read by naming.py's
+    parse_legacy_filename -- a repository with only current-scheme
+    decisions has nothing that a migrationpattern change could break.
+    This was ADR004V01's own gap: a blanket guard would have refused
+    this harmless change for no reason (confirmed via mutation before
+    the fix -- see the audit finding this test closes)."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+
+    assert result["updated_fields"] == ["migrationpattern"]
+
+
+def test_config_rejects_a_migrationpattern_change_when_a_legacy_decision_already_exists(tmp_path):
+    """The mirror of the test above: migrationpattern change IS blocked
+    once a legacy-scheme decision exists, since parse_legacy_filename
+    re-derives that file's own number/version/revision by position and
+    length from this exact field, read fresh on every parse."""
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0001T01.md")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--migrationpattern", "N00:05T05"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
+
+
+def test_config_allows_a_separator_change_when_only_legacy_scheme_decisions_exist(tmp_path):
+    """ADR004V02: separator is only ever read by naming.py's
+    parse_filename (the current scheme) -- a repository with only
+    legacy-scheme decisions has nothing that a separator change could
+    break. This is the pre-existing imprecision ADR004V01 shipped with
+    (confirmed live before this fix: this exact scenario used to be
+    refused)."""
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0001T01.md")
+
+    result = config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert result["updated_fields"] == ["separator"]
 
 
 def test_config_status_or_separator_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):

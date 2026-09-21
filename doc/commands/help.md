@@ -8,13 +8,13 @@ Lists every command, or describes one of them in full.
 
 ## Description
 
-Lists available commands, or describes one command. With no `command` and no --full, lists every command's name and one-line `summary` only, plus `defaults` (the config fields a fresh `init` on this machine would actually produce -- `source` names whether that comes from this machine's own install-level config or the built-in default) and a `hint` pointing at `--full`/a specific command name for the complete contract. --full returns every command's full description and argument list in one call, the same shape this command always returned before summaries existed. Naming a specific `command` always returns its full description and argument list, regardless of --full.
+Lists available commands, or describes one command. With no `command` and no --full, lists every command's name and one-line `summary` only, plus `defaults` (a CURATED SUBSET of the config fields a fresh `init` on this machine would actually produce -- not every field RepoConfig has; `template`, `migrationpattern`, `headerdisclaimer`, the 11 header-row labels, and the plugin fields are all omitted here on purpose, kept short since this is a quick-glance preview, not the full config -- `adrpy installconfig`/`adrpy config` return every field. `source` names whether `defaults` comes from this machine's own install-level config or the built-in default) and a `hint` pointing at `--full`/a specific command name for the complete contract. --full returns every command's full description and argument list in one call, the same shape this command always returned before summaries existed. Naming a specific `command` always returns its full description and argument list, regardless of --full.
 
 ## Arguments
 
-### `--command` *(optional, string, positional)*
+### `command` *(optional, string, positional -- NOT `--command`)*
 
-Name of the command to describe.
+Name of the command to describe. Positional, unlike every other command's flags: `adrpy help new`, never `adrpy help --command new` (which fails).
 
 ### `--full` *(optional, switch)*
 

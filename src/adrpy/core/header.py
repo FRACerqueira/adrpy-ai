@@ -27,9 +27,20 @@ _STATUS_CONFIG_FIELD = {
 # statussup text entirely, so a later label or language change can never
 # again break it. Absent (any file written before this existed) falls
 # back to the same label-text match as before.
+#
+# ADR004V02: matched case-insensitively -- a hand edit that changes only
+# the marker's case (e.g. "<!-- accepted -->") used to fail this match
+# outright and silently fall back to label-text matching with zero
+# signal, reopening exactly the fragility this marker exists to close.
+# `_CANONICAL_STATUS_BY_LOWERCASE` maps the match back to its canonical,
+# correctly-cased form -- every other consumer of `status` (this
+# module's own `_STATUS_CONFIG_FIELD` lookups, `is_migrated`
+# comparisons elsewhere) requires the exact canonical case, never the
+# case actually found in the file.
 _CANONICAL_MARKER_PATTERN = re.compile(
-    r"<!--\s*(" + "|".join(_STATUS_CONFIG_FIELD.keys()) + r")\s*-->"
+    r"<!--\s*(" + "|".join(_STATUS_CONFIG_FIELD.keys()) + r")\s*-->", re.IGNORECASE
 )
+_CANONICAL_STATUS_BY_LOWERCASE = {status.lower(): status for status in _STATUS_CONFIG_FIELD}
 
 
 @dataclass
@@ -306,7 +317,7 @@ def _parse_status_cell(text, config):
 
     marker_match = _CANONICAL_MARKER_PATTERN.search(text[close_paren + 1 :])
     if marker_match:
-        status = marker_match.group(1)
+        status = _CANONICAL_STATUS_BY_LOWERCASE[marker_match.group(1).lower()]
         mismatch = label_status is not None and label_status != status
     else:
         status = label_status

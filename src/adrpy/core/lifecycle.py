@@ -149,38 +149,79 @@ def reject_folderadr_change_if_decisions_exist(old_folder, old_folderadr, new_fo
         )
 
 
-_GUARDED_STATUS_AND_SEPARATOR_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup", "separator")
+# ADR004V02: three separate groups, not one flat list -- each guarded
+# field only actually affects recognition of ONE naming scheme's files,
+# except status labels, which are header content read identically
+# regardless of which scheme matched a file's own NAME.
+_STATUS_LABEL_GUARD_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
+# `separator` is only ever read by naming.py's parse_filename (the
+# CURRENT scheme) -- parse_legacy_filename never references it.
+_CURRENT_SCHEME_GUARD_FIELDS = ("separator",)
+# `migrationpattern` is only ever read by naming.py's
+# parse_legacy_filename (the LEGACY scheme) -- parse_filename never
+# references it. ADR004V01 originally dismissed this field on a
+# write-dependency argument ("not a value this tool's own writes depend
+# on staying stable") that never addressed its READ/recognition
+# dependency -- confirmed live and in naming.py's own source; corrected
+# in ADR004V02.
+_LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
 
 
 def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, new_config, warnings=None):
-    """ADR004V01: a status label or `separator` change on a repository
-    that already has recognized decisions can make some or all of them
-    unrecognized -- confirmed live for both fields independently (a
-    changed statusnew/statusacc/statusrej/statussup label stops
-    core/header.py's own label-text match from recognizing an existing,
-    marker-less status cell; a changed separator stops core/naming.py's
-    own filename parse from recognizing an existing file at all).
+    """ADR004V01/V02: a status label, `separator`, or `migrationpattern`
+    change on a repository that already has recognized decisions can
+    make some or all of them unrecognized -- confirmed live for status
+    labels and `separator` (a changed statusnew/statusacc/statusrej/
+    statussup label stops core/header.py's own label-text match from
+    recognizing an existing, marker-less status cell; a changed
+    separator stops core/naming.py's own current-scheme filename parse
+    from recognizing an existing file at all), and by direct code
+    reading for `migrationpattern` (core/naming.py's own
+    parse_legacy_filename re-derives every legacy-scheme file's number/
+    version/revision/prefix by POSITION and LENGTH from
+    `config.migrationpattern`, read fresh on every call -- nothing
+    stored in the file itself pins its own identity).
 
-    Unconditional once any decision exists -- unlike the ADR004V01 marker
-    itself, this does not check whether a given file is already
-    marker-protected against the specific field being changed. Same
-    blanket shape reject_folderadr_change_if_decisions_exist above
-    already uses (which also never checks whether a given file would
-    individually survive), not a per-file analysis.
+    Scheme-aware (ADR004V02, corrected from V01's blanket check): status
+    labels block on ANY recognized decision (current or legacy scheme --
+    the header format is identical either way); `separator` blocks only
+    if a CURRENT-scheme decision exists; `migrationpattern` blocks only
+    if a LEGACY-scheme decision exists. Blocking a `separator` change in
+    a legacy-only repository (or a `migrationpattern` change in a
+    current-scheme-only repository) would refuse something objectively
+    harmless -- confirmed by reading naming.py's own two parse
+    functions, neither of which references the other scheme's guarded
+    field at all.
+
+    Still unconditional WITHIN the scheme(s) it actually affects --
+    unlike the ADR004V01 marker itself, this does not check whether a
+    given file is already marker-protected against a status-label
+    change specifically (no marker-based equivalent exists for
+    `separator`/`migrationpattern` at all). Same blanket-within-scope
+    shape reject_folderadr_change_if_decisions_exist above already uses,
+    not a per-file analysis.
 
     Scans against `old_config` (never `new_config`): the existing files
     were written/named under the OLD rules, not the new ones -- same
     reasoning as reject_folderadr_change_if_decisions_exist.
 
-    Fails closed (same as that guard) if the scan itself can't be
-    trusted, instead of treating an incomplete scan as "no decisions"."""
-    changed_fields = [
-        field
-        for field in _GUARDED_STATUS_AND_SEPARATOR_FIELDS
-        if getattr(old_config, field) != getattr(new_config, field)
+    The scan-incomplete fail-closed check below is NOT scheme-scoped --
+    an unreadable subdirectory's own contents (and therefore scheme) are
+    unknowable, so any guarded field change fails closed regardless of
+    which scheme it would otherwise only need to protect."""
+    status_fields_changed = [
+        field for field in _STATUS_LABEL_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
     ]
+    current_scheme_fields_changed = [
+        field for field in _CURRENT_SCHEME_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
+    ]
+    legacy_scheme_fields_changed = [
+        field for field in _LEGACY_SCHEME_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
+    ]
+    changed_fields = status_fields_changed + current_scheme_fields_changed + legacy_scheme_fields_changed
     if not changed_fields:
         return
+
     unreadable = find_unreadable_subdirectories(old_folder)
     if unreadable:
         raise CommandError(
@@ -191,13 +232,20 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             data={"changed_fields": changed_fields, "unreadable": unreadable},
             warnings=warnings,
         )
+
     existing = scan_decisions(old_folder, old_config, warnings=warnings)
-    if existing:
+    blocking_fields = list(status_fields_changed) if (status_fields_changed and existing) else []
+    if current_scheme_fields_changed and any(scheme == "current" for scheme, _, _ in existing):
+        blocking_fields += current_scheme_fields_changed
+    if legacy_scheme_fields_changed and any(scheme == "legacy" for scheme, _, _ in existing):
+        blocking_fields += legacy_scheme_fields_changed
+
+    if blocking_fields:
         raise CommandError(
             "status-or-separator-change-blocked-by-existing-decisions",
-            f"Cannot change {', '.join(changed_fields)}: {len(existing)} existing decision(s) would no "
+            f"Cannot change {', '.join(blocking_fields)}: {len(existing)} existing decision(s) would no "
             "longer be recognized.",
-            data={"changed_fields": changed_fields, "existing_decisions": len(existing)},
+            data={"changed_fields": blocking_fields, "existing_decisions": len(existing)},
             warnings=warnings,
         )
 

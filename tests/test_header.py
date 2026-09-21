@@ -205,6 +205,133 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_and_reports_the_mismat
     assert parsed.marker_label_mismatches == ("status_create",)
 
 
+def test_status_change_row_also_resolves_after_a_label_change_thanks_to_the_marker():
+    """Companion to test_status_still_resolves_after_every_label_changes_
+    thanks_to_the_marker above, which never set status_change at all --
+    without this, the Superseded row's own marker resolution was never
+    independently proven; every existing test that DOES build a
+    Superseded row always reads it back under the SAME config it was
+    written with, so the label fallback would silently carry it to
+    green even if marker resolution broke specifically for this row."""
+    written_config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Superseded row survives a label change",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="002",
+    )
+    header_text = build_header(written_config, record)
+    lines = header_text.split(os.linesep)[:-1]  # drop the trailing empty split
+
+    later_config = dataclasses.replace(
+        written_config,
+        statusnew="Something Else Entirely",
+        statusacc="Yet Another Word",
+        statusrej="Not Even Close",
+        statussup="Completely Different",
+    )
+    parsed = parse_header(lines, later_config)
+
+    assert parsed.is_valid
+    assert parsed.status_change == "Superseded"
+    assert parsed.date_change == date(2026, 1, 3)
+    assert parsed.superseded_by_file == "002"
+    assert parsed.marker_label_mismatches == ()
+
+
+def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_changed_row():
+    """Same scenario as the Created-row mismatch test above, but on the
+    Changed row -- _parse_status_cell is called identically at all
+    three call sites inside parse_header, each appending to a shared
+    mismatches list; a bug isolated to just one call site (a wrong
+    literal, a copy-paste mistake) would not be caught by the
+    Created-row test alone."""
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Changed row mismatch",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    header_text = build_header(config, record)
+    lines = header_text.split(os.linesep)[:-1]
+    changed_index = 9
+    assert f"{config.statusacc} (2026-01-02) <!-- Accepted -->" in lines[changed_index]
+    lines[changed_index] = lines[changed_index].replace(config.statusacc, config.statusrej, 1)
+
+    parsed = parse_header(lines, config)
+
+    assert parsed.is_valid
+    assert parsed.status_update == "Accepted"  # the marker wins
+    assert parsed.marker_label_mismatches == ("status_update",)
+
+
+def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_superseded_row():
+    """Same as the two tests above, on the Superseded row -- also proves
+    mismatch detection isn't confused by that row's own extra
+    `: <successor>` suffix trailing the marker."""
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(
+        number=1,
+        title="Superseded row mismatch",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_change="Superseded",
+        date_change=date(2026, 1, 3),
+        superseded_by_file="002",
+    )
+    header_text = build_header(config, record)
+    lines = header_text.split(os.linesep)[:-1]
+    superseded_index = 10
+    assert f"{config.statussup} (2026-01-03) <!-- Superseded --> : 002" in lines[superseded_index]
+    # Targets "{statussup} (" specifically, not a bare .replace(config.statussup, ...) --
+    # this fixture's row label (headertitlestatussuperseded) is ALSO "Superseded",
+    # so a bare replace would hit the row label (leftmost) instead of the status value.
+    lines[superseded_index] = lines[superseded_index].replace(f"{config.statussup} (", f"{config.statusacc} (", 1)
+
+    parsed = parse_header(lines, config)
+
+    assert parsed.is_valid
+    assert parsed.status_change == "Superseded"  # the marker wins
+    assert parsed.superseded_by_file == "002"  # successor reference still parses correctly
+    assert parsed.marker_label_mismatches == ("status_change",)
+
+
+def test_marker_matches_case_insensitively():
+    """ADR004V02: a hand-edited marker with different case (e.g. someone
+    retyped it) must still resolve via the marker, not silently fall
+    back to label-text matching with zero signal -- confirmed as a real
+    gap during the ADR004V01 audit. The label is deliberately corrupted
+    to something no configured status matches, so `status_create` can
+    ONLY come from a successful case-insensitive marker match --
+    without this, the label's own unrelated match against the current
+    config could resolve to the right answer by coincidence, masking a
+    broken case-insensitive match entirely (confirmed: this is exactly
+    what happened on the first version of this test)."""
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    created_index = 8
+    assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in lines[created_index]
+    lines[created_index] = lines[created_index].replace(config.statusnew, "Whatever", 1)
+    lines[created_index] = lines[created_index].replace("<!-- Proposed -->", "<!-- proposed -->")
+
+    parsed = parse_header(lines, config)
+
+    assert parsed.is_valid
+    assert parsed.status_create == "Proposed"  # only resolvable via the case-insensitive marker match
+    assert parsed.marker_label_mismatches == ()  # "Whatever" matches no label, so not a genuine disagreement
+
+
 def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid():
     """Matches the reference tool's own behavior: `is_migrated` is set from
     row 2 alone, before the rest of the header is parsed, and survives an

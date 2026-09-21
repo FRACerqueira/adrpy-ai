@@ -273,6 +273,65 @@ def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_alr
     assert on_disk["statusacc"] == "Accepted"  # nothing was written
 
 
+def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_already_exists(tmp_path):
+    """ADR004V02: the guard's own call site wiring, not just the shared
+    function's internals -- --seed changing migrationpattern is exactly
+    as capable of breaking legacy-scheme recognition as `config` is."""
+    seed = json.loads(init.default_repo_config_text())
+    seed["migrationpattern"] = "N00:04T04"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    (adr_dir / "0001T01.md").write_bytes(b"Legacy content\n")
+
+    seed["migrationpattern"] = "N00:05T05"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
+
+
+def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(tmp_path, monkeypatch):
+    """ADR004V02: reject_status_or_separator_change_if_decisions_exist
+    runs BEFORE _max_existing_numbers inside _validate_and_write -- when
+    a seed both changes a guarded field AND has an unreadable
+    subdirectory, status-or-separator-change-scan-incomplete wins, never
+    init-existing-numbers-scan-incomplete. Pins this order so a future
+    reordering of the two checks can't silently swap which code callers
+    see with no test failure; also the first test of this guard's own
+    scan-incomplete path through `init --seed` at all (previously
+    exercised only through `config`)."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+    adr_dir = tmp_path / "doc" / "adr"
+    blocked = adr_dir / "restricted"
+    blocked.mkdir()
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    seed = json.loads(init.default_repo_config_text())
+    seed["statusnew"] = "Draft"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
+
+    assert excinfo.value.code == "status-or-separator-change-scan-incomplete"
+
+
 def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
     """Init's own bootstrap read
     (used both to find the lock and, unrefreshed, handed straight to
