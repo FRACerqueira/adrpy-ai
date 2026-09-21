@@ -458,6 +458,48 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     assert not (tmp_path.parent / "outside.md").exists()
 
 
+@pytest.mark.parametrize("field", ["scope", "domain"])
+def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_target_header(tmp_path, field):
+    """Unlike `version`, which re-validates scope/domain even when they fall
+    back to the latest member's own current value, revise never validated
+    them at all -- they come straight from the target's already-parsed
+    header cell, carried forward into the new revision's own header with
+    zero checking. Confirmed live: a hand-edited '\\x0b' (VT) in the Scope
+    cell survived an unrelated `revise` call unchanged, propagating into
+    the new revision's own header and into `explore`'s own JSON output --
+    the exact data-hygiene defect reject_embedded_delimiter's own
+    blacklist exists to prevent, just never wired up for this command's
+    two fields. (Embedding a literal '|' instead does not forge the table
+    the same way: `_extract_cell`'s own read-side parsing already
+    truncates a cell's value at the first '|', so it can never actually
+    reach `header.scope`/`header.domain` as a raw character -- confirmed
+    directly, which is why this test uses a control character instead,
+    the vector that DOES survive the round-trip.)"""
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
+    record = DecisionRecord(
+        number=1,
+        title="placeholder",
+        version=1,
+        revision=1,
+        scope="bad\x0bscope" if field == "scope" else "goodscope",
+        domain="bad\x0bdomain" if field == "domain" else "gooddomain",
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "field-contains-forbidden-character"
+
+
 def test_revise_end_to_end_through_main(tmp_path):
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
