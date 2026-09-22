@@ -36,7 +36,7 @@ Removes a `drifted` or `foreign` file/block instead of skipping it. Presence-onl
 
 | Code | Condition |
 |---|---|
-| `usage-error` | An unknown `--provider` or `--skill` value was given, or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
+| `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
 | `io-error` | A write/delete failed for a reason not covered by a more specific code (permission denied, etc.). |
 
 ## Example

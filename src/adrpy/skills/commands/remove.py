@@ -65,8 +65,9 @@ def describe():
             {
                 "code": "usage-error",
                 "condition": (
-                    "An unknown --provider or --skill value was given, or --target global was "
-                    "combined with a provider that has no global-scope concept (anything but claude)."
+                    "An unknown --provider, --skill, or --target value was given (--target accepts only "
+                    "'project'/'global'), or --target global was combined with a provider that has no "
+                    "global-scope concept (anything but claude)."
                 ),
             },
             {"code": "io-error", "condition": "A write/delete failed for a reason not covered by a more specific code (permission denied, etc.)."},

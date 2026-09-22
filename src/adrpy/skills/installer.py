@@ -67,10 +67,20 @@ def _resolve_path(provider_name, skill_name, target_dir, scope):
 
 
 def _validate_scope(provider_names, scope):
-    """Rejects --target global up front, for every requested provider at
-    once, before any write/removal begins -- a call naming several
-    providers must never leave a partial effect on disk just because a
-    later provider in the list turns out to be the one that fails."""
+    """Rejects an unrecognized --target value, and --target global for a
+    provider without a global-scope concept, up front for every
+    requested provider at once, before any write/removal begins -- a
+    call naming several providers must never leave a partial effect on
+    disk just because a later provider in the list turns out to be the
+    one that fails.
+
+    --provider/--skill both reject an unrecognized value via _expand();
+    --target never did -- a typo (e.g. "golbal") silently fell through
+    to the "project" branch in _resolve_path, writing into the current
+    directory instead of failing loudly. Found by a Round 37 usability
+    re-audit."""
+    if scope not in ("project", "global"):
+        raise UsageError(f"Unknown --target value: {scope!r}. Valid values: global, project.")
     if scope != "global":
         return
     unsupported = [name for name in provider_names if PROVIDERS[name]["global_path"] is None]

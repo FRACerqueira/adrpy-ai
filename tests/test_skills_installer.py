@@ -993,3 +993,27 @@ class TestReadTextTOCTOUCollapse:
         # reported) despite the later shared-doc check hitting a vanished
         # file, instead of the whole call crashing after the fact.
         assert any(row["provider"] == "copilot" for row in result["removed"])
+
+
+class TestTargetValidation:
+    """Round 37, Class P3: --provider/--skill both reject an unrecognized
+    value via _expand(); --target never did -- a typo silently fell
+    through to the 'project' branch instead of failing loudly."""
+
+    def test_unknown_target_value_is_a_usage_error_on_install(self, tmp_path):
+        with pytest.raises(UsageError):
+            installer.install(str(tmp_path), ["claude"], ["pre-release-audit"], "bogus", False)
+        assert list(tmp_path.rglob("*")) == []
+
+    def test_unknown_target_value_is_a_usage_error_on_remove(self, tmp_path):
+        with pytest.raises(UsageError):
+            installer.remove(str(tmp_path), ["claude"], ["pre-release-audit"], "bogus", False)
+
+    def test_project_and_global_still_work(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        installer.install(str(tmp_path), ["claude"], ["pre-release-audit"], "project", False)
+        installer.install(str(tmp_path), ["claude"], ["pre-release-audit"], "global", False)
+        assert (tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
+        assert (home / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
