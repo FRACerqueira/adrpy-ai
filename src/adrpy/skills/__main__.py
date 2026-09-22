@@ -47,6 +47,12 @@ def main(argv=None):
         return emit_usage_failure("usage-error", str(error))
     except OSError as error:
         return emit_failure("io-error", str(error))
+    except KeyboardInterrupt:
+        # Same gap, same fix as adrpy/__main__.py's own -- KeyboardInterrupt
+        # is a BaseException, not an Exception, so the catch-all below never
+        # sees it. Found by a Round 37 test-adequacy pass specifically
+        # because this sibling entry point never got the core fix applied.
+        return emit_failure("interrupted", "Interrupted (Ctrl+C).")
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see adrpy/__main__.py
         return emit_failure("internal-error", str(error))
 

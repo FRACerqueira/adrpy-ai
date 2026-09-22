@@ -145,3 +145,19 @@ class TestCliDispatch:
         assert exit_code != 0
         assert out["success"] is False
         assert out["code"] == "internal-error"
+
+    def test_keyboard_interrupt_still_emits_json_on_stdout(self, tmp_path, capsys, monkeypatch):
+        # Round 37, Class P1: adrpy/__main__.py already catches
+        # KeyboardInterrupt (a BaseException, not an Exception -- the
+        # generic except Exception above never sees it); this sibling
+        # entry point never got the same fix until now.
+        import adrpy.skills.installer as installer_module
+
+        def boom(*args, **kwargs):
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(installer_module, "install", boom)
+        exit_code, out = _run(["install", "--path", str(tmp_path)], capsys)
+        assert exit_code != 0
+        assert out["success"] is False
+        assert out["code"] == "interrupted"
