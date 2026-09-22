@@ -17,6 +17,17 @@ from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
 
 _FRONTMATTER_RE = re.compile(r"\A(---\n.*?\n---\n)", re.DOTALL)
 
+# Deliberately much larger than core/config.py's own CONFIG_READ_MAX_BYTES
+# (64KB) -- that cap bounds a schema-fixed JSON file, this one bounds
+# free-form AGENTS.md/SKILL.md content a project owner can legitimately
+# grow well past that. Still bounded, not unlimited: a Round 37
+# test-adequacy front measured an unbounded read of a planted 100MB file
+# peaking process memory near 200MB -- every other full-content reader in
+# the project already caps for the same reason (see LOCK_READ_MAX_BYTES,
+# CONFIG_READ_MAX_BYTES); this was the one that didn't.
+_READ_TEXT_MAX_BYTES = 10 * 1024 * 1024
+_READ_TEXT_CHUNK_SIZE = 65536
+
 
 def _package_version():
     try:
@@ -49,11 +60,46 @@ def _read_text(path):
     own -- every one of them already treats "file not found" as "nothing
     installed here" via check_drift(None)/_agentsmd_block_state(None)/an
     explicit `is None` check, so this is a strict simplification, not a
-    behavior change for the non-racing case."""
+    behavior change for the non-racing case.
+
+    Bounded to _READ_TEXT_MAX_BYTES (see its own note): reads at most
+    that many bytes plus one chunk's worth of overrun, used only to
+    detect that the real file is larger, never decoded or returned.
+    Raises a plain OSError when the cap is exceeded -- caught by
+    skills/__main__.py's existing `except OSError` -> io-error, the same
+    code a write failure already uses, rather than adding a second
+    failure-code registry to a module that doesn't otherwise have one.
+
+    Reading via `path.open("rb")` instead of `path.read_text()` drops
+    Python's own default universal-newline translation, so the decode
+    step below restores it by hand (`\\r\\n`/`\\r` -> `\\n`) -- on
+    Windows, `atomic_write_text` writes `os.linesep` (CRLF) while the
+    hash in `core/hashing.py` is built from pre-normalization, LF-only
+    content; without restoring the translation here, every freshly
+    installed file reads back as "drifted" against its own marker. This
+    LF/CRLF mismatch between hash time and write time is itself a
+    latent bug (Class P6, not yet fixed) -- this is only preserving
+    today's existing read-side workaround for it, not fixing it."""
+
+    def _read_bounded():
+        chunks = []
+        total = 0
+        with path.open("rb") as handle:
+            while total <= _READ_TEXT_MAX_BYTES:
+                more = handle.read(_READ_TEXT_CHUNK_SIZE)
+                if not more:
+                    break
+                chunks.append(more)
+                total += len(more)
+        return b"".join(chunks)
+
     try:
-        return read_with_permission_retry(lambda: path.read_text(encoding="utf-8"))
+        raw_bytes = read_with_permission_retry(_read_bounded)
     except FileNotFoundError:
         return None
+    if len(raw_bytes) > _READ_TEXT_MAX_BYTES:
+        raise OSError(f"{path}: exceeds the {_READ_TEXT_MAX_BYTES}-byte read limit for adrpy-skills.")
+    return raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _resolve_path(provider_name, skill_name, target_dir, scope):

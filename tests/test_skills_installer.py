@@ -806,17 +806,17 @@ class TestReadRetriesTransientPermissionError:
     def test_install_absorbs_a_single_transient_permission_error_on_read(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
         path = tmp_path / ".cursor" / "rules" / "pre-release-audit.mdc"
-        original_read_text = Path.read_text
+        original_open = Path.open
         calls = {"count": 0}
 
-        def flaky_read_text(self, *args, **kwargs):
+        def flaky_open(self, *args, **kwargs):
             if self == path:
                 calls["count"] += 1
                 if calls["count"] == 1:
                     raise PermissionError("transient contention")
-            return original_read_text(self, *args, **kwargs)
+            return original_open(self, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "read_text", flaky_read_text)
+        monkeypatch.setattr(Path, "open", flaky_open)
 
         result = installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
         assert result["skipped"] == []
@@ -963,14 +963,14 @@ class TestReadTextTOCTOUCollapse:
     def test_list_installed_tolerates_a_file_vanishing_exactly_at_the_read(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
         path = tmp_path / ".github" / "instructions" / "comment-audit.instructions.md"
-        original_read_text = Path.read_text
+        original_open = Path.open
 
         def vanish_then_raise(self, *args, **kwargs):
             if self == path:
                 raise FileNotFoundError(2, "No such file or directory", str(self))
-            return original_read_text(self, *args, **kwargs)
+            return original_open(self, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "read_text", vanish_then_raise)
+        monkeypatch.setattr(Path, "open", vanish_then_raise)
 
         rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
         assert rows[0]["installed"] is False
@@ -979,20 +979,43 @@ class TestReadTextTOCTOUCollapse:
     def test_remove_tolerates_shared_doc_vanishing_during_its_own_post_loop_check(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
         shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
-        original_read_text = Path.read_text
+        original_open = Path.open
 
         def vanish_then_raise(self, *args, **kwargs):
             if self == shared:
                 raise FileNotFoundError(2, "No such file or directory", str(self))
-            return original_read_text(self, *args, **kwargs)
+            return original_open(self, *args, **kwargs)
 
-        monkeypatch.setattr(Path, "read_text", vanish_then_raise)
+        monkeypatch.setattr(Path, "open", vanish_then_raise)
 
         result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
         # copilot's own removal must have committed for real (and been
         # reported) despite the later shared-doc check hitting a vanished
         # file, instead of the whole call crashing after the fact.
         assert any(row["provider"] == "copilot" for row in result["removed"])
+
+
+class TestReadTextSizeCap:
+    """Round 37, Class P5: _read_text had no size cap -- a front measured
+    an unbounded read of a planted 100MB file peaking process memory near
+    200MB. Every other full-content reader in the project already caps
+    (core/config.py's CONFIG_READ_MAX_BYTES, core/lock.py's own
+    LOCK_READ_MAX_BYTES); this was the one that didn't."""
+
+    def test_a_file_over_the_cap_raises_oserror_instead_of_loading_it_whole(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)
+        oversized = tmp_path / "oversized.md"
+        oversized.write_text("x" * 500, encoding="utf-8")
+
+        with pytest.raises(OSError):
+            installer._read_text(oversized)
+
+    def test_a_file_at_or_under_the_cap_still_reads_normally(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)
+        fine = tmp_path / "fine.md"
+        fine.write_text("x" * 100, encoding="utf-8")
+
+        assert installer._read_text(fine) == "x" * 100
 
 
 class TestTargetValidation:
