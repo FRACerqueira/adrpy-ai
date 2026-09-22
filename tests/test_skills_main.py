@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from adrpy.skills.__main__ import main
 from adrpy.skills.providers import PROVIDERS
@@ -88,6 +89,46 @@ class TestCliDispatch:
         out = capsys.readouterr().out
         assert exit_code == 0
         assert out.startswith("adrpy-skills ")
+
+    def test_remove_via_short_aliases(self, tmp_path, capsys):
+        # Round 35, Test-Adequacy front: -p/-s were exercised via the real
+        # CLI (test_install_via_short_aliases above), but -t and -f never
+        # were -- describe()'s own alias metadata was checked, and so was
+        # parse_flags' aliases= dict via AST inspection, but neither of
+        # those actually invokes the CLI with -t/-f, so either could drop
+        # from the real aliases={...} kwarg with every existing test still
+        # green.
+        main(["install", "--path", str(tmp_path), "-s", "pre-release-audit", "-p", "cursor"])
+        capsys.readouterr()
+        exit_code, out = _run(["remove", "--path", str(tmp_path), "-s", "pre-release-audit", "-p", "cursor", "-f"], capsys)
+        assert exit_code == 0
+        assert len(out["data"]["removed"]) == 1
+
+    def test_target_global_via_short_alias(self, tmp_path, capsys, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        exit_code, out = _run(["install", "-p", "claude", "-s", "pre-release-audit", "-t", "global"], capsys)
+        assert exit_code == 0
+        assert len(out["data"]["installed"]) == 1
+        assert (home / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
+
+    def test_provider_comma_with_nothing_after_is_a_usage_error_via_cli(self, tmp_path, capsys):
+        # Round 35, Test-Adequacy front: the empty-after-split rejection was
+        # only ever tested by calling installer.install([], ...) directly,
+        # bypassing commands/install.py's own _split() entirely -- a
+        # regression there (e.g. `... or ["all"]`, silently widening the
+        # blast radius to "all providers" on a mistyped flag) would pass
+        # every existing test.
+        exit_code, out = _run(["install", "--path", str(tmp_path), "--provider", ","], capsys)
+        assert exit_code == 2
+        assert out["code"] == "usage-error"
+        assert list(tmp_path.rglob("*")) == []
+
+    def test_short_help_flag_also_works(self, capsys):
+        exit_code, out = _run(["-h"], capsys)
+        assert exit_code == 0
+        assert {c["name"] for c in out["data"]["commands"]} == {"help", "install", "remove", "list"}
 
     def test_unexpected_exception_is_reported_as_internal_error_not_a_raw_traceback(self, tmp_path, capsys, monkeypatch):
         # Round 32, Class F: an exception outside UsageError/OSError (e.g. a

@@ -71,6 +71,28 @@ class TestMarkerRoundTrip:
         frontmatter_end = content.index("---\n", 4) + len("---\n")
         assert content[frontmatter_end:].startswith("<!-- adrpy-skills:")
 
+    def test_unicode_content_round_trips_through_the_hash_and_agentsmd_tag_scan(self, tmp_path):
+        # Round 35, Test-Adequacy front: no test exercised non-ASCII content
+        # through the hash/marker round-trip or the AGENTS.md tag scan.
+        # Confirms compute_hash's explicit UTF-8 encoding and the tag
+        # regex's `[^:\n]+` name group both handle it correctly, not just
+        # ASCII skill bodies.
+        installer.install(str(tmp_path), ["claude", "agentsmd"], ["pre-release-audit"], "project", False)
+
+        claude_path = tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md"
+        text = claude_path.read_text(encoding="utf-8")
+        claude_path.write_text(text + "\nUnicode edit: café, naïve, 日本語, emoji 🎉\n", encoding="utf-8")
+        assert check_drift(claude_path.read_text(encoding="utf-8")) == "drifted"
+
+        agents_md = tmp_path / "AGENTS.md"
+        _hand_edit_inside_marker(agents_md, "### pre-release-audit", "### pre-release-audit — café, 日本語 🎉")
+        inner = installer._agentsmd_extract_inner(agents_md.read_text(encoding="utf-8"), "pre-release-audit")
+        assert check_drift(inner) == "drifted"
+
+        result = installer.install(str(tmp_path), ["claude", "agentsmd"], ["pre-release-audit"], "project", True)
+        assert len(result["installed"]) == 2
+        assert check_drift(claude_path.read_text(encoding="utf-8")) == "clean"
+
 
 class TestDriftProtection:
     @pytest.mark.parametrize("provider", ["claude", "cursor", "copilot"])
@@ -124,6 +146,26 @@ class TestDriftProtection:
         result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
         assert shared.exists()
         reasons = {row["reason"] for row in result["skipped"] if row["provider"] == "shared-doc"}
+        assert "drifted" in reasons
+
+    def test_hand_edited_shared_doc_is_skipped_via_agentsmd_too(self, tmp_path):
+        # Round 35, Test-Adequacy front: every shared-doc drift/foreign test
+        # above used copilot -- agentsmd is the other stub-mode provider,
+        # with its own, more complex reference-counting via
+        # _other_stub_providers_reference, and had never triggered a
+        # drift/foreign shared-doc scenario in any test.
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
+
+        install_result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        reasons = {row["reason"] for row in install_result["skipped"] if row["provider"] == "shared-doc"}
+        assert "drifted" in reasons
+        assert "HAND EDITED" in shared.read_text(encoding="utf-8")
+
+        remove_result = installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        assert shared.exists()
+        reasons = {row["reason"] for row in remove_result["skipped"] if row["provider"] == "shared-doc"}
         assert "drifted" in reasons
 
     def test_agentsmd_block_drift_is_isolated_per_skill(self, tmp_path):
@@ -570,6 +612,24 @@ class TestAgentsmdMalformedBlocks:
         assert "SKILL-BODY-MARKER" in after
         assert "adrpy:skills:decision-log" in after
 
+    def test_two_different_skills_malformed_in_the_same_call_are_detected_independently(self, tmp_path):
+        # Round 35, Test-Adequacy front: every existing malformed-block test
+        # uses a file containing only ONE skill's own (malformed) block --
+        # this exercises detection for two DIFFERENT skills, both malformed,
+        # in the same install() call, confirming AGENTS.md is re-read fresh
+        # per skill_name rather than a status computed once and reused.
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(
+            "<!-- adrpy:skills:pre-release-audit:start -->\nno matching end tag here\n"
+            "<!-- adrpy:skills:decision-log:start -->\nalso no matching end tag\n",
+            encoding="utf-8",
+        )
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
+        assert result["installed"] == []
+        reasons = {row["skill"]: row["reason"] for row in result["skipped"]}
+        assert reasons == {"pre-release-audit": "malformed", "decision-log": "malformed"}
+
 
 class TestGlobalScopeValidatedBeforeAnyWrite:
     """Round 32, Class D: --target global's per-provider validity check
@@ -637,6 +697,29 @@ class TestRemoveTolerateVanishingFile:
 
         result = installer.remove(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
         assert result["removed"] == [{"provider": "cursor", "skill": "pre-release-audit", "file": str(path)}]
+
+    def test_shared_doc_unlink_tolerates_file_vanishing_between_read_and_unlink(self, tmp_path, monkeypatch):
+        # Round 35, Test-Adequacy front: the generic-provider branch's
+        # missing_ok=True (above) has a red/green test; the shared-doc
+        # branch's own, separate read-then-unlink sequence (installer.py's
+        # `remove()`, the "still_referenced" block) never did, despite the
+        # identical TOCTOU shape.
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        original_read_text = Path.read_text
+
+        def read_then_vanish(self, *args, **kwargs):
+            content = original_read_text(self, *args, **kwargs)
+            if self == shared and shared.exists():
+                shared.unlink()
+            return content
+
+        monkeypatch.setattr(Path, "read_text", read_then_vanish)
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        removed_providers = {row["provider"] for row in result["removed"]}
+        assert "copilot" in removed_providers
+        assert not shared.exists()
 
 
 class TestAgentsmdAdversarialContentStaysLinearTime:
