@@ -510,7 +510,31 @@ def list_installed(target_dir, providers, skills):
     skill_names = _expand(skills, resources.SKILL_NAMES)
     rows = []
 
+    # Mirrors install()/remove()'s own `needs_shared_doc` -- the one
+    # shared doc/ai-skills/<name>.md file a stub-mode provider's stub
+    # points at is its own row here too, same as it's its own row in
+    # `installed`/`removed` (provider "shared-doc"), instead of being
+    # invisible to `list` even though a blocked/drifted shared doc is
+    # exactly what would later cause install's own "shared-doc-blocked"
+    # skip.
+    needs_shared_doc = any(PROVIDERS[name]["mode"] != "full" for name in provider_names)
+
     for skill_name in skill_names:
+        if needs_shared_doc:
+            shared_path = _shared_doc_path(target_dir, skill_name)
+            shared_existing = _read_text(shared_path)
+            shared_installed = shared_existing is not None
+            shared_drifted = None if not shared_installed else check_drift(shared_existing) in ("drifted", "foreign")
+            rows.append(
+                {
+                    "skill": skill_name,
+                    "provider": "shared-doc",
+                    "scope": "project",
+                    "installed": shared_installed,
+                    "drifted": shared_drifted,
+                    "file": str(shared_path),
+                }
+            )
         for provider_name in provider_names:
             spec = PROVIDERS[provider_name]
             scopes = ("project", "global") if provider_name == "claude" else ("project",)

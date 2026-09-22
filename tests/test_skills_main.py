@@ -29,9 +29,11 @@ class TestCliDispatch:
         assert exit_code == 0
         # Exact count, not just "> 1" -- every provider x every skill, with
         # claude contributing an extra row for its own global scope (every
-        # other provider is project-scope only) -- so a row silently going
-        # missing wouldn't slip by.
-        rows_per_skill = sum(2 if spec["global_path"] is not None else 1 for spec in PROVIDERS.values())
+        # other provider is project-scope only), plus one "shared-doc" row
+        # per skill since "all" providers includes at least one stub-mode
+        # provider (copilot, agentsmd) -- so a row silently going missing
+        # wouldn't slip by.
+        rows_per_skill = sum(2 if spec["global_path"] is not None else 1 for spec in PROVIDERS.values()) + 1
         assert len(out["data"]["skills"]) == len(SKILL_NAMES) * rows_per_skill
 
     def test_install_via_short_aliases(self, tmp_path, capsys):

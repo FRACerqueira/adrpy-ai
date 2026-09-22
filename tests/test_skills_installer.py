@@ -369,6 +369,32 @@ class TestList:
         assert by_skill["decision-log"]["installed"] is False
         assert by_skill["decision-log"]["drifted"] is None
 
+    def test_list_includes_a_shared_doc_row_when_a_stub_mode_provider_is_requested(self, tmp_path):
+        # Round 37, Class P7: install/remove already report a "shared-doc"
+        # row under `installed`/`removed`; list never did, even though a
+        # blocked/drifted shared doc is exactly what would later cause
+        # install's own "shared-doc-blocked" skip.
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        shared_rows = [r for r in rows if r["provider"] == "shared-doc"]
+        assert len(shared_rows) == 1
+        assert shared_rows[0]["scope"] == "project"
+        assert shared_rows[0]["installed"] is True
+        assert shared_rows[0]["drifted"] is False
+
+    def test_list_omits_the_shared_doc_row_when_only_full_mode_providers_are_requested(self, tmp_path):
+        rows = installer.list_installed(str(tmp_path), ["cursor"], ["comment-audit"])["skills"]
+        assert all(r["provider"] != "shared-doc" for r in rows)
+
+    def test_list_flags_a_hand_edited_shared_doc_via_its_own_row(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        shared_path = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared_path.write_text("hand-edited, no longer matches the marker", encoding="utf-8")
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        shared_row = next(r for r in rows if r["provider"] == "shared-doc")
+        assert shared_row["installed"] is True
+        assert shared_row["drifted"] is True
+
     def test_list_flags_malformed_agentsmd_block_as_drifted(self, tmp_path):
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(
@@ -376,8 +402,9 @@ class TestList:
             encoding="utf-8",
         )
         rows = installer.list_installed(str(tmp_path), ["agentsmd"], ["pre-release-audit"])["skills"]
-        assert rows[0]["installed"] is True
-        assert rows[0]["drifted"] is True
+        row = next(r for r in rows if r["provider"] == "agentsmd")
+        assert row["installed"] is True
+        assert row["drifted"] is True
 
 
 class TestGlobalScope:
@@ -765,8 +792,9 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
         elapsed = time.monotonic() - started
 
         assert elapsed < 3.0, f"list_installed took {elapsed:.2f}s against adversarial AGENTS.md content"
-        assert rows[0]["installed"] is True
-        assert rows[0]["drifted"] is True  # malformed: many starts, zero ends
+        row = next(r for r in rows if r["provider"] == "agentsmd")
+        assert row["installed"] is True
+        assert row["drifted"] is True  # malformed: many starts, zero ends
 
     def test_time_scales_linearly_not_quadratically_with_tag_count(self, tmp_path):
         # Round 35, Test-Adequacy front: the absolute-threshold test above
@@ -973,8 +1001,9 @@ class TestReadTextTOCTOUCollapse:
         monkeypatch.setattr(Path, "open", vanish_then_raise)
 
         rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
-        assert rows[0]["installed"] is False
-        assert rows[0]["drifted"] is None
+        row = next(r for r in rows if r["provider"] == "copilot")
+        assert row["installed"] is False
+        assert row["drifted"] is None
 
     def test_remove_tolerates_shared_doc_vanishing_during_its_own_post_loop_check(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)

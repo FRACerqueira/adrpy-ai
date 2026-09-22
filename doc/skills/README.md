@@ -95,6 +95,17 @@ to delete something (a full file, an `AGENTS.md` block, the shared doc).
 remaining skill block would leave it empty -- that's a judgment call for
 you, not this command.
 
+The full, closed set of values `skipped[].reason` can ever take, across
+both `install` and `remove`, is exactly: `foreign`, `drifted`,
+`malformed` (the three drift statuses above), plus one more that isn't a
+drift status at all -- **`shared-doc-blocked`** (`install` only): a
+stub-mode provider's own file/block was skipped not because of its own
+drift status, but because the one shared doc it would point at was
+itself `foreign`/`drifted` and blocked. `remove` has no equivalent --
+removing a stub-mode provider's own file/block never waits on the
+shared doc's own removability, since deleting a pointer is safe whether
+or not the thing it points at can also be cleaned up right now.
+
 ## Known limitation: the drift marker is not tamper-evident
 
 The content-hash marker above detects accidental drift (a hand-edit since

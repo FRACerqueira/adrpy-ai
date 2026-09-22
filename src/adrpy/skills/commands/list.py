@@ -18,8 +18,12 @@ def describe():
             "false only when the content still matches exactly what was last generated), and the "
             "resolved file path either way. Always reports both project and global scope for claude "
             "(the only provider with a global-scope concept); every other provider is project-scope "
-            "only. Read-only in the strict sense: computes a hash to determine drift, but never "
-            "writes anything back, regardless of what it finds."
+            "only. When any requested provider is stub-mode (copilot, agentsmd), one extra row per "
+            "skill is included under provider 'shared-doc' (project scope only) for the one shared "
+            "doc/ai-skills/<name>.md file its stub points at -- same shared-doc concept install/"
+            "remove already report under that same provider name in their own `installed`/`removed`. "
+            "Read-only in the strict sense: computes a hash to determine drift, but never writes "
+            "anything back, regardless of what it finds."
         ),
         "arguments": [
             {
