@@ -941,3 +941,55 @@ class TestWarningIdentityAndWording:
         warning = next(w for w in result["warnings"] if "pre-release-audit" in w)
         assert "overwritten" not in warning
         assert "left in place" in warning
+
+
+class TestReadTextTOCTOUCollapse:
+    """Round 37, Class P2: the `path.exists()`-then-`_read_text(path)`
+    pattern was repeated 9 times across this file; two of the nine
+    (list_installed's own reads, and the shared-doc-removal check inside
+    remove()) had no protection at all against the file vanishing in
+    between, and could crash with a raw, uncaught FileNotFoundError --
+    reachable even from `list` (read-only), and from `remove()` AFTER it
+    had already committed a real deletion for an earlier (provider,
+    skill) pair in the same call, silently discarding that success from
+    the caller's view. Fixed by folding the existence check into
+    `_read_text` itself (returns None on FileNotFoundError) and removing
+    every separate `.exists()` guard, closing the whole class in one
+    pass instead of patching the two flagged sites alone."""
+
+    def test_read_text_returns_none_for_a_nonexistent_path(self, tmp_path):
+        assert installer._read_text(tmp_path / "does-not-exist.md") is None
+
+    def test_list_installed_tolerates_a_file_vanishing_exactly_at_the_read(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        path = tmp_path / ".github" / "instructions" / "comment-audit.instructions.md"
+        original_read_text = Path.read_text
+
+        def vanish_then_raise(self, *args, **kwargs):
+            if self == path:
+                raise FileNotFoundError(2, "No such file or directory", str(self))
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", vanish_then_raise)
+
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        assert rows[0]["installed"] is False
+        assert rows[0]["drifted"] is None
+
+    def test_remove_tolerates_shared_doc_vanishing_during_its_own_post_loop_check(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        original_read_text = Path.read_text
+
+        def vanish_then_raise(self, *args, **kwargs):
+            if self == shared:
+                raise FileNotFoundError(2, "No such file or directory", str(self))
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", vanish_then_raise)
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        # copilot's own removal must have committed for real (and been
+        # reported) despite the later shared-doc check hitting a vanished
+        # file, instead of the whole call crashing after the fact.
+        assert any(row["provider"] == "copilot" for row in result["removed"])
