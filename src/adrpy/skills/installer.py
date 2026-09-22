@@ -195,11 +195,7 @@ def _agentsmd_force_strip_all(file_text, skill_name):
     return "".join(pieces)
 
 
-def _agentsmd_has_any_block(file_text):
-    return bool(re.search(r"<!-- adrpy:skills:[^:]+:start -->", file_text or ""))
-
-
-def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provider, providers_in_target):
+def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provider):
     """True if some OTHER stub-mode provider (already installed, not part
     of this same call, or part of it but not the one being removed) still
     points at the shared doc for this skill. A malformed agentsmd block
@@ -255,11 +251,18 @@ def install(target_dir, providers, skills, scope, force):
         # drifted: false regardless.
         needs_shared_doc = any(PROVIDERS[name]["mode"] != "full" for name in provider_names)
 
+        # Tracked explicitly (not re-derived from `skipped`) so the
+        # provider loop below can refuse to write any stub-mode provider's
+        # own file when the shared doc it would reference wasn't written --
+        # a blocked shared-doc write used to be silently disconnected from
+        # whether the providers depending on it were allowed to proceed.
+        shared_doc_blocked = False
         if needs_shared_doc:
             shared_path = _shared_doc_path(target_dir, skill_name)
             shared_existing = _read_text(shared_path) if shared_path.exists() else None
             shared_status = check_drift(shared_existing)
-            if _blocks_write(shared_status, force):
+            shared_doc_blocked = _blocks_write(shared_status, force)
+            if shared_doc_blocked:
                 skipped.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status})
             else:
                 if force and shared_status in ("drifted", "foreign"):
@@ -269,20 +272,51 @@ def install(target_dir, providers, skills, scope, force):
                 attempts = atomic_write_text(shared_path, shared_content)
                 warning = retry_warning(attempts)
                 if warning:
-                    warnings.append(warning)
+                    # retry_warning's own message carries no file identity --
+                    # fine for every other caller in this project (one write
+                    # per command invocation), but install()/remove() can
+                    # write several files in one call, where an unqualified
+                    # "write succeeded only after N attempts" doesn't say
+                    # which one.
+                    warnings.append(f"shared-doc/{skill_name}: {warning}")
+                # Symmetric with remove()'s own shared-doc reporting --
+                # previously this write's own success never appeared
+                # anywhere in the result, even in the plain happy path.
+                installed.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path)})
 
         for provider_name in provider_names:
             spec = PROVIDERS[provider_name]
+            path = _resolve_path(provider_name, skill_name, target_dir, scope)
+
+            # A stub-mode provider's own file is meaningless without the
+            # shared doc it points readers at -- never write one pointing
+            # at a shared doc that was itself just refused (foreign/
+            # drifted, no --force). Previously nothing connected the two:
+            # a blocked shared-doc write didn't stop a stub provider from
+            # reporting a clean success while pointing at stale content.
+            if spec["mode"] != "full" and shared_doc_blocked:
+                skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": "shared-doc-blocked"})
+                continue
 
             if provider_name == "agentsmd":
-                path = _resolve_path(provider_name, skill_name, target_dir, scope)
                 existing_file = _read_text(path) if path.exists() else ""
                 status = _agentsmd_block_state(existing_file, skill_name)
                 if _blocks_write(status, force):
                     skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
                     continue
-                if force and status in ("drifted", "foreign", "malformed"):
+                if force and status in ("drifted", "foreign"):
                     warnings.append(f"agentsmd/{skill_name}: {status}, overwritten (--force).")
+                if force and status == "malformed":
+                    # Not "overwritten" -- _agentsmd_force_strip_all only
+                    # ever removes this skill's own tag lines, never a
+                    # guessed span of orphaned body text between them (see
+                    # its own docstring for why). That text survives,
+                    # unwrapped, immediately before the freshly written
+                    # block -- say so, rather than implying it's gone.
+                    warnings.append(
+                        f"agentsmd/{skill_name}: malformed, tags replaced (--force) -- any orphaned body text "
+                        "between them was left in place, since its true boundary can't be determined safely."
+                    )
                 if status == "malformed":
                     existing_file = _agentsmd_force_strip_all(existing_file, skill_name)
                 inner = spec["wrap"](skill_name, meta, None, shared_doc_rel)
@@ -294,11 +328,10 @@ def install(target_dir, providers, skills, scope, force):
                 attempts = atomic_write_text(path, new_file)
                 warning = retry_warning(attempts)
                 if warning:
-                    warnings.append(warning)
+                    warnings.append(f"agentsmd/{skill_name}: {warning}")
                 installed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
                 continue
 
-            path = _resolve_path(provider_name, skill_name, target_dir, scope)
             existing = _read_text(path) if path.exists() else None
             status = check_drift(existing)
             if _blocks_write(status, force):
@@ -316,7 +349,7 @@ def install(target_dir, providers, skills, scope, force):
             attempts = atomic_write_text(path, content)
             warning = retry_warning(attempts)
             if warning:
-                warnings.append(warning)
+                warnings.append(f"{provider_name}/{skill_name}: {warning}")
             installed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
 
     return {"installed": installed, "skipped": skipped, "warnings": warnings}
@@ -362,7 +395,7 @@ def remove(target_dir, providers, skills, scope, force):
                 attempts = atomic_write_text(path, new_file)
                 warning = retry_warning(attempts)
                 if warning:
-                    warnings.append(warning)
+                    warnings.append(f"agentsmd/{skill_name}: {warning}")
                 removed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
                 any_stub_removed = True
                 continue
@@ -382,7 +415,7 @@ def remove(target_dir, providers, skills, scope, force):
                 any_stub_removed = True
 
         if any_stub_removed:
-            still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None, provider_names)
+            still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None)
             if not still_referenced:
                 shared_path = _shared_doc_path(target_dir, skill_name)
                 if shared_path.exists():

@@ -28,7 +28,10 @@ def _installed_path(tmp_path, provider, skill_name="pre-release-audit"):
 class TestInstallBasic:
     def test_install_writes_all_four_providers(self, tmp_path):
         result = installer.install(str(tmp_path), ["all"], ["pre-release-audit"], "project", False)
-        assert {row["provider"] for row in result["installed"]} == {"claude", "cursor", "copilot", "agentsmd"}
+        # "shared-doc" is its own row now too -- copilot and agentsmd both
+        # need it, but it's written (and reported) once per skill, not once
+        # per provider.
+        assert {row["provider"] for row in result["installed"]} == {"claude", "cursor", "copilot", "agentsmd", "shared-doc"}
         assert result["skipped"] == []
         assert (tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
         assert (tmp_path / ".cursor" / "rules" / "pre-release-audit.mdc").exists()
@@ -40,7 +43,8 @@ class TestInstallBasic:
     def test_default_args_install_all_skills_and_providers(self, tmp_path):
         result = installer.install(str(tmp_path), ["all"], ["all"], "project", False)
         installed_pairs = {(row["provider"], row["skill"]) for row in result["installed"]}
-        assert len(installed_pairs) == 4 * 3  # 4 providers x 3 skills
+        # 4 providers x 3 skills, plus 1 shared-doc row per skill.
+        assert len(installed_pairs) == 4 * 3 + 3
 
     def test_comment_audit_has_no_gate_and_still_installs(self, tmp_path):
         result = installer.install(str(tmp_path), ["claude"], ["comment-audit"], "project", False)
@@ -59,7 +63,13 @@ class TestMarkerRoundTrip:
         installer.install(str(tmp_path), ["all"], ["pre-release-audit"], "project", False)
         result = installer.install(str(tmp_path), ["all"], ["pre-release-audit"], "project", False)
         assert result["skipped"] == []
-        assert {row["provider"] for row in result["installed"]} == {"claude", "cursor", "copilot", "agentsmd"}
+        assert {row["provider"] for row in result["installed"]} == {
+            "claude",
+            "cursor",
+            "copilot",
+            "agentsmd",
+            "shared-doc",
+        }
 
     def test_marker_is_placed_after_frontmatter_not_before(self, tmp_path):
         # Round 32, Class I: the marker's exact position was never asserted
@@ -90,7 +100,7 @@ class TestMarkerRoundTrip:
         assert check_drift(inner) == "drifted"
 
         result = installer.install(str(tmp_path), ["claude", "agentsmd"], ["pre-release-audit"], "project", True)
-        assert len(result["installed"]) == 2
+        assert len(result["installed"]) == 3  # claude, agentsmd, and the shared-doc agentsmd needs
         assert check_drift(claude_path.read_text(encoding="utf-8")) == "clean"
 
 
@@ -104,7 +114,9 @@ class TestDriftProtection:
         path.write_text(text + "\nHAND EDITED\n", encoding="utf-8")
 
         result = installer.install(str(tmp_path), [provider], ["pre-release-audit"], "project", False)
-        assert result["installed"] == []
+        # For copilot, the (unrelated, clean) shared doc still installs
+        # independently -- only the provider's own drifted row is absent.
+        assert provider not in {row["provider"] for row in result["installed"]}
         assert result["skipped"][0]["reason"] == "drifted"
         assert "HAND EDITED" in path.read_text(encoding="utf-8")
 
@@ -117,7 +129,7 @@ class TestDriftProtection:
 
         result = installer.install(str(tmp_path), [provider], ["pre-release-audit"], "project", True)
         assert result["skipped"] == []
-        assert len(result["installed"]) == 1
+        assert provider in {row["provider"] for row in result["installed"]}
         assert "HAND EDITED" not in path.read_text(encoding="utf-8")
 
     def test_hand_edited_shared_doc_is_skipped_on_install_without_force(self, tmp_path):
@@ -174,8 +186,11 @@ class TestDriftProtection:
         _hand_edit_inside_marker(agents_md, "### pre-release-audit", "### pre-release-audit (EDITED)")
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
-        skipped_skills = {row["skill"] for row in result["skipped"]}
-        installed_skills = {row["skill"] for row in result["installed"]}
+        # Filtered to the agentsmd provider itself -- the (unrelated,
+        # clean) shared doc for pre-release-audit still installs
+        # independently of its own agentsmd block being drifted.
+        skipped_skills = {row["skill"] for row in result["skipped"] if row["provider"] == "agentsmd"}
+        installed_skills = {row["skill"] for row in result["installed"] if row["provider"] == "agentsmd"}
         assert skipped_skills == {"pre-release-audit"}
         assert installed_skills == {"decision-log"}
         # The hand-edit survives because that block was skipped, not overwritten.
@@ -517,7 +532,9 @@ class TestAgentsmdMalformedBlocks:
         before = agents_md.read_text(encoding="utf-8")
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", False)
-        assert result["installed"] == []
+        # The (unrelated, clean) shared doc still installs independently --
+        # only the malformed agentsmd row is absent.
+        assert "agentsmd" not in {row["provider"] for row in result["installed"]}
         assert result["skipped"][0]["reason"] == "malformed"
         assert agents_md.read_text(encoding="utf-8") == before
 
@@ -542,7 +559,7 @@ class TestAgentsmdMalformedBlocks:
         agents_md.write_text(block, encoding="utf-8")
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", False)
-        assert result["installed"] == []
+        assert "agentsmd" not in {row["provider"] for row in result["installed"]}
         assert result["skipped"][0]["reason"] == "malformed"
         # Neither copy was touched -- an untested "fix" that patched only
         # the first match would have left the second permanently stale.
@@ -555,7 +572,7 @@ class TestAgentsmdMalformedBlocks:
             encoding="utf-8",
         )
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
-        assert len(result["installed"]) == 1
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
         from adrpy.core.hashing import check_drift
 
         inner = installer._agentsmd_extract_inner(agents_md.read_text(encoding="utf-8"), "pre-release-audit")
@@ -580,7 +597,7 @@ class TestAgentsmdMalformedBlocks:
         )
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
-        assert len(result["installed"]) == 1
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
         after = agents_md.read_text(encoding="utf-8")
         assert "adrpy:skills:decision-log" in after
         assert "Some trailing hand-written project notes that must survive." in after
@@ -607,7 +624,7 @@ class TestAgentsmdMalformedBlocks:
         agents_md.write_text(duplicated, encoding="utf-8")
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
-        assert len(result["installed"]) == 1
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
         after = agents_md.read_text(encoding="utf-8")
         assert "SKILL-BODY-MARKER" in after
         assert "adrpy:skills:decision-log" in after
@@ -626,8 +643,8 @@ class TestAgentsmdMalformedBlocks:
         )
 
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
-        assert result["installed"] == []
-        reasons = {row["skill"]: row["reason"] for row in result["skipped"]}
+        assert "agentsmd" not in {row["provider"] for row in result["installed"]}
+        reasons = {row["skill"]: row["reason"] for row in result["skipped"] if row["provider"] == "agentsmd"}
         assert reasons == {"pre-release-audit": "malformed", "decision-log": "malformed"}
 
 
@@ -848,3 +865,79 @@ class TestSharedDocWrittenBeforeStubProviders:
 
         installer.install(str(tmp_path), ["copilot", "agentsmd"], ["decision-log"], "project", False)
         assert stub_writes_saw_shared_doc_missing == [False, False]
+
+
+class TestSharedDocReportingAndBlocking:
+    """Round 36 re-verification finding: two bugs in install() around the
+    shared doc's own success/blocked status."""
+
+    def test_shared_doc_write_appears_in_installed(self, tmp_path):
+        # High: a successful shared-doc write never appeared anywhere in
+        # the result, even in the plain happy path -- a caller checking
+        # `installed` for confirmation of what was actually written on
+        # disk would have missed it entirely.
+        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        shared_rows = [row for row in result["installed"] if row["provider"] == "shared-doc"]
+        assert len(shared_rows) == 1
+        assert shared_rows[0]["file"] == str(tmp_path / "doc" / "ai-skills" / "comment-audit.md")
+
+    def test_blocked_shared_doc_prevents_stub_provider_from_writing_a_stale_reference(self, tmp_path):
+        # High: a foreign/drifted shared doc, blocked without --force,
+        # used to have no effect on whether a stub-mode provider's own
+        # file still got written pointing at it -- reported as a clean
+        # install success while referencing content that was never
+        # actually verified or regenerated.
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        assert "agentsmd" not in {row["provider"] for row in result["installed"]}
+        agentsmd_skip = next(row for row in result["skipped"] if row["provider"] == "agentsmd")
+        assert agentsmd_skip["reason"] == "shared-doc-blocked"
+        assert not (tmp_path / "AGENTS.md").exists()
+        assert shared.read_text(encoding="utf-8") == "hand-written doc, no marker at all"
+
+    def test_force_writes_both_the_shared_doc_and_the_stub_provider_it_blocked(self, tmp_path):
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
+        assert (tmp_path / "AGENTS.md").exists()
+        assert "hand-written" not in shared.read_text(encoding="utf-8")
+
+
+class TestWarningIdentityAndWording:
+    """Round 36 re-verification finding: retry_warning's own message
+    carries no file identity, ambiguous in install()/remove() specifically
+    (the one place in the project that can write several files in one
+    call); and --force's "overwritten" wording overstates what happens to
+    a malformed agentsmd block's own orphaned body text."""
+
+    def test_retry_warning_identifies_which_file_needed_retries(self, tmp_path, monkeypatch):
+        def multi_attempt_write(path, content):
+            from pathlib import Path as _Path
+
+            _Path(path).parent.mkdir(parents=True, exist_ok=True)
+            _Path(path).write_text(content, encoding="utf-8")
+            return 3
+
+        monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
+
+        result = installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
+        assert any(w.startswith("cursor/pre-release-audit: ") and "3 attempts" in w for w in result["warnings"])
+
+    def test_force_over_malformed_block_does_not_claim_the_body_was_overwritten(self, tmp_path):
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(
+            "<!-- adrpy:skills:pre-release-audit:start -->\nno matching end tag here\n",
+            encoding="utf-8",
+        )
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
+        warning = next(w for w in result["warnings"] if "pre-release-audit" in w)
+        assert "overwritten" not in warning
+        assert "left in place" in warning

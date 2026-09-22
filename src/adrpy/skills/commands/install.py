@@ -18,9 +18,15 @@ def describe():
             "a file that already exists with no marker at all is reported as 'foreign' and left "
             "untouched; a file whose marker no longer matches its own current content is reported "
             "as 'drifted' and also left untouched -- in both cases only --force overwrites it. "
-            "--target global combined with any provider other than claude fails with usage-error "
-            "(cursor/copilot/agentsmd have no global-scope concept). Never runs unless explicitly "
-            "invoked -- adrpy-skills is a separate entry point from adrpy and is never called by it."
+            "For copilot/agentsmd, the one shared doc a skill's stub points at is written (and "
+            "reported in `installed` under provider 'shared-doc') before that provider's own file, "
+            "never after -- if the shared doc itself is 'foreign'/'drifted' and blocked (without "
+            "--force), every stub-mode provider that would reference it is also skipped, reported "
+            "with reason 'shared-doc-blocked', rather than writing a stub that points at content "
+            "never actually verified or regenerated. --target global combined with any provider "
+            "other than claude fails with usage-error (cursor/copilot/agentsmd have no global-scope "
+            "concept). Never runs unless explicitly invoked -- adrpy-skills is a separate entry "
+            "point from adrpy and is never called by it."
         ),
         "arguments": [
             {
