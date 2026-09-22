@@ -114,6 +114,30 @@ def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monke
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_atomic_write_bytes_cleans_up_orphan_on_a_non_oserror_mid_write(tmp_path, monkeypatch):
+    """Round 35 resilience front: a KeyboardInterrupt (or any other
+    non-OSError) raised during the write or the os.replace call bypassed
+    the existing `except OSError` cleanup entirely, leaking the temp file
+    -- reproduced live against adrpy-skills' installer.py (patched
+    os.replace to raise KeyboardInterrupt, found the .tmp file left behind
+    in the target directory, permanently, until a human deleted it by
+    hand). Any exception escaping mid-write, not just OSError, must still
+    leave no orphan behind -- same fix shape as atomic_write_chunks's own
+    chunk-producer case above."""
+    target = tmp_path / "decision.md"
+
+    def boom(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
+
+    with pytest.raises(KeyboardInterrupt):
+        atomic_write_text(target, "content")
+
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert not target.exists()
+
+
 def test_atomic_write_chunks_cleans_up_orphan_when_the_chunk_producer_raises_a_non_oserror(tmp_path):
     """ADR006V01's chunk producer can raise LockLostError (core/lock.py)
     from inside the generator -- not an OSError, so it never hit the

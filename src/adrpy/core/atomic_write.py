@@ -136,6 +136,16 @@ def atomic_write_bytes(path, content_bytes):
             if not isinstance(error, PermissionError):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
+        except BaseException:
+            # A signal-driven interrupt (KeyboardInterrupt) or any other
+            # non-OSError raised mid-write must not leave the temp file
+            # behind either -- the OSError-only cleanup above doesn't
+            # catch this. Same gap atomic_write_chunks's own cleanup
+            # already closes for its chunk-producer case (a non-OSError
+            # raised by the caller's generator); this closes it here too,
+            # for the already-materialized-bytes case.
+            temp_path.unlink(missing_ok=True)
+            raise
     raise last_error
 
 
