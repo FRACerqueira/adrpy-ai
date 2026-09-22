@@ -18,6 +18,7 @@ A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueir
 - [Quick Start](#quick-start)
 - [Commands](#commands)
 - [Using adrpy-ai with AI Coding Agents](#using-adrpy-ai-with-ai-coding-agents)
+- [Installing the judgment layer (`adrpy-skills`)](#installing-the-judgment-layer-adrpy-skills)
 - [Configuration](#configuration)
 - [Relationship to AdrPlus](#relationship-to-adrplus)
 - [Architecture and Design Decisions](#architecture-and-design-decisions)
@@ -134,6 +135,20 @@ adrpy-ai was designed for this from the start, not adapted to it afterward:
 - `adrpy help <command>` is the same machine-readable contract an agent can fetch at runtime, instead of relying on documentation baked into its own training data (which can drift out of date).
 - No command ever blocks on a prompt. An agent driving `adrpy` through a shell tool never has to detect and answer an interactive question.
 
+`adrpy` itself is deliberately mechanical: it manages the ADR/decision-log *record*, never the judgment (when a decision needs recording, when a hardening review is due, when to close a review cycle). That judgment layer ships separately, as `adrpy-skills` — see [ADR009V01](doc/adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) and [`doc/skills/`](doc/skills/README.md).
+
+## Installing the judgment layer (`adrpy-skills`)
+
+A separate console script, installed by the same `pip install adrpy-ai` — opt-in, and never called by `adrpy` itself. It installs three vendor-neutral skills (`decision-log`, `pre-release-audit`, `comment-audit`) for whichever AI coding assistants you use:
+
+```bash
+adrpy-skills install                          # every bundled skill, every supported provider
+adrpy-skills install --skill decision-log --provider claude,cursor
+adrpy-skills list                             # what's installed where, and whether any of it has drifted
+```
+
+Supported providers: `claude` (Claude Code, project or global scope), `cursor`, `copilot` (GitHub Copilot), and `agentsmd` (a generic `AGENTS.md`, editing only its own marked block). Every file `adrpy-skills` writes carries a content-hash marker, so a plain re-run after `pip install --upgrade` picks up updates safely, while anything you hand-edited since is left alone unless you pass `--force`. Full command reference: [`doc/skills/`](doc/skills/README.md).
+
 ## Configuration
 
 A repository's own settings (ADR numbering, naming scheme, header labels, status labels) live in `adr-config.adrplus`, edited via `adrpy config`. For a new repository, `adrpy init` seeds those settings from, in order: an explicit `--seed <file>`, a per-user install-level default (`adrpy installconfig`, if one has been set up on this machine), or a built-in default. Status labels and the naming-scheme separator can only be changed while doing so wouldn't break recognition of an already-written decision (see [ADR004](doc/adr/ADR004V02-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md)) — in practice this means the four status labels and the separator become permanently fixed the moment the repository has its first decision of any kind, while the legacy-scheme `migrationpattern` becomes permanently fixed only once the repository has its first legacy-scheme decision specifically; `adrpy help config` documents the exact failure codes.
@@ -152,6 +167,7 @@ This project records its own architectural decisions as it makes them:
 - [`doc/adr/`](doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
 - [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the reference tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
 - [`doc/decision-log-workflow.md`](doc/decision-log-workflow.md) — the step-by-step workflow (with a diagram) for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
+- [`doc/skills/`](doc/skills/README.md) — how `adrpy-skills` installs that same judgment layer for AI coding agents, and how it decides what to write, per provider.
 
 If you're evaluating this project's engineering rigor rather than just its feature set, `doc/adr/` and `doc/decision-log/` are the primary evidence, not this README.
 
