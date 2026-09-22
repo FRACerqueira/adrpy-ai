@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from adrpy.core.errors import UsageError
@@ -518,6 +519,57 @@ class TestAgentsmdMalformedBlocks:
         inner = installer._agentsmd_extract_inner(agents_md.read_text(encoding="utf-8"), "pre-release-audit")
         assert check_drift(inner) == "clean"
 
+    def test_force_cleanup_of_truncated_block_never_deletes_another_skills_valid_block(self, tmp_path):
+        # Round 34, re-verification finding: _agentsmd_force_strip_all used to
+        # use a greedy regex from the orphaned :start tag to end-of-file when
+        # no :end existed anywhere for that skill -- deleting everything past
+        # it, including another skill's own still-valid, unrelated block.
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        agents_md = tmp_path / "AGENTS.md"
+        before_decision_log = agents_md.read_text(encoding="utf-8")
+
+        # Insert a truncated pre-release-audit block, with no :end tag, BEFORE
+        # decision-log's own clean block, plus trailing hand-written notes.
+        agents_md.write_text(
+            "<!-- adrpy:skills:pre-release-audit:start -->\nno matching end tag here\n"
+            + before_decision_log
+            + "Some trailing hand-written project notes that must survive.\n",
+            encoding="utf-8",
+        )
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
+        assert len(result["installed"]) == 1
+        after = agents_md.read_text(encoding="utf-8")
+        assert "adrpy:skills:decision-log" in after
+        assert "Some trailing hand-written project notes that must survive." in after
+        # decision-log's own block must still be exactly what it was -- not
+        # just "present", genuinely unmodified.
+        inner = installer._agentsmd_extract_inner(after, "decision-log")
+        from adrpy.core.hashing import check_drift
+
+        assert check_drift(inner) == "clean"
+
+    def test_force_cleanup_of_duplicated_block_never_deletes_an_interleaved_skills_block(self, tmp_path):
+        # Same root cause, the other malformed shape: a greedy start-to-LAST-end
+        # regex used to swallow any other skill's block sitting between two
+        # duplicate copies of the same skill's own block.
+        duplicated = (
+            "<!-- adrpy:skills:pre-release-audit:start -->\nfirst copy\n"
+            "<!-- adrpy:skills:pre-release-audit:end -->\n"
+            "<!-- adrpy:skills:decision-log:start -->\nSKILL-BODY-MARKER\n"
+            "<!-- adrpy:skills:decision-log:end -->\n"
+            "<!-- adrpy:skills:pre-release-audit:start -->\nsecond, stale copy\n"
+            "<!-- adrpy:skills:pre-release-audit:end -->\n"
+        )
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(duplicated, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
+        assert len(result["installed"]) == 1
+        after = agents_md.read_text(encoding="utf-8")
+        assert "SKILL-BODY-MARKER" in after
+        assert "adrpy:skills:decision-log" in after
+
 
 class TestGlobalScopeValidatedBeforeAnyWrite:
     """Round 32, Class D: --target global's per-provider validity check
@@ -585,3 +637,33 @@ class TestRemoveTolerateVanishingFile:
 
         result = installer.remove(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
         assert result["removed"] == [{"provider": "cursor", "skill": "pre-release-audit", "file": str(path)}]
+
+
+class TestAgentsmdAdversarialContentStaysLinearTime:
+    """Round 34, Security front: the prior per-skill DOTALL-based block
+    regexes (`.*`/`.*?` scanning for a matching `:end`) cost O(n^2) against
+    adversarial content with many `:start` tags and no matching `:end`
+    anywhere -- measured ~9.5s against a 771KB crafted file, reachable even
+    by the read-only `list` command (default --provider all includes
+    agentsmd). The fix replaces per-skill DOTALL spans with one linear tag
+    scan (no `.*`/DOTALL at all), so this must stay fast regardless of how
+    many near-miss tags an adversarial AGENTS.md contains."""
+
+    def test_many_unmatched_start_tags_stays_fast(self, tmp_path):
+        # Same shape as the front's own repro: repeated :start tags for a
+        # real skill name, no :end anywhere. A quadratic implementation
+        # would already take several seconds at this size; a linear one
+        # finishes near-instantly -- the threshold below is generous
+        # specifically to avoid machine-speed flakiness while still being
+        # far below what O(n^2) would need at this size.
+        content = ("<!-- adrpy:skills:decision-log:start -->\n" + "x" * 200) * 3000
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(content, encoding="utf-8")
+
+        started = time.monotonic()
+        rows = installer.list_installed(str(tmp_path), ["agentsmd"], ["decision-log"])["skills"]
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 3.0, f"list_installed took {elapsed:.2f}s against adversarial AGENTS.md content"
+        assert rows[0]["installed"] is True
+        assert rows[0]["drifted"] is True  # malformed: many starts, zero ends

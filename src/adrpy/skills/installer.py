@@ -82,58 +82,65 @@ def _build_shared_doc_content(skill_name, full_content):
 
 _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy:skills:{name}:end -->\n"
 
-
-def _agentsmd_block_pattern(skill_name):
-    escaped = re.escape(skill_name)
-    return re.compile(
-        r"<!-- adrpy:skills:" + escaped + r":start -->\n.*?<!-- adrpy:skills:" + escaped + r":end -->\n?",
-        re.DOTALL,
-    )
-
-
-def _agentsmd_extract_block(file_text, skill_name):
-    match = _agentsmd_block_pattern(skill_name).search(file_text)
-    return match.group(0) if match else None
+# Matches any single tag line for any skill, one at a time -- no `.*`/DOTALL
+# span-hunting across the file. A prior per-skill implementation (matching
+# "start ... end" as one DOTALL span with `.search()`/`.finditer()`) cost
+# O(n^2) against adversarial content with many `:start` tags and no `:end`
+# anywhere (measured: ~9.5s against a 771KB crafted AGENTS.md, hit even by
+# the read-only `list` command) -- this pattern can't backtrack that way
+# since it never spans more than one tag.
+_AGENTSMD_TAG_RE = re.compile(r"<!-- adrpy:skills:([^:\n]+):(start|end) -->\n?")
 
 
-def _agentsmd_inner_pattern(skill_name):
-    escaped = re.escape(skill_name)
-    return re.compile(
-        r"<!-- adrpy:skills:" + escaped + r":start -->\n(.*?)<!-- adrpy:skills:" + escaped + r":end -->\n?",
-        re.DOTALL,
-    )
+def _agentsmd_all_tags(file_text):
+    """Every adrpy:skills marker tag in `file_text`, in document order, as
+    (name, kind, match_start, match_end) tuples -- a single linear pass."""
+    return [(m.group(1), m.group(2), m.start(), m.end()) for m in _AGENTSMD_TAG_RE.finditer(file_text or "")]
+
+
+def _agentsmd_skill_span(file_text, skill_name):
+    """This skill's own complete block span -- (start, end) covering both
+    tag lines and everything between them -- or None when this skill has
+    no single well-formed block (absent, or malformed: more than one
+    `:start`, more than one `:end`, a `:start` with no `:end`, or a
+    `:end` with no `:start`, in any combination)."""
+    tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
+    starts = [t for t in tags if t[1] == "start"]
+    ends = [t for t in tags if t[1] == "end"]
+    if len(starts) != 1 or len(ends) != 1 or starts[0][2] > ends[0][2]:
+        return None
+    return starts[0][2], ends[0][3]
 
 
 def _agentsmd_extract_inner(file_text, skill_name):
     """The block's own content, excluding the `start`/`end` wrapper lines
     -- this is what was actually hashed (`marker + inner`), so drift
-    checks must run against this, never the whole wrapped block."""
-    match = _agentsmd_inner_pattern(skill_name).search(file_text)
-    return match.group(1) if match else None
+    checks must run against this, never the whole wrapped block. None when
+    this skill has no single well-formed block."""
+    tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
+    starts = [t for t in tags if t[1] == "start"]
+    ends = [t for t in tags if t[1] == "end"]
+    if len(starts) != 1 or len(ends) != 1 or starts[0][2] > ends[0][2]:
+        return None
+    return file_text[starts[0][3] : ends[0][2]]
 
 
 def _agentsmd_block_state(file_text, skill_name):
-    """Like check_drift, but first detects two malformed shapes unique to
-    AGENTS.md's marked-block format: a `:start` tag with no matching
-    `:end` (a truncated block), and more than one complete block for the
-    same skill (a duplicated block). Neither is safe to blindly replace
-    (the first case would make `install` silently append a second,
-    conflicting block; the second would leave a stale, unreachable copy
-    permanently behind), so both report "malformed" and are blocked the
-    same as a foreign file (see _blocks_write) instead of being touched."""
+    """Like check_drift, but first detects malformed shapes unique to
+    AGENTS.md's marked-block format (see _agentsmd_skill_span) -- reported
+    as "malformed" and blocked the same as a foreign file (see
+    _blocks_write) instead of being touched."""
     text = file_text or ""
-    starts = len(re.findall(r"<!-- adrpy:skills:" + re.escape(skill_name) + r":start -->", text))
-    if starts:
-        full_matches = len(list(_agentsmd_block_pattern(skill_name).finditer(text)))
-        if full_matches != starts or full_matches > 1:
-            return "malformed"
+    if any(t[0] == skill_name for t in _agentsmd_all_tags(text)) and _agentsmd_skill_span(text, skill_name) is None:
+        return "malformed"
     return check_drift(_agentsmd_extract_inner(text, skill_name))
 
 
 def _agentsmd_replace_or_append(file_text, skill_name, new_block):
-    pattern = _agentsmd_block_pattern(skill_name)
-    if pattern.search(file_text):
-        return pattern.sub(lambda _m: new_block, file_text, count=1)
+    span = _agentsmd_skill_span(file_text, skill_name)
+    if span is not None:
+        start, end = span
+        return file_text[:start] + new_block + file_text[end:]
     if not file_text:
         return new_block
     sep = "\n" if file_text.endswith("\n") else "\n\n"
@@ -141,31 +148,38 @@ def _agentsmd_replace_or_append(file_text, skill_name, new_block):
 
 
 def _agentsmd_remove_block(file_text, skill_name):
-    return _agentsmd_block_pattern(skill_name).sub("", file_text, count=1)
+    span = _agentsmd_skill_span(file_text, skill_name)
+    if span is None:
+        return file_text
+    start, end = span
+    return file_text[:start] + file_text[end:]
 
 
 def _agentsmd_force_strip_all(file_text, skill_name):
-    """Removes every trace of this skill's own block(s) from `file_text`,
-    however malformed (truncated, duplicated, or a mix) -- used only when
-    `--force` overrides a "malformed" _agentsmd_block_state, so a fresh
-    block can be written in without leaving a stray fragment behind that a
-    LATER single-match, non-greedy parse (_agentsmd_extract_inner,
-    _agentsmd_remove_block) could misread as spanning across it and the
-    newly-written block."""
-    escaped = re.escape(skill_name)
-    greedy_span = re.compile(
-        r"<!-- adrpy:skills:" + escaped + r":start -->.*<!-- adrpy:skills:" + escaped + r":end -->\n?",
-        re.DOTALL,
-    )
-    stripped, replaced_any = greedy_span.subn("", file_text)
-    if replaced_any:
-        return stripped
-    # No complete pair exists anywhere for this skill (only a lone
-    # truncated block, with no `:end` at all) -- nothing for the greedy
-    # start-to-end pattern above to anchor on, so strip from its `:start`
-    # tag to the end of the file instead.
-    trailing_fragment = re.compile(r"<!-- adrpy:skills:" + escaped + r":start -->.*\Z", re.DOTALL)
-    return trailing_fragment.sub("", file_text)
+    """Removes every one of this skill's own tag lines from `file_text`,
+    however malformed the surrounding structure (truncated, duplicated,
+    out of order) -- used only when `--force` overrides a "malformed"
+    _agentsmd_block_state, so a fresh block can be written in without a
+    stray tag left behind that a later single-block parse could misread.
+
+    Deliberately removes only the tag lines themselves, precisely located
+    by the linear tag scan -- never a guessed span of surrounding content.
+    A truncated block's own orphaned body text (between a lone `:start`
+    and wherever the file happens to continue) has no reliably knowable
+    end boundary; guessing one is exactly the defect this replaces (the
+    prior greedy-regex version deleted through to the next thing that
+    merely looked like a boundary, including another skill's own valid
+    block or the user's own hand-written content past it)."""
+    tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
+    if not tags:
+        return file_text
+    pieces = []
+    cursor = 0
+    for _, _, tag_start, tag_end in tags:
+        pieces.append(file_text[cursor:tag_start])
+        cursor = tag_end
+    pieces.append(file_text[cursor:])
+    return "".join(pieces)
 
 
 def _agentsmd_has_any_block(file_text):
