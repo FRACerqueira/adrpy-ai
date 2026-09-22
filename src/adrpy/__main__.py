@@ -65,6 +65,17 @@ def main(argv=None):
         # project exists to provide, at exactly the moment an agent needs
         # it most.
         return emit_failure("io-error", str(error))
+    except KeyboardInterrupt:
+        # A signal-driven interrupt (Ctrl+C) is a BaseException, not an
+        # Exception -- the catch-all below never sees it, so without this
+        # it propagates raw, with EMPTY stdout, the exact failure mode
+        # this project exists to prevent. The write layer
+        # (core/atomic_write.py) is already hardened specifically against
+        # this exception type (it cleans up its own temp file on any
+        # BaseException, not just OSError); this closes the same class of
+        # gap at the one place that's supposed to guarantee every
+        # invocation still ends in valid JSON, not just the write itself.
+        return emit_failure("interrupted", "Interrupted (Ctrl+C).")
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see above
         return emit_failure("internal-error", str(error))
 

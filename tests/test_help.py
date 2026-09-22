@@ -630,3 +630,24 @@ def test_unhandled_generic_exception_still_emits_json_on_stdout(capsys, monkeypa
     assert exit_code == EXIT_FAILURE
     assert payload["success"] is False
     assert payload["code"] == "internal-error"
+
+
+def test_keyboard_interrupt_still_emits_json_on_stdout(capsys, monkeypatch):
+    """Round 36 core resilience front: KeyboardInterrupt is a
+    BaseException, not an Exception -- the generic except Exception clause
+    above never sees it, so before this fix it propagated raw, with empty
+    stdout, the exact failure mode this project's own JSON-contract
+    guarantee exists to prevent."""
+    from adrpy.cli import help as help_command
+
+    def boom(_args):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(help_command, "run", boom)
+
+    exit_code = main(["help"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == EXIT_FAILURE
+    assert payload["success"] is False
+    assert payload["code"] == "interrupted"
