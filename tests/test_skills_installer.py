@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -1069,3 +1070,60 @@ class TestTargetValidation:
         installer.install(str(tmp_path), ["claude"], ["pre-release-audit"], "global", False)
         assert (tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
         assert (home / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
+
+
+class TestOrphanedTempFileCleanup:
+    """Round 37, Class P8: every one of the 8 core adrpy mutating commands
+    sweeps its own working folder for orphaned *.tmp files (left by an
+    earlier write interrupted between the temp write and os.replace)
+    before doing anything else -- adrpy-skills never did, despite
+    atomic_write_text leaving the exact same kind of orphan behind."""
+
+    def test_install_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
+        orphan = tmp_path / "leftover.md.deadbeef.tmp"
+        orphan.write_text("never committed", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(orphan, (old_time, old_time))
+
+        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert not orphan.exists()
+        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+
+    def test_remove_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        orphan = tmp_path / "leftover.md.deadbeef.tmp"
+        orphan.write_text("never committed", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(orphan, (old_time, old_time))
+
+        result = installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert not orphan.exists()
+        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+
+    def test_install_cleans_up_an_orphaned_temp_file_under_home_for_global_scope(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        claude_skills_dir = home / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+        orphan = claude_skills_dir / "leftover.md.deadbeef.tmp"
+        orphan.write_text("never committed", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(orphan, (old_time, old_time))
+
+        result = installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+
+        assert not orphan.exists()
+        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+
+    def test_a_fresh_temp_file_is_left_alone(self, tmp_path):
+        # Under ORPHAN_MAX_AGE_SECONDS -- could still be an in-flight write
+        # from a genuinely concurrent process, not an orphan yet.
+        fresh = tmp_path / "leftover.md.deadbeef.tmp"
+        fresh.write_text("still being written, maybe", encoding="utf-8")
+
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert fresh.exists()

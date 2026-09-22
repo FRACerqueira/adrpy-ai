@@ -7,11 +7,11 @@ import re
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.errors import UsageError
 from adrpy.core.hashing import build_marker, check_drift
 from adrpy.core.io_retry import read_with_permission_retry
-from adrpy.core.warnings import retry_warning
+from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 from adrpy.skills import resources
 from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
 
@@ -300,6 +300,27 @@ def _expand(names, universe):
     return list(dict.fromkeys(names))
 
 
+def _cleanup_orphaned_temp_files(target_dir, scope, warnings):
+    """Round 37, Class P8: every one of the 8 core `adrpy` mutating
+    commands sweeps its own working folder for `*.tmp` files orphaned by
+    an earlier interrupted write before doing anything else -- this
+    module never did, despite atomic_write_text leaving the exact same
+    kind of orphan behind on an interrupted install/remove.
+
+    `--target project` writes are confined to `target_dir` (every
+    provider's project_path is relative to it); `--target global`'s only
+    provider is `claude`, whose global_path is always under
+    `~/.claude/skills/` (providers.py) -- scanning that one subdirectory
+    instead of the whole home directory avoids an expensive, unbounded
+    rglob over content this tool never touches."""
+    directory = Path(target_dir) if scope == "project" else Path.home() / ".claude" / "skills"
+    if not directory.is_dir():
+        return
+    warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(directory, warnings=warnings))
+    if warning:
+        warnings.append(warning)
+
+
 def install(target_dir, providers, skills, scope, force):
     provider_names = _expand(providers, PROVIDERS)
     skill_names = _expand(skills, resources.SKILL_NAMES)
@@ -308,6 +329,7 @@ def install(target_dir, providers, skills, scope, force):
     installed = []
     skipped = []
     warnings = []
+    _cleanup_orphaned_temp_files(target_dir, scope, warnings)
 
     for skill_name in skill_names:
         meta = resources.load_meta(skill_name)
@@ -435,6 +457,7 @@ def remove(target_dir, providers, skills, scope, force):
     removed = []
     skipped = []
     warnings = []
+    _cleanup_orphaned_temp_files(target_dir, scope, warnings)
 
     for skill_name in skill_names:
         any_stub_removed = False
