@@ -1,6 +1,6 @@
 """Content-hash drift marker shared by adrpy-skills install/remove/list.
 
-A generated file or AGENTS.md block carries a trailing marker comment
+A generated file or AGENTS.md block carries a leading marker comment
 recording a hash of everything else in it, so a later install/remove can
 tell whether it is still exactly what was last generated before touching
 it again -- see ADR009V01.

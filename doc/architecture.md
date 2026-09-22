@@ -6,12 +6,14 @@
 
 This page explains how `adrpy-ai` is put together and why: the module
 layout, the request lifecycle, the two load-bearing architectural
-decisions (the repository lock and the install-level config), and the
-decision lifecycle the whole tool exists to manage. For the individual
-command contracts, see [`doc/commands/`](commands/INDEX.md); for the
-project's own recorded architectural decisions and their full rationale,
-see [`doc/adr/`](adr/) and [`doc/decision-log/`](decision-log/INDEX.md) --
-this page summarizes and links to them, it does not replace them.
+decisions (the repository lock and the install-level config), the
+decision lifecycle the whole tool exists to manage, and -- as a separate
+concern -- the `adrpy-skills` subsystem that ships alongside it in the
+same distribution. For the individual command contracts, see
+[`doc/commands/`](commands/INDEX.md); for the project's own recorded
+architectural decisions and their full rationale, see [`doc/adr/`](adr/)
+and [`doc/decision-log/`](decision-log/INDEX.md) -- this page summarizes
+and links to them, it does not replace them.
 
 ## Why this project exists
 
@@ -56,11 +58,11 @@ graph TD
     CORE["core/*.py<br/>16 shared modules, grouped by<br/>concern in the table below"] --> FS[("Filesystem")]
 ```
 
-No single command uses every `core/` module, and no `core/` module is used
-by every command -- the table below is the accurate picture; the diagram
-above is deliberately just the layering, not a full edge list, because a
-command-by-module graph for 13 x 15 modules is a hairball no one can
-actually read.
+No single command uses every `core/` module -- Dispatch & contract's four
+modules are the one exception, used by every command -- the table below is
+the accurate picture; the diagram above is deliberately just the
+layering, not a full edge list, because a command-by-module graph for 14
+commands x 16 modules is a hairball no one can actually read.
 
 | Concern | Modules | Responsibility |
 |---|---|---|
@@ -77,6 +79,11 @@ storage; every command that reasons about existing decision files
 touches Decision file mechanics; `init`/`config`/`migrate`/`installconfig`
 touch Configuration; only `log` touches Decision log; every command
 touches Dispatch & contract.
+
+`core/` has one additional module not in this table: `hashing.py`, the
+content-hash drift marker used exclusively by the separate `adrpy-skills`
+entry point (see below) -- no `adrpy` command imports it, so it is
+intentionally out of scope for this table.
 
 ## Request lifecycle
 
@@ -214,6 +221,89 @@ from. `reject` on a successor also reverts its predecessor's `Superseded`
 status back, undoing the `supersede` that created it, in the same
 two-write operation.
 
+## The `adrpy-skills` subsystem
+
+`adrpy-skills` is a second, independent console-script entry point in the
+same distribution (`pip install adrpy-ai` installs both `adrpy` and
+`adrpy-skills` on `PATH`) -- installing AI-coding-agent skill files, not
+managing ADRs. See [ADR009V01](adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
+for why it exists as a separate entry point rather than an `adrpy`
+subcommand: `adrpy` manages the ADR/decision-log *record* mechanically and
+must stay pure -- this feature installs *operating instructions for an AI
+agent*, a different concern, for more than one provider (Claude Code,
+Cursor, GitHub Copilot, generic `AGENTS.md`) with genuinely different
+activation models, which the reference tool has no equivalent of at all.
+`adrpy`'s own command surface never mentions `adrpy-skills`; installing or
+running it is entirely opt-in.
+
+### Module map
+
+```mermaid
+graph TD
+    CALLER2["Caller<br/>(human or AI agent)"] --> MAIN2
+    MAIN2["skills/__main__.py<br/>entry point + dispatch"] --> REG2
+    REG2["skills/registry.py<br/>verb -> command module"] --> CMD2
+    CMD2["skills/commands/*.py<br/>4 thin command modules:<br/>help, install, remove, list"] --> INSTALLER
+    INSTALLER["skills/installer.py<br/>drift-state detection + write/delete<br/>orchestration per (provider, skill)"] --> PROVIDERS
+    INSTALLER --> RESOURCES
+    PROVIDERS["skills/providers.py<br/>per-provider path + content-wrap table"]
+    RESOURCES["skills/resources.py<br/>loads gate.md/body.md/glue.md<br/>from packaged skill resources"]
+    INSTALLER --> CORESHARED
+    CORESHARED["core/atomic_write.py, core/hashing.py,<br/>core/io_retry.py, core/warnings.py<br/>(reused from adrpy's own core/)"] --> FS2[("Filesystem<br/>(target repo, or ~/.claude etc. for --target global)")]
+```
+
+| Module | Responsibility |
+|---|---|
+| `skills/__main__.py` | Entry point + dispatch: looks up the verb in `skills/registry.py`, handles `--version`/`-v` and `--help`/`-h` (the one JSON-exception convenience, mirroring `adrpy/__main__.py`), and is the single place any exception becomes the JSON envelope. |
+| `skills/registry.py` | Maps each of the 4 verbs (`help`, `install`, `remove`, `list`) to its command module -- a separate table from `core/registry.py`'s own, by design (ADR009V01: never touches `adrpy`'s own command surface). |
+| `skills/commands/*.py` | 4 thin command modules, one per verb: each owns its own `describe()` contract and flag parsing (`core/args.parse_flags`, reused from `adrpy`), then delegates to `skills/installer.py`. |
+| `skills/installer.py` | The shared mechanics: content generation per (provider, skill), `foreign`/`drifted`/`malformed` classification, and the actual write/delete orchestration for `install`/`remove`/`list`. |
+| `skills/providers.py` | The provider-adapter table (ADR009V01): per-provider project/global file path, delivery mode (`full`/`stub`/`stub_block`), and the wrap function shaping content for that provider. |
+| `skills/resources.py` | Loads each bundled skill's static `gate.md`/`body.md`/`glue.md`/`meta.json` from the package and assembles the full content a `claude`/`cursor` provider gets, or the one shared doc a stub-mode provider points at. |
+
+`skills/installer.py` also reuses `core/atomic_write.py`, `core/hashing.py`
+(the content-hash drift marker), `core/io_retry.py` (transient-read
+retries), and `core/warnings.py` from `adrpy`'s own `core/` -- but never
+`core/lock.py` or `core/lifecycle.py`: there is no repository-wide lock
+and no decision-file concept here at all (see "Request flow" below).
+
+### Request flow
+
+Genuinely different from `adrpy`'s own request lifecycle, not a variant of it:
+
+```mermaid
+sequenceDiagram
+    participant Caller as Caller (human or AI agent)
+    participant Main as skills/__main__.main()
+    participant Cmd as skills/commands/*.py (per command)
+    participant Inst as skills/installer.py
+    participant Prov as skills/providers.py
+    participant FS as Filesystem
+
+    Caller->>Main: adrpy-skills install --skill decision-log --provider claude
+    Main->>Main: look up verb in skills/registry.py
+    Main->>Cmd: command.run(args)
+    Cmd->>Cmd: parse_flags(args, ...) -- reuses core/args.py
+    Cmd->>Inst: install(providers, skills, target, path, force)
+    Inst->>Prov: resolve file path + wrap content for this provider
+    Inst->>FS: read existing file (core/io_retry.py) to classify drift state
+    FS-->>Inst: current content, or none
+    Inst->>Inst: classify clean / foreign / drifted / malformed
+    Inst->>FS: atomic_write_text(...) -- only when clean, or --force given
+    Cmd-->>Main: result dict (shape is per-command: installed/skipped,<br/>removed/skipped, or a skills cross-product -- not one shared shape)
+    Main-->>Caller: success JSON envelope on stdout
+
+    Note over Cmd,Main: No repository lock: adrpy-skills never acquires<br/>core/lock.py's whole-repository lock, and has no<br/>core/lifecycle.py concept of a "decision file" at all --<br/>each write is its own, narrower critical section.
+```
+
+Unlike `adrpy`'s single `{data.decisions, data.warnings, ...}`-shaped
+envelope, `adrpy-skills`' `data` shape differs by command -- `install`
+returns `{installed, skipped, warnings}`, `remove` returns `{removed,
+skipped, warnings}`, `list` returns `{skills, warnings}` (a cross-product
+of every requested skill x provider), and `help` returns `{commands,
+hint}` with no `warnings` key at all (a read-only listing command with
+nothing to report omits the key rather than sending an empty list).
+
 ## The JSON contract
 
 Every command returns exactly one JSON object on stdout, whether it
@@ -232,7 +322,9 @@ succeeds or fails:
 pattern-match -- the full, per-command list of codes lives inline in each
 command's own [`doc/commands/`](commands/INDEX.md) page, next to the
 exact condition that triggers it. `warnings` is always present, even when
-empty, and carries non-fatal information about automatic recovery a
+empty, on every `adrpy` command's response -- see the `adrpy-skills`
+subsystem section above for how that entry point's own envelope differs.
+`warnings` carries non-fatal information about automatic recovery a
 command's own dependencies performed silently (a retried write, a
 reclaimed stale lock, orphaned temp-file cleanup, an encoding repair) --
 information that would otherwise be discarded before it ever reached
@@ -242,6 +334,8 @@ anywhere a caller could see it.
 
 - [`doc/commands/`](commands/INDEX.md) -- full argument and failure-code
   reference, one page per command, generated from `describe()`.
+- [`doc/skills/`](skills/README.md) -- how `adrpy-skills` installs the
+  judgment layer for AI coding agents, per provider.
 - [`doc/adr/`](adr/) -- this project's own formal Architecture Decision
   Records, written using `adrpy-ai` itself.
 - [`doc/decision-log/`](decision-log/INDEX.md) -- confirmed divergences
