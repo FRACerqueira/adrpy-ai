@@ -73,13 +73,11 @@ def _read_text(path):
     Reading via `path.open("rb")` instead of `path.read_text()` drops
     Python's own default universal-newline translation, so the decode
     step below restores it by hand (`\\r\\n`/`\\r` -> `\\n`) -- on
-    Windows, `atomic_write_text` writes `os.linesep` (CRLF) while the
-    hash in `core/hashing.py` is built from pre-normalization, LF-only
-    content; without restoring the translation here, every freshly
-    installed file reads back as "drifted" against its own marker. This
-    LF/CRLF mismatch between hash time and write time is itself a
-    latent bug (Class P6, not yet fixed) -- this is only preserving
-    today's existing read-side workaround for it, not fixing it."""
+    Windows, `atomic_write_text` writes `os.linesep` (CRLF) to disk.
+    This, paired with `core/hashing.py`'s own `compute_hash` (which
+    canonicalizes newlines to bare `\\n` before hashing, Class P6),
+    keeps hash-time and read-time content in agreement regardless of
+    host OS: both sides always compare LF-canonical text."""
 
     def _read_bounded():
         chunks = []
