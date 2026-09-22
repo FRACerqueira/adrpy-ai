@@ -12,15 +12,15 @@ Writes the requested (provider, skill) pairs to disk, wrapped in the shape each 
 
 ## Arguments
 
-### `--provider` *(optional, string)*
+### `--provider` / `-p` *(optional, string)*
 
 Comma-separated list of providers to install for: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` (every bundled provider) when omitted.
 
-### `--skill` *(optional, string)*
+### `--skill` / `-s` *(optional, string)*
 
 Comma-separated list of skills to install: `comment-audit`, `decision-log`, `pre-release-audit`. Defaults to `all` (every bundled skill) when omitted.
 
-### `--target` *(optional, string)*
+### `--target` / `-t` *(optional, string)*
 
 `project` (default) writes under `--path`; `global` writes under your own home directory (only meaningful for `claude` -- every other provider fails with `usage-error` under `--target global`).
 
@@ -28,7 +28,7 @@ Comma-separated list of skills to install: `comment-audit`, `decision-log`, `pre
 
 Repository root to install into. Defaults to `.`. Only meaningful for `--target project`.
 
-### `--force` *(optional, switch)*
+### `--force` / `-f` *(optional, switch)*
 
 Overwrites a `foreign` or `drifted` file/block instead of skipping it. Presence-only: pass just `--force`, not `--force true/false`.
 

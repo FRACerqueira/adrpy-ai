@@ -24,12 +24,14 @@ def describe():
         "arguments": [
             {
                 "name": "provider",
+                "alias": "-p",
                 "type": "string",
                 "required": False,
                 "description": "Comma-separated list of providers to report on: claude, cursor, copilot, agentsmd. Defaults to 'all'.",
             },
             {
                 "name": "skill",
+                "alias": "-s",
                 "type": "string",
                 "required": False,
                 "description": f"Comma-separated list of skills to report on: {', '.join(SKILL_NAMES)}. Defaults to 'all'.",
@@ -49,7 +51,7 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, optional=("provider", "path", "skill"))
+    flags = parse_flags(args, optional=("provider", "path", "skill"), aliases={"p": "provider", "s": "skill"})
     return installer.list_installed(
         target_dir=flags.get("path", "."),
         providers=_split(flags.get("provider")),

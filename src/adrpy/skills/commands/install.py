@@ -25,6 +25,7 @@ def describe():
         "arguments": [
             {
                 "name": "provider",
+                "alias": "-p",
                 "type": "string",
                 "required": False,
                 "description": (
@@ -34,6 +35,7 @@ def describe():
             },
             {
                 "name": "skill",
+                "alias": "-s",
                 "type": "string",
                 "required": False,
                 "description": (
@@ -43,6 +45,7 @@ def describe():
             },
             {
                 "name": "target",
+                "alias": "-t",
                 "type": "string",
                 "required": False,
                 "description": (
@@ -59,6 +62,7 @@ def describe():
             },
             {
                 "name": "force",
+                "alias": "-f",
                 "type": "switch",
                 "required": False,
                 "description": (
@@ -81,7 +85,12 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, optional=("provider", "target", "path", "skill"), switches=("force",))
+    flags = parse_flags(
+        args,
+        optional=("provider", "target", "path", "skill"),
+        switches=("force",),
+        aliases={"p": "provider", "t": "target", "s": "skill", "f": "force"},
+    )
     providers = _split(flags.get("provider"))
     skills = _split(flags.get("skill"))
     return installer.install(

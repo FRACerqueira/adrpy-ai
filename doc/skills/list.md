@@ -12,11 +12,11 @@ Cross-product of every requested skill x every requested provider, each entry re
 
 ## Arguments
 
-### `--provider` *(optional, string)*
+### `--provider` / `-p` *(optional, string)*
 
 Comma-separated list of providers to report on: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all`.
 
-### `--skill` *(optional, string)*
+### `--skill` / `-s` *(optional, string)*
 
 Comma-separated list of skills to report on: `comment-audit`, `decision-log`, `pre-release-audit`. Defaults to `all`.
 

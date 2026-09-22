@@ -69,23 +69,46 @@ with `usage-error`.
 
 ## Drift protection, not blind overwrite
 
-Every file or `AGENTS.md` block `adrpy-skills` writes carries a trailing
-`<!-- adrpy-skills: v... sha256:... -->` marker. A later `install` or
-`remove` call checks that marker before touching the file again:
+Every file or `AGENTS.md` block `adrpy-skills` writes carries a leading
+`<!-- adrpy-skills: v... sha256:... -->` marker -- right after the
+frontmatter block for `claude`/`cursor`/`copilot`, or at the very start of
+each skill's own `AGENTS.md` block. A later `install` or `remove` call
+checks that marker before touching the file again:
 
 - **foreign** -- something already exists there with no marker at all (a
   naming collision, or a file you wrote by hand). Left untouched.
 - **drifted** -- a marker exists, but the file's own current content no
   longer hashes to what it recorded (you edited it since it was
   generated). Left untouched.
+- **malformed** (`agentsmd` only) -- a skill's own `start`/`end` block is
+  truncated (missing its closing tag) or duplicated (more than one
+  complete block for the same skill). Left untouched, same as `foreign`.
 - **clean** -- the file still matches exactly what was last generated.
   Freely overwritten -- this is what makes a routine `pip install
   --upgrade adrpy-ai` followed by a re-run actually pick up an update.
 
-Both `foreign` and `drifted` require `--force` to overwrite (`install`) or
-delete (`remove`). `remove` never deletes `AGENTS.md` itself, even when
-stripping its only remaining skill block would leave it empty -- that's a
-judgment call for you, not this command.
+`foreign`, `drifted`, and `malformed` all require `--force` to overwrite
+(`install`) or delete (`remove`) -- including the one shared
+`doc/ai-skills/<name>.md` file itself, and every code path `remove` uses
+to delete something (a full file, an `AGENTS.md` block, the shared doc).
+`remove` never deletes `AGENTS.md` itself, even when stripping its only
+remaining skill block would leave it empty -- that's a judgment call for
+you, not this command.
+
+## Known limitation: no cross-process lock on `AGENTS.md`
+
+Unlike `adrpy`'s own repository-wide lock (ADR001V01), `adrpy-skills`
+does not lock `AGENTS.md` (or any other file it writes) against a second,
+truly concurrent `adrpy-skills` invocation. Two processes racing to
+install different skills into the same `AGENTS.md` at the same instant
+could, in principle, both read the file before either writes it back,
+losing one of the two updates. Measured risk in this tool's actual usage
+pattern (a one-off installer invocation, not a long-running service) is
+very low -- real, staggered process launches did not reproduce the race,
+only an artificially widened window did -- so this is accepted as a known
+limitation rather than fixed with a lock. If you script concurrent
+`adrpy-skills` calls against the same target (e.g. from CI), serialize
+them yourself.
 
 ## Commands
 
