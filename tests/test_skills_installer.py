@@ -667,3 +667,101 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
         assert elapsed < 3.0, f"list_installed took {elapsed:.2f}s against adversarial AGENTS.md content"
         assert rows[0]["installed"] is True
         assert rows[0]["drifted"] is True  # malformed: many starts, zero ends
+
+    def test_time_scales_linearly_not_quadratically_with_tag_count(self, tmp_path):
+        # Round 35, Test-Adequacy front: the absolute-threshold test above
+        # only reliably catches a full revert to the old catastrophic-
+        # backtracking regex -- a "mild" quadratic reintroduction built from
+        # fast C-level primitives (str.find/str.count in a loop) measured
+        # 0.14-0.78s at this same input size, comfortably under 3.0s despite
+        # being genuinely O(n^2). A scaling/ratio test catches the
+        # complexity CLASS regardless of the implementation's constant
+        # factor: linear growth scales ~8x for an 8x input increase;
+        # quadratic scales ~64x.
+        def measure(target, n):
+            target.mkdir()
+            content = ("<!-- adrpy:skills:decision-log:start -->\n" + "x" * 200) * n
+            (target / "AGENTS.md").write_text(content, encoding="utf-8")
+            started = time.perf_counter()
+            installer.list_installed(str(target), ["agentsmd"], ["decision-log"])
+            return time.perf_counter() - started
+
+        small = measure(tmp_path / "small", 500)
+        large = measure(tmp_path / "large", 4000)  # 8x the tag count
+        ratio = large / max(small, 1e-6)
+        assert ratio < 20, (
+            f"scaling ratio {ratio:.1f}x for an 8x input-size increase suggests super-linear behavior "
+            f"(small={small:.4f}s, large={large:.4f}s)"
+        )
+
+
+class TestReadRetriesTransientPermissionError:
+    """Round 35 resilience front: installer.py's own reads never used the
+    project's shared read_with_permission_retry (core/io_retry.py), unlike
+    every other reader (core/config.py, core/lock.py, core/lifecycle.py) --
+    a single transient PermissionError (a Windows "pending delete" window
+    under a concurrent reader) failed the whole install/remove/list call
+    outright instead of being absorbed."""
+
+    def test_install_absorbs_a_single_transient_permission_error_on_read(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
+        path = tmp_path / ".cursor" / "rules" / "pre-release-audit.mdc"
+        original_read_text = Path.read_text
+        calls = {"count": 0}
+
+        def flaky_read_text(self, *args, **kwargs):
+            if self == path:
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    raise PermissionError("transient contention")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+        result = installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
+        assert result["skipped"] == []
+        assert calls["count"] >= 2
+
+
+class TestWriteRetryVisibility:
+    """Round 35 resilience front: a write that only succeeded after
+    absorbing transient contention was silently discarded -- every core-CLI
+    write site captures atomic_write_text's own attempt count and surfaces
+    it via core.warnings.retry_warning; installer.py's 4 call sites didn't."""
+
+    def test_install_reports_a_warning_after_absorbing_a_transient_write_retry(self, tmp_path, monkeypatch):
+        def multi_attempt_write(path, content):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+            return 3
+
+        monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
+
+        result = installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
+        assert any("3 attempts" in w for w in result["warnings"])
+
+
+class TestSharedDocWrittenBeforeStubProviders:
+    """Round 35 resilience front: needs_shared_doc used to be discovered as
+    a side effect of the provider loop, and the shared doc was only written
+    AFTER the whole loop finished -- reproduced: interrupting install()
+    between two stub-mode providers left the first one's file referencing a
+    doc/ai-skills/<name>.md that was never written, with list_installed()
+    reporting a false drifted: false the whole time. Fixed by computing
+    needs_shared_doc from the request alone (no I/O) and writing the shared
+    doc before the provider loop starts."""
+
+    def test_shared_doc_exists_before_any_stub_provider_is_written(self, tmp_path, monkeypatch):
+        original_atomic_write_text = installer.atomic_write_text
+        shared_doc_path = tmp_path / "doc" / "ai-skills" / "decision-log.md"
+        stub_writes_saw_shared_doc_missing = []
+
+        def spy(path, content):
+            if path != shared_doc_path:
+                stub_writes_saw_shared_doc_missing.append(not shared_doc_path.exists())
+            return original_atomic_write_text(path, content)
+
+        monkeypatch.setattr(installer, "atomic_write_text", spy)
+
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["decision-log"], "project", False)
+        assert stub_writes_saw_shared_doc_missing == [False, False]

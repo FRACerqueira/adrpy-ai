@@ -10,6 +10,8 @@ from pathlib import Path
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import UsageError
 from adrpy.core.hashing import build_marker, check_drift
+from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.warnings import retry_warning
 from adrpy.skills import resources
 from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
 
@@ -21,6 +23,17 @@ def _package_version():
         return _pkg_version("adrpy-ai")
     except PackageNotFoundError:
         return "0.0.0+dev"
+
+
+def _read_text(path):
+    """Reads `path` as UTF-8, retrying a transient PermissionError the
+    same way every other reader in this project already does (core/
+    config.py, core/lock.py, core/lifecycle.py, all via core/io_retry.py)
+    -- installer.py used to be the only reader that didn't, so a single
+    transient contention blip (a Windows "pending delete" window under a
+    concurrent reader) failed the whole install/remove/list call outright
+    instead of being absorbed like everywhere else."""
+    return read_with_permission_retry(lambda: path.read_text(encoding="utf-8"))
 
 
 def _resolve_path(provider_name, skill_name, target_dir, scope):
@@ -199,7 +212,7 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
             continue
         path = _resolve_path(provider_name, skill_name, target_dir, scope)
         if provider_name == "agentsmd":
-            if path.exists() and _agentsmd_block_state(path.read_text(encoding="utf-8"), skill_name) != "absent":
+            if path.exists() and _agentsmd_block_state(_read_text(path), skill_name) != "absent":
                 return True
         elif path.exists():
             return True
@@ -230,14 +243,40 @@ def install(target_dir, providers, skills, scope, force):
         meta = resources.load_meta(skill_name)
         full_content = resources.load_full_content(skill_name)
         shared_doc_rel = SHARED_DOC_PATH.format(name=skill_name)
-        needs_shared_doc = False
+        # Derivable from the request alone, no I/O needed -- computed (and
+        # the shared doc written, below) BEFORE any stub-mode provider's
+        # own file, so an interruption partway through the provider loop
+        # can never leave a stub already pointing at a shared doc that was
+        # never written. Previously this was only known as a side effect
+        # of the provider loop, and the shared doc was written only after
+        # it finished -- reproduced: interrupting between two stub
+        # providers left the first one's file referencing a nonexistent
+        # doc/ai-skills/<name>.md, with list_installed() reporting it as
+        # drifted: false regardless.
+        needs_shared_doc = any(PROVIDERS[name]["mode"] != "full" for name in provider_names)
+
+        if needs_shared_doc:
+            shared_path = _shared_doc_path(target_dir, skill_name)
+            shared_existing = _read_text(shared_path) if shared_path.exists() else None
+            shared_status = check_drift(shared_existing)
+            if _blocks_write(shared_status, force):
+                skipped.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status})
+            else:
+                if force and shared_status in ("drifted", "foreign"):
+                    warnings.append(f"shared-doc/{skill_name}: {shared_status}, overwritten (--force).")
+                shared_content = _insert_marker(_build_shared_doc_content(skill_name, full_content), marker_version)
+                shared_path.parent.mkdir(parents=True, exist_ok=True)
+                attempts = atomic_write_text(shared_path, shared_content)
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
 
         for provider_name in provider_names:
             spec = PROVIDERS[provider_name]
 
             if provider_name == "agentsmd":
                 path = _resolve_path(provider_name, skill_name, target_dir, scope)
-                existing_file = path.read_text(encoding="utf-8") if path.exists() else ""
+                existing_file = _read_text(path) if path.exists() else ""
                 status = _agentsmd_block_state(existing_file, skill_name)
                 if _blocks_write(status, force):
                     skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
@@ -252,13 +291,15 @@ def install(target_dir, providers, skills, scope, force):
                 new_block = _AGENTSMD_BLOCK_TEMPLATE.format(name=skill_name, body=body)
                 new_file = _agentsmd_replace_or_append(existing_file, skill_name, new_block)
                 path.parent.mkdir(parents=True, exist_ok=True)
-                atomic_write_text(path, new_file)
+                attempts = atomic_write_text(path, new_file)
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
                 installed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
-                needs_shared_doc = True
                 continue
 
             path = _resolve_path(provider_name, skill_name, target_dir, scope)
-            existing = path.read_text(encoding="utf-8") if path.exists() else None
+            existing = _read_text(path) if path.exists() else None
             status = check_drift(existing)
             if _blocks_write(status, force):
                 skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
@@ -270,24 +311,13 @@ def install(target_dir, providers, skills, scope, force):
                 wrapped = spec["wrap"](skill_name, meta, full_content, None)
             else:
                 wrapped = spec["wrap"](skill_name, meta, None, shared_doc_rel)
-                needs_shared_doc = True
             content = _insert_marker(wrapped, marker_version)
             path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(path, content)
+            attempts = atomic_write_text(path, content)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
             installed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
-
-        if needs_shared_doc:
-            shared_path = _shared_doc_path(target_dir, skill_name)
-            shared_existing = shared_path.read_text(encoding="utf-8") if shared_path.exists() else None
-            shared_status = check_drift(shared_existing)
-            if _blocks_write(shared_status, force):
-                skipped.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status})
-            else:
-                if force and shared_status in ("drifted", "foreign"):
-                    warnings.append(f"shared-doc/{skill_name}: {shared_status}, overwritten (--force).")
-                shared_content = _insert_marker(_build_shared_doc_content(skill_name, full_content), marker_version)
-                shared_path.parent.mkdir(parents=True, exist_ok=True)
-                atomic_write_text(shared_path, shared_content)
 
     return {"installed": installed, "skipped": skipped, "warnings": warnings}
 
@@ -311,7 +341,7 @@ def remove(target_dir, providers, skills, scope, force):
                 if not path.exists():
                     warnings.append(f"agentsmd/{skill_name}: not installed, nothing to remove.")
                     continue
-                file_text = path.read_text(encoding="utf-8")
+                file_text = _read_text(path)
                 status = _agentsmd_block_state(file_text, skill_name)
                 if status == "absent":
                     warnings.append(f"agentsmd/{skill_name}: not installed, nothing to remove.")
@@ -329,7 +359,10 @@ def remove(target_dir, providers, skills, scope, force):
                     new_file = _agentsmd_remove_block(file_text, skill_name)
                 # Never delete AGENTS.md itself, even if this empties it --
                 # that's a judgment call for the human, not this command.
-                atomic_write_text(path, new_file)
+                attempts = atomic_write_text(path, new_file)
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
                 removed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
                 any_stub_removed = True
                 continue
@@ -338,7 +371,7 @@ def remove(target_dir, providers, skills, scope, force):
             if not path.exists():
                 warnings.append(f"{provider_name}/{skill_name}: not installed, nothing to remove.")
                 continue
-            existing = path.read_text(encoding="utf-8")
+            existing = _read_text(path)
             status = check_drift(existing)
             if _blocks_write(status, force):
                 skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
@@ -353,7 +386,7 @@ def remove(target_dir, providers, skills, scope, force):
             if not still_referenced:
                 shared_path = _shared_doc_path(target_dir, skill_name)
                 if shared_path.exists():
-                    shared_status = check_drift(shared_path.read_text(encoding="utf-8"))
+                    shared_status = check_drift(_read_text(shared_path))
                     if _blocks_write(shared_status, force):
                         skipped.append(
                             {"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status}
@@ -379,7 +412,7 @@ def list_installed(target_dir, providers, skills):
                     continue
                 path = _resolve_path(provider_name, skill_name, target_dir, scope)
                 if provider_name == "agentsmd":
-                    file_text = path.read_text(encoding="utf-8") if path.exists() else ""
+                    file_text = _read_text(path) if path.exists() else ""
                     status = _agentsmd_block_state(file_text, skill_name)
                     installed_flag = status != "absent"
                     # "foreign"/"malformed" count as drifted here too: all mean
@@ -388,7 +421,7 @@ def list_installed(target_dir, providers, skills):
                     # the caller.
                     drifted = None if not installed_flag else status in ("drifted", "foreign", "malformed")
                 else:
-                    existing = path.read_text(encoding="utf-8") if path.exists() else None
+                    existing = _read_text(path) if path.exists() else None
                     installed_flag = existing is not None
                     drifted = None if not installed_flag else check_drift(existing) in ("drifted", "foreign")
                 rows.append(
