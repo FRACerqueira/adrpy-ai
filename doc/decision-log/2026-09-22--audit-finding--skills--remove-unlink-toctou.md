@@ -1,0 +1,5 @@
+# remove()'s unlink() calls now tolerate the target vanishing between the drift-check read and the delete
+
+**Front:** Round 33: stability front | **Severity:** Medium | **Resolution:** Direct | **Round:** 33
+
+remove()'s generic-provider branch and the shared-doc removal both used a check-then-use shape (exists() then read_text() then unlink()) with no protection against the file disappearing in that window (another process, a concurrent removal). Before the fix, that raised FileNotFoundError uncaught inside the per-provider loop, aborting the whole command and leaving any remaining (provider, skill) pairs in the same call unprocessed -- inconsistent with the project's own best-effort-per-item convention used elsewhere (e.g. migrate). core/lock.py already solves the identical class of problem via path.unlink(missing_ok=True); installer.py's two unlink() sites now use the same call. Verified with a new test (TestRemoveTolerateVanishingFile) that monkeypatches Path.read_text to delete the file immediately after the drift-check read runs, reproducing the exact TOCTOU window; the call now completes and reports the item removed instead of raising.
