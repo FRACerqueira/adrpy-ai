@@ -1,0 +1,4 @@
+{
+  "name": "decision-log",
+  "description": "Lightweight, per-event log for decisions and findings that are not architecture -- audit closures, retracted verdicts, documentation-drift corrections, accepted non-architectural divergences -- kept separate from ADRs so an architecture record never turns into a growing audit log. Use whenever the project's own decision-log trigger rule fires; propose an entry and wait for confirmation before writing."
+}
