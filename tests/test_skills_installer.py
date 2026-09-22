@@ -939,6 +939,42 @@ class TestSharedDocReportingAndBlocking:
         assert (tmp_path / "AGENTS.md").exists()
         assert "hand-written" not in shared.read_text(encoding="utf-8")
 
+    def test_blocked_shared_doc_also_blocks_copilot_not_just_agentsmd(self, tmp_path):
+        # Round 37, Class P9: the sibling test above only ever exercised
+        # agentsmd -- copilot is the other stub-mode provider and shares
+        # the exact same shared_doc_blocked check, never independently
+        # confirmed.
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert "copilot" not in {row["provider"] for row in result["installed"]}
+        copilot_skip = next(row for row in result["skipped"] if row["provider"] == "copilot")
+        assert copilot_skip["reason"] == "shared-doc-blocked"
+        assert not (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").exists()
+
+    def test_blocked_shared_doc_for_one_skill_does_not_leak_into_another_skills_install(self, tmp_path):
+        # Round 37, Class P9: shared_doc_blocked is a per-skill local inside
+        # the skill_name loop -- never actually proven not to leak across
+        # skills or providers in the same multi-skill call.
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+
+        result = installer.install(
+            str(tmp_path), ["copilot", "agentsmd"], ["comment-audit", "decision-log"], "project", False
+        )
+
+        blocked_pairs = {
+            (row["provider"], row["skill"]) for row in result["skipped"] if row["reason"] == "shared-doc-blocked"
+        }
+        assert blocked_pairs == {("copilot", "comment-audit"), ("agentsmd", "comment-audit")}
+        installed_pairs = {(row["provider"], row["skill"]) for row in result["installed"]}
+        assert ("copilot", "decision-log") in installed_pairs
+        assert ("agentsmd", "decision-log") in installed_pairs
+
 
 class TestWarningIdentityAndWording:
     """Round 36 re-verification finding: retry_warning's own message
@@ -959,6 +995,54 @@ class TestWarningIdentityAndWording:
 
         result = installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
         assert any(w.startswith("cursor/pre-release-audit: ") and "3 attempts" in w for w in result["warnings"])
+
+    def test_shared_doc_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
+        # Round 37, Class P9: 3 of installer.py's 4 retry_warning call
+        # sites were never exercised for their own identity prefix -- only
+        # the generic/cursor site (above) was.
+        def multi_attempt_write(path, content):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+            return 4
+
+        monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
+
+        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        assert any(w.startswith("shared-doc/comment-audit: ") and "4 attempts" in w for w in result["warnings"])
+
+    def test_install_agentsmd_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
+        def multi_attempt_write(path, content):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+            return 2
+
+        monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        assert any(w.startswith("agentsmd/comment-audit: ") and "2 attempts" in w for w in result["warnings"])
+
+    def test_remove_agentsmd_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        def multi_attempt_write(path, content):
+            Path(path).write_text(content, encoding="utf-8")
+            return 3
+
+        monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
+
+        result = installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        assert any(w.startswith("agentsmd/comment-audit: ") and "3 attempts" in w for w in result["warnings"])
+
+    def test_force_overwrite_of_a_foreign_shared_doc_produces_its_own_warning(self, tmp_path):
+        # Round 37, Class P9: exercised by TestSharedDocReportingAndBlocking's
+        # own force test, but the warning text itself was never asserted on.
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+
+        assert any(w == "shared-doc/comment-audit: foreign, overwritten (--force)." for w in result["warnings"])
 
     def test_force_over_malformed_block_does_not_claim_the_body_was_overwritten(self, tmp_path):
         agents_md = tmp_path / "AGENTS.md"

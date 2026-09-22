@@ -581,6 +581,58 @@ def test_reject_retry_still_fails_loudly_for_a_multi_member_predecessor_family(t
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
 
 
+def test_reject_single_member_shortcut_false_positive_on_a_coincidental_match(tmp_path):
+    """Round 37, Class P9: reject.py's own docstring discloses a narrow,
+    accepted residual risk in the single-member already-reverted
+    shortcut -- a corrupted superseded_from reference in the successor's
+    own filename that happens to coincide with a real, never-superseded,
+    single-member ADR is silently accepted as "already reverted" instead
+    of failing loudly. This pins that disclosed behavior with a real
+    test rather than leaving it as an unverified comment -- if this ever
+    starts failing loudly instead, the risk note in reject.py should be
+    revisited, not this test blindly updated to match."""
+    tmp_path, _ = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    # An ordinary, standalone, never-superseded ADR -- single-member
+    # family, status_change is None because nothing ever happened to it,
+    # not because it was reverted.
+    v01_path = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        v01_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 1),
+    )
+    # Its filename claims to supersede ADR001 (a corrupted/hand-edited
+    # superseded_from, or a copy-paste mistake), but ADR001's own header
+    # has no back-reference to it at all -- it was never actually marked
+    # Superseded by this successor.
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path,
+        cfg,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 3),
+        superseded=1,
+    )
+
+    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert result["status"] == "Rejected"
+    assert result["undone_predecessor"] is None
+    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+
+
 def test_approve_rejects_refdate_before_create(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 
