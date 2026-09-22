@@ -27,12 +27,12 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
-from adrpy.core.config import parse_repo_config
-from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header, parse_header
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
-from adrpy.core.lock import LockLostError, acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import (
     find_unreadable_subdirectories,
@@ -138,6 +138,28 @@ def describe():
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
         ],
+        "failure_codes": build_failure_codes(
+            {
+                FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no file is touched either way; retry.",
+                FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED: "Both the repository's own migrationpattern and the install-level config's own fallback are empty.",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
+                FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
+                FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
+                FailureCodes.MIGRATION_SCAN_UNRELIABLE_ENCODING: "A scanned candidate's content isn't valid UTF-8 -- refuses the whole run.",
+                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
+                FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
+                FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
+                FailureCodes.MIGRATION_LOCK_LOST: "The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss.",
+                FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome.",
+                FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+                FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
+                FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
+            },
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

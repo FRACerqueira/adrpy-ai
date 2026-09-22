@@ -9,7 +9,8 @@ accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
     find_by_unique_title,
@@ -20,7 +21,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -100,6 +101,24 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            {
+                FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
+                FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
+                FailureCodes.NEW_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan.",
+                FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this exact title.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The resulting filename already exists on disk.",
+                FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The title, once case-transformed, would produce a filename this tool could never recognize again.",
+                FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+                FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
+                FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
+            },
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

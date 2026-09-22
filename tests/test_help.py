@@ -67,41 +67,88 @@ def test_every_path_based_command_documents_target_directory_not_found():
         assert "target-directory-not-found" in text, f"{name}'s describe() never mentions it"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "ADR005V01's own stated payoff: this is the permanent, automated version of the "
-        "documentation-completeness sweep this project has otherwise done by hand (twice, growing "
-        "in scope each time). As of the registry's own creation, 59 of 130 FailureCodes are still "
-        "undocumented in every command's combined describe() text -- almost entirely core/config.py's "
-        "own field-validation grammar (config-lenseq-too-small, config-*-too-long, etc.) and "
-        "core/header.py's granular parse-failure codes (adr-header-*-not-found, status-line-*), both "
-        "already named as a deliberately-NOT-hand-patched-again gap in the decision-log entry this "
-        "ADR itself closes (2026-09-21--deferred--cli--index-md-every-failure-code-documented-claim-"
-        "is-false.md). Remove this xfail once that separate documentation sweep actually closes the "
-        "gap -- strict=True means this test starts failing loudly (not silently passing) the moment "
-        "it does, so the mark itself can't go stale."
-    ),
-)
 def test_every_failure_code_is_documented_somewhere():
-    """The actual payoff ADR005V01 names as its own Positive Consequence: a
-    single, grep-able registry makes 'every code is documented' a property
-    this test can check mechanically, instead of a claim that has to be
-    re-audited by hand every few months. Combines every command's own
-    describe() text (top-level + every argument's own) into one string and
-    checks every FailureCodes attribute appears in it somewhere -- the same
-    technique this file's own tests above already use per-code, generalized
-    to the whole registry at once."""
-    combined = []
-    for module in COMMANDS.values():
-        info = module.describe()
-        combined.append(info["description"])
-        combined.extend(arg.get("description", "") for arg in info.get("arguments", []))
-    combined_text = " ".join(combined)
-
+    """ADR008V01: the actual payoff ADR005V01 named as its own Positive
+    Consequence -- a single, grep-able registry makes 'every code is
+    documented' a property this test can check mechanically, instead of
+    a claim that has to be re-audited by hand every few months. Checks
+    the structured `failure_codes` field (not free-form prose
+    substring-matching, which the field replaces as this completeness
+    check's own source of truth) -- every command's own list, unioned
+    across all 14, must cover every FailureCodes attribute."""
     codes = {name: getattr(FailureCodes, name) for name in dir(FailureCodes) if name.isupper()}
-    missing = sorted(code for code in codes.values() if code not in combined_text)
-    assert not missing, f"{len(missing)} FailureCodes not documented in any describe(): {missing}"
+    documented = {
+        entry["code"] for module in COMMANDS.values() for entry in module.describe().get("failure_codes", [])
+    }
+    missing = sorted(code for code in codes.values() if code not in documented)
+    assert not missing, f"{len(missing)} FailureCodes not in any command's own failure_codes field: {missing}"
+
+
+def test_every_failure_codes_entry_is_a_real_failure_code():
+    """The reverse direction of the completeness check above: a typo'd or
+    stale string in some command's own failure_codes field would pass
+    the completeness check (it doesn't check for extras) but would be a
+    real, silent drift from the registry -- every entry's own `code`
+    must be a real FailureCodes value, not just present."""
+    real_codes = {getattr(FailureCodes, name) for name in dir(FailureCodes) if name.isupper()}
+    for name, module in COMMANDS.items():
+        for entry in module.describe().get("failure_codes", []):
+            assert entry["code"] in real_codes, f"{name}'s failure_codes has a bogus code: {entry['code']!r}"
+
+
+def test_no_command_lists_the_same_failure_code_twice():
+    """build_failure_codes silently drops a later duplicate in favor of
+    the first -- a command accidentally merging two sources that both
+    define the same code would not error, just silently keep whichever
+    condition text came first. Pins that this doesn't currently happen
+    anywhere, so a future merge that DOES introduce one is caught."""
+    for name, module in COMMANDS.items():
+        codes = [entry["code"] for entry in module.describe().get("failure_codes", [])]
+        assert len(codes) == len(set(codes)), f"{name}'s failure_codes has a duplicate entry"
+
+
+def test_every_failure_codes_entry_has_a_non_empty_condition():
+    """A `failure_codes` entry with a blank/missing condition would pass
+    every other check here while still being useless to an agent reading
+    it -- the whole point of this field is a real one-line explanation,
+    not just the bare code string a moment's misconfiguration could
+    already recover from the JSON payload's own `code` key."""
+    for name, module in COMMANDS.items():
+        for entry in module.describe().get("failure_codes", []):
+            assert entry.get("condition", "").strip(), f"{name}'s {entry['code']!r} has no condition text"
+
+
+def test_field_is_blank_is_only_claimed_by_commands_that_can_actually_reach_it():
+    """ADR008V01 verification round: field-is-blank was over-claimed by
+    approve/reject/undo/revise/migrate -- each of them only ever calls
+    reject_embedded_delimiter on a value already `.strip()`-ed upstream
+    (header.title/scope/domain via core/header.py's own _extract_cell;
+    migrate's own candidate title via an explicit `.strip()` before the
+    call), so `value != "" and not value.strip()` can never be true --
+    the code is structurally unreachable there. Only supersede/version
+    call reject_embedded_delimiter on a RAW, unstripped --scope/--domain
+    flag value (falling back to the pre-stripped header value only when
+    the flag is omitted), so they're the only two that can genuinely
+    raise it."""
+    for name in ("approve", "reject", "undo", "revise", "migrate"):
+        codes = {entry["code"] for entry in COMMANDS[name].describe()["failure_codes"]}
+        assert "field-is-blank" not in codes, f"{name} claims field-is-blank but can never reach it"
+    for name in ("supersede", "version"):
+        codes = {entry["code"] for entry in COMMANDS[name].describe()["failure_codes"]}
+        assert "field-is-blank" in codes, f"{name} can genuinely raise field-is-blank via a raw --scope/--domain flag"
+
+
+def test_installconfig_documents_io_error():
+    """ADR008V01 verification round: installconfig.py's own 3
+    atomic_write_text call sites are never wrapped in attach_warnings (or
+    any other OSError-catching mechanism, unlike every other write
+    command) -- a raw OSError (e.g. a PermissionError exhausting
+    atomic_write_bytes' own retry budget) propagates uncaught to
+    __main__'s generic handler, which reports it as io-error, the exact
+    same way every other writer's own io-error claim is already
+    justified."""
+    codes = {entry["code"] for entry in COMMANDS["installconfig"].describe()["failure_codes"]}
+    assert "io-error" in codes
 
 
 def test_every_path_based_command_except_init_documents_config_not_found():

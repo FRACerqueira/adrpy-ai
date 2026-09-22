@@ -13,6 +13,7 @@ from pathlib import Path
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import (
+    SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
     SUPPORTED_LANGUAGES,
     default_repo_config_text,
     default_repo_config_text_for_language,
@@ -21,7 +22,7 @@ from adrpy.core.config import (
     read_config_text,
 )
 from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
-from adrpy.core.errors import CommandError, FailureCodes, UsageError
+from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
@@ -29,7 +30,7 @@ from adrpy.core.lifecycle import (
     resolve_target_and_config,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import (
     find_unreadable_subdirectories,
@@ -167,6 +168,35 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            {
+                FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
+                FailureCodes.CONFIG_ALREADY_EXISTS: "adr-config.adrplus already exists and no --seed was given.",
+                FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
+                FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
+                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while --seed was acquiring the repository lock -- no write was made; retry.",
+                FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own folderadr differs from the current one, and the OLD folder already has recognized decisions.",
+                FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderadr could not be scanned while checking --seed's own folderadr change.",
+                FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderadr already holds a file that would newly parse as a decision.",
+                FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY: "folderadr and folderlog resolve to the same real directory (or one nested inside the other), typically via a symlink or junction.",
+                FailureCodes.FOLDERLOG_CHANGE_BLOCKED_BY_EXISTING_ENTRIES: "--seed's own folderlog differs from the current one, and the OLD directory already has decision-log entries.",
+                FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderlog already holds a file that would newly parse as a decision-log entry.",
+                FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
+                FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking --seed's own folderlog change.",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own status-label/separator/migrationpattern would break recognition of an existing decision.",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD folderadr could not be scanned while checking a guarded field change.",
+                FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--seed's own separator would make a file NOT currently recognized as a decision newly parse as one.",
+                FailureCodes.INIT_EXISTING_NUMBERS_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while computing the existing max number/version/revision.",
+                FailureCodes.LENSEQ_TOO_SMALL_FOR_EXISTING_DECISIONS: "The resulting lenseq is too narrow for a decision number that already exists on disk.",
+                FailureCodes.LENVERSION_TOO_SMALL_FOR_EXISTING_DECISIONS: "The resulting lenversion is too narrow for a decision version that already exists on disk.",
+                FailureCodes.LENREVISION_TOO_SMALL_FOR_EXISTING_DECISIONS: "The resulting lenrevision is too narrow for a decision revision that already exists on disk.",
+                FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+                FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
+                FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
+            },
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

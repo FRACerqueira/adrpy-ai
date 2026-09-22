@@ -221,3 +221,22 @@ class FailureCodes:
 
     # src/adrpy/cli/help.py
     UNKNOWN_COMMAND = "unknown-command"
+
+
+def build_failure_codes(*sources):
+    """ADR008V01: merges any number of {code: condition} mappings -- a
+    command's own inline entries plus whichever shared dicts it reaches
+    (core/config.py's, core/header.py's, core/lock.py's) -- into the
+    list-of-objects shape every describe() response uses for its own
+    failure_codes field, matching the existing `arguments` list's own
+    shape rather than a bare dict. Preserves each source's own order;
+    a code appearing in more than one source keeps its first mapping."""
+    entries = []
+    seen = set()
+    for source in sources:
+        for code, condition in source.items():
+            if code in seen:
+                continue
+            seen.add(code)
+            entries.append({"code": code, "condition": condition})
+    return entries

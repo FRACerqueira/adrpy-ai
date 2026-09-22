@@ -5,8 +5,11 @@ new transition.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
     has_superseded_sibling,
@@ -16,7 +19,7 @@ from adrpy.core.lifecycle import (
     rewrite_status_field,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -69,6 +72,16 @@ def describe():
                 "description": "Path to the decision file. A bare name with no extension gets '.md' appended.",
             },
         ],
+        "failure_codes": build_failure_codes(
+            _INELIGIBILITY_DETAILS,
+            {
+                FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed) -- undo would leave two.",
+            },
+            LIFECYCLE_FAILURE_CODES,
+            HEADER_FAILURE_CODES,
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

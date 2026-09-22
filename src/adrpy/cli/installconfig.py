@@ -65,7 +65,7 @@ from adrpy.core.config import (
     parse_repo_config,
     read_config_text,
 )
-from adrpy.core.errors import CommandError, FailureCodes, UsageError
+from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import resolve_install_config_path
 from adrpy.core.warnings import retry_warning
 
@@ -231,6 +231,16 @@ def describe():
                 for field in _EDITABLE_FIELDS
             ],
         ],
+        "failure_codes": build_failure_codes(
+            {
+                FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
+                FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
+                FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
+                FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
+                FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
+            },
+            config_schema.SHARED_FAILURE_CODES,
+        ),
     }
 
 

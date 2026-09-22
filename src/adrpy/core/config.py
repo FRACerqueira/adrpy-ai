@@ -119,6 +119,58 @@ _TOO_LONG_CODES = {
     "statussup": FailureCodes.CONFIG_STATUSSUP_TOO_LONG,
 }
 
+# ADR008V01: every code parse_repo_config can raise, one static one-line
+# condition each -- reachable from every command (parse_repo_config runs
+# on every invocation's own config load, via resolve_target_and_config/
+# load_repo_config), so each command's own describe() merges this dict
+# into its own failure_codes field rather than repeating the same 40
+# entries by hand. Excludes language-not-supported (core/config.py's
+# own load_language_pack, only reachable via --language on init/
+# installconfig, not universal).
+SHARED_FAILURE_CODES = {
+    FailureCodes.CONFIG_FILE_TOO_LARGE: "The config file exceeds the 64KB size limit.",
+    FailureCodes.CONFIG_INVALID_ENCODING: "The config file's bytes are not valid UTF-8.",
+    FailureCodes.CONFIG_INVALID_JSON: "The config file is not valid JSON, or its root is not a JSON object.",
+    FailureCodes.CONFIG_MISSING_FIELD: "The config is missing one or more required fields.",
+    FailureCodes.CONFIG_UNEXPECTED_FIELD: "The config has one or more fields this schema does not recognize.",
+    FailureCodes.CONFIG_WRONG_TYPE: "A field's value is not the type this schema requires for it (string/integer/boolean/array of strings).",
+    FailureCodes.CONFIG_LENSEQ_TOO_SMALL: f"lenseq is below its configured minimum ({LENSEQ_MIN}).",
+    FailureCodes.CONFIG_LENSEQ_TOO_LARGE: f"lenseq is above its configured maximum ({LENSEQ_MAX}).",
+    FailureCodes.CONFIG_LENVERSION_TOO_SMALL: f"lenversion is below its configured minimum ({LENVERSION_MIN}).",
+    FailureCodes.CONFIG_LENVERSION_TOO_LARGE: f"lenversion is above its configured maximum ({LENVERSION_MAX}).",
+    FailureCodes.CONFIG_LENREVISION_NEGATIVE: f"lenrevision is below its configured minimum ({LENREVISION_MIN}).",
+    FailureCodes.CONFIG_LENREVISION_TOO_LARGE: f"lenrevision is above its configured maximum ({LENREVISION_MAX}).",
+    FailureCodes.CONFIG_SEPARATOR_INVALID: f"separator is not one of {VALID_SEPARATORS}.",
+    FailureCodes.CONFIG_CASETRANSFORM_INVALID: "casetransform is not one of the recognized case-transform names.",
+    FailureCodes.CONFIG_FIELD_EMPTY: "A field that must be non-empty is an empty string.",
+    FailureCodes.CONFIG_PREFIX_INVALID: f"prefix is not ASCII letters only, max {PREFIX_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_FOLDERADR_TOO_LONG: f"folderadr exceeds {FOLDERADR_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_FOLDERADR_NOT_RELATIVE: "folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository.",
+    FailureCodes.CONFIG_FOLDERLOG_TOO_LONG: f"folderlog exceeds {FOLDERLOG_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_FOLDERLOG_NOT_RELATIVE: "folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository.",
+    FailureCodes.CONFIG_FOLDERADR_FOLDERLOG_OVERLAP: "folderadr and folderlog are the same directory, or one is nested inside the other.",
+    FailureCodes.CONFIG_TEMPLATE_TOO_LONG: f"template exceeds {TEMPLATE_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERDISCLAIMER_TOO_LONG: f"headerdisclaimer exceeds {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_FIELD_IS_BLANK: "A field is non-empty but blank after stripping whitespace.",
+    FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->').",
+    FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID: "migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##].",
+    FailureCodes.CONFIG_HEADERTITLEFILE_TOO_LONG: f"headertitlefile exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERVERSION_TOO_LONG: f"headerversion exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERREVISION_TOO_LONG: f"headerrevision exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERSCOPE_TOO_LONG: f"headerscope exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERDOMAIN_TOO_LONG: f"headerdomain exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERTITLESTATUSCREATED_TOO_LONG: f"headertitlestatuscreated exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERTITLESTATUSCHANGED_TOO_LONG: f"headertitlestatuschanged exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERTITLESTATUSSUPERSEDED_TOO_LONG: f"headertitlestatussuperseded exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERTABLEFIELDS_TOO_LONG: f"headertablefields exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERTABLEVALUES_TOO_LONG: f"headertablevalues exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_HEADERMIGRATED_TOO_LONG: f"headermigrated exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_STATUSNEW_TOO_LONG: f"statusnew exceeds {STATUS_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_STATUSACC_TOO_LONG: f"statusacc exceeds {STATUS_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_STATUSREJ_TOO_LONG: f"statusrej exceeds {STATUS_LABEL_MAX_LENGTH} characters.",
+    FailureCodes.CONFIG_STATUSSUP_TOO_LONG: f"statussup exceeds {STATUS_LABEL_MAX_LENGTH} characters.",
+}
+
 
 def _is_relative_path(value):
     """Rejects anything that could anchor outside the repository on either

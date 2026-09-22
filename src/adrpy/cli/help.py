@@ -1,5 +1,7 @@
 """`help` command: lists available commands, or describes one of them."""
 
+from adrpy.core.errors import FailureCodes, build_failure_codes
+
 _DEFAULTS_PREVIEW_FIELDS = (
     "folderadr",
     "prefix",
@@ -59,6 +61,9 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            {FailureCodes.UNKNOWN_COMMAND: "The named `command` doesn't match any registered command."},
+        ),
     }
 
 

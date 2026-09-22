@@ -26,13 +26,17 @@ page has drifted; regenerate it instead of hand-editing around the gap.
 | [`installconfig`](installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
 | [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
-Every failure code a command can return is documented inline, in that
-command's own `## Description` section, alongside the condition that
-triggers it -- there is no separate global error-code index, because a
-code's meaning is only complete together with the specific write it
-guards. As of ADR005V01's own registry (`core/errors.py`'s `FailureCodes`),
-this claim is checkable by an automated test
-(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`) --
-currently `xfail`, since a known set of codes (mostly `core/config.py`'s
-own field-validation grammar) is not yet covered; see that test's own
-`reason` for the tracked gap.
+Every failure code a command can return is documented on that command's
+own page, in its `## Failure codes` table (ADR008V01) -- the same
+structured `failure_codes` field `adrpy help <command>` returns at
+runtime, not free-form prose. There is still no separate GLOBAL
+error-code index: codes genuinely specific to one command's own
+operation are only ever listed there, since a code's meaning is only
+complete together with the specific write it guards. Codes with
+identical meaning everywhere they're reachable (config-schema
+validation, header parsing) are authored once, in a shared source next
+to the code that raises them, and merged into every command's own table
+that can actually return them -- still delivered on that command's own
+page, never referenced from outside it. This claim is checkable by an
+automated test
+(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`).

@@ -7,8 +7,11 @@ successor.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
@@ -20,7 +23,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import LockLostError, acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -96,6 +99,20 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            _INELIGIBILITY_DETAILS,
+            {
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
+                FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
+                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found -- this decision's own status was already committed to Rejected.",
+                FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Reverting the predecessor's Superseded status failed -- this decision's own status was already committed to Rejected.",
+            },
+            LIFECYCLE_FAILURE_CODES,
+            HEADER_FAILURE_CODES,
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

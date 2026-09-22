@@ -7,10 +7,12 @@ not the latest member's. --open is permanently not implemented (see
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
     has_superseded_sibling,
@@ -24,7 +26,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -103,6 +105,25 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            _INELIGIBILITY_DETAILS,
+            {
+                FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
+                FailureCodes.FAMILY_NOT_FOUND: "This decision's own family could not be resolved.",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
+                FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the LATEST family member's own last update date (or creation date, if never updated).",
+                FailureCodes.FILE_ALREADY_EXISTS: "The new revision's own resulting filename already exists on disk.",
+                FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION: "The next revision number does not fit in the configured lenrevision width.",
+                FailureCodes.NOT_LATEST_VERSION: "This decision is not the latest version/revision in its family (and isn't the one documented branch-off-a-rejected-latest exception).",
+                FailureCodes.REVISION_NOT_CONFIGURED: "This repository's config has lenrevision == 0.",
+                FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again.",
+            },
+            LIFECYCLE_FAILURE_CODES,
+            HEADER_FAILURE_CODES,
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

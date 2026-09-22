@@ -20,6 +20,12 @@ Name of the command to describe. Positional, unlike every other command's flags:
 
 Return every command's full description and argument list at once, instead of the default summarized listing. Ignored when `command` is also given -- a single named command is already returned in full either way.
 
+## Failure codes
+
+| Code | Condition |
+|---|---|
+| `unknown-command` | The named `command` doesn't match any registered command. |
+
 ## Example
 
 ```bash

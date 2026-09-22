@@ -8,6 +8,8 @@ not silently either.
 """
 
 from adrpy.core.args import parse_flags
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import parse_header
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
@@ -38,6 +40,15 @@ def describe():
                 "description": "Repository root directory (must contain adr-config.adrplus).",
             },
         ],
+        "failure_codes": build_failure_codes(
+            {
+                FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+                FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
+            },
+            CONFIG_FAILURE_CODES,
+        ),
     }
 
 

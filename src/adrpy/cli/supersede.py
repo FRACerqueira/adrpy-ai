@@ -6,10 +6,12 @@ never a collision-disambiguator. `--open` is permanently not implemented
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
     has_superseded_sibling,
@@ -24,7 +26,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
     verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import LockLostError, acquire_repo_lock
+from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -144,6 +146,25 @@ def describe():
                 ),
             },
         ],
+        "failure_codes": build_failure_codes(
+            _INELIGIBILITY_DETAILS,
+            {
+                FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
+                FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the predecessor's own last update date (or creation date, if never updated).",
+                FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
+                FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
+                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the FIRST of the two writes) failed -- nothing was written.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the SECOND of the two writes) failed -- the predecessor was already committed to Superseded.",
+            },
+            LIFECYCLE_FAILURE_CODES,
+            HEADER_FAILURE_CODES,
+            CONFIG_FAILURE_CODES,
+            LOCK_FAILURE_CODES,
+        ),
     }
 
 

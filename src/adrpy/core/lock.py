@@ -57,6 +57,15 @@ class LockLostError(CommandError):
         super().__init__(FailureCodes.LOCK_LOST, detail, warnings=warnings)
 
 
+# ADR008V01: reachable by every command that calls acquire_repo_lock
+# (every mutating command except installconfig, which is deliberately
+# unlocked -- per-user state, not shared repository state).
+SHARED_FAILURE_CODES = {
+    FailureCodes.REPOSITORY_LOCKED: "The repository lock could not be acquired before timing out.",
+    FailureCodes.LOCK_LOST: "The repository lock was acquired but reclaimed by another process before this write could commit -- no write was made; retry.",
+}
+
+
 def _unlink_with_retry(path):
     """Same transient-PermissionError retry as atomic_write_text -- a
     Windows "pending delete"/sharing-violation window under heavy

@@ -650,6 +650,39 @@ def stream_normalized_body_chunks(source_path, report):
         yield LINESEP_BYTES
 
 
+# ADR008V01: the codes every one of the 6 per-file lifecycle commands
+# (approve/reject/undo/supersede/version/revise) reaches identically,
+# via resolve_repo_and_target/read_target/family_members -- each
+# command's own describe() merges this in on top of its own specific
+# entries (eligibility-specific codes, refdate bounds, its own write
+# failures). Deliberately excludes field-is-blank: unlike
+# field-contains-forbidden-character (still reachable regardless of
+# stripping -- a '|' or embedded line break survives even after leading/
+# trailing whitespace is removed), field-is-blank can only fire on a
+# value that is non-empty but blank AFTER stripping -- reachable only
+# where reject_embedded_delimiter is called on a RAW, unstripped value
+# (supersede/version's own --scope/--domain flags), never where it's
+# called on an already-`.strip()`-ed one (every one of these 6 commands'
+# own title/scope/domain, sourced from core/header.py's _extract_cell,
+# which always strips). Each command that can genuinely reach it lists
+# it in its own inline dict instead.
+SHARED_FAILURE_CODES = {
+    FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
+    FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
+    FailureCodes.FILENAME_NOT_RECOGNIZED: "--file's own name matches neither naming scheme.",
+    FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+    FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
+    FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
+    FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A free-text field contains '|', a line-break-like character, or (for title) a filesystem-unsafe character.",
+    FailureCodes.NOT_PROPOSED: "The target's own status_create is not Proposed (and it is not a migrated placeholder either).",
+    FailureCodes.ALREADY_SUPERSEDED: "The target has already been superseded.",
+    FailureCodes.FAMILY_MEMBER_SUPERSEDED: "Another member of the same family has already been superseded.",
+    FailureCodes.FAMILY_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan.",
+    FailureCodes.FAMILY_SCAN_UNRELIABLE_ENCODING: "A sibling in the same family needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision.",
+    FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
+}
+
+
 def resolve_repo_and_target(fileadr):
     """The non-content-dependent half of load_target (ADR001,
     doc/adr/ADR001V01-...): resolve the extension default, find the

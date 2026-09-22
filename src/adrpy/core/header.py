@@ -13,6 +13,34 @@ from adrpy.core.errors import FailureCodes
 
 HEADER_LINE_COUNT = 12
 
+# ADR008V01: every code parse_header can produce via its own result.error
+# (never raised here directly -- read_target, core/lifecycle.py, is what
+# actually raises header.error, or FailureCodes.HEADER_INVALID as its own
+# fallback), one static one-line condition each. Reachable only by the 6
+# per-file commands that call read_target (approve/reject/undo/supersede/
+# version/revise) -- new/migrate/explore/config/installconfig/init/log
+# never surface these: migrate and explore both call parse_header
+# directly but only ever read .is_valid/.error, never raise on it.
+SHARED_FAILURE_CODES = {
+    FailureCodes.HEADER_INVALID: "The header failed structural validation, for a reason not covered by a more specific code below.",
+    FailureCodes.ADR_FILE_EMPTY: "The file has no content at all.",
+    FailureCodes.ADR_FILE_TOO_SHORT: "The file has fewer than the 12 required header lines.",
+    FailureCodes.ADR_HEADER_COMMENT_NOT_FOUND: "Line 1 (or line 12) is not the '<!-- ... -->' disclaimer comment this format requires.",
+    FailureCodes.ADR_HEADER_INVALID_FORMAT: "Line 2 or line 3 does not match the fixed table-header shape this format requires.",
+    FailureCodes.ADR_HEADER_TITLE_NOT_FOUND: "The Title row's own cell is missing or malformed.",
+    FailureCodes.ADR_HEADER_VERSION_NOT_FOUND: "The Version row's own cell is missing, malformed, or not a plain digit run.",
+    FailureCodes.ADR_HEADER_REVISION_NOT_FOUND: "The Revision row's own cell is missing, malformed, or not a plain digit run.",
+    FailureCodes.ADR_HEADER_SCOPE_NOT_FOUND: "The Scope row's own cell is missing or malformed.",
+    FailureCodes.ADR_HEADER_DOMAIN_NOT_FOUND: "The Domain row's own cell is missing or malformed.",
+    FailureCodes.ADR_HEADER_STATUS_CREATED_NOT_FOUND: "The Created status row's own cell is missing or malformed.",
+    FailureCodes.ADR_HEADER_STATUS_UPDATED_NOT_FOUND: "The Changed status row's own cell is missing or malformed.",
+    FailureCodes.ADR_HEADER_STATUS_SUPERSEDED_NOT_FOUND: "The Superseded status row's own cell is missing or malformed.",
+    FailureCodes.ADR_STATUS_SUPERSEDE_FORMAT_INVALID: "The Superseded row's own status is set, but its successor-reference suffix (': <number>') is missing.",
+    FailureCodes.STATUS_LINE_FORMAT_INVALID: "A status cell's own parenthesized-date shape ('label (date)') could not be parsed at all.",
+    FailureCodes.STATUS_LINE_UNKNOWN_STATUS: "A status cell's own label text does not match any of statusnew/statusacc/statusrej/statussup, and no canonical marker is present either.",
+    FailureCodes.STATUS_LINE_DATE_INVALID: "A status cell's own parenthesized date is not a valid ISO date.",
+}
+
 _STATUS_CONFIG_FIELD = {
     "Proposed": "statusnew",
     "Accepted": "statusacc",
