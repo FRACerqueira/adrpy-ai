@@ -277,11 +277,12 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
     assert any("orphaned" in w.lower() for w in payload["warnings"])
 
 
-def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
-    """Reject's primary write (marking THIS file Rejected)
-    already succeeds before it discovers the predecessor it's supposed to
-    un-supersede doesn't exist. The previous failure response revealed
-    nothing about the mutation that had already happened for real."""
+def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
+    """Round 36 retraction: an earlier version of this command wrote this
+    decision's own status FIRST, so a missing predecessor still reported a
+    successful mutation despite the overall failure. The predecessor
+    lookup now runs BEFORE any write -- a missing predecessor means
+    nothing was committed at all, safely retryable from scratch."""
     target = tmp_path
     init.run(["--path", str(target)])
     config = load_repo_config(target / "adr-config.adrplus")
@@ -302,11 +303,11 @@ def test_reject_reveals_partial_success_when_predecessor_is_missing(tmp_path):
         reject.run(["--file", str(successor_path)])
 
     assert excinfo.value.code == "superseded-predecessor-not-found"
-    assert excinfo.value.data == {"file": str(successor_path), "status": "Rejected"}
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+    assert excinfo.value.data is None
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
 
 
-def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path):
+def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path, monkeypatch):
     """No existing test had more than one
     warning accumulated simultaneously before a later failure -- which
     quietly weakens every `assert excinfo.value.warnings` check elsewhere
@@ -315,51 +316,58 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
     temp-file cleanup AND an encoding repair) surviving together to a
     later, unrelated CommandError, and checks both content and order.
 
-    `reject` on a successor whose predecessor is missing is the natural
-    home for this: encoding_repaired_warning only fires once the write it
-    describes has actually happened, and here the target write genuinely
-    succeeds first (making the warning true), with the LATER, unrelated
-    failure being that the predecessor doesn't exist -- both warnings are
-    real by the time they survive to that failure, not merely by
-    coincidence of timing."""
-    target = tmp_path
-    init.run(["--path", str(target)])
-    config = load_repo_config(target / "adr-config.adrplus")
-    adr_dir = target / "doc" / "adr"
-    successor_path = adr_dir / "ADR002V01-successor--999.md"
-    _write_raw(
-        successor_path,
-        config,
-        number=2,
-        title="Successor",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        superseded=999,
-    )
-    with open(successor_path, "ab") as handle:
+    Round 36 retraction: previously this used the predecessor-missing
+    scenario, since the target's own write ran first and its encoding
+    repair was already real by the time that later, unrelated failure hit.
+    With the predecessor reverted FIRST now, that specific scenario has no
+    write before the failure at all -- so this uses the predecessor's OWN
+    encoding repair (real once ITS write succeeds) followed by the
+    target's own write failing as the later, unrelated failure instead."""
+    from adrpy.cli import supersede
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    successor_path = Path(result["created"])
+    # Injected AFTER supersede, directly onto the now-Superseded
+    # predecessor -- approve/supersede's own writes would otherwise have
+    # already repaired it before reject ever sees it.
+    with open(adr_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
 
+    adr_dir = tmp_path / "doc" / "adr"
     orphan_path = adr_dir / "orphan.md.abc123.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
     old_time = time.time() - 999
     os.utime(orphan_path, (old_time, old_time))
 
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path)])
+    from adrpy.cli import reject as reject_module
 
-    assert excinfo.value.code == "superseded-predecessor-not-found"
+    real_rewrite = reject_module.rewrite_status_field
+    calls = {"n": 0}
+
+    def flaky_rewrite(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated disk failure")
+        return real_rewrite(*args, **kwargs)
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path)])
+
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
     assert len(excinfo.value.warnings) == 2
     assert "orphaned" in excinfo.value.warnings[0].lower()
     assert "rewritten" in excinfo.value.warnings[1].lower()
 
 
-def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp_path, monkeypatch):
-    """Same
-    partial-mutation class as test_reject_reveals_partial_success_when_
-    predecessor_is_missing, but for a real OSError instead of a missing
-    predecessor -- the target's own write to Rejected already succeeded
-    before the predecessor's "undo Superseded" write fails."""
+def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tmp_path, monkeypatch):
+    """Round 36 retraction: with the predecessor reverted FIRST now, a
+    failure on the SECOND rewrite_status_field call hits this decision's
+    OWN write, AFTER the predecessor has already, for real, been reverted
+    -- the inverse of the old order's partial-success shape."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -383,28 +391,23 @@ def test_reject_reveals_target_already_rejected_when_predecessor_write_fails(tmp
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "reject-predecessor-write-failed"
-    assert excinfo.value.data["file"] == str(successor_path)
-    assert excinfo.value.data["status"] == "Rejected"
-    assert excinfo.value.data["predecessor_file"] == str(adr_path)
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
+    assert "|Superseded||" in adr_path.read_text(encoding="utf-8")  # predecessor genuinely reverted
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 
 
-def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the_predecessor_write(
-    tmp_path, monkeypatch
-):
+def test_reject_reveals_predecessor_already_reverted_when_the_lock_is_lost_on_its_own_write(tmp_path, monkeypatch):
     """Same class as the OSError
     sibling test above, but for LockLostError on this command's SECOND
-    write -- it must not bypass reject-predecessor-write-failed's handler
-    (which only catches OSError), or it would report a generic, dataless
-    lock-lost even though the target was already, for real, committed to
-    Rejected.
+    write. Round 36 retraction: with the predecessor reverted first, the
+    lock steal now has to land on the TARGET's own stream (the second
+    call), not the predecessor's.
 
-    ADR006V01: the predecessor's body is now streamed directly from disk
-    (core/lifecycle.py's stream_normalized_body_chunks) instead of being
-    read up front into `pred_lines` before the write -- so the lock steal
-    now has to happen DURING that stream, not before it, to land in the
-    same check-to-commit window `lock.verify_still_held()` is meant to
+    ADR006V01: the target's own body is streamed directly from disk
+    (core/lifecycle.py's stream_normalized_body_chunks) rather than read
+    up front -- so the lock steal happens DURING that stream, to land in
+    the same check-to-commit window `lock.verify_still_held()` is meant to
     close (see core/lifecycle.py's _rewrite_with_streamed_body, which
     re-verifies the lock a second time right before this exact write
     commits, specifically to keep this window shut now that streaming a
@@ -425,9 +428,9 @@ def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the
     def steal_lock_then_stream(source_path, report):
         calls["n"] += 1
         if calls["n"] == 2:
-            # The FIRST call streams the target's own (primary) write,
-            # which must succeed normally -- only the SECOND call, the
-            # predecessor's write, is where this test steals the lock.
+            # The FIRST call streams the predecessor's own write, which
+            # must succeed normally -- only the SECOND call, the target's
+            # own write, is where this test steals the lock.
             lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
             lock_path.write_text(f"someone-else-entirely\n{time.time()}")
         yield from real_stream(source_path, report)
@@ -437,11 +440,145 @@ def test_reject_reveals_target_already_rejected_when_the_lock_is_lost_before_the
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
 
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
+    assert "|Superseded||" in adr_path.read_text(encoding="utf-8")  # predecessor genuinely reverted
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
+
+
+def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monkeypatch):
+    """Round 36: a failure on the FIRST rewrite_status_field call now hits
+    the predecessor's own write, before this decision's own write has
+    even been attempted -- nothing committed at all, unlike the old
+    order's second-write failure (covered by the sibling tests above,
+    which now hit this decision's own write instead)."""
+    from adrpy.cli import supersede
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    successor_path = Path(result["created"])
+    predecessor_text_before = adr_path.read_text(encoding="utf-8")
+
+    from adrpy.cli import reject as reject_module
+
+    real_rewrite = reject_module.rewrite_status_field
+    calls = {"n": 0}
+
+    def flaky_rewrite(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("simulated disk failure")
+        return real_rewrite(*args, **kwargs)
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path)])
+
     assert excinfo.value.code == "reject-predecessor-write-failed"
-    assert excinfo.value.data["file"] == str(successor_path)
-    assert excinfo.value.data["status"] == "Rejected"
-    assert excinfo.value.data["predecessor_file"] == str(adr_path)
+    assert excinfo.value.data is None
+    assert adr_path.read_text(encoding="utf-8") == predecessor_text_before  # untouched
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
+
+
+def test_reject_retries_safely_after_predecessor_already_reverted_single_member_family(tmp_path, monkeypatch):
+    """Round 36: the whole point of reverting the predecessor first is
+    that the failure above is safely retryable. For a predecessor with no
+    version/revision history (the common case), a plain retry recognizes
+    the since-reverted predecessor (status_change is None, single family
+    member) and completes -- it does not re-attempt the revert and does
+    not report superseded-predecessor-not-found."""
+    from adrpy.cli import supersede
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    successor_path = Path(result["created"])
+
+    from adrpy.cli import reject as reject_module
+
+    real_rewrite = reject_module.rewrite_status_field
+    calls = {"n": 0}
+
+    def fail_second_call_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated disk failure")
+        return real_rewrite(*args, **kwargs)
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", fail_second_call_once)
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", real_rewrite)
+    result = reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+
+    assert result["status"] == "Rejected"
+    assert result["undone_predecessor"] is None  # nothing left to revert this time
     assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+
+
+def test_reject_retry_still_fails_loudly_for_a_multi_member_predecessor_family(tmp_path):
+    """Same retry scenario as the single-member test above, but the
+    predecessor's family has version history (two members) -- deliberately
+    NOT auto-recognized as already reverted, since which specific sibling
+    was the reverted one can't be disambiguated once its own back-
+    reference is gone. Simulates the already-reverted state directly
+    (hand-written via _write_raw, both members already status_change=None
+    -- as they would be after a genuine revert, or simply never
+    superseded) rather than via an injected write failure, since the
+    point here is the detection logic itself, not how the state was
+    reached."""
+    tmp_path, _ = _setup_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+
+    v01_path = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        v01_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 1),
+        # Already back to normal -- as it would be after an earlier,
+        # partially-failed reject already reverted it for real.
+    )
+    v02_path = adr_dir / "ADR001V02-first-decision.md"
+    _write_raw(
+        v02_path,
+        cfg,
+        number=1,
+        title="First decision",
+        version=2,
+        status_create="Proposed",
+        date_create=date(2026, 1, 2),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path,
+        cfg,
+        number=2,
+        title="Successor",
+        version=1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 3),
+        superseded=1,
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.data is None
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
 
 
 def test_approve_rejects_refdate_before_create(tmp_path):
@@ -856,16 +993,14 @@ def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_su
     assert "|Superseded|Superseded" in v01_path.read_text(encoding="utf-8"), "V01 must stay untouched"
 
 
-def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_incomplete(tmp_path, monkeypatch):
-    """The predecessor-family
-    scan runs AFTER the primary write (marking this file Rejected) has
-    already committed -- unlike every other family_members call in this
-    codebase, which all run before their command's own first write. The
-    bare family-scan-incomplete family_members raises carries no
-    data.file/data.status, unlike this command's other two second-phase
-    codes -- reject now re-raises it with that same partial-success
-    shape instead of leaving the caller to infer it from `warnings`
-    alone."""
+def test_reject_family_scan_incomplete_makes_no_write_at_all(tmp_path, monkeypatch):
+    """Round 36 retraction: the predecessor-family scan now runs BEFORE
+    any write, like every other family_members call in this codebase --
+    unlike the old order, where it ran AFTER the primary write had already
+    committed and needed a special partial-success re-raise merging in
+    file/status. That merge is gone now: the original family-scan-
+    incomplete error propagates completely unchanged, and nothing was
+    written."""
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     cfg = load_repo_config(tmp_path / "adr-config.adrplus")
@@ -920,15 +1055,11 @@ def test_reject_reveals_partial_success_when_the_predecessor_family_scan_is_inco
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-04"])
 
     assert excinfo.value.code == "family-scan-incomplete"
-    assert excinfo.value.data["file"] == str(successor_path)
-    assert excinfo.value.data["status"] == "Rejected"
-    # The original error's own data
-    # (which subdirectories couldn't be scanned) must survive the
-    # re-raise too, not just this command's own file/status.
-    assert excinfo.value.data["folder"] == str(adr_dir)
-    assert excinfo.value.data["unreadable"] == [str(adr_dir / "restricted")]
-    # The primary write really did commit despite the overall failure.
-    assert "Rejected (2026-01-04)" in successor_path.read_text(encoding="utf-8")
+    # The original error's own data (which subdirectories couldn't be
+    # scanned) survives completely unmodified -- no file/status merged in,
+    # since nothing has been written by this point.
+    assert excinfo.value.data == {"folder": str(adr_dir), "unreadable": [str(adr_dir / "restricted")]}
+    assert "Rejected (2026-01-04)" not in successor_path.read_text(encoding="utf-8")
     assert calls["count"] == 2
 
 
