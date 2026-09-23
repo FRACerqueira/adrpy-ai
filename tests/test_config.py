@@ -479,8 +479,8 @@ def test_headertable_fields_with_marker_comment_characters_are_rejected(field, p
     made is_migrated=True on the header of EVERY ordinary,
     non-migrated file ever written under that config -- confirmed live
     with an otherwise-normal `new` decision reading back as
-    is_migrated: true. That flag feeds counts_as_family_member and
-    several lifecycle eligibility exceptions."""
+    is_migrated: true. That flag feeds several lifecycle eligibility
+    exceptions."""
     data = _valid_config_dict()
     data[field] = payload
 

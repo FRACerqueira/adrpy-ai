@@ -439,3 +439,21 @@ def test_explore_accepts_short_flag_end_to_end_through_main(tmp_path):
     (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
 
     assert main(["explore", "-p", str(tmp_path)]) == EXIT_SUCCESS
+
+
+def test_explore_says_which_files_are_invalid_and_why(tmp_path):
+    config = parse_repo_config(json.dumps(_default_config_dict()))
+    valid = _decision_text(config, number=1, title="Valid", version=1, status_create="Proposed")
+    damaged = valid.replace("|--|--|", "|-x|--|", 1)
+    _write_repo(tmp_path, _default_config_dict(), {
+        "ADR001V01-valid.md": valid,
+        "ADR002V01-damaged.md": damaged,
+        "ADR003V01-plain.md": "# Plain notes, no header\n",
+    })
+
+    decisions = explore.run(["--path", str(tmp_path)])["decisions"]
+
+    states = {d["filename"]: (d["header"]["state"], d["header"]["invalid_reason"]) for d in decisions}
+    assert states["ADR001V01-valid.md"] == ("valid", None)
+    assert states["ADR002V01-damaged.md"] == ("adulterated", "adr-header-invalid-format")
+    assert states["ADR003V01-plain.md"][0] == "no-header"

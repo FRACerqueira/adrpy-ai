@@ -561,8 +561,10 @@ def test_migrate_refuses_when_a_scanned_file_has_a_lossy_encoding(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
 
-    assert excinfo.value.code == "migration-scan-unreliable-encoding"
-    assert excinfo.value.data == {"unreliable_files": [str(target)]}
+    # Round 39: a lossy byte only matters when it breaks the header. Here
+    # the canonical marker still decides the status, so the header parses
+    # and the already-tool-created check refuses -- still never touched.
+    assert excinfo.value.code == "already-tool-created-adrs-exist"
     assert target.read_bytes() == corrupted  # never touched
 
 
@@ -867,3 +869,85 @@ def test_a_per_file_failure_with_an_empty_message_still_says_what_failed(tmp_pat
 
     assert excinfo.value.code == "migration-write-failed"
     assert excinfo.value.data["results"][0]["error"] == "OSError"
+
+
+@pytest.mark.parametrize("damage", ["title", "first-line"])
+def test_migrate_never_stamps_a_second_header_over_an_adulterated_one(tmp_path, damage):
+    # A file that already carries this tool's header, damaged by hand, is
+    # not "a file with no header": migrate refuses the whole run and names
+    # it, instead of writing a new header on top of the broken one.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    header = build_header(cfg, DecisionRecord(number=2, title="Second", version=1))
+    lines = header.split("\n")
+    if damage == "title":
+        lines[3] = "broken title row"
+    else:
+        lines[0] = ""
+    damaged = tmp_path / "doc" / "adr" / "0002Second.md"
+    damaged.write_bytes(("\n".join(lines) + "# body\n").encode("utf-8"))
+    before = {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")}
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-invalid-headers-exist"
+    assert excinfo.value.data["files"] == [str(damaged)]
+    assert {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")} == before
+
+
+def test_a_legacy_file_with_an_ordinary_markdown_table_is_still_migrated(tmp_path):
+    # Positive control for the refusal above: only rows this tool's header
+    # writes count as its shape, not any table near the top of a file.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n\n| Field | Value |\n|---|---|\n| a | b |\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy)]
+    assert legacy.read_text(encoding="utf-8").count("|Adr-Plus ") == 1
+
+
+def test_an_interrupt_mid_run_reports_the_files_already_migrated(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    first = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    second = _write_legacy_file(tmp_path, "0002Second.md", "# Second\n")
+    real_chunks = migrate.atomic_write_chunks
+    calls = {"count": 0}
+
+    def interrupt_on_second(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise KeyboardInterrupt()
+        return real_chunks(*args, **kwargs)
+
+    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupt_on_second)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "interrupted"
+    done = excinfo.value.data["results"]
+    assert len(done) == 1 and done[0]["status"] == "migrated"
+    assert done[0]["file"] in (str(first), str(second))
+
+
+def test_a_legacy_three_column_table_with_short_dashes_is_still_migrated(tmp_path):
+    # `|--|--|--|` starts like this tool's separator row but is not it.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n\n|a|b|c|\n|--|--|--|\n|1|2|3|\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy)]
+
+
+def test_migrate_drops_every_leading_bom_of_a_legacy_file(tmp_path):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    legacy.write_bytes(b"\xef\xbb\xbf\xef\xbb\xbf" + legacy.read_bytes())
+
+    migrate.run(["--path", str(tmp_path)])
+
+    assert b"\xef\xbb\xbf" not in legacy.read_bytes()

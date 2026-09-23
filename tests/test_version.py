@@ -501,3 +501,20 @@ def test_version_describe_declares_empty_as_a_presence_only_switch():
     arguments = {argument["name"]: argument for argument in version.describe()["arguments"]}
 
     assert arguments["empty"]["type"] == "switch"
+
+
+def test_version_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp_path):
+    # The filename decides numbering, counting every file: a V02 left out
+    # of the family (no header) still holds its number, so version refuses
+    # instead of creating a second V02 under another title.
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    broken = adr_path.parent / "ADR001V02-draft.md"
+    broken.write_text("no header\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR001V02-draft.md"}
+    assert any(w.startswith(f"{broken}: ignored") for w in excinfo.value.warnings)
+    assert sorted(p.name for p in adr_path.parent.glob("ADR001V02*")) == ["ADR001V02-draft.md"]

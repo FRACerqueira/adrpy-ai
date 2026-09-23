@@ -1,6 +1,6 @@
 <img src="../../src/adrpy/icon.png" width="160" alt="adrpy-ai icon">
 
-[← README](../../README.md) · [Architecture](../architecture.md)
+[← README](../../README.md) · [Decision lifecycle](../lifecycle.md) · [Architecture](../architecture.md)
 
 # Command Reference
 

@@ -1088,12 +1088,10 @@ def test_reject_family_scan_incomplete_makes_no_write_at_all(tmp_path, monkeypat
     real_family_members = reject_module.family_members
     calls = {"count": 0}
 
-    def flaky_family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None, unparseable=None):
+    def flaky_family_members(folder, config, number, warnings=None, ignored=None):
         calls["count"] += 1
         if calls["count"] == 1:
-            return real_family_members(
-                folder, config, number, warnings=warnings, exclude_from_encoding_check=exclude_from_encoding_check
-            )
+            return real_family_members(folder, config, number, warnings=warnings, ignored=ignored)
         raise CommandError(
             "family-scan-incomplete",
             "Cannot safely scan: 1 subdirectory could not be scanned.",
@@ -1502,11 +1500,11 @@ def test_reject_refuses_when_a_predecessor_family_member_has_an_unparseable_head
     assert successor_path.read_text(encoding="utf-8") == before
 
 
-def test_reject_is_not_blocked_by_a_same_number_file_that_never_had_a_header(tmp_path):
-    """Positive control for the refusal above: only a header with this
-    tool's shape that fails to parse blocks reject. A plain Markdown file
-    that merely matches the naming scheme (never tool-managed, no header
-    at all) is not a family member and must not block it."""
+def test_reject_refuses_when_a_same_number_file_has_no_header(tmp_path):
+    """The filename decides identity: a file named into the predecessor's
+    family belongs to it, even with no header at all. Its status can't be
+    read, so reject can't tell whether it is the Superseded member to
+    revert -- it refuses and names it, rather than guessing."""
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     cfg = load_repo_config(tmp_path / "adr-config.adrplus")
@@ -1515,14 +1513,31 @@ def test_reject_is_not_blocked_by_a_same_number_file_that_never_had_a_header(tmp
         status_create="Proposed", date_create=date(2026, 1, 1),
         status_update="Accepted", date_update=date(2026, 1, 1),
     )
-    (adr_dir / "ADR001V02-notes.md").write_text("# Notes\n\nPlain text, no header.\n" * 5, encoding="utf-8")
+    notes = adr_dir / "ADR001V02-notes.md"
+    notes.write_text("# Notes\n\nPlain text, no header.\n" * 5, encoding="utf-8")
     successor_path = adr_dir / "ADR002V01-successor--001.md"
     _write_raw(
         successor_path, cfg, number=2, title="Successor", version=1,
         status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
     )
 
-    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
-    assert result["undone_predecessor"] is None
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.data == {"unparseable_files": [str(notes)]}
+
+
+@pytest.mark.parametrize("boms", [1, 2])
+def test_a_decision_an_editor_saved_with_a_bom_is_still_read(tmp_path, boms):
+    # PowerShell 5.1 (-Encoding UTF8) and some editors prepend a BOM; the
+    # tool never writes one, so it is not content. The rewrite drops it.
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    path = tmp_path / "doc" / "adr" / "ADR001V01-first.md"
+    path.write_bytes(b"\xef\xbb\xbf" * boms + path.read_bytes())
+
+    result = approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    assert result["status"] == "Accepted"
+    assert path.read_text(encoding="utf-8").startswith("<!-- ")

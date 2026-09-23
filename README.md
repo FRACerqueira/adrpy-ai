@@ -124,7 +124,7 @@ Bare `adrpy help` (or running `adrpy` with no arguments at all) lists every comm
 adrpy help <command>
 ```
 
-`adrpy help --full` returns every command's full contract in one call, if that's genuinely what's needed. All three shapes are also available as prose reference pages under [`doc/commands/`](doc/commands/INDEX.md), one per command, generated directly from the same `describe()` contract.
+`adrpy help --full` returns every command's full contract in one call, if that's genuinely what's needed. All three shapes are also available as prose reference pages under [`doc/commands/`](doc/commands/INDEX.md), one per command, generated directly from the same `describe()` contract. Which status each command can move a decision to, and what stops it, is on one page: [`doc/lifecycle.md`](doc/lifecycle.md).
 
 ## Using adrpy-ai with AI Coding Agents
 

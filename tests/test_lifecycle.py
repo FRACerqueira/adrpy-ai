@@ -727,9 +727,9 @@ def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tm
 
 
 def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
-    """family_members must apply
-    counts_as_family_member (is_valid OR is_migrated), matching the real
-    tool's own equivalent scan -- a filename-matching file whose header
+    """family_members counts only headers that parse (Round 39; the
+    reference tool also counted a damaged migrated header) -- a
+    filename-matching file whose header
     doesn't parse at all (unmigrated legacy, or simply corrupt) must never
     be counted as a family member, regardless of which naming scheme
     matched its filename."""
@@ -750,70 +750,46 @@ def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
     assert members[0][0].title == "existing-decision"
 
 
-def test_family_members_fails_closed_when_a_sibling_needs_a_lossy_decode(tmp_path):
-    """Confirmed live: `family_members` using the no-report header
-    read instead of the with-report variant would let a sibling
-    with invalid UTF-8 bytes in its header (e.g. a corrupted or
-    hostile-migrated file) silently decode lossily, fail to parse,
-    and get EXCLUDED from the family with zero signal -- not merely
-    unwarned about, but invisible to has_superseded_sibling/
-    has_pending_sibling, the exact guard every per-file command relies
-    on to prevent two live successors (ADR001's own concern). Reproduced
-    live end-to-end: a genuinely Superseded V01 with 2 corrupted bytes
-    in its status row made `version` on V02 succeed and create a V03,
-    duplicating the family, with `warnings: []`. `family_members` can no
-    longer trust `existing == []`/a member-list omission to mean
-    "genuinely not a member" when the scan that produced it needed a
-    lossy decode -- fails closed instead, mirroring migrate's own
-    migration-scan-unreliable-encoding for the identical hazard."""
+def _written_decision(tmp_path, corrupt_old, corrupt_new):
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
     record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
-    good_path = adr_dir / "ADR001V01-existing-decision.md"
-    with open(good_path, "w", encoding="utf-8", newline="") as handle:
+    path = adr_dir / "ADR001V01-existing-decision.md"
+    with open(path, "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body")
-
-    raw = good_path.read_bytes()
-    corrupted = raw.replace(b"Proposed", b"Prop\xffsed", 1)
-    good_path.write_bytes(corrupted)
-
-    with pytest.raises(CommandError) as excinfo:
-        family_members(adr_dir, config, 1)
-
-    assert excinfo.value.code == "family-scan-unreliable-encoding"
-    assert str(good_path) in excinfo.value.data["unreliable_files"][0]
+    path.write_bytes(path.read_bytes().replace(corrupt_old, corrupt_new, 1))
+    return config, adr_dir, path
 
 
-def test_family_members_exempts_only_the_excluded_path_from_the_encoding_check(tmp_path):
-    """`exclude_from_encoding_check` exists specifically for the file every
-    real caller is already reading via `read_target` -- that file's own
-    encoding reliability is separately surfaced as a warning there, and
-    the command's own write is expected to heal it (the same tolerated
-    behavior this project has always had for the file actually being
-    acted on). Confirmed both directions with the SAME corruption
-    shape: excluded, the scan still succeeds and includes the file;
-    not excluded (a genuine, unidentified sibling), the exact same
-    corruption still fails closed -- this is not a blanket bypass."""
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
-    corrupted_path = adr_dir / "ADR001V01-existing-decision.md"
-    with open(corrupted_path, "w", encoding="utf-8", newline="") as handle:
-        handle.write(build_header(config, record) + "# body")
-    raw = corrupted_path.read_bytes()
-    corrupted_path.write_bytes(raw.replace(b"Proposed", b"Prop\xffsed", 1))
+def test_a_sibling_whose_header_no_longer_parses_is_left_out_and_reported(tmp_path):
+    """Round 39 policy: the header decides status, counting only headers
+    that parse. Invalid bytes in the table separator row break it,
+    so the file is left out of the family -- its status can't be read --
+    and reported in `warnings`. Round 25 failed closed here instead; a
+    family made inconsistent this way is now an accepted, visible limit."""
+    config, adr_dir, path = _written_decision(tmp_path, b"|--|--|", b"|-\xff|--|")
+    ignored = []
+    warnings = []
 
-    members = family_members(adr_dir, config, 1, exclude_from_encoding_check=corrupted_path)
+    members = family_members(adr_dir, config, 1, warnings=warnings, ignored=ignored)
 
-    assert len(members) == 1
-    assert members[0][2] == corrupted_path
+    assert members == []
+    assert [entry[2] for entry in ignored] == [path]
+    assert warnings == [f"{path}: ignored -- its header does not parse (adr-header-invalid-format); see explore."]
 
-    with pytest.raises(CommandError) as excinfo:
-        family_members(adr_dir, config, 1, exclude_from_encoding_check=adr_dir / "some-other-unrelated-file.md")
 
-    assert excinfo.value.code == "family-scan-unreliable-encoding"
+def test_a_sibling_whose_lossy_decode_still_parses_stays_a_member(tmp_path):
+    """Positive control: a lossy decode only matters when it breaks the
+    header. An invalid byte in the title cell still parses, so the file
+    keeps its place in the family."""
+    config, adr_dir, path = _written_decision(tmp_path, b"Existing decision", b"Existing decisio\xff")
+    warnings = []
+
+    members = family_members(adr_dir, config, 1, warnings=warnings)
+
+    assert [entry[2] for entry in members] == [path]
+    assert warnings == []
 
 
 def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):

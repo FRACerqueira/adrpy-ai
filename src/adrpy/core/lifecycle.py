@@ -21,11 +21,11 @@ from adrpy.core.atomic_write import (
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import _STATUS_LABEL_FIELDS, load_repo_config
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, counts_as_family_member, parse_header
+from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, parse_header
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
-from adrpy.core.warnings import excluded_candidate_warning, marker_label_mismatch_warning
+from adrpy.core.warnings import excluded_candidate_warning, ignored_file_warning, marker_label_mismatch_warning
 
 
 def parse_refdate(text):
@@ -492,6 +492,13 @@ def _read_header_bytes(path, count):
     return read_with_permission_retry(_open_and_read)
 
 
+def _without_leading_boms(text):
+    """The tool never writes a BOM, so any run of them at the very start
+    was added by an editor (or PowerShell 5.1's -Encoding UTF8) and is not
+    content -- left in, it hides the header's first line."""
+    return text.lstrip("\ufeff")
+
+
 def read_header_lines(path, count=HEADER_LINE_COUNT):
     """Reads only enough of `path` to recover the first `count` real
     lines -- never the whole file. Used wherever only the header is
@@ -499,7 +506,7 @@ def read_header_lines(path, count=HEADER_LINE_COUNT):
     body, however large, just to look at its first 12 lines would be
     wasteful. Tolerates invalid bytes the same way read_lines does."""
     text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
-    return split_real_lines(text)[:count]
+    return split_real_lines(_without_leading_boms(text))[:count]
 
 
 def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
@@ -522,7 +529,7 @@ def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
     except UnicodeDecodeError:
         text = buffer.decode("utf-8", errors="replace")
         encoding_repaired = True
-    return split_real_lines(text)[:count], encoding_repaired
+    return split_real_lines(_without_leading_boms(text))[:count], encoding_repaired
 
 
 def read_lines_with_report(path):
@@ -541,7 +548,7 @@ def read_lines_with_report(path):
     except UnicodeDecodeError:
         text = raw_bytes.decode("utf-8", errors="replace")
         encoding_repaired = True
-    return split_real_lines(text), encoding_repaired
+    return split_real_lines(_without_leading_boms(text)), encoding_repaired
 
 
 def read_body(lines):
@@ -678,7 +685,6 @@ SHARED_FAILURE_CODES = {
     FailureCodes.ALREADY_SUPERSEDED: "The target has already been superseded.",
     FailureCodes.FAMILY_MEMBER_SUPERSEDED: "Another member of the same family has already been superseded.",
     FailureCodes.FAMILY_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan.",
-    FailureCodes.FAMILY_SCAN_UNRELIABLE_ENCODING: "A sibling in the same family needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision.",
     FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
 }
 
@@ -763,7 +769,12 @@ def read_target(path, config, warnings=None):
         # (adr-file-empty, adr-header-title-not-found,
         # status-line-date-invalid, ...) -- use it as the code itself
         # instead of discarding it behind one fixed label.
-        raise CommandError(header.error or FailureCodes.HEADER_INVALID, "Header is not structurally valid.")
+        code = header.error or FailureCodes.HEADER_INVALID
+        raise CommandError(
+            code,
+            f"{path.name}: its header does not parse ({code}), so its status can't be read and no command "
+            "acts on it. Repair it by hand.",
+        )
 
     if warnings is not None:
         warning = marker_label_mismatch_warning(header)
@@ -792,100 +803,52 @@ def load_target(fileadr):
     return config, root, path, filename_info, header, encoding_repaired
 
 
-def family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None, unparseable=None):
-    """Every decision (current or legacy scheme) sharing `number` that
-    actually counts as a family member, with its parsed header attached
-    -- filtered through `counts_as_family_member` before ever including a
-    scanned file. A hand-written legacy file matched by FILENAME but
-    never run through `migrate` has no valid header at all -- without
-    this filter it would still get counted, and
-    has_pending_sibling/latest_in_family (below) would misjudge it as a
-    genuine pending/latest member.
+def family_members(folder, config, number, warnings=None, ignored=None):
+    """Every decision (current or legacy scheme) sharing `number` whose
+    header parses, with that parsed header attached.
 
-    `warnings`, when given, is forwarded to scan_decisions -- see its own
-    note.
+    The filename decides identity and numbering, counting every file; the
+    header decides status, counting only the ones that parse. A file with
+    this number whose header does not parse -- damaged by hand, a lossy
+    decode that broke it, or a legacy file never run through `migrate` --
+    is left out: its status can't be read, and nothing here guesses it.
+    That is an accepted limit, not a guarantee: a family made
+    inconsistent that way (two live decisions after a hand-broken
+    Superseded cell) is not prevented. It is made visible instead: each
+    such file is reported once in `warnings`, and `explore` lists it with
+    the reason.
 
-    `exclude_from_encoding_check`, when given (every real caller passes
-    the file it's already reading via `read_target`), is the one path
-    exempt from the fail-closed lossy-decode check below -- that file's
-    own encoding reliability is already surfaced separately as a warning
-    by `read_target`, and the command's own write is expected to heal it,
-    the same tolerated behavior this project has always had for the file
-    actually being acted on. A genuine SIBLING needing a lossy decode is a
-    different, unhandled hazard -- see the check itself.
+    `ignored`, when given (a list), receives each such file as
+    (ParsedFileName, HeaderParseResult, Path) -- for a caller that must
+    not act on a family whose status it can't fully read (reject's
+    predecessor revert), or that numbers by filename (version/revise).
 
-    Scans strict -- every consumer of family membership
-    (has_superseded_sibling, has_pending_sibling, latest_in_family, and
-    so every per-file command's own family guard) is a safety decision;
-    an incomplete scan here is never safe to treat as "no such member"
-    the way explore's own best-effort listing can.
-
-    `unparseable`, when given (a list), collects every file with this
-    number whose header has this tool's shape (its `|Adr-Plus ` row) but
-    does not parse -- a hand-corrupted header, whose status can't be read,
-    as opposed to a legacy file that never had a header at all."""
+    Scans strict -- an unreadable subdirectory or file is an OS error,
+    not an invalid file, and is never treated as "no such member"."""
     members = []
-    unreliable_files = []
     for _, parsed, path in scan_decisions(
         folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.FAMILY_SCAN_INCOMPLETE
     ):
         if parsed.number != number:
             continue
-        # Only the header (12 lines) decides membership -- neither variant
-        # loads the (potentially large) body just to check that. Uses the
-        # WITH-REPORT variant (unlike the rest of this function's own
-        # history) specifically so a sibling needing a lossy decode is
-        # never silently treated as "not a member" below -- see the
-        # fail-closed check after this loop.
-        header_lines, encoding_repaired = read_header_lines_with_report(path)
-        # `encoding_repaired` alone is too blunt: the bounded read's own
-        # chunk (4096 bytes) commonly covers a small file's ENTIRE
-        # content, so a replacement character landing only in the BODY --
-        # well past line `count` -- would otherwise be misread as header
-        # corruption. Only a replacement character genuinely WITHIN the
-        # returned header lines threatens parse_header's own
-        # determination; body-only corruption is the already-tolerated,
-        # self-healing-on-next-write case every read_target caller relies
-        # on (encoding_repaired_warning), unaffected by this check.
-        header_actually_corrupted = encoding_repaired and any("�" in line for line in header_lines)
-        is_excluded = exclude_from_encoding_check is not None and path.resolve() == exclude_from_encoding_check.resolve()
-        if header_actually_corrupted and not is_excluded:
-            unreliable_files.append(str(path))
-            continue
-        header = parse_header(header_lines, config)
-        if (
-            unparseable is not None
-            and not header.is_valid
-            and len(header_lines) > 1
-            and header_lines[1].startswith("|Adr-Plus ")
-        ):
-            unparseable.append(str(path))
+        # Only the header (12 lines) decides membership -- the body is
+        # never loaded just to check that.
+        header = parse_header(read_header_lines(path), config)
         # Deliberately does not surface header.marker_label_mismatches
         # (ADR004V01) here -- a mismatch on a SIBLING would misattribute a
         # warning about that other file to whatever command (e.g.
         # approve) is actually acting on a different family member.
         # read_target's own warning already covers the file actually
         # being acted on.
-        if not counts_as_family_member(header):
+        if not header.is_valid:
+            if ignored is not None:
+                ignored.append((parsed, header, path))
+            if warnings is not None:
+                warning = ignored_file_warning(path, header.error)
+                if warning not in warnings:
+                    warnings.append(warning)
             continue
         members.append((parsed, header, path))
-    if unreliable_files:
-        # A sibling that needed a lossy decode has an unreliable, possibly
-        # wrong, parsed header -- `not counts_as_family_member(header)`
-        # above would silently exclude a genuine (if corrupted) member,
-        # defeating has_superseded_sibling/has_pending_sibling, the exact
-        # guard every per-file command relies on to prevent two live
-        # successors (confirmed live: a corrupted-but-genuinely-Superseded
-        # sibling let `version` on its own family proceed and create a
-        # duplicate). Fails closed instead, mirroring migrate's own
-        # migration-scan-unreliable-encoding for the identical hazard.
-        raise CommandError(
-            FailureCodes.FAMILY_SCAN_UNRELIABLE_ENCODING,
-            f"{len(unreliable_files)} family member(s) could not be decoded cleanly as UTF-8; family "
-            "membership can't be trusted from a lossy decode.",
-            data={"unreliable_files": unreliable_files},
-            warnings=warnings,
-        )
     return members
 
 

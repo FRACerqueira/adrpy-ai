@@ -55,10 +55,8 @@ def describe():
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
             "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made. May also fail with "
-            "family-scan-unreliable-encoding (data.unreliable_files names the affected file(s)) if a sibling "
-            "needed a lossy UTF-8 decode -- its parsed header can't be trusted for a safety decision either, "
-            "the same reasoning as an unreadable subdirectory; no write was made. The target's own title (re-read "
+            "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
+            "The target's own title (re-read "
             "from its header cell, not a flag) is re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
             "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
@@ -74,7 +72,9 @@ def describe():
             "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
             "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
-            "(data.file names it) if the resulting filename already exists on disk. No write is made in "
+            "(data.file names it) if the resulting filename already exists on disk, or if any file of "
+            "this family already holds the number it would create -- whatever its title, whether or not "
+            "its header parses. No write is made in "
             "any of these cases."
         ),
         "arguments": [
@@ -141,7 +141,7 @@ def describe():
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the LATEST family member's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
-                FailureCodes.FILE_ALREADY_EXISTS: "The new version's own resulting filename already exists on disk.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title, header valid or not), or its resulting filename already exists -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
                 FailureCodes.NOT_LATEST_VERSION: "This decision is not the latest version/revision in its family (and isn't the one documented branch-off-a-rejected-latest exception).",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
@@ -201,8 +201,9 @@ def run(args):
 
             # One scan shared by all three checks below, avoiding a
             # duplicate scan_decisions call each.
+            ignored = []
             members = family_members(
-                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+                folder, config, filename_info.number, warnings=warnings, ignored=ignored
             )
             latest = latest_in_family(folder, config, filename_info.number, members=members)
             if latest is None:
@@ -210,12 +211,13 @@ def run(args):
                     FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
                 )
             latest_parsed, latest_header, latest_path = latest
+            new_version = latest_parsed.version + 1
 
-            if len(str(latest_parsed.version + 1)) > config.lenversion:
+            if len(str(new_version)) > config.lenversion:
                 raise CommandError(
                     FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION,
-                    f"New version {latest_parsed.version + 1} does not fit in lenversion={config.lenversion}.",
-                    data={"new_version": latest_parsed.version + 1, "lenversion": config.lenversion},
+                    f"New version {new_version} does not fit in lenversion={config.lenversion}.",
+                    data={"new_version": new_version, "lenversion": config.lenversion},
                     warnings=warnings,
                 )
 
@@ -290,7 +292,7 @@ def run(args):
             record = DecisionRecord(
                 number=filename_info.number,
                 title=header.title,
-                version=latest_parsed.version + 1,
+                version=new_version,
                 revision=1 if config.lenrevision > 0 else None,
                 scope=scope,
                 domain=domain,
@@ -299,6 +301,17 @@ def run(args):
             )
 
             filename = build_filename(config, record)
+            # The filename decides numbering, counting every file: a version
+            # number already held by any file of this family is taken, never
+            # given to a second file.
+            taken = next((entry[2] for entry in members + ignored if entry[0].version == new_version), None)
+            if taken is not None:
+                raise CommandError(
+                    FailureCodes.FILE_ALREADY_EXISTS,
+                    f"Version {new_version} is already held by {taken.name}.",
+                    data={"file": taken.name},
+                    warnings=warnings,
+                )
             new_path = resolve_within(folder, filename)
             if new_path.exists():
                 raise CommandError(

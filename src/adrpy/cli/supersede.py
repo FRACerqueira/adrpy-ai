@@ -117,10 +117,9 @@ def describe():
             "family-scan-incomplete or supersede-successor-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "and successor-number allocation can't be trusted from an incomplete scan; no write was made "
-            "either way. May also fail with family-scan-unreliable-encoding (data.unreliable_files names "
-            "the affected file(s)) if a sibling needed a lossy UTF-8 decode -- its parsed header can't be "
-            "trusted for a safety decision either, the same reasoning as an unreadable subdirectory; no "
-            "write was made. The successor's own title -- the predecessor's own filename segment, "
+            "either way. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). A file pointing back at this decision whose header does not parse "
+            "is not guessed at: supersede refuses and names it in data.file. "
+            "The successor's own title -- the predecessor's own filename segment, "
             "re-validated before use, unless --title overrides it (see its own argument description) -- "
             "may fail with field-contains-forbidden-character if it carries '|', a line-break-like "
             "character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control character; the successor's "
@@ -279,7 +278,7 @@ def run(args):
             # each be independently superseded, producing two live
             # successors. Same guard version.py/revise.py already use.
             members = family_members(
-                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+                folder, config, filename_info.number, warnings=warnings
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(

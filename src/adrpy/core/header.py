@@ -364,9 +364,13 @@ def _parse_status_cell(text, config):
     return status, parsed_date, mismatch, None
 
 
-def counts_as_family_member(header):
-    """Looser test used when scanning the ADR folder to resolve sequence
-    and version membership: a migrated file with a still-blank
-    Version/Revision/Created/Changed counts as a member of its family
-    even though it fails the strict structural check above."""
-    return header.is_valid or header.is_migrated
+def has_header_shape(lines):
+    """True when any of the first HEADER_LINE_COUNT lines carries a row
+    only this tool's header writes (`|Adr-Plus ` field row, or exactly
+    the `|--|--|` separator). Tells a damaged header apart from no header at all --
+    looking past the first two lines, so a line inserted or deleted at
+    the top doesn't hide it. Both markers are plain ASCII, so a lossy
+    decode never removes them."""
+    return any(
+        "|Adr-Plus " in line or line.rstrip() == "|--|--|" for line in lines[:HEADER_LINE_COUNT]
+    )

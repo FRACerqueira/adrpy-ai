@@ -270,9 +270,8 @@ def reject_marker_comment_syntax(value, field_name):
     lines[1]`). Confirmed live: a hostile config
     setting headertablevalues to e.g. 'Values <!-- x -->' made
     is_migrated=True on the header of every ordinary, non-migrated file
-    ever written under that config -- that flag feeds
-    counts_as_family_member and several lifecycle eligibility
-    exceptions. Rejected outright -- narrower than
+    ever written under that config -- that flag feeds several lifecycle
+    eligibility exceptions. Rejected outright -- narrower than
     reject_status_marker_forgery_characters (which also blocks '('/')'),
     since neither is part of THIS specific detection's own grammar; a
     legitimate label containing '(' has no bearing on is_migrated and

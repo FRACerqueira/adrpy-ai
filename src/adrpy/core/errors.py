@@ -139,7 +139,6 @@ class FailureCodes:
     TARGET_DIRECTORY_NOT_FOUND = "target-directory-not-found"
     CONFIG_NOT_FOUND = "config-not-found"
     FILENAME_NOT_RECOGNIZED = "filename-not-recognized"
-    FAMILY_SCAN_UNRELIABLE_ENCODING = "family-scan-unreliable-encoding"
     HEADER_INVALID = "header-invalid"
     FAMILY_SCAN_INCOMPLETE = "family-scan-incomplete"
 
@@ -206,7 +205,7 @@ class FailureCodes:
     MIGRATION_SCAN_FAILED = "migration-scan-failed"
     MIGRATION_SCAN_INCOMPLETE = "migration-scan-incomplete"
     NO_DECISIONS_FOUND = "no-decisions-found"
-    MIGRATION_SCAN_UNRELIABLE_ENCODING = "migration-scan-unreliable-encoding"
+    MIGRATION_INVALID_HEADERS_EXIST = "migration-invalid-headers-exist"
     ALREADY_TOOL_CREATED_ADRS_EXIST = "already-tool-created-adrs-exist"
     NO_ELIGIBLE_FILES_TO_MIGRATE = "no-eligible-files-to-migrate"
     MIGRATION_LOCK_LOST = "migration-lock-lost"

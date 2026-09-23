@@ -71,7 +71,7 @@ commands x 16 modules is a hairball no one can actually read.
 | Configuration | `config.py`, `install_config.py` | A repository's own `adr-config.adrplus` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py` | Status transitions and family scans; the 12-line header format; filename parsing/building for both naming schemes; title case transforms; path-escape guards. |
 | Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR007V01](adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr.md), superseding ADR003V01's own schema driver). |
-| Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal recovery (a retried write, a reclaimed stale lock, orphan cleanup, an encoding repair). |
+| Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal recovery (a retried write, a reclaimed stale lock, orphan cleanup, an encoding repair), and each decision file left out of a family because its header does not parse ([lifecycle.md](lifecycle.md)). |
 
 Every write command (`init`, `new`, `approve`, `reject`, `undo`,
 `supersede`, `version`, `revise`, `migrate`, `config`, `installconfig`,
@@ -185,9 +185,12 @@ tool, recorded in `core/config.py`'s own docstring.
 
 ## Decision lifecycle
 
-Every decision file's `status_create`/`status_update` pair moves through a
-small, fixed set of states, enforced by `core/lifecycle.py`'s own
-eligibility checks (never inferred from a file's position on disk):
+Every decision file's three status cells (`status_create`,
+`status_update`, and `status_change` for Superseded) move through a small,
+fixed set of states, enforced by `core/lifecycle.py`'s own eligibility
+checks (never inferred from a file's position on disk). The user-facing
+rules -- what each command requires, the family rules, and the failure
+code for each refusal -- are in [`lifecycle.md`](lifecycle.md):
 
 ```mermaid
 stateDiagram-v2
@@ -332,7 +335,8 @@ empty, on every `adrpy` command's response -- see the `adrpy-skills`
 subsystem section above for how that entry point's own envelope differs.
 `warnings` carries non-fatal information about automatic recovery a
 command's own dependencies performed silently (a retried write, a
-reclaimed stale lock, orphaned temp-file cleanup, an encoding repair) --
+reclaimed stale lock, orphaned temp-file cleanup, an encoding repair), and
+every decision file a command left out because its header does not parse --
 information that would otherwise be discarded before it ever reached
 anywhere a caller could see it.
 

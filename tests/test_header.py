@@ -8,7 +8,6 @@ from adrpy.core.config import load_repo_config
 from adrpy.core.header import (
     DecisionRecord,
     build_header,
-    counts_as_family_member,
     parse_header,
 )
 
@@ -115,7 +114,6 @@ def test_build_then_parse_round_trips_the_record():
     parsed = parse_header(lines, config)
 
     assert parsed.is_valid
-    assert counts_as_family_member(parsed)
     assert parsed.title == "Round trip"
     assert parsed.version == 1
     assert parsed.domain == "Testing"
@@ -368,11 +366,12 @@ def test_marker_matches_case_insensitively():
     assert parsed.marker_label_mismatches == ()  # "Whatever" matches no label, so not a genuine disagreement
 
 
-def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid():
-    """Matches the reference tool's own behavior: `is_migrated` is set from
-    row 2 alone, before the rest of the header is parsed, and survives an
-    early return caused by a later row failing to parse -- exactly the gap
-    `counts_as_family_member` exists to cover."""
+def test_a_damaged_migrated_header_is_marked_migrated_but_not_valid():
+    """`is_migrated` is set from row 2 alone, before the rest of the header
+    is parsed, and survives an early return caused by a later row failing
+    to parse. Such a header no longer counts as a family member (Round 39:
+    status is read only from headers that parse); the reference tool
+    counted it."""
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
@@ -393,7 +392,6 @@ def test_migrated_file_counts_as_family_member_even_when_not_structurally_valid(
 
     assert parsed.is_migrated
     assert not parsed.is_valid
-    assert counts_as_family_member(parsed)
 
 
 def _replaced(lines, index, value):
@@ -465,11 +463,10 @@ def test_parse_header_reports_the_specific_error_code(mutate, expected_code):
     assert not parsed.is_valid
 
 
-def test_malformed_header_is_neither_valid_nor_a_family_member():
+def test_malformed_header_is_not_valid():
     config = load_repo_config(FIXTURE_PATH)
     lines = ["not a header"] * 12
 
     parsed = parse_header(lines, config)
 
     assert not parsed.is_valid
-    assert not counts_as_family_member(parsed)

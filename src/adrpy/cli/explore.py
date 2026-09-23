@@ -10,7 +10,7 @@ not silently either.
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import FailureCodes, build_failure_codes
-from adrpy.core.header import parse_header
+from adrpy.core.header import has_header_shape, parse_header
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
@@ -25,7 +25,11 @@ def describe():
             "Lists every decision file in the repository, recognized or not, on a best-effort basis: "
             "a file excluded for escaping the repository boundary, a subdirectory that could not be "
             "scanned, or a single file that could not be read are all reported via `warnings` instead "
-            "of silently missing from `decisions` or failing the whole command. "
+            "of silently missing from `decisions` or failing the whole command. Each entry's "
+            "`header.state` is `valid`, `adulterated` (this tool's header, but it does not parse) or "
+            "`no-header`, with `header.invalid_reason` naming the parse failure for the last two -- a file "
+            "that is not `valid` has no status the other commands can read, so they leave it out of every "
+            "family rule (see doc/lifecycle.md). "
             "May fail with target-directory-not-found if --path does not point to an existing directory, "
             "or config-not-found if that directory has no adr-config.adrplus -- these two are hard "
             "failures, not part of the best-effort reporting above, since there is no repository to scan "
@@ -148,6 +152,11 @@ def _build_entry(path, config):
         "title": parsed.title if parsed else None,
         "header": {
             "is_valid": header.is_valid,
+            # Only a header that parses gives a status; an invalid file is
+            # left out of every family rule (see doc/lifecycle.md).
+            # "adulterated": this tool's header, damaged; "no-header": none.
+            "state": "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines) else "no-header"),
+            "invalid_reason": None if header.is_valid else header.error,
             "is_migrated": header.is_migrated,
             "scope": header.scope,
             "domain": header.domain,

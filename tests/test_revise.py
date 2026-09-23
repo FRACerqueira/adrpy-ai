@@ -546,3 +546,36 @@ def test_revise_describe_documents_the_lenrevision_precondition():
     describe() never said so, so an agent only discovered this by trial
     and error."""
     assert "lenrevision" in revise.describe()["description"]
+
+
+def test_revise_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    broken = adr_path.parent / "ADR001V01R02-draft.md"
+    broken.write_text("no header\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": "ADR001V01R02-draft.md"}
+    assert sorted(p.name for p in adr_path.parent.glob("ADR001V01R02*")) == ["ADR001V01R02-draft.md"]
+
+
+def test_revise_refuses_a_revision_number_a_valid_file_already_holds(tmp_path):
+    # Branching off R01 while R02 (Rejected) exists recomputes R02. A
+    # hand-edited title would give it a different filename, which the
+    # identical-name check alone missed -- the number is held all the same.
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
+    reject.run(["--file", str(r2_path), "--refdate", "2026-01-06"])
+    text = adr_path.read_text(encoding="utf-8")
+    title_row = [line for line in text.splitlines() if line.startswith("|File title md|")][0]
+    adr_path.write_text(text.replace(title_row, "|File title md|Renamed|"), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+
+    assert excinfo.value.code == "file-already-exists"
+    assert excinfo.value.data == {"file": r2_path.name}
+    assert sorted(p.name for p in r2_path.parent.glob("ADR001V01R02*")) == [r2_path.name]

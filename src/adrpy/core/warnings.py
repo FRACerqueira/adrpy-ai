@@ -128,6 +128,12 @@ def excluded_candidate_warning(paths):
     )
 
 
+def ignored_file_warning(path, reason):
+    """A decision file left out of a family because its header does not
+    parse -- its status can't be read, so nothing acts on it."""
+    return f"{path}: ignored -- its header does not parse ({reason}); see explore."
+
+
 def marker_label_mismatch_warning(header):
     """ADR004V01: a hidden canonical status marker takes precedence over
     the status cell's visible label text when both are present. If they

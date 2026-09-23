@@ -30,7 +30,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.header import DecisionRecord, build_header, parse_header
+from adrpy.core.header import DecisionRecord, build_header, has_header_shape, parse_header
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
@@ -54,7 +54,7 @@ def _stream_migrated_candidate(candidate_path, header_text, lock):
     through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
     the source file into the destination temp file (via
     atomic_write_chunks), never assembled as one in-memory bytes object
-    -- except a leading UTF-8 BOM, stripped from the very first chunk
+    -- except any run of leading UTF-8 BOMs, stripped from the very first chunk
     only, matching the reference tool's own confirmed behavior (see this
     module's own docstring).
 
@@ -74,7 +74,7 @@ def _stream_migrated_candidate(candidate_path, header_text, lock):
             if not chunk:
                 break
             if first_chunk:
-                if chunk.startswith(b"\xef\xbb\xbf"):
+                while chunk.startswith(b"\xef\xbb\xbf"):
                     chunk = chunk[3:]
                 first_chunk = False
             yield chunk
@@ -98,12 +98,13 @@ def describe():
             "adr-config.adrplus -- inside the same repository lock as the rest of this command, but as an "
             "earlier, independent write, not atomically bundled with the migration itself: it commits "
             "before the scan/eligibility checks below run, and survives even if this same call goes on "
-            "to fail one of them (migration-scan-failed/-incomplete/-unreliable-encoding, "
+            "to fail one of them (migration-scan-failed/-incomplete, migration-invalid-headers-exist, "
             "no-decisions-found, already-tool-created-adrs-exist, no-eligible-files-to-migrate) -- those "
             "refusals mean no DECISION file was touched, not that adr-config.adrplus itself wasn't. "
             "Whenever that persist-back happened, the result -- success, any failure code this command "
             "reports, or interrupted -- carries migrationpattern_persisted with the pattern written (in "
-            "data, on a failure); an unexpected internal-error does not. "
+            "data, on a failure); an unexpected internal-error does not. An interrupt once files are being "
+            "migrated also names, in data.results, the ones already migrated. "
             "Subsequent commands see the persisted value directly, without consulting the install-level "
             "config again, regardless of whether this particular run went on to succeed. "
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
@@ -128,14 +129,16 @@ def describe():
             "decisions: refuses the ENTIRE run with already-tool-created-adrs-exist -- no decision file is "
             "touched -- if "
             "even ONE scanned file already has a valid, non-migrated header (i.e. this repository has decisions "
-            "this tool itself already created). "
-            "Refuses the whole run with migration-scan-unreliable-encoding, naming every affected file in "
-            "`data.unreliable_files`, if any scanned file's content isn't valid UTF-8 -- a lossy decode there "
-            "can't be trusted for the already-tool-created-adrs-exist safety check above or for candidate "
-            "eligibility. Its structurally identical sibling, migration-scan-failed (`data.unreadable_file` "
-            "names the one file), refuses the whole run the same way if a scanned file's header can't even "
-            "be read (permission denied or similar) -- same scan phase, same all-or-nothing semantics, a "
-            "real OSError instead of a lossy decode. Also refuses with migration-scan-incomplete "
+            "this tool itself already created). Refuses the whole run the same way with "
+            "migration-invalid-headers-exist (`data.files` names them) if a scanned file carries this tool's "
+            "header but it does not parse -- a damaged header is never mistaken for no header, so migrate "
+            "never writes a second header on top of one. "
+"A byte that isn't valid UTF-8 only matters if it breaks a header: a tool header that still "
+            "parses counts for the already-tool-created check, one that no longer parses is refused as "
+            "damaged (migration-invalid-headers-exist), and a legacy file with no header is migrated with "
+            "its content copied byte for byte after the new header (any leading BOM dropped). migration-scan-"
+            "failed (`data.unreadable_file` names the one file) refuses the whole run if a scanned file's "
+            "header can't even be read (permission denied or similar). Also refuses with migration-scan-incomplete "
             "(`data.unreadable` names the subdirectories) if a subdirectory under the decisions folder "
             "couldn't be scanned at all -- a hidden already-migrated file inside it could make the "
             "already-tool-created-adrs-exist check above silently answer 'no' when the true answer is 'yes'."
@@ -152,7 +155,7 @@ def describe():
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
-                FailureCodes.MIGRATION_SCAN_UNRELIABLE_ENCODING: "A scanned candidate's content isn't valid UTF-8 -- refuses the whole run.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file carries this tool's header but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
@@ -172,7 +175,10 @@ def describe():
 def _report_persisted_pattern(persisted, warnings):
     """The fallback migrationpattern persist-back commits before any
     candidate is looked at; every refusal after it must still say so
-    (data.migrationpattern_persisted), or it reads as "nothing written"."""
+    (data.migrationpattern_persisted), or it reads as "nothing written".
+    Likewise an interrupt once the per-file loop has started
+    (`persisted["results"]`): the files already migrated are reported in
+    data.results, so a re-run's smaller batch doesn't look like a loss."""
     try:
         yield
     except CommandError as error:
@@ -180,14 +186,14 @@ def _report_persisted_pattern(persisted, warnings):
             error.data = {**(error.data or {}), "migrationpattern_persisted": persisted["pattern"]}
         raise
     except KeyboardInterrupt as error:
-        if persisted["pattern"] is None:
+        data = {}
+        if persisted["pattern"] is not None:
+            data["migrationpattern_persisted"] = persisted["pattern"]
+        if persisted.get("results") is not None:
+            data["results"] = persisted["results"]
+        if not data:
             raise
-        raise CommandError(
-            "interrupted",
-            "Interrupted (Ctrl+C).",
-            data={"migrationpattern_persisted": persisted["pattern"]},
-            warnings=list(warnings),
-        ) from error
+        raise CommandError("interrupted", "Interrupted (Ctrl+C).", data=data, warnings=list(warnings)) from error
 
 
 def run(args):
@@ -252,7 +258,7 @@ def run(args):
                     warnings.append(warning)
 
             entries = []  # (ParsedFileName, Path, HeaderParseResult)
-            unreliable_files = []
+            adulterated_files = []
             if folder.is_dir():
                 # Resolved once, not once per candidate -- see is_within's
                 # own note.
@@ -270,22 +276,16 @@ def run(args):
                         continue
                     _, parsed = found
                     try:
-                        # A lossy decode (errors="replace") with no signal
-                        # would let a single invalid UTF-8 byte in an
-                        # otherwise-valid, already-tool-created header's
-                        # status-label cell make parse_header see it as
-                        # invalid, bypassing the already-tool-created-adrs-
-                        # exist safety check below and letting the file get
-                        # a SECOND header stamped onto it. Same lossy-decode
-                        # detection every other read in this project already
-                        # uses; entries with a lossy read are set aside below,
-                        # never trusted for a safety-critical decision.
+                        # A byte a lossy decode replaced only matters if it
+                        # breaks the header: then the file is refused as
+                        # damaged (it keeps this tool's header shape, ASCII),
+                        # never taken for a file with no header.
                         #
                         # Reads only the bounded header (parse_header never
                         # looks past it, and the write loop below copies
                         # body bytes through raw, untouched either way), not
                         # the whole candidate.
-                        lines, encoding_repaired = read_header_lines_with_report(candidate)
+                        lines, _encoding_repaired = read_header_lines_with_report(candidate)
                     except OSError as error:
                         # This scan-phase read must not run outside a
                         # try/except: a real failure here (permission
@@ -301,14 +301,15 @@ def run(args):
                             data={"unreadable_file": str(candidate)},
                             warnings=warnings,
                         ) from error
-                    if encoding_repaired:
-                        unreliable_files.append(str(candidate))
                     # Deliberately does not surface header.marker_label_
                     # mismatches (ADR004V01) here -- this scan is a bulk
                     # eligibility pass over every candidate, not a report
                     # on one specific target file the way read_target's
                     # own warning already covers.
-                    entries.append((parsed, candidate, parse_header(lines, config)))
+                    header = parse_header(lines, config)
+                    if not header.is_valid and has_header_shape(lines):
+                        adulterated_files.append(str(candidate))
+                    entries.append((parsed, candidate, header))
 
                 # Same as scan_decisions/explore -- an is_within-excluded
                 # candidate is reported, not dropped with zero signal.
@@ -343,18 +344,16 @@ def run(args):
                     warnings=warnings,
                 )
 
-            if unreliable_files:
-                # A lossy decode can't be trusted for either the safety check
-                # right below (it could be hiding a genuine, already-migrated
-                # header) or candidate eligibility (it could wrongly qualify a
-                # file that was never meant to be touched) -- refuse the whole
-                # run rather than guess, since migrate is a one-time, largely
-                # irreversible bulk operation.
+            # A damaged header of this tool's is not "no header": migrating
+            # would stamp a second one on top, and it may be the one
+            # tool-created decision the check below needs to see.
+            if adulterated_files:
                 raise CommandError(
-                    FailureCodes.MIGRATION_SCAN_UNRELIABLE_ENCODING,
-                    f"{len(unreliable_files)} file(s) could not be decoded cleanly as UTF-8; migration refuses "
-                    "to run until they're fixed (their true header state can't be trusted).",
-                    data={"unreliable_files": unreliable_files},
+                    FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
+                    f"{len(adulterated_files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
+                    f"an exact `|--|--|` separator in the first 12 lines) but it does not parse: "
+                    f"{', '.join(adulterated_files)}. Repair or remove them by hand, then run migrate again.",
+                    data={"files": adulterated_files},
                     warnings=warnings,
                 )
 
@@ -384,6 +383,7 @@ def run(args):
             # already built, so this isn't a fidelity requirement to
             # preserve.
             results = []
+            persisted["results"] = results
             for parsed, candidate_path in candidates:
                 try:
                     # ADR001, part 3: guarantees this write never commits

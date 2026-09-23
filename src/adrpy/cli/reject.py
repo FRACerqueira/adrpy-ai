@@ -68,8 +68,7 @@ def describe():
             "committed at all: superseded-predecessor-not-found or reject-predecessor-write-failed (a "
             "real OSError on that write; a lock lost there surfaces the standard lock-lost instead, also "
             "with nothing committed), or -- if the scan for the predecessor's own family hits an "
-            "unreadable subdirectory or a sibling needing a lossy UTF-8 decode -- "
-            "family-scan-incomplete/family-scan-unreliable-encoding, all mean no write was made and the "
+            "unreadable subdirectory -- family-scan-incomplete, all mean no write was made and the "
             "call is safely retryable from scratch. Only reject-own-write-failed-after-predecessor-"
             "reverted is a genuine partial success: the predecessor was already reverted for real when "
             "writing THIS decision's own Rejected status then failed -- `data.predecessor_file` names "
@@ -81,17 +80,17 @@ def describe():
             "fails with superseded-predecessor-not-found instead when some member of that family IS "
             "Superseded but not pointing at this decision (another successor took over, or a "
             "back-reference edited by hand) -- reject only ever reverts a Superseded mark that names "
-            "this decision -- or when a member's header has this tool's shape but does not parse, so "
-            "its status can't be read (`data.unparseable_files` names it; repair it by hand and "
-            "retry). May instead fail with repository-locked "
+            "this decision -- or when any file named into that family (by its number) has a header that "
+            "does not parse, damaged or missing, so its status can't be read (`data.unparseable_files` "
+            "names it; repair or remove it by hand and retry). That refusal applies to the retry above "
+            "too. May instead fail with repository-locked "
             "(lock never acquired) or lock-lost (lost before any write) -- in both of those cases no "
             "write was made at all. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write "
-            "was made either way; retry. May also fail with family-scan-incomplete or "
-            "family-scan-unreliable-encoding BEFORE any write (this decision's own family scan, "
-            "unrelated to the predecessor lookup above) if a subdirectory under the decisions folder could "
-            "not be scanned, or a sibling needed a lossy UTF-8 decode whose parsed header can't be trusted "
-            "for a safety decision -- no write made in that case. The target's own title/scope/domain "
+            "was made either way; retry. May also fail with family-scan-incomplete BEFORE any write (this "
+            "decision's own family scan, unrelated to the predecessor lookup above) if a subdirectory under "
+            "the decisions folder could not be scanned -- no write made in that case. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
+            "The target's own title/scope/domain "
             "(re-read from its header cells, not flags) are re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
             "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
@@ -172,7 +171,7 @@ def run(args):
             # Pre-fetching members here is also how the scan's own warnings
             # (an excluded is_within candidate) reach this command.
             members = family_members(
-                folder, config, filename_info.number, warnings=warnings, exclude_from_encoding_check=path
+                folder, config, filename_info.number, warnings=warnings
             )
             if has_superseded_sibling(folder, config, filename_info.number, members=members):
                 raise CommandError(
@@ -212,10 +211,11 @@ def run(args):
                 # failure here needs no special partial-success re-raise --
                 # it propagates exactly like this command's own primary
                 # family scan above.
-                pred_unparseable = []
+                pred_ignored = []
                 pred_members = family_members(
-                    folder, config, filename_info.superseded_from, warnings=warnings, unparseable=pred_unparseable
+                    folder, config, filename_info.superseded_from, warnings=warnings, ignored=pred_ignored
                 )
+                pred_unparseable = [str(entry[2]) for entry in pred_ignored]
                 # latest_in_family picks whichever sibling has the highest
                 # (version, revision) -- not necessarily the one this
                 # successor actually came from. Reachable whenever the
@@ -286,11 +286,9 @@ def run(args):
                     pred_parsed, pred_header, pred_path = predecessor
                     # pred_header already comes from pred_members' own scan
                     # (family_members, via read_header_lines_with_report) --
-                    # no separate read needed for the header portion. That
-                    # same scan's own fail-closed check (family-scan-
-                    # unreliable-encoding) already guarantees this exact
-                    # header wasn't lossy-decoded, or this call would never
-                    # have reached here -- only the BODY's own encoding
+                    # no separate read needed for the header portion. It
+                    # parsed, so whatever that read replaced did not affect
+                    # the status read from it -- only the BODY's own encoding
                     # status (ADR006V01, known only once the streamed write
                     # below has read it) can still need the warning.
                     # ADR001, part 3: guarantees this write (and this
