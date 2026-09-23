@@ -29,17 +29,27 @@ def _setup_accepted_repo(tmp_path):
     return tmp_path, adr_path
 
 
-def test_supersede_reveals_predecessor_already_superseded_when_successor_write_fails(tmp_path, monkeypatch):
-    """Mechanism-correctness audit (resilience finding #1), the
-    worst instance found: supersede marks the predecessor Superseded
-    (mark_superseded, a real committed write) BEFORE writing the
-    successor. If only the successor write fails with a real OSError, the
-    predecessor is left permanently Superseded with no successor ever
-    created -- an orphaned, broken family state. The failure response
-    must name that partial mutation explicitly via `data`, not just
-    convert to the generic io-error the attach_warnings safety net alone
-    would produce."""
+SUCCESSOR_NAME = "ADR002V01-use-postgre-sql--001.md"
+
+
+def _steal_lock(tmp_path):
+    (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
+
+
+def _fail_predecessor_write(monkeypatch):
+    from adrpy.cli import supersede as supersede_module
+
+    def failing_mark(*_args, **_kwargs):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(supersede_module, "mark_superseded", failing_mark)
+
+
+def test_supersede_writes_nothing_when_the_successor_write_fails(tmp_path, monkeypatch):
+    """The successor is the FIRST write: its failure leaves the
+    predecessor untouched, so a plain retry is always safe."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    before = adr_path.read_text(encoding="utf-8")
 
     from adrpy.cli import supersede as supersede_module
 
@@ -52,30 +62,20 @@ def test_supersede_reveals_predecessor_already_superseded_when_successor_write_f
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "supersede-successor-write-failed"
-    assert excinfo.value.data["predecessor"] == str(adr_path)
-    assert excinfo.value.data["predecessor_status"] == "Superseded"
-    # The predecessor really was mutated on disk despite the overall failure.
-    assert "|Superseded|Superseded" in adr_path.read_text(encoding="utf-8")
+    assert adr_path.read_text(encoding="utf-8") == before
+    assert not (tmp_path / "doc" / "adr" / SUCCESSOR_NAME).exists()
 
 
-def test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_before_the_successor_write(
-    tmp_path, monkeypatch
-):
-    """Same partial-mutation risk as
-    the OSError test above, but for LockLostError on this command's
-    SECOND write -- it must not bypass supersede-successor-write-failed's
-    handler (which only catches OSError), or a caller would see the
-    generic, dataless 'no write was made' lock-lost message even though
-    the predecessor was already, for real, committed to Superseded."""
+def test_supersede_reports_lock_lost_with_no_write_when_lost_before_the_successor_write(tmp_path, monkeypatch):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    before = adr_path.read_text(encoding="utf-8")
 
     from adrpy.cli import supersede as supersede_module
 
     real_build_header = supersede_module.build_header
 
     def steal_lock_then_build(*args, **kwargs):
-        lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
-        lock_path.write_text(f"someone-else-entirely\n{time.time()}")
+        _steal_lock(tmp_path)
         return real_build_header(*args, **kwargs)
 
     monkeypatch.setattr(supersede_module, "build_header", steal_lock_then_build)
@@ -83,11 +83,114 @@ def test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "supersede-successor-write-failed"
-    assert excinfo.value.data["predecessor"] == str(adr_path)
-    assert excinfo.value.data["predecessor_status"] == "Superseded"
-    # The predecessor really was mutated on disk despite the overall failure.
-    assert "|Superseded|Superseded" in adr_path.read_text(encoding="utf-8")
+    assert excinfo.value.code == "lock-lost"
+    assert adr_path.read_text(encoding="utf-8") == before
+    assert not (tmp_path / "doc" / "adr" / SUCCESSOR_NAME).exists()
+
+
+def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_path, monkeypatch):
+    """The predecessor is the SECOND write. When it fails, the successor
+    already exists on disk -- so the number the predecessor would point at
+    can never be handed to an unrelated `new` in the meantime (the old
+    order left the predecessor pointing at ': 002' with no ADR002 on disk,
+    and the next `new` took 002)."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    _fail_predecessor_write(monkeypatch)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
+    assert excinfo.value.code == "supersede-write-failed"
+    assert excinfo.value.data["successor"] == str(successor_path)
+    assert excinfo.value.data["predecessor_status"] == "Accepted"
+    assert successor_path.exists()
+    assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
+
+    monkeypatch.undo()
+    result = new.run(["--path", str(tmp_path), "--title", "Unrelated caching decision", "--refdate", "2026-01-06"])
+    assert result["created"].endswith("ADR003V01-unrelated-caching-decision.md")
+
+
+def test_supersede_reports_the_successor_when_the_lock_is_lost_before_the_predecessor_write(tmp_path, monkeypatch):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    from adrpy.cli import supersede as supersede_module
+
+    real_write = supersede_module.atomic_write_text
+
+    def write_then_steal_lock(path, content):
+        attempts = real_write(path, content)
+        _steal_lock(tmp_path)
+        return attempts
+
+    monkeypatch.setattr(supersede_module, "atomic_write_text", write_then_steal_lock)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-write-failed"
+    assert excinfo.value.data["successor"] == str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME)
+    assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
+
+
+def test_retrying_after_a_failed_predecessor_write_resumes_instead_of_creating_a_second_successor(
+    tmp_path, monkeypatch
+):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    _fail_predecessor_write(monkeypatch)
+    with pytest.raises(CommandError):
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    monkeypatch.undo()
+    successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
+    successor_before = successor_path.read_text(encoding="utf-8")
+
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
+
+    assert result["created"] == str(successor_path)
+    assert any("resumed" in warning for warning in result["warnings"])
+    assert "|Superseded|Superseded (2026-01-06) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
+    assert successor_path.read_text(encoding="utf-8") == successor_before
+    assert sorted(p.name for p in (tmp_path / "doc" / "adr").glob("*.md")) == [
+        "ADR001V01-use-postgre-sql.md",
+        SUCCESSOR_NAME,
+    ]
+
+
+def test_an_orphaned_successor_that_moved_on_is_not_resumed(tmp_path, monkeypatch):
+    """Only a successor still Proposed -- untouched since the interrupted
+    call -- is resumed. One already approved or rejected in the meantime
+    is refused rather than guessed at."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    _fail_predecessor_write(monkeypatch)
+    with pytest.raises(CommandError):
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    monkeypatch.undo()
+    successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
+    approve.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    predecessor_before = adr_path.read_text(encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert excinfo.value.data["file"] == str(successor_path)
+    assert adr_path.read_text(encoding="utf-8") == predecessor_before
+
+
+def test_a_successor_of_a_different_predecessor_is_never_mistaken_for_an_orphan(tmp_path):
+    # Positive control: ADR002 supersedes ADR001; superseding ADR003 must
+    # create its own successor, not resume onto ADR002.
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    new.run(["--path", str(tmp_path), "--title", "Use Redis", "--refdate", "2026-01-06"])
+    third = tmp_path / "doc" / "adr" / "ADR003V01-use-redis.md"
+    approve.run(["--file", str(third), "--refdate", "2026-01-07"])
+
+    result = supersede.run(["--file", str(third), "--refdate", "2026-01-08"])
+
+    assert result["created"].endswith("ADR004V01-use-redis--003.md")
+    assert not any("resumed" in warning for warning in result["warnings"])
 
 
 def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
@@ -493,3 +596,38 @@ def test_supersede_end_to_end_through_main(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     assert main(["supersede", "--file", str(adr_path)]) == EXIT_SUCCESS
+
+
+def test_superseding_again_after_the_successor_was_rejected_still_creates_a_new_successor(tmp_path):
+    # Positive control for the orphan check: a successor rejected after a
+    # SUCCESSFUL supersede (reject reverts the predecessor to Accepted)
+    # also points back at the predecessor, but is the normal end of that
+    # attempt, not an interrupted one -- a new supersede must just proceed.
+    from adrpy.cli import reject
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    reject.run(["--file", str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME), "--refdate", "2026-01-06"])
+
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+
+    assert result["created"].endswith("ADR003V01-use-postgre-sql--001.md")
+    assert not any("resumed" in warning for warning in result["warnings"])
+
+
+def test_a_rejected_earlier_successor_does_not_stop_resuming_onto_the_new_orphan(tmp_path, monkeypatch):
+    from adrpy.cli import reject
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    reject.run(["--file", str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME), "--refdate", "2026-01-06"])
+    _fail_predecessor_write(monkeypatch)
+    with pytest.raises(CommandError):
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+    monkeypatch.undo()
+
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-08"])
+
+    assert result["created"].endswith("ADR003V01-use-postgre-sql--001.md")
+    assert any("resumed" in warning for warning in result["warnings"])
+    assert "|Superseded|Superseded (2026-01-08) <!-- Superseded --> : 003|" in adr_path.read_text(encoding="utf-8")

@@ -57,13 +57,22 @@ def describe():
             "Refuses with family-member-superseded if another member of the same family has "
             "already been superseded, or family-member-pending if another member is still "
             "unresolved (Proposed) -- no write is made either way. "
-            "This is two writes in sequence, not one: a failure creating the successor "
-            "(supersede-successor-write-failed) means success=false even though the predecessor "
-            "was already committed to Superseded -- that code's own `data.predecessor`/"
-            "`data.predecessor_status` names the file already mutated despite the overall failure "
-            "(a lock lost before this SECOND write also surfaces this same code/data, not lock-lost). "
-            "May instead fail with repository-locked (lock never acquired) or lock-lost (lost before the "
-            "FIRST write) -- in both of those cases no write was made at all. May also fail with "
+            "This is two writes in sequence, not one, successor first: a failure creating the "
+            "successor (supersede-successor-write-failed) means nothing was written. A failure "
+            "marking the predecessor Superseded afterward (supersede-write-failed) means success=false "
+            "even though the successor already exists -- that code's own `data.successor` names it, "
+            "and `data.predecessor_status` is still Accepted (a lock lost before this SECOND write also "
+            "surfaces this same code/data, not lock-lost). The successor keeps its number on disk, so "
+            "no later `new` can take it, and re-running supersede on the same file resumes: it finds "
+            "that successor (the one existing file whose supersede suffix points back at this "
+            "decision), marks only the predecessor, and says so in `warnings` -- without re-applying "
+            "--title/--scope/--domain to it. That existing successor is resumed only while it is still "
+            "Proposed and the only one (a Rejected successor, left by an earlier supersede whose "
+            "successor was then rejected, is not an orphan and never blocks a new supersede); "
+            "otherwise this fails with "
+            "supersede-orphaned-successor-not-resumable (data.file/data.files name it) and no write is "
+            "made. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
+            "the FIRST write) -- in both of those cases no write was made at all. May also fail with "
             "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
             "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
             "family-scan-incomplete or supersede-successor-scan-incomplete if a subdirectory under the "
@@ -84,10 +93,7 @@ def describe():
             "already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own "
             "current status makes Superseded unreachable from here) if the target isn't eligible -- no "
             "write is made. Fails with file-already-exists (data.file names it) if the successor's own "
-            "resulting filename already exists on disk -- no write is made either. If the PREDECESSOR's "
-            "own write (marking it Superseded, the FIRST of the two writes) fails with an OSError, that "
-            "surfaces as supersede-write-failed instead of a generic io-error, for discoverability -- "
-            "nothing was written in that case."
+            "resulting filename already exists on disk -- no write is made either."
         ),
         "arguments": [
             {
@@ -157,8 +163,9 @@ def describe():
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
-                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the FIRST of the two writes) failed -- nothing was written.",
-                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the SECOND of the two writes) failed -- the predecessor was already committed to Superseded.",
+                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-running supersede resumes onto it.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the FIRST of the two writes) failed -- nothing was written.",
+                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "A non-Rejected successor from an earlier, interrupted supersede of this decision already exists but is no longer Proposed, or more than one does -- no write was made.",
             },
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
@@ -263,42 +270,96 @@ def run(args):
             # strict=True: an unreadable subdirectory hiding a
             # higher-numbered decision must never be silently treated as
             # "not found" here, or the allocated successor number could
-            # collide once that subdirectory becomes readable again.
-            successor_number = next_number(
-                scan_decisions(
-                    folder, config, warnings=warnings, strict=True,
-                    incomplete_code=FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE,
-                )
+            # collide once that subdirectory becomes readable again -- and,
+            # for the orphan check below, a hidden successor would be
+            # missed and a second one created.
+            decisions = scan_decisions(
+                folder, config, warnings=warnings, strict=True,
+                incomplete_code=FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE,
             )
 
-            successor = DecisionRecord(
-                number=successor_number,
-                # Defaults to the predecessor's own FILENAME segment
-                # (already case-transformed), not its header's prose title --
-                # confirmed via live comparison against the reference tool.
-                # Overridden by --title when given (see above).
-                title=title,
-                version=1,
-                revision=1 if config.lenrevision > 0 else None,
-                scope=scope,
-                domain=domain,
-                status_create="Proposed",
-                date_create=refdate,
-                superseded=filename_info.number,
-            )
-            filename = build_filename(config, successor)
-            successor_path = resolve_within(folder, filename)
-            if successor_path.exists():
-                raise CommandError(
-                    FailureCodes.FILE_ALREADY_EXISTS,
-                    f"File already exists: {filename}",
-                    data={"file": filename},
-                    warnings=warnings,
+            # The successor is written FIRST (below), so an earlier call
+            # whose predecessor write then failed leaves exactly this: a
+            # file already pointing back at this still-Accepted predecessor.
+            # Resume onto it instead of allocating a second successor --
+            # but only while it is still Proposed, i.e. untouched since
+            # that call; one approved since is not guessed at. A Rejected
+            # one is the normal end of an earlier attempt (reject reverts
+            # the predecessor to Accepted), not an interrupted one.
+            orphans = []
+            for scheme_entry in decisions:
+                if getattr(scheme_entry[1], "superseded_from", None) != filename_info.number:
+                    continue
+                candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
+                if candidate_header.status_update != "Rejected":
+                    orphans.append((scheme_entry[2], candidate_info, candidate_header))
+            if orphans:
+                orphan_path, orphan_info, orphan_header = orphans[0]
+                if len(orphans) != 1 or orphan_header.status_update is not None or orphan_header.status_change is not None:
+                    raise CommandError(
+                        FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
+                        f"{len(orphans)} existing successor(s) already point at this decision, and "
+                        "they cannot be resumed onto (not exactly one, or no longer Proposed).",
+                        data={"file": str(orphan_path), "files": [str(orphan[0]) for orphan in orphans]},
+                        warnings=warnings,
+                    )
+                successor_path = orphan_path
+                successor_number = orphan_info.number
+                warnings.append(
+                    f"resumed: {successor_path.name} already existed from an earlier supersede of this "
+                    "decision whose predecessor write failed -- only the predecessor was marked now; "
+                    "the successor's own content (title/scope/domain) was left as it was."
                 )
+            else:
+                successor_number = next_number(decisions)
+
+                successor = DecisionRecord(
+                    number=successor_number,
+                    # Defaults to the predecessor's own FILENAME segment
+                    # (already case-transformed), not its header's prose title --
+                    # confirmed via live comparison against the reference tool.
+                    # Overridden by --title when given (see above).
+                    title=title,
+                    version=1,
+                    revision=1 if config.lenrevision > 0 else None,
+                    scope=scope,
+                    domain=domain,
+                    status_create="Proposed",
+                    date_create=refdate,
+                    superseded=filename_info.number,
+                )
+                filename = build_filename(config, successor)
+                successor_path = resolve_within(folder, filename)
+                if successor_path.exists():
+                    raise CommandError(
+                        FailureCodes.FILE_ALREADY_EXISTS,
+                        f"File already exists: {filename}",
+                        data={"file": filename},
+                        warnings=warnings,
+                    )
+
+                content = build_header(config, successor) + config.template
+                try:
+                    # ADR001, part 3: guarantees the successor write never
+                    # commits blindly if the lease was reclaimed. A lost
+                    # lock here surfaces as lock-lost: nothing written yet.
+                    lock.verify_still_held()
+                    attempts = atomic_write_text(successor_path, content)
+                except OSError as error:
+                    # The FIRST write -- nothing has been written yet.
+                    raise CommandError(
+                        FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
+                        f"{successor_path}: {error}",
+                        data={"intended_successor": str(successor_path)},
+                        warnings=warnings,
+                    ) from error
+                warning = retry_warning(attempts)
+                if warning:
+                    warnings.append(warning)
 
             try:
-                # ADR001, part 3: guarantees the predecessor write below
-                # never commits blindly if the lease was reclaimed.
+                # ADR001, part 3: this command's SECOND write (or only one,
+                # when resuming) -- never commits blindly either.
                 lock.verify_still_held()
                 _record, body_encoding_repaired, attempts = mark_superseded(
                     path, config, header, filename_info, successor_number, refdate, lock=lock
@@ -309,41 +370,20 @@ def run(args):
                 # the streamed write).
                 if encoding_repaired or body_encoding_repaired:
                     warnings.append(encoding_repaired_warning(path))
-            except OSError as error:
-                # Nothing has been written yet at this point (the
-                # predecessor's own mutation IS this write) -- the
-                # generic attach_warnings safety net's io-error is
-                # already the right shape, just give it a command-
-                # specific code for discoverability.
-                raise CommandError(
-                    FailureCodes.SUPERSEDE_WRITE_FAILED, f"{path}: {error}", warnings=warnings
-                ) from error
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
-
-            content = build_header(config, successor) + config.template
-            try:
-                # ADR001, part 3: this command's SECOND write -- guarantees
-                # it never commits blindly either, on its own.
-                lock.verify_still_held()
-                attempts = atomic_write_text(successor_path, content)
             except (OSError, LockLostError) as error:
-                # By this point the predecessor has ALREADY been marked
-                # Superseded for real (the write above already succeeded)
-                # -- data names that partial mutation explicitly, so a
-                # caller doesn't have to infer an orphaned family state
-                # from a generic io-error. Both OSError and LockLostError
-                # are caught here (not just OSError), so a lock lost on
-                # this second write reports the same orphaned-family risk
-                # instead of a generic, dataless "no write was made".
+                # The successor already exists on disk (written above, or
+                # found and resumed onto) and still holds its number, so no
+                # later `new` can take it; re-running supersede on this same
+                # file resumes onto it. Both OSError and LockLostError are
+                # caught, so a lock lost here still names the successor
+                # instead of a dataless "no write was made".
                 raise CommandError(
-                    FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
-                    f"{successor_path}: {error}",
+                    FailureCodes.SUPERSEDE_WRITE_FAILED,
+                    f"{path}: {error}",
                     data={
                         "predecessor": str(path),
-                        "predecessor_status": "Superseded",
-                        "intended_successor": str(successor_path),
+                        "predecessor_status": "Accepted",
+                        "successor": str(successor_path),
                     },
                     warnings=warnings,
                 ) from error

@@ -190,6 +190,7 @@ class FailureCodes:
     # src/adrpy/cli/supersede.py
     SUPERSEDE_WRITE_FAILED = "supersede-write-failed"
     SUPERSEDE_SUCCESSOR_WRITE_FAILED = "supersede-successor-write-failed"
+    SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE = "supersede-orphaned-successor-not-resumable"
     SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE = "supersede-successor-scan-incomplete"
 
     # src/adrpy/cli/version.py
