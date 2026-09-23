@@ -2,6 +2,8 @@ import json
 
 from adrpy.core.output import emit_failure
 
+import pytest
+
 
 def test_emit_failure_omits_warnings_key_when_warnings_is_none(capsys):
     """warnings=None means the run never even started accumulating (e.g.
@@ -36,3 +38,22 @@ def test_emit_failure_includes_non_empty_warnings(capsys):
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["warnings"] == ["something already happened"]
+
+
+
+@pytest.mark.parametrize("error, expected", [
+    (Exception("   "), "Exception"),
+    (OSError(13, ""), "PermissionError (errno 13)"),
+    (OSError(), "OSError"),
+    (ValueError("real message"), "real message"),
+])
+def test_explain_never_returns_a_blank_or_contentless_message(error, expected):
+    from adrpy.core.output import explain
+
+    assert explain(error) == expected
+
+
+def test_explain_keeps_both_filenames_when_the_message_is_empty():
+    from adrpy.core.output import explain
+
+    assert explain(OSError(17, "", "a", None, "b")) == "FileExistsError (errno 17): a -> b"

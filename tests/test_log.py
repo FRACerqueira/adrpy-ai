@@ -874,3 +874,25 @@ def test_an_identical_retry_after_an_index_failure_still_brings_the_index_up_to_
     assert excinfo.value.code == "log-entry-already-exists"
     index = (tmp_path / "doc" / "decision-log" / "INDEX.md").read_text(encoding="utf-8")
     assert "Stranded entry" in index
+
+
+
+def test_an_already_exists_refusal_warns_when_the_index_could_not_be_regenerated(tmp_path):
+    # The documented recovery (an identical retry brings INDEX.md up to
+    # date) must not fail silently.
+    _init_repo(tmp_path)
+    args = [
+        "--path", str(tmp_path), "--classification", "scope-note", "--scope", "cli", "--slug", "other",
+        "--summary", "Other", "--body", "x", "--refdate", "2026-09-18",
+    ]
+    log_dir = tmp_path / "doc" / "decision-log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "notes.md").write_text("not an entry\n", encoding="utf-8")
+    with pytest.raises(CommandError):
+        log.run(args)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(args)
+
+    assert excinfo.value.code == "log-entry-already-exists"
+    assert any("INDEX.md" in w and "could not be regenerated" in w for w in excinfo.value.warnings)

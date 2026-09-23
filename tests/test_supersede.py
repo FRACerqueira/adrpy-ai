@@ -825,3 +825,170 @@ def test_resume_never_adopts_a_migrated_placeholder_for_a_normal_predecessor(tmp
 
     assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
     assert predecessor.read_text(encoding="utf-8") == before
+
+
+
+def _migrated_repo(tmp_path, *names):
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_migrate import _init_repo_with_pattern, _write_legacy_file
+    from adrpy.cli import migrate
+
+    _init_repo_with_pattern(tmp_path)
+    for name in names:
+        _write_legacy_file(tmp_path, name, "# " + name + "\n\nbody\n")
+    migrate.run(["--path", str(tmp_path)])
+    return tmp_path / "doc" / "adr"
+
+
+def test_a_placeholder_pointing_at_its_own_number_is_never_resumed_onto_itself(tmp_path):
+    # A successor always gets a later number than its predecessor; a file
+    # whose suffix names its own number is not a successor at all.
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x--001.md")
+    target = adr_dir / "ADR001V01-use-x--001.md"
+    before = target.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(target), "--refdate", "2026-01-05", "--resume"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert target.read_bytes() == before
+
+
+def test_a_same_family_member_is_never_a_successor(tmp_path):
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR001V02-use-x--001.md")
+    v01 = adr_dir / "ADR001V01-use-x.md"
+    before = v01.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(v01), "--refdate", "2026-01-05", "--resume"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert v01.read_bytes() == before
+
+
+def test_a_lower_numbered_file_pointing_back_is_not_a_successor_and_does_not_block(tmp_path):
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-a--002.md", "ADR002V01-use-b.md")
+    adr002 = adr_dir / "ADR002V01-use-b.md"
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr002), "--refdate", "2026-01-05", "--resume"])
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+
+    result = supersede.run(["--file", str(adr002), "--refdate", "2026-01-05"])
+    assert result["created"].endswith("ADR003V01-use-b--002.md")
+
+
+def test_the_refusal_for_nothing_to_resume_says_so(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05", "--resume"])
+
+    assert "without --resume" in excinfo.value.detail
+
+
+def test_the_refusal_for_a_placeholder_onto_a_tool_created_version_names_that_reason(tmp_path):
+    # migrate a chain, then continue the predecessor's family with version:
+    # the placeholder is only adopted onto a migrated predecessor.
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
+    v01 = adr_dir / "ADR001V01-use-x.md"
+    approve.run(["--file", str(v01), "--refdate", "2026-01-02"])
+    v02 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-03"])["created"])
+    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(v02), "--refdate", "2026-01-05", "--resume"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert "migrated placeholder" in excinfo.value.detail and "not migrated" in excinfo.value.detail
+
+
+
+def test_rejecting_a_placeholder_whose_versioned_predecessor_was_never_superseded_just_rejects_it(tmp_path):
+    # No member of the predecessor's family is Superseded, so there is
+    # nothing to revert in any reading; the refusal advice ("reject it")
+    # must actually work.
+    from adrpy.cli import reject
+
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
+    v01 = adr_dir / "ADR001V01-use-x.md"
+    approve.run(["--file", str(v01), "--refdate", "2026-01-02"])
+    v02 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-03"])["created"])
+    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+    placeholder = adr_dir / "ADR002V01-use-y--001.md"
+
+    result = reject.run(["--file", str(placeholder), "--refdate", "2026-01-05"])
+
+    assert result["undone_predecessor"] is None
+    assert "Rejected" in placeholder.read_text(encoding="utf-8")
+    created = supersede.run(["--file", str(v02), "--refdate", "2026-01-06"])["created"]
+    assert created.endswith("ADR003V01-use-x--001.md")
+
+
+def test_rejecting_a_successor_still_refuses_when_a_family_member_is_superseded_by_another(tmp_path):
+    # Positive control: a family member IS Superseded, pointing at some
+    # other successor -- which member this one came from is ambiguous, so
+    # reject still refuses rather than guess.
+    from adrpy.cli import reject
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"])
+    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+    real_successor = Path(supersede.run(["--file", str(v02), "--refdate", "2026-01-05"])["created"])
+    assert real_successor.name.startswith("ADR002")
+    impostor = real_successor.with_name(real_successor.name.replace("ADR002", "ADR003", 1))
+    impostor.write_bytes(real_successor.read_bytes())
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(impostor), "--refdate", "2026-01-06"])
+
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+
+
+def test_following_the_no_created_status_advice_recovers(tmp_path, monkeypatch):
+    # The message must name a step that works: reject can't act on a file
+    # with no Created status, so the only ways out are by hand.
+    tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
+    text = successor_path.read_text(encoding="utf-8")
+    created_row = [line for line in text.splitlines() if line.startswith("|Created|")][0]
+    successor_path.write_text(text.replace(created_row, "|Created||"), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
+    assert "delete it and run supersede without --resume" in excinfo.value.detail
+
+    successor_path.unlink()
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
+    assert Path(result["created"]).name == "ADR002V01-use-postgre-sql--001.md"
+
+
+def test_following_the_superseded_since_advice_recovers_when_its_successor_was_approved(tmp_path, monkeypatch):
+    from adrpy.cli import reject, undo
+
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
+    second = Path(supersede.run(["--file", str(orphan), "--refdate", "2026-01-07"])["created"])
+    approve.run(["--file", str(second), "--refdate", "2026-01-08"])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-09", "--resume"])
+    assert "undo that successor first if it was approved" in excinfo.value.detail
+
+    undo.run(["--file", str(second)])
+    reject.run(["--file", str(second), "--refdate", "2026-01-09"])
+    undo.run(["--file", str(orphan)])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-09", "--resume"])
+    assert result["created"] == str(orphan)
+
+
+def test_the_already_exists_advice_covers_an_approved_successor_further_down_the_chain(tmp_path, monkeypatch):
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
+
+    assert excinfo.value.code == "supersede-successor-already-exists"
+    assert "undo that successor first if it was approved" in excinfo.value.detail
+    assert "repeat down the chain" in excinfo.value.detail

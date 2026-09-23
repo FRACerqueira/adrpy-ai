@@ -30,6 +30,7 @@ from adrpy.core.decision_log import (
     validate_slug,
 )
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.output import explain
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.lifecycle import (
@@ -218,7 +219,7 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "summary/front/reopenwhen is non-empty but blank after stripping whitespace.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content -- Round/INDEX.md can't be safely computed while it's present.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under folderlog could not be scanned.",
-                FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one.",
+                FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails).",
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED: "The entry itself was written, but regenerating INDEX.md afterward failed.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -352,8 +353,11 @@ def run(args):
                 try:
                     lock.verify_still_held()
                     regenerate_index(log_dir, warnings=warnings)
-                except (OSError, LockLostError, CommandError):
-                    pass
+                except (OSError, LockLostError, CommandError) as error:
+                    warnings.append(
+                        f"INDEX.md could not be regenerated ({explain(error)}); it may not list every entry, and "
+                        "will catch up on the next log call that succeeds."
+                    )
                 raise CommandError(
                     FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
                     f"Decision-log entry already exists: {filename}",

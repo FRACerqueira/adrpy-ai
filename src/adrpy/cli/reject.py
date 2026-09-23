@@ -74,15 +74,16 @@ def describe():
             "reverted is a genuine partial success: the predecessor was already reverted for real when "
             "writing THIS decision's own Rejected status then failed -- `data.predecessor_file` names "
             "the file already reverted. Retrying `reject` on the same file after that specific failure "
-            "is safe and completes the operation in the common case (this decision's own predecessor has "
-            "no version/revision history) -- reject recognizes a single-member family whose one member "
-            "is no longer Superseded as already-reverted and proceeds straight to this decision's own "
-            "write without erroring; a predecessor with version/revision siblings cannot be "
-            "disambiguated this way (which specific sibling was the one reverted isn't derivable once "
-            "its own back-reference is gone) and still fails with superseded-predecessor-not-found on "
-            "retry -- recovery in that narrower case, without editing any file, is to run `supersede "
-            "--resume` on the sibling this decision was created from (which marks it Superseded again, "
-            "pointing at this decision) and then `reject` this decision again. May instead fail with repository-locked "
+            "is safe and completes the operation: when no member of the predecessor's family is "
+            "Superseded any more (the revert already happened, or the predecessor was never marked at "
+            "all -- an interrupted supersede, or a migrated placeholder), there is nothing to revert and "
+            "reject proceeds straight to this decision's own write (`undone_predecessor` null). It "
+            "fails with superseded-predecessor-not-found instead when some member of that family IS "
+            "Superseded but not pointing at this decision (another successor took over, or a "
+            "back-reference edited by hand) -- reject only ever reverts a Superseded mark that names "
+            "this decision -- or when a member's header has this tool's shape but does not parse, so "
+            "its status can't be read (`data.unparseable_files` names it; repair it by hand and "
+            "retry). May instead fail with repository-locked "
             "(lock never acquired) or lock-lost (lost before any write) -- in both of those cases no "
             "write was made at all. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write "
@@ -127,7 +128,7 @@ def describe():
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
-                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, or a multi-member family's own back-reference to it is gone -- no write was made.",
+                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, a member of its family is Superseded but not pointing at this decision, or a member's header does not parse (data.unparseable_files) -- no write was made.",
                 FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Reverting the predecessor's Superseded status failed with a real OSError -- no write was made.",
                 FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED: "The predecessor's Superseded status was already reverted for real, but writing this decision's own Rejected status then failed -- data.predecessor_file names the file already reverted; retry is safe.",
             },
@@ -211,7 +212,10 @@ def run(args):
                 # failure here needs no special partial-success re-raise --
                 # it propagates exactly like this command's own primary
                 # family scan above.
-                pred_members = family_members(folder, config, filename_info.superseded_from, warnings=warnings)
+                pred_unparseable = []
+                pred_members = family_members(
+                    folder, config, filename_info.superseded_from, warnings=warnings, unparseable=pred_unparseable
+                )
                 # latest_in_family picks whichever sibling has the highest
                 # (version, revision) -- not necessarily the one this
                 # successor actually came from. Reachable whenever the
@@ -239,26 +243,38 @@ def run(args):
                     # succeeded and cleared status_change, and with it the
                     # superseded_by_file back-reference this match depends
                     # on, so there is no live link left to re-derive from.
-                    # Only auto-recognize the second case when it is
-                    # unambiguous: a single-member family (no version/
-                    # revision history) whose one member is no longer
-                    # Superseded at all. A multi-member family can't be
-                    # disambiguated this way -- there is no reliable way to
-                    # tell WHICH sibling was the reverted one once its own
-                    # back-reference is gone (see the back-reference-
-                    # matching tests this command already has) -- so that
-                    # case still fails loudly, unchanged. Residual, accepted
-                    # risk of the single-member shortcut: a corrupted
-                    # predecessor-sequence reference in the successor's own
-                    # filename that happens to coincide with a real,
-                    # never-superseded, single-member ADR would also match
-                    # here and be silently accepted -- narrow (requires a
-                    # corrupted filename AND a coincidental real match) and
-                    # disclosed, not fixed, since nothing in the reverted
-                    # file's own content can distinguish "already reverted"
-                    # from "never superseded" once the back-reference is
-                    # gone either way.
-                    already_reverted = len(pred_members) == 1 and pred_members[0][1].status_change is None
+                    # Recognize the second case -- or a successor whose
+                    # predecessor was never marked at all (an interrupted
+                    # supersede, or a migrated placeholder) -- only when it is
+                    # unambiguous: no member of the predecessor's family is
+                    # Superseded at all, so there is nothing to revert in any
+                    # reading. When some member IS Superseded (pointing at
+                    # another successor, or with a back-reference edited by
+                    # hand), that case still fails loudly: reject only reverts a Superseded
+                    # mark that names this successor. Residual, accepted risk: a
+                    # corrupted predecessor-sequence reference in the
+                    # successor's own filename that happens to name a real,
+                    # never-superseded family would also match here and be
+                    # silently accepted -- narrow (requires a corrupted
+                    # filename AND a coincidental real match) and disclosed,
+                    # since nothing in that family's own content can tell
+                    # "already reverted" from "never superseded" either way.
+                    # A member whose header doesn't parse is left out of
+                    # pred_members, and its status can't be read -- it may
+                    # be the Superseded one, so it refuses, naming the file.
+                    if pred_unparseable:
+                        raise CommandError(
+                            FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND,
+                            f"Could not tell whether the decision this one superseded (sequence "
+                            f"{filename_info.superseded_from}) is still marked Superseded: "
+                            f"{', '.join(pred_unparseable)} has a header that does not parse. Repair it by "
+                            "hand and retry. No write was made.",
+                            data={"unparseable_files": pred_unparseable},
+                            warnings=warnings,
+                        )
+                    already_reverted = bool(pred_members) and all(
+                        member[1].status_change is None for member in pred_members
+                    )
                     if not already_reverted:
                         raise CommandError(
                             FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND,
@@ -320,8 +336,8 @@ def run(args):
             # doesn't have to infer it from `warnings` alone or discover it
             # only by re-reading the predecessor file itself. Retrying
             # `reject` on this same file is then safe: the predecessor
-            # lookup above already recognizes a since-reverted single-
-            # member predecessor and skips straight to this write again.
+            # lookup above finds no member Superseded any more and skips
+            # straight to this write again.
             try:
                 # Inside the try: a lock lost here, after the predecessor
                 # revert above already committed, is that same partial

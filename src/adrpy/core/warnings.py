@@ -12,6 +12,7 @@ design)."""
 
 import contextlib
 
+from adrpy.core.output import explain
 from adrpy.core.errors import CommandError, FailureCodes
 
 
@@ -54,7 +55,7 @@ def attach_warnings(warnings):
         # already marked Superseded before its successor write failed)
         # still handles its own OSError explicitly, with tailored `data`,
         # before it would ever reach here.
-        raise CommandError(FailureCodes.IO_ERROR, str(error), warnings=list(warnings)) from error
+        raise CommandError(FailureCodes.IO_ERROR, explain(error), warnings=list(warnings)) from error
 
 
 def orphan_cleanup_warning(removed, relative_to=None):

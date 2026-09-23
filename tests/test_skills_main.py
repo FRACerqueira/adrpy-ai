@@ -315,3 +315,20 @@ class TestFailureDetailOnStdout:
 
         assert out["code"] == "target-directory-not-found"
         assert "not an existing directory" in out["detail"]
+
+
+
+class TestAnEmptyErrorMessageStillExplainsItself:
+    @pytest.mark.parametrize("error, code", [(ValueError(""), "internal-error"), (OSError(), "io-error")])
+    def test_the_detail_falls_back_to_the_error_type(self, tmp_path, capsys, monkeypatch, error, code):
+        import adrpy.skills.installer as installer_module
+
+        def boom(*args, **kwargs):
+            raise error
+
+        monkeypatch.setattr(installer_module, "list_installed", boom)
+        main(["list", "--path", str(tmp_path)])
+        out = json.loads(capsys.readouterr().out)
+
+        assert out["code"] == code
+        assert out["detail"] == type(error).__name__

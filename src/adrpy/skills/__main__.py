@@ -6,7 +6,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, metadata
 
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.output import EXIT_SUCCESS, emit_failure, emit_success, emit_usage_failure
+from adrpy.core.output import EXIT_SUCCESS, emit_failure, explain, emit_success, emit_usage_failure
 from adrpy.skills.registry import COMMANDS
 
 _FALLBACK_SUMMARY = "Multi-provider AI-coding-agent skills installer for adrpy-ai."
@@ -48,7 +48,7 @@ def main(argv=None):
     except CommandError as error:
         return emit_failure(error.code, error.detail, error.data, error.warnings)
     except OSError as error:
-        return emit_failure("io-error", str(error))
+        return emit_failure("io-error", explain(error))
     except KeyboardInterrupt:
         # Same gap, same fix as adrpy/__main__.py's own -- KeyboardInterrupt
         # is a BaseException, not an Exception, so the catch-all below never
@@ -56,7 +56,7 @@ def main(argv=None):
         # because this sibling entry point never got the core fix applied.
         return emit_failure("interrupted", "Interrupted (Ctrl+C).")
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see adrpy/__main__.py
-        return emit_failure("internal-error", str(error))
+        return emit_failure("internal-error", explain(error))
 
     return emit_success(data)
 

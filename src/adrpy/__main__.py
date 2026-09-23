@@ -4,7 +4,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, metadata
 
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.output import EXIT_SUCCESS, emit_failure, emit_success, emit_usage_failure
+from adrpy.core.output import EXIT_SUCCESS, emit_failure, explain, emit_success, emit_usage_failure
 from adrpy.core.registry import COMMANDS
 
 _DOCS_URL = "https://github.com/FRACerqueira/adrpy-ai#readme"
@@ -64,7 +64,7 @@ def main(argv=None):
         # with EMPTY stdout -- breaking the JSON contract this whole
         # project exists to provide, at exactly the moment an agent needs
         # it most.
-        return emit_failure("io-error", str(error))
+        return emit_failure("io-error", explain(error))
     except KeyboardInterrupt:
         # A signal-driven interrupt (Ctrl+C) is a BaseException, not an
         # Exception -- the catch-all below never sees it, so without this
@@ -77,7 +77,7 @@ def main(argv=None):
         # invocation still ends in valid JSON, not just the write itself.
         return emit_failure("interrupted", "Interrupted (Ctrl+C).")
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see above
-        return emit_failure("internal-error", str(error))
+        return emit_failure("internal-error", explain(error))
 
     return emit_success(data)
 

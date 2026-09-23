@@ -79,7 +79,7 @@ Required, and only valid, when --classification is deferred; usage-error otherwi
 | `field-is-blank` | summary/front/reopenwhen is non-empty but blank after stripping whitespace. |
 | `log-directory-contains-unrecognized-file` | A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content -- Round/INDEX.md can't be safely computed while it's present. |
 | `log-scan-incomplete` | A subdirectory under folderlog could not be scanned. |
-| `log-entry-already-exists` | An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one. |
+| `log-entry-already-exists` | An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails). |
 | `log-index-regeneration-failed` | The entry itself was written, but regenerating INDEX.md afterward failed. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |

@@ -402,28 +402,46 @@ def test_cleanup_never_follows_a_link_out_of_the_swept_folder(tmp_path):
     assert victim.exists()
 
 
-def test_a_temp_file_that_vanishes_before_replace_is_rewritten_and_the_write_still_lands(tmp_path, monkeypatch):
-    # A concurrent sweep can delete an in-flight temp file whose mtime looks
-    # old (a writer stalled over 30s, or a server clock skewed on a network
-    # share); the write must recover by rewriting it, not fail.
+def test_a_temp_file_that_vanishes_before_replace_fails_instead_of_being_rewritten(tmp_path, monkeypatch):
+    # A concurrent orphan sweep only removes a temp file older than 30s --
+    # the same age at which that process also reclaims this one's lock
+    # (ABANDON_AFTER_SECONDS). Rewriting and retrying here would commit a
+    # write after the lock is gone (reproduced: two ADR001 files, both
+    # commands reporting success); failing is the safe answer.
     target = tmp_path / "decision.md"
-    real_replace = os.replace
+    target.write_text("original")
     calls = {"n": 0}
 
     def replace_after_temp_vanished(src, dst):
         calls["n"] += 1
-        if calls["n"] == 1:
-            os.unlink(src)
-            raise FileNotFoundError(2, "No such file or directory", str(src))
-        return real_replace(src, dst)
+        os.unlink(src)
+        raise FileNotFoundError(2, "No such file or directory", str(src))
 
     monkeypatch.setattr("adrpy.core.atomic_write.os.replace", replace_after_temp_vanished)
     monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
 
-    attempts = atomic_write_text(target, "content")
+    with pytest.raises(FileNotFoundError):
+        atomic_write_text(target, "content")
 
-    assert attempts == 2
-    assert target.read_text() == "content"
+    assert calls["n"] == 1
+    assert target.read_text() == "original"
+
+
+def test_a_chunk_source_that_disappears_fails_at_once(tmp_path, monkeypatch):
+    target = tmp_path / "decision.md"
+    calls = {"n": 0}
+
+    def chunks():
+        calls["n"] += 1
+        raise FileNotFoundError(2, "No such file or directory", str(tmp_path / "source.md"))
+        yield b""  # pragma: no cover
+
+    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(FileNotFoundError):
+        atomic_write_chunks(target, chunks)
+
+    assert calls["n"] == 1
 
 
 def test_a_missing_destination_folder_still_fails_at_once(tmp_path):

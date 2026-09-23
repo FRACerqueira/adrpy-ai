@@ -110,16 +110,6 @@ def atomic_write_text(path, content):
     return atomic_write_bytes(path, normalize_newlines(content).encode("utf-8"))
 
 
-def _temp_vanished(error, path):
-    """True when os.replace found our own temp file already gone while the
-    destination folder still exists -- a concurrent orphan sweep removed
-    it because its mtime looked older than ORPHAN_MAX_AGE_SECONDS (a writer
-    stalled that long, or a network share's server clock running behind).
-    Rewriting it recovers; a missing destination folder does not, and
-    still fails at once."""
-    return isinstance(error, FileNotFoundError) and Path(path).parent.is_dir()
-
-
 def atomic_write_bytes(path, content_bytes):
     """Same atomicity guarantees as atomic_write_text, but no newline
     normalization at all -- for the one real case where that would be
@@ -153,7 +143,7 @@ def atomic_write_bytes(path, content_bytes):
         except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)
-            if not (isinstance(error, PermissionError) or _temp_vanished(error, path)):
+            if not isinstance(error, PermissionError):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
         except BaseException:
@@ -202,7 +192,7 @@ def atomic_write_chunks(path, chunks_factory):
         except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)
-            if not (isinstance(error, PermissionError) or _temp_vanished(error, path)):
+            if not isinstance(error, PermissionError):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
         except BaseException:
@@ -233,6 +223,21 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     fail the caller's entire command over best-effort housekeeping
     unrelated to what it was actually asked to do -- left in place for a
     later cleanup pass instead, and reported via `warnings` when given.
+
+    Known limitation (decided, not fixed): the 30s age is measured against
+    the temp file's own mtime. On a network share whose server clock runs
+    well behind this machine's, a concurrent call can sweep another call's
+    still-in-flight temp file; that write then fails instead of being
+    retried, since a retry here cannot tell that case from one whose lock
+    was already reclaimed. The failure surfaces as the calling command's
+    own code for that write: an io-error for a single-write command, with
+    nothing committed and re-running succeeds; supersede's and reject's
+    first write (supersede-successor-write-failed, reject-predecessor-
+    write-failed), also with nothing committed; their second write as a
+    partial success (supersede-write-failed, reject-own-write-failed-after-
+    predecessor-reverted), recovered as that code documents (--resume, or a
+    plain retry of reject); and a per-file failure in migrate's
+    migration-write-failed, where re-running migrates what is left.
 
     Uses rglob, not glob -- every other scan in this codebase
     (scan_decisions, migrate, explore, init's own numbering) already

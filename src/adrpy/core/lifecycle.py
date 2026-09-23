@@ -792,7 +792,7 @@ def load_target(fileadr):
     return config, root, path, filename_info, header, encoding_repaired
 
 
-def family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None):
+def family_members(folder, config, number, warnings=None, exclude_from_encoding_check=None, unparseable=None):
     """Every decision (current or legacy scheme) sharing `number` that
     actually counts as a family member, with its parsed header attached
     -- filtered through `counts_as_family_member` before ever including a
@@ -818,7 +818,12 @@ def family_members(folder, config, number, warnings=None, exclude_from_encoding_
     (has_superseded_sibling, has_pending_sibling, latest_in_family, and
     so every per-file command's own family guard) is a safety decision;
     an incomplete scan here is never safe to treat as "no such member"
-    the way explore's own best-effort listing can."""
+    the way explore's own best-effort listing can.
+
+    `unparseable`, when given (a list), collects every file with this
+    number whose header has this tool's shape (its `|Adr-Plus ` row) but
+    does not parse -- a hand-corrupted header, whose status can't be read,
+    as opposed to a legacy file that never had a header at all."""
     members = []
     unreliable_files = []
     for _, parsed, path in scan_decisions(
@@ -848,6 +853,13 @@ def family_members(folder, config, number, warnings=None, exclude_from_encoding_
             unreliable_files.append(str(path))
             continue
         header = parse_header(header_lines, config)
+        if (
+            unparseable is not None
+            and not header.is_valid
+            and len(header_lines) > 1
+            and header_lines[1].startswith("|Adr-Plus ")
+        ):
+            unparseable.append(str(path))
         # Deliberately does not surface header.marker_label_mismatches
         # (ADR004V01) here -- a mismatch on a SIBLING would misattribute a
         # warning about that other file to whatever command (e.g.

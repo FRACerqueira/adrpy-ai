@@ -45,6 +45,32 @@ _INELIGIBILITY_DETAILS = {
 }
 
 
+def _not_resumable_reason(orphans, predecessor_header):
+    """Why --resume can't resume here, naming the step that fixes it."""
+    if not orphans:
+        return ("--resume found no existing successor of this decision to resume onto; run supersede "
+                "without --resume to create one.")
+    names = ", ".join(orphan[0].name for orphan in orphans)
+    if len(orphans) > 1:
+        return (f"--resume needs exactly one existing successor of this decision, but {len(orphans)} point "
+                f"at it ({names}); reject all but one, then run --resume again.")
+    name, orphan = orphans[0][0].name, orphans[0][2]
+    if orphan.status_change is not None:
+        return (f"{name} was itself superseded since; reject its own successor first (which reverts it -- "
+                "undo that successor first if it was approved, and repeat down the chain if it was itself "
+                "superseded), then undo it if it had been approved, then run "
+                "--resume again.")
+    if orphan.status_update is not None:
+        return f"{name} is no longer Proposed ({orphan.status_update}); undo it back to Proposed, then run --resume again."
+    if orphan.is_migrated and not predecessor_header.is_migrated:
+        return (f"{name} is a migrated placeholder (no status of its own), but this decision is not migrated "
+                "(it was created, versioned or revised by this tool); a placeholder is only adopted onto a "
+                "migrated predecessor. Reject it to create a new successor instead.")
+    return (f"{name} has no Created status and date of its own, so it cannot be resumed onto, and no command "
+            "can act on it: repair its Created cell by hand and run --resume again, or delete it and run "
+            "supersede without --resume.")
+
+
 def describe():
     return {
         "name": "supersede",
@@ -71,7 +97,11 @@ def describe():
             "supersede-successor-already-exists (data.file/data.files name it) instead of being guessed "
             "at: reject it to create a new successor, or --resume to use it (one approved since must be "
             "undone back to Proposed first -- neither reject nor --resume accepts an Accepted successor; one "
-            "itself superseded since needs its own successor rejected first, which reverts it, then undo). "
+            "itself superseded since needs its own successor rejected first, which reverts it -- that successor "
+            "undone first if it was approved, repeating down the chain if it was itself superseded -- then "
+            "undo if it had been approved). Only a file with a later sequence number than this decision counts as its "
+            "successor; one pointing back from the same number (itself or its own family) or a lower one is "
+            "ignored. "
             "A Rejected successor is the "
             "normal end of an earlier attempt and never counts. --resume itself fails with "
             "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
@@ -79,9 +109,8 @@ def describe():
             "both it and this decision are migrated placeholders with no status yet (a chain recorded in the "
             "filenames before adrpy, adopted as is; `status` is then null) -- and "
             "with refdate-before-history if --refdate is before that successor's creation; no write is "
-            "made in any of these cases. To reject a successor whose predecessor has version/revision "
-            "siblings and was never marked Superseded, first run supersede --resume on that predecessor, "
-            "then reject the successor. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
+            "made in any of these cases. Rejecting a still-Proposed successor directly works too: with no "
+            "member of this decision's family marked Superseded, reject has nothing to revert. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
             "the FIRST write) -- in both of those cases no write was made at all. May also fail with "
             "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
             "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
@@ -321,6 +350,14 @@ def run(args):
             for scheme_entry in decisions:
                 if getattr(scheme_entry[1], "superseded_from", None) != filename_info.number:
                     continue
+                # A successor always gets a later sequence number than its
+                # predecessor (next_number): a file pointing back from the
+                # same number (itself, or a member of its own family) or a
+                # lower one is not a successor of this decision at all --
+                # adopting one would supersede a decision by itself or by an
+                # older one, with no command able to undo it.
+                if scheme_entry[1].number <= filename_info.number:
+                    continue
                 try:
                     candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
                 except CommandError as error:
@@ -336,10 +373,10 @@ def run(args):
                     FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
                     f"{len(orphans)} existing successor(s) already point at this decision "
                     f"({', '.join(orphan[0].name for orphan in orphans)}). Re-run with --resume to finish "
-                    "superseding onto it, or reject it to create a new successor. First, if it was approved "
-                    "since, undo it; if it was itself superseded since, reject its own successor (which reverts "
-                    "it) and then undo it. To reject it when this decision has version/revision siblings, run "
-                    "--resume first and then reject it.",
+                    "superseding onto it, or reject it to create a new successor. First, if it was itself "
+                    "superseded since, reject its own successor (which reverts it -- undo that successor first "
+                    "if it was approved, and repeat down the chain if it was itself superseded); then, if it "
+                    "had been approved, undo it.",
                     data={"file": orphan_files[0], "files": orphan_files},
                     warnings=warnings,
                 )
@@ -363,10 +400,7 @@ def run(args):
                         data["file"] = orphan_files[0]
                     raise CommandError(
                         FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
-                        f"--resume needs exactly one existing successor of this decision, still Proposed "
-                        f"since its own creation (or, when both files are migrated placeholders, never "
-                        f"given a status at all); found {len(orphans)} non-Rejected one(s). One approved "
-                        "since can be undone back to Proposed first.",
+                        _not_resumable_reason(orphans, header),
                         data=data,
                         warnings=warnings,
                     )

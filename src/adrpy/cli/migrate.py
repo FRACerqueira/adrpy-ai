@@ -21,6 +21,7 @@ concurrent direct edit of the repo's own migrationpattern is never
 silently overwritten by a stale fallback decision.
 """
 
+import contextlib
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -34,6 +35,7 @@ from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config, verify_folderadr_unchanged_since_lock
 from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
+from adrpy.core.output import explain
 from adrpy.core.security import (
     find_unreadable_subdirectories,
     is_within,
@@ -99,6 +101,9 @@ def describe():
             "to fail one of them (migration-scan-failed/-incomplete/-unreliable-encoding, "
             "no-decisions-found, already-tool-created-adrs-exist, no-eligible-files-to-migrate) -- those "
             "refusals mean no DECISION file was touched, not that adr-config.adrplus itself wasn't. "
+            "Whenever that persist-back happened, the result -- success, any failure code this command "
+            "reports, or interrupted -- carries migrationpattern_persisted with the pattern written (in "
+            "data, on a failure); an unexpected internal-error does not. "
             "Subsequent commands see the persisted value directly, without consulting the install-level "
             "config again, regardless of whether this particular run went on to succeed. "
             "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
@@ -151,7 +156,7 @@ def describe():
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
-                FailureCodes.MIGRATION_LOCK_LOST: "The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss, and data.migrationpattern_persisted (when present) the fallback pattern already written into adr-config.adrplus.",
+                FailureCodes.MIGRATION_LOCK_LOST: "The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss.",
                 FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -163,13 +168,37 @@ def describe():
     }
 
 
+@contextlib.contextmanager
+def _report_persisted_pattern(persisted, warnings):
+    """The fallback migrationpattern persist-back commits before any
+    candidate is looked at; every refusal after it must still say so
+    (data.migrationpattern_persisted), or it reads as "nothing written"."""
+    try:
+        yield
+    except CommandError as error:
+        if persisted["pattern"] is not None:
+            error.data = {**(error.data or {}), "migrationpattern_persisted": persisted["pattern"]}
+        raise
+    except KeyboardInterrupt as error:
+        if persisted["pattern"] is None:
+            raise
+        raise CommandError(
+            "interrupted",
+            "Interrupted (Ctrl+C).",
+            data={"migrationpattern_persisted": persisted["pattern"]},
+            warnings=list(warnings),
+        ) from error
+
+
 def run(args):
     path = parse_flags(args, required=("path",), aliases={"p": "path"})["path"]
     target, config_path, config = resolve_target_and_config(path)
 
     folder = resolve_within(target, config.folderadr)
     warnings = []
-    with attach_warnings(warnings):
+    persisted = {"pattern": None}
+    # Outside attach_warnings, so even an io-error it converts is covered.
+    with _report_persisted_pattern(persisted, warnings), attach_warnings(warnings):
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
@@ -197,7 +226,6 @@ def run(args):
             # `config --migrationpattern` edit racing this call is always
             # seen fresh: if it lands first, this read already has a
             # non-empty value and no fallback is even considered.
-            persisted_pattern = None
             if not config.migrationpattern:
                 fallback_text = read_install_config_text()
                 fallback_pattern = parse_repo_config(fallback_text).migrationpattern if fallback_text else ""
@@ -218,7 +246,7 @@ def run(args):
                 config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
                 lock.verify_still_held()
                 attempts = atomic_write_text(config_path, merged_text)
-                persisted_pattern = fallback_pattern
+                persisted["pattern"] = fallback_pattern
                 warning = retry_warning(attempts)
                 if warning:
                     warnings.append(warning)
@@ -410,16 +438,11 @@ def run(args):
                     # of them as individually "failed" when none were ever
                     # attempted. Stop outright and report exactly what was
                     # actually done so far.
-                    data = {"results": results}
-                    if persisted_pattern is not None:
-                        # The persist-back above already committed -- say so,
-                        # rather than let `results: []` read as "nothing written".
-                        data["migrationpattern_persisted"] = persisted_pattern
                     raise CommandError(
                         FailureCodes.MIGRATION_LOCK_LOST,
                         f"The repository lock was lost after {len(results)} of {len(candidates)} file(s) were "
                         "processed; migration was aborted rather than continuing unprotected.",
-                        data=data,
+                        data={"results": results},
                         warnings=warnings,
                     )
                 except (OSError, UnicodeError, CommandError) as error:
@@ -433,7 +456,7 @@ def run(args):
                     # not a whole-batch abort; LockLostError, itself a
                     # CommandError subclass, is already caught by the more
                     # specific clause above and never reaches this one.
-                    results.append({"file": str(candidate_path), "status": "failed", "error": str(error)})
+                    results.append({"file": str(candidate_path), "status": "failed", "error": explain(error)})
 
             failed = [entry for entry in results if entry["status"] == "failed"]
             if failed:
@@ -446,4 +469,7 @@ def run(args):
 
             migrated = [entry["file"] for entry in results]
 
-    return {"migrated": migrated, "warnings": warnings}
+    result = {"migrated": migrated, "warnings": warnings}
+    if persisted["pattern"] is not None:
+        result["migrationpattern_persisted"] = persisted["pattern"]
+    return result

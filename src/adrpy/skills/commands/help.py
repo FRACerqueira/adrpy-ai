@@ -13,7 +13,7 @@ def describe():
             "lists every command's name and one-line `summary` only. --full returns every command's "
             "full description and argument list in one call. Naming a specific `command` always "
             "returns its full description and argument list, regardless of --full. Fails with "
-            "usage-error if the named `command` doesn't match any registered command."
+            "unknown-command if the named `command` doesn't match any registered command."
         ),
         "arguments": [
             {

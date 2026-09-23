@@ -94,7 +94,7 @@ def check_drift(existing_text):
     # The tool never writes a BOM, so a leading one was added by an editor
     # and isn't content -- without this, it hides the marker's position
     # and a tool-written file reads as "foreign".
-    existing_text = existing_text.removeprefix("﻿")
+    existing_text = existing_text.lstrip("\ufeff")
     marker = parse_marker(existing_text)
     if marker is None:
         return "foreign"

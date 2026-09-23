@@ -783,3 +783,87 @@ def test_a_lock_lost_after_the_pattern_persist_back_says_the_config_was_written(
     assert excinfo.value.code == "migration-lock-lost"
     assert excinfo.value.data["results"] == []
     assert excinfo.value.data["migrationpattern_persisted"] == "N00:04T04"
+
+
+
+def test_a_successful_migrate_says_it_persisted_the_fallback_pattern(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrationpattern_persisted"] == "N00:04T04"
+
+
+def test_a_refusal_after_the_persist_back_still_says_it_persisted_the_pattern(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    (tmp_path / "doc" / "adr").mkdir(parents=True, exist_ok=True)  # nothing to migrate
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.data["migrationpattern_persisted"] == "N00:04T04"
+
+
+def test_no_persist_back_means_no_such_key(tmp_path):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert "migrationpattern_persisted" not in result
+
+
+
+def test_an_interrupt_after_the_persist_back_still_says_it_persisted_the_pattern(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
+    real_chunks = migrate.atomic_write_chunks
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "interrupted"
+    assert excinfo.value.data["migrationpattern_persisted"] == "N00:04T04"
+
+
+def test_an_interrupt_after_the_persist_back_keeps_the_warnings_already_collected(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
+    monkeypatch.setattr(migrate, "orphan_cleanup_warning", lambda *_args: "an earlier warning")
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "interrupted"
+    assert "an earlier warning" in excinfo.value.warnings
+
+
+def test_a_per_file_failure_with_an_empty_message_still_says_what_failed(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    def failing_write(*args, **kwargs):
+        raise OSError()
+
+    monkeypatch.setattr(migrate, "atomic_write_chunks", failing_write)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-write-failed"
+    assert excinfo.value.data["results"][0]["error"] == "OSError"

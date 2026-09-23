@@ -15,6 +15,18 @@ EXIT_FAILURE = 1
 EXIT_USAGE_ERROR = 2
 
 
+def explain(error):
+    """An exception's message for `detail`, or its type name when the
+    message is empty (`ValueError("")`, `OSError()`), so a failure never
+    reaches a caller with no explanation at all."""
+    if isinstance(error, OSError) and error.errno is not None and not (error.strerror or "").strip():
+        name = f"{type(error).__name__} (errno {error.errno})"
+        if not error.filename:
+            return name
+        return f"{name}: {error.filename} -> {error.filename2}" if error.filename2 else f"{name}: {error.filename}"
+    return str(error).strip() or type(error).__name__
+
+
 def emit_success(data):
     print(json.dumps({"success": True, "data": data}))
     return EXIT_SUCCESS
