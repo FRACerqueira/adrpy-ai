@@ -7,7 +7,7 @@ never a collision-disambiguator. `--open` is permanently not implemented
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
@@ -63,15 +63,20 @@ def describe():
             "even though the successor already exists -- that code's own `data.successor` names it, "
             "and `data.predecessor_status` is still Accepted (a lock lost before this SECOND write also "
             "surfaces this same code/data, not lock-lost). The successor keeps its number on disk, so "
-            "no later `new` can take it, and re-running supersede on the same file resumes: it finds "
-            "that successor (the one existing file whose supersede suffix points back at this "
-            "decision), marks only the predecessor, and says so in `warnings` -- without re-applying "
-            "--title/--scope/--domain to it. That existing successor is resumed only while it is still "
-            "Proposed and the only one (a Rejected successor, left by an earlier supersede whose "
-            "successor was then rejected, is not an orphan and never blocks a new supersede); "
-            "otherwise this fails with "
-            "supersede-orphaned-successor-not-resumable (data.file/data.files name it) and no write is "
-            "made. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
+            "no later `new` can take it; re-run with --resume to finish: it finds that successor "
+            "(the existing file whose supersede suffix points back at this decision), marks only the "
+            "predecessor, and says so in `warnings`. Without --resume, any existing non-Rejected "
+            "successor pointing back at this decision -- left by that failure, or by rejecting and then "
+            "undoing an earlier successor, which looks identical on disk -- is refused with "
+            "supersede-successor-already-exists (data.file/data.files name it) instead of being guessed "
+            "at: reject it to create a new successor, or --resume to use it. A Rejected successor is the "
+            "normal end of an earlier attempt and never counts. --resume itself fails with "
+            "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
+            "one such successor exists and it is still Proposed with its own Created status and date, and "
+            "with refdate-before-history if --refdate is before that successor's creation; no write is "
+            "made in any of these cases. To reject a successor whose predecessor has version/revision "
+            "siblings and was never marked Superseded, first run supersede --resume on that predecessor, "
+            "then reject the successor. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
             "the FIRST write) -- in both of those cases no write was made at all. May also fail with "
             "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
             "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
@@ -151,6 +156,17 @@ def describe():
                     "(field-contains-forbidden-character), or be blank (field-is-blank)."
                 ),
             },
+            {
+                "name": "resume",
+                "type": "switch",
+                "required": False,
+                "description": (
+                    "Finish an earlier supersede of this decision onto the successor it already created, "
+                    "marking only the predecessor -- see the description above for exactly when that is "
+                    "allowed. Cannot be combined with --title, --scope or --domain (usage-error): the "
+                    "existing successor is kept as it was created. Presence-only."
+                ),
+            },
         ],
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
@@ -163,9 +179,10 @@ def describe():
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
-                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-running supersede resumes onto it.",
+                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-run supersede with --resume to finish.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the FIRST of the two writes) failed -- nothing was written (data.intended_successor names the file that would have been created).",
-                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "A non-Rejected successor from an earlier, interrupted supersede of this decision already exists but is no longer Proposed, or more than one does -- no write was made.",
+                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date (data.files names what was found) -- no write was made.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS: "A non-Rejected successor already points back at this decision (data.file/data.files name it) and --resume was not given -- no write was made; reject it to create a new successor, or re-run with --resume.",
             },
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
@@ -180,8 +197,15 @@ def run(args):
         args,
         required=("file",),
         optional=("domain", "scope", "refdate", "title"),
+        switches=("resume",),
         aliases={"f": "file", "d": "domain", "s": "scope", "r": "refdate", "t": "title"},
     )
+    resume = flags.get("resume", False)
+    if resume and any(name in flags for name in ("title", "scope", "domain")):
+        # A resumed successor keeps the content it was created with; these
+        # would otherwise be accepted and silently ignored.
+        raise UsageError("--resume cannot be combined with --title, --scope or --domain: the existing "
+                         "successor is kept exactly as it was created.")
     config, root, path = resolve_repo_and_target(flags["file"])
     folder = resolve_within(root, config.folderadr)
     warnings = []
@@ -279,36 +303,64 @@ def run(args):
             )
 
             # The successor is written FIRST (below), so an earlier call
-            # whose predecessor write then failed leaves exactly this: a
-            # file already pointing back at this still-Accepted predecessor.
-            # Resume onto it instead of allocating a second successor --
-            # but only while it is still Proposed, i.e. untouched since
-            # that call; one approved since is not guessed at. A Rejected
-            # one is the normal end of an earlier attempt (reject reverts
-            # the predecessor to Accepted), not an interrupted one.
+            # whose predecessor write then failed leaves a file already
+            # pointing back at this still-Accepted predecessor. So can a
+            # normal sequence with no failure at all (supersede, reject the
+            # successor, undo that reject), and nothing on disk tells the
+            # two apart -- so this never guesses: an existing non-Rejected
+            # successor is only resumed onto when the caller asks for it
+            # with --resume, and refused otherwise. A Rejected one is the
+            # normal end of an earlier attempt (reject reverts the
+            # predecessor to Accepted) and never counts.
             orphans = []
             for scheme_entry in decisions:
                 if getattr(scheme_entry[1], "superseded_from", None) != filename_info.number:
                     continue
-                candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
+                try:
+                    candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
+                except CommandError as error:
+                    # Otherwise this reads as if --file itself were bad.
+                    if error.data is None:
+                        error.data = {"file": str(scheme_entry[2])}
+                    raise
                 if candidate_header.status_update != "Rejected":
                     orphans.append((scheme_entry[2], candidate_info, candidate_header))
-            if orphans:
-                orphan_path, orphan_info, orphan_header = orphans[0]
-                if len(orphans) != 1 or orphan_header.status_update is not None or orphan_header.status_change is not None:
+            orphan_files = [str(orphan[0]) for orphan in orphans]
+            if orphans and not resume:
+                raise CommandError(
+                    FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
+                    f"{len(orphans)} existing successor(s) already point at this decision "
+                    f"({', '.join(orphan[0].name for orphan in orphans)}). Reject it to create a new "
+                    "successor, or re-run with --resume to finish superseding onto it.",
+                    data={"file": orphan_files[0], "files": orphan_files},
+                    warnings=warnings,
+                )
+            if resume:
+                resumable = (
+                    len(orphans) == 1
+                    and orphans[0][2].status_create is not None
+                    and orphans[0][2].date_create is not None
+                    and orphans[0][2].status_update is None
+                    and orphans[0][2].status_change is None
+                )
+                if not resumable:
+                    data = {"files": orphan_files}
+                    if orphan_files:
+                        data["file"] = orphan_files[0]
                     raise CommandError(
                         FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
-                        f"{len(orphans)} existing successor(s) already point at this decision, and "
-                        "they cannot be resumed onto (not exactly one, or no longer Proposed).",
-                        data={"file": str(orphan_path), "files": [str(orphan[0]) for orphan in orphans]},
+                        f"--resume needs exactly one existing successor of this decision, still Proposed "
+                        f"since its own creation; found {len(orphans)} non-Rejected one(s).",
+                        data=data,
                         warnings=warnings,
                     )
+                orphan_path, orphan_info, orphan_header = orphans[0]
+                validate_refdate_not_before(refdate, orphan_header.date_create)
                 successor_path = orphan_path
                 successor_number = orphan_info.number
                 warnings.append(
-                    f"resumed: {successor_path.name} already existed from an earlier supersede of this "
-                    "decision whose predecessor write failed -- only the predecessor was marked now; "
-                    "the successor's own content (title/scope/domain) was left as it was."
+                    f"resumed: {successor_path.name} already existed and still points at this decision "
+                    "-- only the predecessor was marked now; the successor itself was left as it was."
                 )
             else:
                 successor_number = next_number(decisions)

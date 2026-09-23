@@ -80,9 +80,9 @@ def describe():
             "write without erroring; a predecessor with version/revision siblings cannot be "
             "disambiguated this way (which specific sibling was the one reverted isn't derivable once "
             "its own back-reference is gone) and still fails with superseded-predecessor-not-found on "
-            "retry -- recovery in that narrower case means confirming by hand which sibling this "
-            "decision superseded and, if it's genuinely already reverted, editing this decision's own "
-            "status directly. May instead fail with repository-locked "
+            "retry -- recovery in that narrower case, without editing any file, is to run `supersede "
+            "--resume` on the sibling this decision was created from (which marks it Superseded again, "
+            "pointing at this decision) and then `reject` this decision again. May instead fail with repository-locked "
             "(lock never acquired) or lock-lost (lost before any write) -- in both of those cases no "
             "write was made at all. May also fail with folderadr-changed-after-lock-acquired if a "
             "concurrent config change moved folderadr while this call was acquiring the lock -- no write "
@@ -322,8 +322,11 @@ def run(args):
             # `reject` on this same file is then safe: the predecessor
             # lookup above already recognizes a since-reverted single-
             # member predecessor and skips straight to this write again.
-            lock.verify_still_held()
             try:
+                # Inside the try: a lock lost here, after the predecessor
+                # revert above already committed, is that same partial
+                # success -- not a bare lock-lost ("no write was made").
+                lock.verify_still_held()
                 _record, body_encoding_repaired, attempts = rewrite_status_field(
                     path, config, header, filename_info, field="update", status="Rejected", refdate=refdate, lock=lock
                 )

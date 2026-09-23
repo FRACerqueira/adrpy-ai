@@ -1387,3 +1387,73 @@ def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
 
     assert main(["approve", "-f", str(adr_path), "-r", "2026-01-02"]) == EXIT_SUCCESS
     assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in adr_path.read_text(encoding="utf-8")
+
+
+def test_reject_reveals_predecessor_already_reverted_when_the_lock_is_lost_between_its_two_writes(tmp_path, monkeypatch):
+    """The lock can also be lost AFTER the predecessor revert committed but
+    before this decision's own write starts streaming -- caught by the
+    explicit verify_still_held() between the two writes. That check must
+    report the same partial success, not a bare lock-lost ("no write was
+    made"), which would hide the revert that did happen."""
+    from adrpy.cli import supersede
+    from adrpy.cli import reject as reject_module
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    successor_path = Path(supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"])
+
+    real_rewrite = reject_module.rewrite_status_field
+
+    def rewrite_then_steal_lock(*args, **kwargs):
+        result = real_rewrite(*args, **kwargs)
+        if kwargs.get("field") == "change":
+            (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
+        return result
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", rewrite_then_steal_lock)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path)])
+
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
+    assert "|Superseded||" in adr_path.read_text(encoding="utf-8")
+    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
+
+
+def test_a_partial_reject_in_a_multi_member_family_is_recoverable_with_resume_then_reject(tmp_path, monkeypatch):
+    # The recovery path reject's describe() names, end to end, using only
+    # tool commands: supersede --resume on the predecessor, then reject.
+    from adrpy.cli import supersede
+    from adrpy.cli import reject as reject_module
+
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    v02 = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"])
+    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+    successor_path = Path(supersede.run(["--file", str(v02), "--refdate", "2026-01-05"])["created"])
+
+    real_rewrite = reject_module.rewrite_status_field
+
+    def rewrite_then_steal_lock(*args, **kwargs):
+        result = real_rewrite(*args, **kwargs)
+        if kwargs.get("field") == "change":
+            (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
+        return result
+
+    monkeypatch.setattr(reject_module, "rewrite_status_field", rewrite_then_steal_lock)
+    with pytest.raises(CommandError):
+        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    monkeypatch.undo()
+    (tmp_path / "doc" / "adr" / ".adrpy.lock").unlink()  # the other process is done
+
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+
+    supersede.run(["--file", str(v02), "--refdate", "2026-01-06", "--resume"])
+    result = reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+
+    assert result["undone_predecessor"] == str(v02)
+    assert "|Superseded||" in v02.read_text(encoding="utf-8")
+    assert "Rejected" in successor_path.read_text(encoding="utf-8")
