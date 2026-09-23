@@ -81,8 +81,12 @@ checks that marker before touching the file again:
   longer hashes to what it recorded (you edited it since it was
   generated). Left untouched.
 - **malformed** (`agentsmd` only) -- a skill's own `start`/`end` block is
-  truncated (missing its closing tag) or duplicated (more than one
-  complete block for the same skill). Left untouched, same as `foreign`.
+  truncated (missing its closing tag), duplicated (more than one
+  complete block for the same skill), or crosses another skill's block
+  (nested inside it or overlapping it -- only reachable by hand-editing,
+  since `install` only ever replaces a block in place or appends). Left
+  untouched, same as `foreign`; `--force` replaces only this skill's own
+  tags, never the other skill's block.
 - **clean** -- the file still matches exactly what was last generated.
   Freely overwritten -- this is what makes a routine `pip install
   --upgrade adrpy-ai` followed by a re-run actually pick up an update.

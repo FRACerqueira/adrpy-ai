@@ -678,6 +678,69 @@ class TestAgentsmdMalformedBlocks:
         reasons = {row["skill"]: row["reason"] for row in result["skipped"] if row["provider"] == "agentsmd"}
         assert reasons == {"pre-release-audit": "malformed", "decision-log": "malformed"}
 
+    @staticmethod
+    def _cross_two_blocks(tmp_path, shape):
+        # Only reachable by hand-editing: install() only ever replaces a
+        # block in place or appends after existing content.
+        installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
+        agents_md = tmp_path / "AGENTS.md"
+        text = agents_md.read_text(encoding="utf-8")
+        outer_end = "<!-- adrpy:skills:pre-release-audit:end -->\n"
+        text = text.replace(outer_end, "", 1)
+        if shape == "nested":
+            anchor = "<!-- adrpy:skills:decision-log:end -->\n"
+        else:
+            anchor = "<!-- adrpy:skills:decision-log:start -->\n"
+        text = text.replace(anchor, anchor + outer_end, 1)
+        agents_md.write_text(text, encoding="utf-8")
+        return agents_md
+
+    @pytest.mark.parametrize("shape", ["nested", "overlapping"])
+    def test_a_block_containing_another_skills_tag_is_reported_as_malformed(self, tmp_path, shape):
+        self._cross_two_blocks(tmp_path, shape)
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", False)
+
+        reasons = {row["skill"]: row["reason"] for row in result["skipped"] if row["provider"] == "agentsmd"}
+        assert reasons == {"pre-release-audit": "malformed"}
+
+    @pytest.mark.parametrize("shape", ["nested", "overlapping"])
+    def test_force_over_a_crossed_block_never_deletes_the_other_skills_tags(self, tmp_path, shape):
+        agents_md = self._cross_two_blocks(tmp_path, shape)
+
+        installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
+
+        after = agents_md.read_text(encoding="utf-8")
+        assert after.count("<!-- adrpy:skills:decision-log:start -->") == 1
+        assert after.count("<!-- adrpy:skills:decision-log:end -->") == 1
+        assert installer._agentsmd_block_state(after, "pre-release-audit") == "clean"
+
+    def test_nested_block_force_leaves_the_inner_skills_block_clean(self, tmp_path):
+        agents_md = self._cross_two_blocks(tmp_path, "nested")
+
+        installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", True)
+
+        assert installer._agentsmd_block_state(agents_md.read_text(encoding="utf-8"), "decision-log") == "clean"
+
+    def test_adjacent_blocks_with_no_blank_line_between_them_are_not_malformed(self, tmp_path):
+        # Positive control: the closest well-formed shape to "another
+        # skill's tag right at this block's boundary".
+        installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
+        agents_md = tmp_path / "AGENTS.md"
+        text = agents_md.read_text(encoding="utf-8")
+        glued = text.replace(
+            "<!-- adrpy:skills:pre-release-audit:end -->\n\n", "<!-- adrpy:skills:pre-release-audit:end -->\n", 1
+        )
+        assert glued != text
+        agents_md.write_text(glued, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit", "decision-log"], "project", False)
+
+        assert [row for row in result["skipped"] if row["provider"] == "agentsmd"] == []
+        after = agents_md.read_text(encoding="utf-8")
+        assert installer._agentsmd_block_state(after, "pre-release-audit") == "clean"
+        assert installer._agentsmd_block_state(after, "decision-log") == "clean"
+
 
 class TestGlobalScopeValidatedBeforeAnyWrite:
     """Round 32, Class D: --target global's per-provider validity check

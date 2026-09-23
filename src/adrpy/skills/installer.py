@@ -185,18 +185,33 @@ def _agentsmd_all_tags(file_text):
     return [(m.group(1), m.group(2), m.start(), m.end()) for m in _AGENTSMD_TAG_RE.finditer(file_text or "")]
 
 
-def _agentsmd_skill_span(file_text, skill_name):
-    """This skill's own complete block span -- (start, end) covering both
-    tag lines and everything between them -- or None when this skill has
-    no single well-formed block (absent, or malformed: more than one
-    `:start`, more than one `:end`, a `:start` with no `:end`, or a
-    `:end` with no `:start`, in any combination)."""
-    tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
+def _agentsmd_own_tags(file_text, skill_name):
+    """This skill's own (start, end) tag tuples when it has exactly one
+    well-formed block, else None: absent, or malformed -- more than one
+    `:start`, more than one `:end`, a `:start` with no `:end`, a `:end`
+    with no `:start`, in any combination, or another skill's tag between
+    its own two (a nested or overlapping block, only reachable by hand-
+    editing -- replacing such a span would delete or split that other
+    skill's block)."""
+    all_tags = _agentsmd_all_tags(file_text)
+    tags = [t for t in all_tags if t[0] == skill_name]
     starts = [t for t in tags if t[1] == "start"]
     ends = [t for t in tags if t[1] == "end"]
     if len(starts) != 1 or len(ends) != 1 or starts[0][2] > ends[0][2]:
         return None
-    return starts[0][2], ends[0][3]
+    if any(t[0] != skill_name and starts[0][3] <= t[2] < ends[0][2] for t in all_tags):
+        return None
+    return starts[0], ends[0]
+
+
+def _agentsmd_skill_span(file_text, skill_name):
+    """This skill's own complete block span -- (start, end) covering both
+    tag lines and everything between them -- or None when this skill has
+    no single well-formed block (see _agentsmd_own_tags)."""
+    own = _agentsmd_own_tags(file_text, skill_name)
+    if own is None:
+        return None
+    return own[0][2], own[1][3]
 
 
 def _agentsmd_extract_inner(file_text, skill_name):
@@ -204,12 +219,10 @@ def _agentsmd_extract_inner(file_text, skill_name):
     -- this is what was actually hashed (`marker + inner`), so drift
     checks must run against this, never the whole wrapped block. None when
     this skill has no single well-formed block."""
-    tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
-    starts = [t for t in tags if t[1] == "start"]
-    ends = [t for t in tags if t[1] == "end"]
-    if len(starts) != 1 or len(ends) != 1 or starts[0][2] > ends[0][2]:
+    own = _agentsmd_own_tags(file_text, skill_name)
+    if own is None:
         return None
-    return file_text[starts[0][3] : ends[0][2]]
+    return file_text[own[0][3] : own[1][2]]
 
 
 def _agentsmd_block_state(file_text, skill_name):
