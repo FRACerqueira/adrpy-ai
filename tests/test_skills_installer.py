@@ -1587,3 +1587,39 @@ class TestSharedDocNeverDanglesNorStrands:
 
         assert shared.exists()
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("shared-doc", "drifted")}
+
+
+class TestAgentsmdTagsAreWholeLines:
+    """The tool only ever writes an adrpy:skills tag on a line of its own;
+    the same text quoted inside a line of the user's prose is not a tag."""
+
+    def test_a_tag_quoted_inline_in_the_users_prose_is_not_a_tag(self, tmp_path):
+        prose = "To mark a block we use `<!-- adrpy:skills:comment-audit:start -->` inline.\n"
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(prose, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
+        after = agents_md.read_text(encoding="utf-8")
+        assert after.startswith(prose)
+        assert installer._agentsmd_block_state(after, "comment-audit") == "clean"
+
+    def test_force_never_strips_a_tag_quoted_inline_in_the_users_prose(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        agents_md = tmp_path / "AGENTS.md"
+        prose = "Quoted: `<!-- adrpy:skills:comment-audit:end -->` in a sentence.\n"
+        agents_md.write_text(agents_md.read_text(encoding="utf-8") + "<!-- adrpy:skills:comment-audit:end -->\n" + prose, encoding="utf-8")
+
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+
+        assert prose in agents_md.read_text(encoding="utf-8")
+
+    def test_a_real_tag_line_is_still_recognized_as_malformed(self, tmp_path):
+        # Positive control: a stray tag on its own line still counts.
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("<!-- adrpy:skills:comment-audit:start -->\nno end tag\n", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("agentsmd", "malformed")}

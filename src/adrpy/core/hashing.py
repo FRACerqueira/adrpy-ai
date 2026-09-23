@@ -9,19 +9,25 @@ it again -- see ADR009V01.
 import hashlib
 import re
 
-# Anchored to \A, with an optional leading frontmatter block, instead of
-# matching anywhere in the text: `_insert_marker` (installer.py) only ever
-# places the real marker at position 0, or immediately after a leading
-# `---\n...\n---\n` block -- never anywhere else. Round 37, Class P6: an
-# unanchored `.search()` would find the FIRST marker-shaped substring
-# anywhere in the text, which for a "foreign" file that happens to
-# contain one embedded mid-body (hand-written, or copy-pasted from a
-# generated file) would misreport it as "clean"/"drifted" instead of
-# "foreign".
-_MARKER_RE = re.compile(
-    r"\A(?P<frontmatter>---\n.*?\n---\n)?<!-- adrpy-skills: v(?P<version>\S+) sha256:(?P<hash>[0-9a-f]{64}) -->\n?",
-    re.DOTALL,
-)
+# Anchored to where `_insert_marker` (installer.py) places the real marker:
+# position 0, or immediately after a leading `---\n...\n---\n` frontmatter
+# block, never anywhere else -- an unanchored search would read a foreign
+# file with a marker-shaped comment embedded mid-body as "clean"/
+# "drifted". Frontmatter is matched on its own first, up to its FIRST
+# closing `---` (the same boundary installer.py's _FRONTMATTER_RE uses to
+# insert the marker): a single regex with an optional lazy frontmatter
+# group backtracks past that boundary, over later `---` rule lines, to
+# reach a marker-shaped comment further down the body.
+_FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
+_MARKER_RE = re.compile(r"<!-- adrpy-skills: v(?P<version>\S+) sha256:(?P<hash>[0-9a-f]{64}) -->\n?")
+
+
+def _leading_marker(text):
+    """(frontmatter, marker match) for the marker at its one legitimate
+    position, or (frontmatter, None) when there is no marker there."""
+    frontmatter = _FRONTMATTER_RE.match(text)
+    position = frontmatter.end() if frontmatter else 0
+    return (frontmatter.group(0) if frontmatter else ""), _MARKER_RE.match(text, position)
 
 
 def compute_hash(content):
@@ -50,7 +56,7 @@ def parse_marker(text):
     `_insert_marker` would have placed it (position 0, or immediately
     after a leading frontmatter block), or None if no marker is there --
     never a marker-shaped substring anywhere else in `text`."""
-    match = _MARKER_RE.match(text)
+    _frontmatter, match = _leading_marker(text)
     if match is None:
         return None
     return match.group("version"), match.group("hash")
@@ -61,14 +67,13 @@ def strip_marker(text):
     re-hashing what the marker itself claims to cover -- keeping any
     leading frontmatter block intact, since that was part of what
     `build_marker` originally hashed (the marker sits AFTER frontmatter,
-    never replacing it). `_MARKER_RE` is \\A-anchored, so this only ever
-    strips a match at the very start of `text` (or right after a leading
-    frontmatter block) -- it can never remove a marker-shaped substring
+    never replacing it). Only ever strips a marker at its one legitimate
+    position (see _leading_marker) -- never a marker-shaped substring
     found later in the text."""
-    match = _MARKER_RE.match(text)
+    frontmatter, match = _leading_marker(text)
     if match is None:
         return text
-    return (match.group("frontmatter") or "") + text[match.end() :]
+    return frontmatter + text[match.end() :]
 
 
 def check_drift(existing_text):

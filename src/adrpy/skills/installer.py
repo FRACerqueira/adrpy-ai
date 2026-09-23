@@ -209,8 +209,10 @@ _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy
 # O(n^2) against adversarial content with many `:start` tags and no `:end`
 # anywhere (measured: ~9.5s against a 771KB crafted AGENTS.md, hit even by
 # the read-only `list` command) -- this pattern can't backtrack that way
-# since it never spans more than one tag.
-_AGENTSMD_TAG_RE = re.compile(r"<!-- adrpy:skills:([^:\n]+):(start|end) -->\n?")
+# since it never spans more than one tag. A tag is a whole line, as
+# _AGENTSMD_BLOCK_TEMPLATE writes it: the same text quoted inside a line of
+# the user's own prose is not a tag, and --force must never strip it.
+_AGENTSMD_TAG_RE = re.compile(r"^<!-- adrpy:skills:([^:\n]+):(start|end) -->(?:\n|\Z)", re.MULTILINE)
 
 
 def _agentsmd_all_tags(file_text):

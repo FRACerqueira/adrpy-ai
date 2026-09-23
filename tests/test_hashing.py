@@ -85,3 +85,35 @@ def test_parse_marker_still_finds_the_real_marker_after_a_frontmatter_block():
     version, digest = parse_marker(text)
     assert version == "1.0.0"
     assert digest == compute_hash(content)
+
+
+def test_a_marker_after_a_later_rule_line_is_not_read_as_the_leading_marker():
+    # Frontmatter ends at its FIRST closing `---` (as _insert_marker reads
+    # it); a later `---` rule line must not stretch it to reach a
+    # marker-shaped comment further down a hand-written file.
+    text = (
+        "---\ntitle: mine\n---\n\nMy notes.\n\n---\n"
+        + build_marker("1.0.0", "generated body\n")
+        + "\ngenerated body\n"
+    )
+
+    assert parse_marker(text) is None
+    assert check_drift(text) == "foreign"
+
+
+def test_a_marker_hashing_the_users_own_prefix_still_reads_as_foreign():
+    prefix = "---\ntitle: mine\n---\n\nMy notes.\n\n---\n"
+    rest = "\ngenerated body\n"
+    text = prefix + build_marker("1.0.0", prefix + rest) + rest
+
+    assert check_drift(text) == "foreign"
+
+
+def test_a_marker_right_after_the_first_closing_rule_is_still_found():
+    # Positive control: the one real placement _insert_marker uses, even
+    # when the body itself contains more `---` rule lines afterwards.
+    body = "\nText.\n\n---\n\nMore text.\n"
+    frontmatter = "---\ntitle: x\n---\n"
+    text = frontmatter + build_marker("1.0.0", frontmatter + body) + "\n" + body
+
+    assert check_drift(text) == "clean"
