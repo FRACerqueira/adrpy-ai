@@ -31,7 +31,7 @@ Repository root directory.
 | `already-tool-created-adrs-exist` | At least one scanned file already has a valid, non-migrated header -- refuses the whole run. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created) -- nothing needs migration. |
-| `migration-lock-lost` | The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss. |
+| `migration-lock-lost` | The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss, and data.migrationpattern_persisted (when present) the fallback pattern already written into adr-config.adrplus. |
 | `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |

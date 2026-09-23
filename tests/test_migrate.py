@@ -756,3 +756,30 @@ def test_migrate_describe_documents_the_persist_back_write_survives_a_later_fail
     description = migrate.describe()["description"]
     assert "survives" in description
     assert "no decision file is touched" in description
+
+
+def test_a_lock_lost_after_the_pattern_persist_back_says_the_config_was_written(tmp_path, monkeypatch):
+    # The fallback pattern is written into adr-config.adrplus before any
+    # candidate; a lock lost right after must not report only `results: []`
+    # as if nothing had been written.
+    import time as _time
+
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    fallback_text = json.dumps(_seed_config_with_pattern("N00:04T04"))
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda: fallback_text)
+    real_write = migrate.atomic_write_text
+
+    def write_then_steal_lock(path, content):
+        attempts = real_write(path, content)
+        (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{_time.time()}")
+        return attempts
+
+    monkeypatch.setattr(migrate, "atomic_write_text", write_then_steal_lock)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-lock-lost"
+    assert excinfo.value.data["results"] == []
+    assert excinfo.value.data["migrationpattern_persisted"] == "N00:04T04"

@@ -151,7 +151,7 @@ def describe():
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
-                FailureCodes.MIGRATION_LOCK_LOST: "The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss.",
+                FailureCodes.MIGRATION_LOCK_LOST: "The repository lock was lost partway through -- data.results names only the candidates actually attempted before the loss, and data.migrationpattern_persisted (when present) the fallback pattern already written into adr-config.adrplus.",
                 FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -197,6 +197,7 @@ def run(args):
             # `config --migrationpattern` edit racing this call is always
             # seen fresh: if it lands first, this read already has a
             # non-empty value and no fallback is even considered.
+            persisted_pattern = None
             if not config.migrationpattern:
                 fallback_text = read_install_config_text()
                 fallback_pattern = parse_repo_config(fallback_text).migrationpattern if fallback_text else ""
@@ -217,6 +218,7 @@ def run(args):
                 config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
                 lock.verify_still_held()
                 attempts = atomic_write_text(config_path, merged_text)
+                persisted_pattern = fallback_pattern
                 warning = retry_warning(attempts)
                 if warning:
                     warnings.append(warning)
@@ -408,11 +410,16 @@ def run(args):
                     # of them as individually "failed" when none were ever
                     # attempted. Stop outright and report exactly what was
                     # actually done so far.
+                    data = {"results": results}
+                    if persisted_pattern is not None:
+                        # The persist-back above already committed -- say so,
+                        # rather than let `results: []` read as "nothing written".
+                        data["migrationpattern_persisted"] = persisted_pattern
                     raise CommandError(
                         FailureCodes.MIGRATION_LOCK_LOST,
                         f"The repository lock was lost after {len(results)} of {len(candidates)} file(s) were "
                         "processed; migration was aborted rather than continuing unprotected.",
-                        data={"results": results},
+                        data=data,
                         warnings=warnings,
                     )
                 except (OSError, UnicodeError, CommandError) as error:
