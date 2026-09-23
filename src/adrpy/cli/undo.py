@@ -9,6 +9,8 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
+    raise_if_rejected_successor,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
@@ -58,7 +60,9 @@ def describe():
             "control character), or consists entirely of whitespace/'_'/'-'. Fails with one of "
             "still-proposed, already-superseded, or not-proposed if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
-            "already been superseded or is still unresolved (Proposed) -- no write is made in any of "
+            "already been superseded or is still unresolved (Proposed). Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Fails with "
+            "rejected-successor-is-final if the target belongs to the family of a successor that was "
+            "rejected -- the end of its line. No write is made in any of "
             "these cases."
         ),
         "arguments": [
@@ -73,6 +77,8 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead.",
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed) -- undo would leave two.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -129,6 +135,8 @@ def run(args):
                     "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",
                     warnings=warnings,
                 )
+            raise_if_not_latest(filename_info, members, warnings)
+            raise_if_rejected_successor(members, warnings)
 
             # title/scope/domain are re-read from the SOURCE
             # file's own header cells, not flags -- a hand-edited or

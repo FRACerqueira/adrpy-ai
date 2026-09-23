@@ -6,6 +6,7 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_superseded_sibling,
@@ -62,7 +63,7 @@ def describe():
             "already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Accepted unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases."
+            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). "
         ),
         "arguments": [
             {
@@ -87,7 +88,8 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
             },
@@ -146,6 +148,7 @@ def run(args):
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
+            raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)

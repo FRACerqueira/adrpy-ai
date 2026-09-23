@@ -2168,3 +2168,21 @@ class TestAgentsmdOwnershipIsProvedByTheMarkerHash:
 
         assert any("repeated, unpaired, at different indentations" in w for w in result["warnings"])
         assert copy in agents_md.read_text(encoding="utf-8")
+
+
+
+def test_remove_says_why_an_unmarked_indented_copy_is_left_alone(tmp_path):
+    (tmp_path / "AGENTS.md").write_text(f"Example:\n\n    {START}\n    example body\n    {END}\n", encoding="utf-8")
+
+    result = installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+    assert any("no valid marker" in w for w in result["warnings"])
+
+
+def test_an_existing_shared_doc_is_still_updated_when_no_stub_can_be_written(tmp_path):
+    installer.install(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+    (tmp_path / "AGENTS.md").write_text(f"```\n{START}\nexample\n{END}\n```\n", encoding="utf-8")
+
+    result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+    assert "shared-doc" in {row["provider"] for row in result["installed"]}

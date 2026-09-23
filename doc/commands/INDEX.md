@@ -26,7 +26,7 @@ page has drifted; regenerate it instead of hand-editing around the gap.
 | [`installconfig`](installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
 | [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
-Every failure code a command can return is documented on that command's
+Every failure code specific to a command is documented on that command's
 own page, in its `## Failure codes` table (ADR008V01) -- the same
 structured `failure_codes` field `adrpy help <command>` returns at
 runtime, not free-form prose. There is still no separate GLOBAL
@@ -40,3 +40,5 @@ that can actually return them -- still delivered on that command's own
 page, never referenced from outside it. This claim is checkable by an
 automated test
 (`tests/test_help.py::test_every_failure_code_is_documented_somewhere`).
+
+Four codes any command can return are not repeated on every page: `usage-error` (a malformed invocation, exit code 2), `unknown-command`, `interrupted` (Ctrl+C; `migrate` adds `data` when it already wrote something) and `internal-error` (a genuinely unexpected exception).

@@ -960,15 +960,31 @@ def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_membe
     member isn't the latest one already selects the wrong file -- reject
     would revert the untouched latest member and leave the real
     predecessor permanently, silently Superseded."""
+    # Round 40: superseding an older member while a newer one is alive is
+    # now refused (only the latest member is alive), so this state can only
+    # come from outside the tool (a hand edit, an older repository) -- it is
+    # written directly, and reject must still pick the member the
+    # back-reference names.
     tmp_path, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-01"])
-    version.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    v02_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision.md"
-    approve.run(["--file", str(v02_path), "--refdate", "2026-01-03"])
-
-    # Supersede the OLDER member (V01), not the latest (V02).
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
-    successor_path = Path(result["created"])
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    _write_raw(
+        adr_path, cfg, number=1, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 1),
+        status_update="Accepted", date_update=date(2026, 1, 1),
+        status_change="Superseded", date_change=date(2026, 1, 4), superseded_by_file="002",
+    )
+    v02_path = adr_dir / "ADR001V02-first-decision.md"
+    _write_raw(
+        v02_path, cfg, number=1, title="First decision", version=2,
+        status_create="Proposed", date_create=date(2026, 1, 2),
+        status_update="Accepted", date_update=date(2026, 1, 3),
+    )
+    successor_path = adr_dir / "ADR002V01-first-decision--001.md"
+    _write_raw(
+        successor_path, cfg, number=2, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 4), superseded=1,
+    )
 
     reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
@@ -1541,3 +1557,207 @@ def test_a_decision_an_editor_saved_with_a_bom_is_still_read(tmp_path, boms):
 
     assert result["status"] == "Accepted"
     assert path.read_text(encoding="utf-8").startswith("<!-- ")
+
+
+
+# ---- Round 40: only the family's latest member is alive ----
+
+
+def _family_with_v02(tmp_path, v02_status):
+    """V01 Accepted, then V02 created from it and moved to `v02_status`."""
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    adr = tmp_path / "doc" / "adr"
+    v01 = adr / "ADR001V01-first.md"
+    approve.run(["--file", str(v01), "--refdate", "2026-01-02"])
+    v02 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-03"])["created"])
+    if v02_status == "Accepted":
+        approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+    elif v02_status == "Rejected":
+        reject.run(["--file", str(v02), "--refdate", "2026-01-04"])
+    return adr, v01, v02
+
+
+@pytest.mark.parametrize("command", ["undo", "supersede"])
+def test_a_version_is_locked_once_a_newer_version_is_alive(tmp_path, command):
+    adr, v01, v02 = _family_with_v02(tmp_path, "Accepted")
+    before = v01.read_text(encoding="utf-8")
+    args = ["--file", str(v01)] + ([] if command == "undo" else ["--refdate", "2026-01-05"])
+
+    with pytest.raises(CommandError) as excinfo:
+        {"undo": undo, "supersede": supersede}[command].run(args)
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(v02)
+    assert v01.read_text(encoding="utf-8") == before
+    assert sorted(p.name for p in adr.glob("*.md")) == [v01.name, v02.name]
+
+
+def test_a_single_rejected_newer_version_leaves_the_older_one_alive(tmp_path):
+    adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
+
+    result = undo.run(["--file", str(v01)])
+
+    assert result["status"] == "Proposed"
+
+
+def test_two_newer_versions_lock_the_older_one_even_when_both_are_rejected(tmp_path):
+    adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
+    v03 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-05"])["created"])
+    reject.run(["--file", str(v03), "--refdate", "2026-01-06"])
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(v01), "--refdate", "2026-01-07"])
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(v03)
+
+
+def _rejected_successor(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    adr = tmp_path / "doc" / "adr"
+    pred = adr / "ADR001V01-first.md"
+    approve.run(["--file", str(pred), "--refdate", "2026-01-02"])
+    succ = Path(supersede.run(["--file", str(pred), "--refdate", "2026-01-03"])["created"])
+    reject.run(["--file", str(succ), "--refdate", "2026-01-04"])
+    return adr, pred, succ
+
+
+@pytest.mark.parametrize("command", ["undo", "version"])
+def test_a_rejected_successor_is_final(tmp_path, command):
+    # A rejected successor is the end of its line: its predecessor was put
+    # back, and nothing may bring the successor back to life or branch off it.
+    adr, pred, succ = _rejected_successor(tmp_path)
+    before = succ.read_text(encoding="utf-8")
+    args = ["--file", str(succ)] + ([] if command == "undo" else ["--refdate", "2026-01-05"])
+
+    with pytest.raises(CommandError) as excinfo:
+        {"undo": undo, "version": version}[command].run(args)
+
+    assert excinfo.value.code == "rejected-successor-is-final"
+    assert succ.read_text(encoding="utf-8") == before
+    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name])
+
+
+def test_a_rejected_decision_that_is_not_a_successor_can_still_be_undone(tmp_path):
+    # Positive control: only a successor (name carrying --NNN) is final.
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    path = tmp_path / "doc" / "adr" / "ADR001V01-first.md"
+    reject.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    assert undo.run(["--file", str(path)])["status"] == "Proposed"
+
+
+def test_reject_still_reverts_the_predecessor_after_lenseq_changes(tmp_path):
+    # The Superseded cell stores the successor's number padded to the
+    # lenseq in force when it was written; a later lenseq change must not
+    # strand the predecessor (compared as a number, not as text).
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    pred = tmp_path / "doc" / "adr" / "ADR001V01-first.md"
+    approve.run(["--file", str(pred), "--refdate", "2026-01-02"])
+    succ = Path(supersede.run(["--file", str(pred), "--refdate", "2026-01-03"])["created"])
+    config.run(["--path", str(tmp_path), "--lenseq", "4"])
+
+    result = reject.run(["--file", str(succ), "--refdate", "2026-01-04"])
+
+    assert result["undone_predecessor"] == str(pred)
+    assert "|Superseded||" in pred.read_text(encoding="utf-8")
+
+
+
+def test_a_superseded_sibling_saved_with_a_bom_still_freezes_the_family(tmp_path):
+    # The BOM strip also applies to the family scan, not only to the target.
+    tmp_path, _ = _setup_repo(tmp_path)
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    v01 = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        v01, cfg, number=1, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 1),
+        status_update="Accepted", date_update=date(2026, 1, 1),
+        status_change="Superseded", date_change=date(2026, 1, 2), superseded_by_file="002",
+    )
+    v01.write_bytes(b"\xef\xbb\xbf" + v01.read_bytes())
+    v02 = adr_dir / "ADR001V02-first-decision.md"
+    _write_raw(v02, cfg, number=1, title="First decision", version=2, status_create="Proposed", date_create=date(2026, 1, 3))
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.code == "family-member-superseded"
+
+
+def test_reject_names_every_file_of_the_predecessor_family_that_does_not_parse(tmp_path):
+    tmp_path, _ = _setup_repo(tmp_path)
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    _write_raw(
+        adr_dir / "ADR001V01-first-decision.md", cfg, number=1, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 1),
+        status_update="Accepted", date_update=date(2026, 1, 1),
+    )
+    broken = [adr_dir / "ADR001V02-notes.md", adr_dir / "ADR001V03-more.md"]
+    for path in broken:
+        path.write_text("# no header\n", encoding="utf-8")
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path, cfg, number=2, title="Successor", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert sorted(excinfo.value.data["unparseable_files"]) == sorted(str(p) for p in broken)
+
+
+
+def test_the_whole_family_of_a_rejected_successor_is_final(tmp_path):
+    # A version of a successor carries no --NNN suffix; it is the
+    # successor's family all the same, so once the successor is rejected
+    # none of it comes back to life (it would give the predecessor a
+    # second live line after a new supersede).
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-01-01"])
+    adr = tmp_path / "doc" / "adr"
+    pred = adr / "ADR001V01-first.md"
+    approve.run(["--file", str(pred), "--refdate", "2026-01-02"])
+    succ = Path(supersede.run(["--file", str(pred), "--refdate", "2026-01-03"])["created"])
+    approve.run(["--file", str(succ), "--refdate", "2026-01-04"])
+    v02 = Path(version.run(["--file", str(succ), "--refdate", "2026-01-05"])["created"])
+    reject.run(["--file", str(v02), "--refdate", "2026-01-06"])
+    undo.run(["--file", str(succ)])
+    reject.run(["--file", str(succ), "--refdate", "2026-01-07"])
+    assert "|Superseded||" in pred.read_text(encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(v02)])
+
+    assert excinfo.value.code == "rejected-successor-is-final"
+
+
+def test_reject_treats_a_non_ascii_digit_back_reference_as_not_naming_it(tmp_path):
+    tmp_path, _ = _setup_repo(tmp_path)
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    pred = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        pred, cfg, number=1, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 1),
+        status_update="Accepted", date_update=date(2026, 1, 1),
+        status_change="Superseded", date_change=date(2026, 1, 2), superseded_by_file="002",
+    )
+    pred.write_text(pred.read_text(encoding="utf-8").replace(": 002|", ": \u00b2|"), encoding="utf-8")
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path, cfg, number=2, title="Successor", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "superseded-predecessor-not-found"

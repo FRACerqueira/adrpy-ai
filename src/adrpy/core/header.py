@@ -220,7 +220,7 @@ def parse_header(lines, config):
         result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
         return result
     if version_text:
-        if not version_text.isdigit():
+        if not (version_text.isascii() and version_text.isdigit()):
             result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
             return result
         result.version = int(version_text)
@@ -230,7 +230,7 @@ def parse_header(lines, config):
         result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
         return result
     if revision_text:
-        if not revision_text.isdigit():
+        if not (revision_text.isascii() and revision_text.isdigit()):
             result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
             return result
         result.revision = int(revision_text)
@@ -370,7 +370,10 @@ def has_header_shape(lines):
     the `|--|--|` separator). Tells a damaged header apart from no header at all --
     looking past the first two lines, so a line inserted or deleted at
     the top doesn't hide it. Both markers are plain ASCII, so a lossy
-    decode never removes them."""
+    decode never removes them. A NUL byte also counts: it means the file
+    was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
+    which splits the markers apart -- a damaged header, not a missing one
+    (Round 40, decided by the project owner)."""
     return any(
-        "|Adr-Plus " in line or line.rstrip() == "|--|--|" for line in lines[:HEADER_LINE_COUNT]
+        "|Adr-Plus " in line or line.rstrip() == "|--|--|" or "\x00" in line for line in lines[:HEADER_LINE_COUNT]
     )

@@ -30,7 +30,7 @@ Repository root to remove from. Defaults to `.`. Only meaningful for `--target p
 
 ### `--force` / `-f` *(optional, switch)*
 
-Removes a `drifted`, `foreign`, or (`agentsmd`) `malformed` file/block instead of skipping it. Presence-only.
+Removes a `drifted`, `foreign`, or (`agentsmd`) `malformed` or `indented` file/block instead of skipping it. Presence-only.
 
 ### `--allow-external-links` *(optional, switch)*
 

@@ -376,10 +376,12 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
     v02_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
     approve.run(["--file", str(v02_path), "--refdate", "2026-01-04"])
 
-    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    # Round 40: only the latest member (V02) can be superseded; once it is,
+    # the family is frozen and superseding V01 is refused.
+    supersede.run(["--file", str(v02_path), "--refdate", "2026-01-05"])
 
     with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(v02_path), "--refdate", "2026-01-06"])
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
 
     assert excinfo.value.code == "family-member-superseded"
     # No second successor was ever created.
@@ -665,16 +667,17 @@ def test_an_undone_rejected_successor_is_not_silently_resumed_onto(tmp_path):
     # supersede with a different --title must not quietly reuse it.
     from adrpy.cli import reject, undo
 
+    # Round 40: a rejected successor is the end of its line, so the undo
+    # that used to recreate this shape is refused outright.
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
     reject.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
-    undo.run(["--file", str(successor_path)])
 
     with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--title", "Use CockroachDB"])
+        undo.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "supersede-successor-already-exists"
+    assert excinfo.value.code == "rejected-successor-is-final"
     assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
 
 
@@ -864,7 +867,9 @@ def test_a_same_family_member_is_never_a_successor(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(v01), "--refdate", "2026-01-05", "--resume"])
 
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    # Round 40: V02 (same family, newer) locks V01, which is refused before
+    # any successor lookup -- either way V01 is never marked.
+    assert excinfo.value.code == "not-latest-version"
     assert v01.read_bytes() == before
 
 
@@ -992,3 +997,27 @@ def test_the_already_exists_advice_covers_an_approved_successor_further_down_the
     assert excinfo.value.code == "supersede-successor-already-exists"
     assert "undo that successor first if it was approved" in excinfo.value.detail
     assert "repeat down the chain" in excinfo.value.detail
+
+
+
+def test_resume_never_marks_a_placeholder_with_an_orphan_already_superseded(tmp_path):
+    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
+    v01 = adr_dir / "ADR001V01-use-x.md"
+    supersede.run(["--file", str(adr_dir / "ADR002V01-use-y--001.md"), "--refdate", "2026-01-05"])
+    before = v01.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(v01), "--refdate", "2026-01-06", "--resume"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert v01.read_bytes() == before
+
+
+def test_the_not_resumable_reasons_name_the_step_that_fixes_them(tmp_path, monkeypatch):
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
+
+    assert "undo it back to Proposed" in excinfo.value.detail

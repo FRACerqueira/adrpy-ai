@@ -358,27 +358,42 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     assert excinfo.value.data["latest_status"] == "Accepted"
 
 
-def test_revise_branching_from_immediate_predecessor_of_a_rejected_latest_collides(tmp_path):
-    """Confirmed against a real run of the reference tool's own `revise`
-    command: revise's new revision
-    number is always TARGET.revision+1 (never latest.revision+1, unlike
-    `version`'s always-fresh latest.version+1) -- so branching off the
-    revision immediately before a rejected latest recomputes that exact
-    same (now-rejected-but-still-on-disk) filename and collides. This is
-    the reference tool's own behavior, not a bug in this port: the branch-off
-    exception is only usable when the recomputed number doesn't already
-    exist (e.g. branching from further back, or after the intervening
-    files are otherwise gone)."""
+def test_revise_branching_off_an_older_revision_takes_the_next_free_number(tmp_path):
+    """Round 40, decided by the project owner (a divergence from AdrPlus,
+    whose revise always computes TARGET.revision+1 and so collided here
+    with the rejected R02 still on disk): revise numbers from the highest
+    revision this version already holds, so branching off R01 while the
+    single newer R02 is Rejected creates R03."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
     reject.run(["--file", str(r2_path), "--refdate", "2026-01-06"])
 
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
 
-    assert excinfo.value.code == "file-already-exists"
-    assert excinfo.value.data == {"file": "ADR001V01R02-use-postgre-sql.md"}
+    assert os.path.basename(result["created"]) == "ADR001V01R03-use-postgre-sql.md"
+
+
+def test_revise_of_a_migrated_placeholder_numbers_from_its_filename(tmp_path):
+    # A migrated placeholder's Version/Revision cells are blank; the
+    # filename decides numbering, so V02R01 is followed by V02R02, never V00.
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+    from adrpy.cli import migrate
+
+    config_file = tmp_path / "seed-config.json"
+    config = dict(_config_with_revisions(), migrationpattern="N00:04T08V04:02R06:02")
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    legacy = adr_dir / "00010201Foo.md"
+    legacy.write_bytes(b"# Foo\n\nbody\n")
+    migrate.run(["--path", str(tmp_path)])
+
+    result = revise.run(["--file", str(legacy), "--refdate", "2026-01-07"])
+
+    assert os.path.basename(result["created"]) == "ADR001V02R02-foo.md"
 
 
 def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
@@ -548,23 +563,24 @@ def test_revise_describe_documents_the_lenrevision_precondition():
     assert "lenrevision" in revise.describe()["description"]
 
 
-def test_revise_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp_path):
+def test_revise_numbers_past_a_revision_whose_header_does_not_parse(tmp_path):
+    # The filename decides numbering, counting every file: an R02 left out
+    # of the family (no header) still holds its number, so the new revision
+    # is R03, never a second R02.
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     broken = adr_path.parent / "ADR001V01R02-draft.md"
     broken.write_text("no header\n", encoding="utf-8")
 
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
 
-    assert excinfo.value.code == "file-already-exists"
-    assert excinfo.value.data == {"file": "ADR001V01R02-draft.md"}
+    assert os.path.basename(result["created"]).startswith("ADR001V01R03-")
     assert sorted(p.name for p in adr_path.parent.glob("ADR001V01R02*")) == ["ADR001V01R02-draft.md"]
 
 
-def test_revise_refuses_a_revision_number_a_valid_file_already_holds(tmp_path):
-    # Branching off R01 while R02 (Rejected) exists recomputes R02. A
-    # hand-edited title would give it a different filename, which the
-    # identical-name check alone missed -- the number is held all the same.
+def test_revise_never_reuses_a_revision_number_a_valid_file_holds(tmp_path):
+    # Branching off R01 while R02 (Rejected) exists: a hand-edited title
+    # gives the new file a different name, which an identical-name check
+    # alone would miss -- numbering past the highest revision never reuses R02.
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
@@ -573,9 +589,36 @@ def test_revise_refuses_a_revision_number_a_valid_file_already_holds(tmp_path):
     title_row = [line for line in text.splitlines() if line.startswith("|File title md|")][0]
     adr_path.write_text(text.replace(title_row, "|File title md|Renamed|"), encoding="utf-8")
 
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
 
-    assert excinfo.value.code == "file-already-exists"
-    assert excinfo.value.data == {"file": r2_path.name}
+    assert os.path.basename(result["created"]) == "ADR001V01R03-renamed.md"
     assert sorted(p.name for p in r2_path.parent.glob("ADR001V01R02*")) == [r2_path.name]
+
+
+
+def test_revise_numbering_only_counts_revisions_of_its_own_version(tmp_path):
+    # Positive control: an R02 in version 1 does not affect version 2.
+    from adrpy.cli import version
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", v02, "--refdate", "2026-01-04"])
+    (adr_path.parent / "ADR001V01R02-draft.md").write_text("no header\n", encoding="utf-8")
+
+    result = revise.run(["--file", v02, "--refdate", "2026-01-05"])
+
+    assert os.path.basename(result["created"]) == "ADR001V02R02-use-postgre-sql.md"
+
+
+
+def test_revise_of_a_file_outside_the_decisions_folder_is_not_an_internal_error(tmp_path):
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    outside = elsewhere / "ADR001V02R01-use-postgre-sql.md"
+    outside.write_bytes(adr_path.read_bytes())
+
+    try:
+        revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
+    except CommandError:
+        pass

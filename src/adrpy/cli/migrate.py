@@ -155,7 +155,7 @@ def describe():
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file carries this tool's header but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
@@ -351,7 +351,8 @@ def run(args):
                 raise CommandError(
                     FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
                     f"{len(adulterated_files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
-                    f"an exact `|--|--|` separator in the first 12 lines) but it does not parse: "
+                    f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
+                    f"byte there, e.g. UTF-16), and no header parses: "
                     f"{', '.join(adulterated_files)}. Repair or remove them by hand, then run migrate again.",
                     data={"files": adulterated_files},
                     warnings=warnings,

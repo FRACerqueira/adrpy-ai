@@ -8,6 +8,8 @@ from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
+    raise_if_rejected_successor,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
@@ -66,9 +68,8 @@ def describe():
             "produce a successor file the tool can never recognize again. Fails with family-not-found if "
             "this decision's own family can't be resolved, or lenversion-too-small-for-new-version "
             "(data.new_version/data.lenversion) if the next version number doesn't fit the configured "
-            "width -- no write is made either way. If this isn't the latest version/revision in its "
-            "family (and isn't the one documented branch-off-a-rejected-latest exception), fails with "
-            "not-latest-version (data names the actual latest member). Fails with one of still-proposed, "
+            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
+            "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
             "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
             "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
@@ -137,13 +138,14 @@ def describe():
             {
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
                 FailureCodes.FAMILY_NOT_FOUND: "This decision's own family could not be resolved.",
-                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the LATEST family member's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title, header valid or not), or its resulting filename already exists -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
-                FailureCodes.NOT_LATEST_VERSION: "This decision is not the latest version/revision in its family (and isn't the one documented branch-off-a-rejected-latest exception).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -221,32 +223,8 @@ def run(args):
                     warnings=warnings,
                 )
 
-            if latest_path.resolve() != path.resolve():
-                # Branching a new version off an older member is allowed
-                # only when the actual latest was Rejected.
-                allowed = latest_header.status_update == "Rejected" and (
-                    latest_parsed.version > filename_info.version
-                    or (
-                        latest_parsed.version == filename_info.version
-                        and (latest_parsed.revision or 0) > (filename_info.revision or 0)
-                    )
-                )
-                if not allowed:
-                    # Names the actual latest member as structured data --
-                    # the code alone can't carry a version number, and an
-                    # agent has no other way to learn it without a separate
-                    # `explore` call.
-                    raise CommandError(
-                        FailureCodes.NOT_LATEST_VERSION,
-                        "This decision is not the latest version/revision in its family.",
-                        data={
-                            "latest_file": str(latest_path),
-                            "latest_version": latest_parsed.version,
-                            "latest_revision": latest_parsed.revision,
-                            "latest_status": latest_header.status_update,
-                        },
-                        warnings=warnings,
-                    )
+            raise_if_not_latest(filename_info, members, warnings)
+            raise_if_rejected_successor(members, warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # version, so the caller knows which recovery action applies.

@@ -518,3 +518,17 @@ def test_version_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp
     assert excinfo.value.data == {"file": "ADR001V02-draft.md"}
     assert any(w.startswith(f"{broken}: ignored") for w in excinfo.value.warnings)
     assert sorted(p.name for p in adr_path.parent.glob("ADR001V02*")) == ["ADR001V02-draft.md"]
+
+
+
+def test_a_locked_version_is_refused_before_a_taken_number_is_considered(tmp_path):
+    # Precedence: not-latest-version wins over file-already-exists.
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", v02, "--refdate", "2026-01-04"])
+    (adr_path.parent / "ADR001V03-draft.md").write_text("no header\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "not-latest-version"

@@ -73,7 +73,7 @@ def describe():
                 "alias": "-f",
                 "type": "switch",
                 "required": False,
-                "description": "Removes a 'drifted', 'foreign', or (agentsmd) 'malformed' file/block instead of skipping it. Presence-only.",
+                "description": "Removes a 'drifted', 'foreign', or (agentsmd) 'malformed' or 'indented' file/block instead of skipping it. Presence-only.",
             },
             {
                 "name": "allow-external-links",

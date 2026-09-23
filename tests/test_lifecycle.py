@@ -1142,3 +1142,35 @@ def test_read_body_joins_with_the_host_line_separator(tmp_path):
     header_and_body = [f"line{i}" for i in range(12)] + ["first body line", "second body line"]
 
     assert read_body(header_and_body) == "first body line" + os.linesep + "second body line" + os.linesep
+
+
+
+def test_family_members_reports_an_ignored_file_once_per_warnings_list(tmp_path):
+    config, adr_dir, path = _written_decision(tmp_path, b"|--|--|", b"|-x|--|")
+    warnings = []
+
+    family_members(adr_dir, config, 1, warnings=warnings)
+    family_members(adr_dir, config, 1, warnings=warnings)
+
+    assert len([w for w in warnings if "ignored" in w]) == 1
+
+
+@pytest.mark.parametrize("name", ["ADR001V02-a--².md", "ADR001V²-a.md"])
+def test_a_filename_with_a_non_ascii_digit_is_not_recognized_rather_than_crashing(tmp_path, name):
+    from adrpy.core.naming import parse_any_filename
+
+    config = load_repo_config(FIXTURE_PATH)
+    found = parse_any_filename(name, config)
+
+    # Not a crash: either not recognized at all, or recognized without the bogus number.
+    assert found is None or found[1].superseded_from is None
+
+
+def test_a_header_with_a_non_ascii_digit_version_is_invalid_rather_than_crashing(tmp_path):
+    from adrpy.core.header import parse_header
+
+    config, adr_dir, path = _written_decision(tmp_path, b"|Version|01|", "|Version|0²|".encode("utf-8"))
+
+    header = parse_header(read_header_lines(path), config)
+
+    assert not header.is_valid

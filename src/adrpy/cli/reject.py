@@ -21,6 +21,7 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_superseded_sibling,
@@ -99,7 +100,7 @@ def describe():
             "of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Rejected unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases."
+            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). "
         ),
         "arguments": [
             {
@@ -124,10 +125,11 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
-                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, a member of its family is Superseded but not pointing at this decision, or a member's header does not parse (data.unparseable_files) -- no write was made.",
+                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, a member of its family is Superseded but not pointing at this decision, or -- when no valid member names this decision -- a file of that family does not parse (data.unparseable_files); no write was made.",
                 FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Reverting the predecessor's Superseded status failed with a real OSError -- no write was made.",
                 FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED: "The predecessor's Superseded status was already reverted for real, but writing this decision's own Rejected status then failed -- data.predecessor_file names the file already reverted; retry is safe.",
             },
@@ -179,6 +181,7 @@ def run(args):
                     "A sibling decision in this family has already been superseded.",
                     warnings=warnings,
                 )
+            raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)
@@ -224,13 +227,18 @@ def run(args):
                 # the latest. Match the specific member this successor's
                 # own number was stamped onto instead (mark_superseded's own
                 # superseded_by_file, a bare zero-padded sequence number,
-                # never a filename).
-                successor_ref = f"{filename_info.number:0{config.lenseq}d}"
+                # never a filename). Compared as a number: the padding is the
+                # lenseq in force when it was written, which a later config
+                # change may have altered.
+                def names_this_successor(ref):
+                    ref = (ref or "").strip()
+                    return ref.isascii() and ref.isdigit() and int(ref) == filename_info.number
+
                 predecessor = next(
                     (
                         member
                         for member in pred_members
-                        if member[1].status_change == "Superseded" and member[1].superseded_by_file == successor_ref
+                        if member[1].status_change == "Superseded" and names_this_successor(member[1].superseded_by_file)
                     ),
                     None,
                 )

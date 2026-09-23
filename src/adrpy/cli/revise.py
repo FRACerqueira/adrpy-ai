@@ -12,6 +12,8 @@ from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
+    raise_if_rejected_successor,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
@@ -72,16 +74,14 @@ def describe():
             "falls back to echoing such a value raw, which can collide with the filename's own separator "
             "and produce a file the tool can never recognize again. Fails with family-not-found if this "
             "decision's own family can't be resolved, or lenrevision-too-small-for-new-revision "
-            "(data.new_revision/data.lenrevision) if the next revision number doesn't fit the configured "
-            "width -- no write is made either way. If this isn't the latest version/revision in its "
-            "family (and isn't the one documented branch-off-a-rejected-latest exception), fails with "
-            "not-latest-version (data names the actual latest member). Fails with one of still-proposed, "
+            "(data.new_revision/data.lenrevision) if the next revision number -- the one after the highest "
+            "revision this version already holds, whatever file holds it -- doesn't fit the configured "
+            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
+            "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
             "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
             "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
-            "(data.file names it) if the resulting filename already exists on disk, or if any file of "
-            "this family already holds the number it would create -- whatever its title, whether or not "
-            "its header parses. No write is made in "
+            "(data.file names it) if the resulting filename already exists on disk. No write is made in "
             "any of these cases."
         ),
         "arguments": [
@@ -110,12 +110,13 @@ def describe():
             {
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
                 FailureCodes.FAMILY_NOT_FOUND: "This decision's own family could not be resolved.",
-                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the LATEST family member's own last update date (or creation date, if never updated).",
-                FailureCodes.FILE_ALREADY_EXISTS: "The new revision's number is already held by a file of this family (any title, header valid or not), or its resulting filename already exists -- data.file names it.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The new revision's own resulting filename already exists on disk (data.file names it).",
                 FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION: "The next revision number does not fit in the configured lenrevision width.",
-                FailureCodes.NOT_LATEST_VERSION: "This decision is not the latest version/revision in its family (and isn't the one documented branch-off-a-rejected-latest exception).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead.",
                 FailureCodes.REVISION_NOT_CONFIGURED: "This repository's config has lenrevision == 0.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
@@ -173,36 +174,33 @@ def run(args):
                     FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
                 )
             latest_parsed, latest_header, latest_path = latest
-            new_revision = (header.revision or 0) + 1
+            # The filename decides numbering, counting every file: the next
+            # revision after the highest one this version already holds
+            # (Round 40, a deliberate divergence from AdrPlus, whose
+            # target-revision+1 collided when branching off an older
+            # revision). A migrated placeholder's blank cells play no part.
+            new_revision = (
+                max(
+                    (
+                        (entry[0].revision or 0)
+                        for entry in members + ignored
+                        if entry[0].version == filename_info.version
+                    ),
+                    default=filename_info.revision or 0,
+                )
+                + 1
+            )
 
-            if len(str((latest_parsed.revision or 0) + 1)) > config.lenrevision:
+            if len(str(new_revision)) > config.lenrevision:
                 raise CommandError(
                     FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
-                    f"New revision {(latest_parsed.revision or 0) + 1} does not fit in lenrevision={config.lenrevision}.",
-                    data={"new_revision": (latest_parsed.revision or 0) + 1, "lenrevision": config.lenrevision},
+                    f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
+                    data={"new_revision": new_revision, "lenrevision": config.lenrevision},
                     warnings=warnings,
                 )
 
-            if latest_path.resolve() != path.resolve():
-                # Same branch-off-a-rejected-latest exception as `version`, but
-                # revision-only (revise never bumps the version number).
-                allowed = latest_header.status_update == "Rejected" and (latest_parsed.revision or 0) > (
-                    filename_info.revision or 0
-                )
-                if not allowed:
-                    # Names the actual latest member as structured data --
-                    # see `version`'s own comment.
-                    raise CommandError(
-                        FailureCodes.NOT_LATEST_VERSION,
-                        "This decision is not the latest version/revision in its family.",
-                        data={
-                            "latest_file": str(latest_path),
-                            "latest_version": latest_parsed.version,
-                            "latest_revision": latest_parsed.revision,
-                            "latest_status": latest_header.status_update,
-                        },
-                        warnings=warnings,
-                    )
+            raise_if_not_latest(filename_info, members, warnings)
+            raise_if_rejected_successor(members, warnings)
 
             # A specific reason code, not one collapsed not-eligible-for-
             # revision, so the caller knows which recovery action applies.
@@ -246,7 +244,7 @@ def run(args):
             record = DecisionRecord(
                 number=filename_info.number,
                 title=header.title,
-                version=header.version or 0,
+                version=filename_info.version,
                 revision=new_revision,
                 scope=header.scope,
                 domain=header.domain,
@@ -255,25 +253,6 @@ def run(args):
             )
 
             filename = build_filename(config, record)
-            # The filename decides numbering, counting every file: a revision
-            # number already held by any file of this family -- one whose
-            # header does not parse, or one whose title was edited so its
-            # filename differs -- is taken, never given to a second file.
-            taken = next(
-                (
-                    entry[2]
-                    for entry in members + ignored
-                    if entry[0].version == filename_info.version and (entry[0].revision or 0) == new_revision
-                ),
-                None,
-            )
-            if taken is not None:
-                raise CommandError(
-                    FailureCodes.FILE_ALREADY_EXISTS,
-                    f"Revision {new_revision} is already held by {taken.name}.",
-                    data={"file": taken.name},
-                    warnings=warnings,
-                )
             new_path = resolve_within(folder, filename)
             if new_path.exists():
                 raise CommandError(

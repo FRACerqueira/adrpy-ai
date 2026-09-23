@@ -198,9 +198,9 @@ stateDiagram-v2
     Proposed --> Accepted: approve
     Proposed --> Rejected: reject
     Accepted --> Proposed: undo
-    Rejected --> Proposed: undo
+    Rejected --> Proposed: undo (not a rejected successor)
     Accepted --> Superseded: supersede
-    Superseded --> [*]
+    Superseded --> Accepted: reject of its successor
 
     note right of Superseded
         supersede also creates a new
@@ -227,7 +227,10 @@ instead creates a Proposed successor under a new sequence number (a new
 family), writing it before marking the predecessor `Superseded`. `reject`
 on a successor also reverts its predecessor's `Superseded` status back
 (predecessor first), undoing the `supersede` that created it, in the
-same two-write operation.
+same two-write operation; the rejected successor's family is then the
+end of its line. Only a family's latest member is alive (`core/lifecycle.py`'s
+`locking_member`): every command refuses on a member a newer one has
+locked -- see [`lifecycle.md`](lifecycle.md) for the exact rule.
 
 ## The `adrpy-skills` subsystem
 
@@ -319,7 +322,7 @@ Every command returns exactly one JSON object on stdout, whether it
 succeeds or fails:
 
 ```json
-{"success": true, "data": {"...": "..."}, "warnings": []}
+{"success": true, "data": {"...": "...", "warnings": []}}
 ```
 
 ```json
@@ -330,9 +333,14 @@ succeeds or fails:
 `config-already-exists`, ...), never a free-text message a caller has to
 pattern-match -- the full, per-command list of codes lives inline in each
 command's own [`doc/commands/`](commands/INDEX.md) page, next to the
-exact condition that triggers it. `warnings` is always present, even when
-empty, on every `adrpy` command's response -- see the `adrpy-skills`
-subsystem section above for how that entry point's own envelope differs.
+exact condition that triggers it. On success, `data.warnings` is always
+present, even when empty. On a failure the command reports (a documented
+`code`), `warnings` is present once the command has started collecting
+them; it is absent for `usage-error`, `unknown-command`, `internal-error`,
+an `interrupted` caught at the entry point (`migrate`'s own `interrupted`
+carries them), and failures raised before that point (a missing file,
+no repository found) -- see the `adrpy-skills` subsystem section
+above for how that entry point's own envelope differs.
 `warnings` carries non-fatal information about automatic recovery a
 command's own dependencies performed silently (a retried write, a
 reclaimed stale lock, orphaned temp-file cleanup, an encoding repair), and

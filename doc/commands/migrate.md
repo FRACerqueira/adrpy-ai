@@ -27,7 +27,7 @@ Repository root directory.
 | `field-contains-forbidden-character` | A candidate's own title (sourced from its raw legacy filename) contains '\|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort. |
 | `migration-scan-failed` | A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run. |
 | `migration-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- refuses the whole run. |
-| `migration-invalid-headers-exist` | A scanned file carries this tool's header but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
+| `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (a `\|Adr-Plus ` row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
 | `already-tool-created-adrs-exist` | At least one scanned file already has a valid, non-migrated header -- refuses the whole run. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created) -- nothing needs migration. |

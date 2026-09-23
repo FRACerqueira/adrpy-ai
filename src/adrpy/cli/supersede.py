@@ -11,6 +11,7 @@ from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_fail
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     has_pending_sibling,
@@ -80,7 +81,7 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "Refuses with family-member-superseded if another member of the same family has "
+            "Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has "
             "already been superseded, or family-member-pending if another member is still "
             "unresolved (Proposed) -- no write is made either way. "
             "This is two writes in sequence, not one, successor first: a failure creating the "
@@ -118,7 +119,7 @@ def describe():
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "and successor-number allocation can't be trusted from an incomplete scan; no write was made "
             "either way. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). A file pointing back at this decision whose header does not parse "
-            "is not guessed at: supersede refuses and names it in data.file. "
+            "is not guessed at: supersede refuses with that header's parse-failure code and names the file in data.file. "
             "The successor's own title -- the predecessor's own filename segment, "
             "re-validated before use, unless --title overrides it (see its own argument description) -- "
             "may fail with field-contains-forbidden-character if it carries '|', a line-break-like "
@@ -204,8 +205,9 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
-                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not a strict ISO date (YYYY-MM-DD).",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the predecessor's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
@@ -292,6 +294,7 @@ def run(args):
                     "Another decision in this family is still unresolved (Proposed).",
                     warnings=warnings,
                 )
+            raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)

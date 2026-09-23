@@ -886,6 +886,75 @@ def latest_in_family(folder, config, number, members=None):
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
 
 
+def locking_member(filename_info, members):
+    """The family member that makes `filename_info`'s decision no longer
+    the live one, or None when it is.
+
+    Only the family's latest member is alive. A newer version locks every
+    member of an older version, and a newer revision locks the older
+    revisions of the same version -- unless the newer ones are a single
+    member, and that member is Rejected: then the older one is still the
+    live one (Round 40, decided by the project owner). Membership and
+    status come from `members` (headers that parse); version and revision
+    from the filename."""
+
+    def blocker(newer):
+        if not newer:
+            return None
+        if len(newer) == 1 and newer[0][1].status_update == "Rejected":
+            return None
+        return max(newer, key=lambda member: (member[0].version, member[0].revision or 0))
+
+    newer_versions = [m for m in members if m[0].version > filename_info.version]
+    locked_by = blocker(newer_versions)
+    if locked_by is not None:
+        return locked_by
+    newer_revisions = [
+        m
+        for m in members
+        if m[0].version == filename_info.version and (m[0].revision or 0) > (filename_info.revision or 0)
+    ]
+    return blocker(newer_revisions)
+
+
+def raise_if_not_latest(filename_info, members, warnings):
+    """not-latest-version when a newer family member locks this one (see
+    locking_member), naming that member as data -- the code alone can't
+    carry which file it is."""
+    locked_by = locking_member(filename_info, members)
+    if locked_by is None:
+        return
+    parsed, header, path = locked_by
+    raise CommandError(
+        FailureCodes.NOT_LATEST_VERSION,
+        f"This decision is no longer the live one in its family: {path.name} is newer. Only the latest "
+        "member can change (a single newer member that was Rejected leaves this one live).",
+        data={
+            "latest_file": str(path),
+            "latest_version": parsed.version,
+            "latest_revision": parsed.revision,
+            "latest_status": header.status_update,
+        },
+        warnings=warnings,
+    )
+
+
+def raise_if_rejected_successor(members, warnings):
+    """A successor (its filename carries a supersede suffix) that was
+    Rejected is the end of its line, and so is its whole family: rejecting
+    it put its predecessor back, and nothing may bring any of it back to
+    life or branch off it -- a version of a successor carries no suffix,
+    but is the successor's family all the same (Round 40, decided by the
+    project owner). `members` is the target's own family."""
+    if any(m[0].superseded_from is not None and m[1].status_update == "Rejected" for m in members):
+        raise CommandError(
+            FailureCodes.REJECTED_SUCCESSOR_IS_FINAL,
+            "This decision belongs to a successor that was rejected: its predecessor was put back, and the "
+            "successor's family is the end of its line. Supersede the predecessor again for a new successor.",
+            warnings=warnings,
+        )
+
+
 def _ineligibility_reason_for_proposed_state(header):
     """The two structural checks every ineligibility_reason_for_* below
     shares byte-for-byte: must be Proposed (or a migrated placeholder

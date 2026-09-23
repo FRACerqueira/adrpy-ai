@@ -49,7 +49,7 @@ def describe():
             "decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and "
             "next-number allocation can't be trusted from an incomplete scan; no write was made. Once the "
             "scan itself succeeds, fails with title-already-exists (data.existing_file names it) if "
-            "another decision already has this exact title, or file-already-exists (data.file names it) "
+            "another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) "
             "if the resulting filename happens to already exist on disk -- neither write is made."
         ),
         "arguments": [
@@ -109,7 +109,7 @@ def describe():
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
                 FailureCodes.NEW_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan.",
-                FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this exact title.",
+                FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this title, once both are normalized by the configured case transform.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",

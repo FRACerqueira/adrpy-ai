@@ -951,3 +951,71 @@ def test_migrate_drops_every_leading_bom_of_a_legacy_file(tmp_path):
     migrate.run(["--path", str(tmp_path)])
 
     assert b"\xef\xbb\xbf" not in legacy.read_bytes()
+
+
+def test_migrate_refuses_over_a_tool_header_re_encoded_as_utf16(tmp_path):
+    # PowerShell 5.1's Out-File and '>' write UTF-16LE with a BOM. Read as
+    # UTF-8 the header no longer parses and its markers are split by NUL
+    # bytes; it is still this tool's header, damaged -- never "no header",
+    # or migrate would write a blank header over an Accepted decision.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Tool made"])
+    tool_made = tmp_path / "doc" / "adr" / "ADR001V01-tool-made.md"
+    tool_made.write_bytes(b"\xff\xfe" + tool_made.read_text(encoding="utf-8").encode("utf-16-le"))
+    _write_legacy_file(tmp_path, "0002Legacy.md", "# Legacy\n")
+    before = tool_made.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-invalid-headers-exist"
+    assert excinfo.value.data["files"] == [str(tool_made)]
+    assert tool_made.read_bytes() == before
+
+
+
+@pytest.mark.parametrize("damage", ["lines-above", "no-field-row"])
+def test_a_damaged_tool_header_is_recognized_past_line_two_and_by_its_separator(tmp_path, damage):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    header = build_header(cfg, DecisionRecord(number=2, title="Second", version=1))
+    lines = header.split("\n")
+    if damage == "lines-above":
+        lines = ["", "notes", "more notes"] + lines
+    else:
+        lines = [line.replace("|Adr-Plus Fields|", "|Fields|") for line in lines]
+    damaged = tmp_path / "doc" / "adr" / "0002Second.md"
+    damaged.write_bytes(("\n".join(lines) + "# body\n").encode("utf-8"))
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-invalid-headers-exist"
+    assert excinfo.value.data["files"] == [str(damaged)]
+
+
+def test_a_bom_at_a_later_chunk_boundary_is_body_content(tmp_path):
+    from adrpy.core.atomic_write import STREAM_CHUNK_SIZE
+
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    body = b"# First\n" + b"x" * (STREAM_CHUNK_SIZE - 8) + b"\xef\xbb\xbfafter"
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "")
+    legacy.write_bytes(body)
+
+    migrate.run(["--path", str(tmp_path)])
+
+    assert legacy.read_bytes().endswith(b"\xef\xbb\xbfafter")
+
+
+def test_an_interrupt_before_anything_was_written_propagates_as_is(tmp_path, monkeypatch):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(migrate, "read_header_lines_with_report", interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        migrate.run(["--path", str(tmp_path)])

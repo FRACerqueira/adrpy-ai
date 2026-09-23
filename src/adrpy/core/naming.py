@@ -60,7 +60,7 @@ def parse_filename(filename, config):
     superseded_from = None
     if len(supersede_parts) == 2:
         suffix = supersede_parts[1]
-        if not suffix.isdigit():
+        if not (suffix.isascii() and suffix.isdigit()):
             return None
         superseded_from = int(suffix)
     name = supersede_parts[0]
@@ -128,7 +128,7 @@ def parse_legacy_filename(filename, config):
         return None
 
     seq_text = name[n_pos : n_pos + n_len]
-    if not seq_text.isdigit():
+    if not (seq_text.isascii() and seq_text.isdigit()):
         return None
     number = int(seq_text)
 
@@ -138,7 +138,7 @@ def parse_legacy_filename(filename, config):
         if len(name) < v_pos + v_len:
             return None
         version_text = name[v_pos : v_pos + v_len]
-        if not version_text.isdigit():
+        if not (version_text.isascii() and version_text.isdigit()):
             return None
         version = int(version_text)
 
@@ -148,7 +148,7 @@ def parse_legacy_filename(filename, config):
         if len(name) < r_pos + r_len:
             return None
         revision_text = name[r_pos : r_pos + r_len]
-        if not revision_text.isdigit():
+        if not (revision_text.isascii() and revision_text.isdigit()):
             return None
         revision = int(revision_text)
 

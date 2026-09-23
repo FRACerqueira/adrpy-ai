@@ -457,3 +457,13 @@ def test_explore_says_which_files_are_invalid_and_why(tmp_path):
     assert states["ADR001V01-valid.md"] == ("valid", None)
     assert states["ADR002V01-damaged.md"] == ("adulterated", "adr-header-invalid-format")
     assert states["ADR003V01-plain.md"][0] == "no-header"
+
+
+
+def test_explore_gives_the_reason_for_a_file_with_no_header(tmp_path):
+    _write_repo(tmp_path, _default_config_dict(), {"ADR003V01-plain.md": "# Plain notes, no header\n"})
+
+    decision = explore.run(["--path", str(tmp_path)])["decisions"][0]
+
+    assert decision["header"]["state"] == "no-header"
+    assert decision["header"]["invalid_reason"] == "adr-file-too-short"
