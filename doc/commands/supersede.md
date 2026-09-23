@@ -50,7 +50,7 @@ Title for the successor; defaults to the predecessor's own filename-segment titl
 | `title-produces-unrecognizable-filename` | The successor's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `supersede-successor-scan-incomplete` | A subdirectory under the decisions folder could not be scanned while allocating the successor's own number. |
 | `supersede-write-failed` | The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-running supersede resumes onto it. |
-| `supersede-successor-write-failed` | The successor's own write (the FIRST of the two writes) failed -- nothing was written. |
+| `supersede-successor-write-failed` | The successor's own write (the FIRST of the two writes) failed -- nothing was written (data.intended_successor names the file that would have been created). |
 | `supersede-orphaned-successor-not-resumable` | A non-Rejected successor from an earlier, interrupted supersede of this decision already exists but is no longer Proposed, or more than one does -- no write was made. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |

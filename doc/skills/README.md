@@ -83,7 +83,8 @@ checks that marker before touching the file again:
 - **malformed** (`agentsmd` only) -- a skill's own `start`/`end` block is
   truncated (missing its closing tag), duplicated (more than one
   complete block for the same skill), or crosses another skill's block
-  (nested inside it or overlapping it -- only reachable by hand-editing,
+  (wraps another skill's block inside its own, or overlaps it -- only
+  reachable by hand-editing,
   since `install` only ever replaces a block in place or appends). Left
   untouched, same as `foreign`; `--force` replaces only this skill's own
   tags, never the other skill's block.
@@ -98,6 +99,13 @@ to delete something (a full file, an `AGENTS.md` block, the shared doc).
 `remove` never deletes `AGENTS.md` itself, even when stripping its only
 remaining skill block would leave it empty -- that's a judgment call for
 you, not this command.
+
+One deliberate exception: before doing anything else, `install` and
+`remove` delete temp files an earlier interrupted `adrpy-skills` write
+left behind -- only files named exactly `<target name>.<32-hex uuid4>.tmp`,
+older than 30 seconds, in the same folder as a file this call itself
+would write (never a folder-wide or recursive scan). Each removal is
+reported in `warnings`. No other file is ever deleted without `--force`.
 
 The full, closed set of values `skipped[].reason` can ever take, across
 both `install` and `remove`, is exactly: `foreign`, `drifted`,
@@ -157,4 +165,6 @@ Every failure code a command can return is documented on that command's
 own page, in its `## Failure codes` table -- the same structured
 `failure_codes` field `adrpy-skills help <command>` returns at runtime.
 If a page here and the CLI ever disagree, the CLI is right and the page
-has drifted.
+has drifted. Two codes can come from any command without being listed
+on its page: `unknown-command` (the verb itself isn't recognized) and
+`internal-error` (an unexpected bug in the tool -- please report it).

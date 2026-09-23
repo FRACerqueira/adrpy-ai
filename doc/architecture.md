@@ -73,8 +73,9 @@ commands x 16 modules is a hairball no one can actually read.
 | Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR007V01](adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr.md), superseding ADR003V01's own schema driver). |
 | Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal recovery (a retried write, a reclaimed stale lock, orphan cleanup, an encoding repair). |
 
-Every write command (`new`, `approve`, `reject`, `undo`, `supersede`,
-`version`, `revise`, `migrate`, `config`, `log`) touches Concurrency &
+Every write command (`init`, `new`, `approve`, `reject`, `undo`,
+`supersede`, `version`, `revise`, `migrate`, `config`, `installconfig`,
+`log`) touches Concurrency &
 storage; every command that reasons about existing decision files
 touches Decision file mechanics; `init`/`config`/`migrate`/`installconfig`
 touch Configuration; only `log` touches Decision log; every command
@@ -200,8 +201,10 @@ stateDiagram-v2
 
     note right of Superseded
         supersede also creates a new
-        sibling file, status Proposed,
-        in the same family
+        decision, status Proposed, under
+        the next free sequence number
+        (a new family), whose filename's
+        supersede suffix points back here
     end note
 
     note right of Accepted
@@ -214,12 +217,14 @@ stateDiagram-v2
 ```
 
 A **family** is every file sharing the same leading sequence number
-(`ADR001*`): `version` starts a new major version, `revise` starts a new
-wording-fix revision, and `supersede` starts a successor -- all three
-create a new Proposed sibling rather than mutating the source they branch
-from. `reject` on a successor also reverts its predecessor's `Superseded`
-status back, undoing the `supersede` that created it, in the same
-two-write operation.
+(`ADR001*`): `version` starts a new major version and `revise` a new
+wording-fix revision -- both create a new Proposed sibling in the same
+family rather than mutating the source they branch from. `supersede`
+instead creates a Proposed successor under a new sequence number (a new
+family), writing it before marking the predecessor `Superseded`. `reject`
+on a successor also reverts its predecessor's `Superseded` status back
+(predecessor first), undoing the `supersede` that created it, in the
+same two-write operation.
 
 ## The `adrpy-skills` subsystem
 
@@ -285,6 +290,7 @@ sequenceDiagram
     Main->>Cmd: command.run(args)
     Cmd->>Cmd: parse_flags(args, ...) -- reuses core/args.py
     Cmd->>Inst: install(providers, skills, target, path, force)
+    Inst->>FS: remove orphaned <name>.<uuid4>.tmp next to each target path (older than 30s)
     Inst->>Prov: resolve file path + wrap content for this provider
     Inst->>FS: read existing file (core/io_retry.py) to classify drift state
     FS-->>Inst: current content, or none
@@ -300,8 +306,8 @@ Unlike `adrpy`'s single `{data.decisions, data.warnings, ...}`-shaped
 envelope, `adrpy-skills`' `data` shape differs by command -- `install`
 returns `{installed, skipped, warnings}`, `remove` returns `{removed,
 skipped, warnings}`, `list` returns `{skills, warnings}` (a cross-product
-of every requested skill x provider), and `help` returns `{commands,
-hint}` with no `warnings` key at all (a read-only listing command with
+of every requested skill x provider), and `help` returns `{commands}`
+(plus a `hint` on the bare listing) with no `warnings` key at all (a read-only listing command with
 nothing to report omits the key rather than sending an empty list).
 
 ## The JSON contract

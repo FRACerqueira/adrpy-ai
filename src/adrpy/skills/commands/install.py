@@ -76,7 +76,7 @@ def describe():
                 "type": "switch",
                 "required": False,
                 "description": (
-                    "Overwrites a 'foreign' or 'drifted' file/block instead of skipping it. "
+                    "Overwrites a 'foreign', 'drifted', or (agentsmd) 'malformed' file/block instead of skipping it. "
                     "Presence-only: pass just '--force', not '--force true/false'."
                 ),
             },
