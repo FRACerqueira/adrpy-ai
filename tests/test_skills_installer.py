@@ -8,6 +8,9 @@ from adrpy.skills import installer
 
 import pytest
 
+# The uuid4-hex shape atomic_write's own temp files carry.
+OWN_TEMP_HEX = "0123456789abcdef0123456789abcdef"
+
 
 def _hand_edit_inside_marker(path, old, new):
     text = path.read_text(encoding="utf-8")
@@ -1164,7 +1167,8 @@ class TestOrphanedTempFileCleanup:
     atomic_write_text leaving the exact same kind of orphan behind."""
 
     def test_install_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
-        orphan = tmp_path / "leftover.md.deadbeef.tmp"
+        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        orphan.parent.mkdir(parents=True)
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
@@ -1172,11 +1176,11 @@ class TestOrphanedTempFileCleanup:
         result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
 
         assert not orphan.exists()
-        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+        assert any(orphan.name in w for w in result["warnings"])
 
     def test_remove_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
         installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
-        orphan = tmp_path / "leftover.md.deadbeef.tmp"
+        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
@@ -1184,15 +1188,29 @@ class TestOrphanedTempFileCleanup:
         result = installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
 
         assert not orphan.exists()
-        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+        assert any(orphan.name in w for w in result["warnings"])
+
+    def test_install_cleans_up_orphans_of_the_shared_doc_and_agentsmd_too(self, tmp_path):
+        orphans = [
+            tmp_path / f"AGENTS.md.{OWN_TEMP_HEX}.tmp",
+            tmp_path / "doc" / "ai-skills" / f"comment-audit.md.{OWN_TEMP_HEX}.tmp",
+        ]
+        old_time = time.time() - 999
+        for orphan in orphans:
+            orphan.parent.mkdir(parents=True, exist_ok=True)
+            orphan.write_text("never committed", encoding="utf-8")
+            os.utime(orphan, (old_time, old_time))
+
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        assert not any(orphan.exists() for orphan in orphans)
 
     def test_install_cleans_up_an_orphaned_temp_file_under_home_for_global_scope(self, tmp_path, monkeypatch):
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
-        claude_skills_dir = home / ".claude" / "skills"
-        claude_skills_dir.mkdir(parents=True)
-        orphan = claude_skills_dir / "leftover.md.deadbeef.tmp"
+        orphan = home / ".claude" / "skills" / "comment-audit" / f"SKILL.md.{OWN_TEMP_HEX}.tmp"
+        orphan.parent.mkdir(parents=True)
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
@@ -1200,14 +1218,78 @@ class TestOrphanedTempFileCleanup:
         result = installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
 
         assert not orphan.exists()
-        assert any("leftover.md.deadbeef.tmp" in w for w in result["warnings"])
+        assert any(orphan.name in w for w in result["warnings"])
 
     def test_a_fresh_temp_file_is_left_alone(self, tmp_path):
         # Under ORPHAN_MAX_AGE_SECONDS -- could still be an in-flight write
         # from a genuinely concurrent process, not an orphan yet.
-        fresh = tmp_path / "leftover.md.deadbeef.tmp"
+        fresh = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        fresh.parent.mkdir(parents=True)
         fresh.write_text("still being written, maybe", encoding="utf-8")
 
         installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
 
         assert fresh.exists()
+
+    @pytest.mark.parametrize("name", [
+        "comment-audit.mdc.notes.tmp",
+        f"comment-audit.mdc.{OWN_TEMP_HEX[:31]}.tmp",
+        f"other-rule.mdc.{OWN_TEMP_HEX}.tmp",
+    ])
+    def test_a_near_miss_tmp_next_to_a_written_file_is_left_alone(self, tmp_path, name):
+        # Same folder as a file this call writes, but not a name
+        # atomic_write_text could have given that file's own temp copy.
+        foreign = tmp_path / ".cursor" / "rules" / name
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text("user data", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(foreign, (old_time, old_time))
+
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert foreign.exists()
+
+    @pytest.mark.parametrize("relative", [
+        "build/cache.tmp",
+        ".git/objects/pack/tmp_pack.tmp",
+        "notes.tmp",
+    ])
+    def test_install_never_deletes_a_users_own_tmp_file_outside_its_write_surface(self, tmp_path, relative):
+        # The sweep exists to clean up atomic_write_text's own orphans; the
+        # project target is the user's whole repository, so an old *.tmp
+        # this tool never wrote must survive.
+        foreign = tmp_path / relative
+        foreign.parent.mkdir(parents=True, exist_ok=True)
+        foreign.write_text("user data", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(foreign, (old_time, old_time))
+
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert foreign.exists()
+
+    def test_remove_never_deletes_a_users_own_tmp_file_outside_its_write_surface(self, tmp_path):
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        foreign = tmp_path / "build" / "cache.tmp"
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text("user data", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(foreign, (old_time, old_time))
+
+        installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert foreign.exists()
+
+    def test_global_install_never_deletes_a_tmp_file_inside_another_skills_folder(self, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        foreign = home / ".claude" / "skills" / "someone-elses-skill" / "draft.tmp"
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text("user data", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(foreign, (old_time, old_time))
+
+        installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+
+        assert foreign.exists()

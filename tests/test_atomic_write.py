@@ -13,6 +13,9 @@ from adrpy.core.atomic_write import (
     normalize_newlines,
 )
 
+# The uuid4-hex shape atomic_write's own temp files carry.
+OWN_TEMP_HEX = "0123456789abcdef0123456789abcdef"
+
 
 def test_atomic_write_normalizes_and_creates_file(tmp_path):
     target = tmp_path / "decision.md"
@@ -213,12 +216,12 @@ def test_atomic_write_readers_never_see_partial_content(tmp_path):
 
 
 def test_cleanup_removes_only_old_temp_files(tmp_path):
-    old_temp = tmp_path / "old.tmp"
+    old_temp = tmp_path / f"old.md.{OWN_TEMP_HEX}.tmp"
     old_temp.write_text("stale")
     old_time = time.time() - 60
     os.utime(old_temp, (old_time, old_time))
 
-    fresh_temp = tmp_path / "fresh.tmp"
+    fresh_temp = tmp_path / f"fresh.md.{OWN_TEMP_HEX}.tmp"
     fresh_temp.write_text("fresh")
 
     removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30)
@@ -237,7 +240,7 @@ def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
     (temp files never collide by name and are never read by anything)."""
     subfolder = tmp_path / "nested"
     subfolder.mkdir()
-    old_temp = subfolder / "old.tmp"
+    old_temp = subfolder / f"old.md.{OWN_TEMP_HEX}.tmp"
     old_temp.write_text("stale")
     old_time = time.time() - 60
     os.utime(old_temp, (old_time, old_time))
@@ -259,7 +262,7 @@ def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be
     asked to do -- best-effort per candidate instead, matching
     _unlink_with_retry's own established philosophy for this exact
     class of problem, reported as a warning when the caller opts in."""
-    old_temp = tmp_path / "old.tmp"
+    old_temp = tmp_path / f"old.md.{OWN_TEMP_HEX}.tmp"
     old_temp.write_text("stale")
     old_time = time.time() - 60
     os.utime(old_temp, (old_time, old_time))
@@ -279,10 +282,48 @@ def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be
     assert removed == []  # never raised, just didn't count it as removed
     assert old_temp.exists()  # left in place for a later cleanup pass
     assert len(warnings) == 1
-    assert "old.tmp" in warnings[0]
+    assert old_temp.name in warnings[0]
 
     # Backward compatible: no warnings= at all (the default) never raises either.
     assert cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30) == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "notes.tmp",
+        "0001-decision.md.tmp",
+        f"0001-decision.md.{OWN_TEMP_HEX[:31]}.tmp",
+        f"0001-decision.md.{OWN_TEMP_HEX.upper()}.tmp",
+        f"0001-decision.md.{OWN_TEMP_HEX}.tmp.bak",
+        f".{OWN_TEMP_HEX}.tmp",
+    ],
+)
+def test_cleanup_never_removes_a_tmp_file_atomic_write_could_not_have_created(tmp_path, name):
+    # atomic_write_bytes/atomic_write_chunks name their temp file
+    # `<target name>.<uuid4 hex>.tmp` -- any other *.tmp in the same folder
+    # is the user's, however old.
+    foreign = tmp_path / name
+    foreign.write_text("user data")
+    old_time = time.time() - 60
+    os.utime(foreign, (old_time, old_time))
+
+    removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30)
+
+    assert removed == []
+    assert foreign.exists()
+
+
+def test_cleanup_still_removes_an_orphan_named_exactly_as_atomic_write_names_it(tmp_path):
+    orphan = tmp_path / f"0001-decision.md.{OWN_TEMP_HEX}.tmp"
+    orphan.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(orphan, (old_time, old_time))
+
+    removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30)
+
+    assert removed == [orphan]
+    assert not orphan.exists()
 
 
 @pytest.mark.parametrize(

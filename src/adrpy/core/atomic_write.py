@@ -7,6 +7,7 @@ a transient permission failure (e.g. a Windows "pending delete" state under
 a concurrent reader); anything past that surfaces as a real error.
 """
 
+import glob
 import os
 import re
 import time
@@ -24,6 +25,13 @@ ORPHAN_MAX_AGE_SECONDS = 30
 STREAM_CHUNK_SIZE = 65536
 
 _REAL_NEWLINE = re.compile(r"\r\n|\r|\n")
+
+# atomic_write_bytes/atomic_write_chunks name their temp file
+# `<target name>.<uuid4 hex>.tmp`; the orphan sweeps below match only that
+# exact shape, so no other *.tmp a user keeps in the same folder is ever
+# mistaken for one of this module's own leftovers.
+_OWN_TEMP_SUFFIX = r"\.[0-9a-f]{32}\.tmp"
+_OWN_TEMP_NAME = re.compile(r".+" + _OWN_TEMP_SUFFIX)
 
 
 def split_real_lines(text):
@@ -199,7 +207,7 @@ def atomic_write_chunks(path, chunks_factory):
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
-    """Removes leftover `*.tmp` files (from a write interrupted by something
+    """Removes leftover temp files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed
     process, a full disk) once older than `max_age_seconds`. Returns the
     paths removed, so the caller can warn about it.
@@ -220,11 +228,36 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     leave an orphan inside a subfolder unfound and unreported (a
     housekeeping leak, not a correctness issue -- temp files never
     collide by name and are never read by anything)."""
-    directory = Path(directory)
+    candidates = (
+        candidate for candidate in Path(directory).rglob("*.tmp") if _OWN_TEMP_NAME.fullmatch(candidate.name)
+    )
+    return _remove_orphans(candidates, max_age_seconds, warnings)
+
+
+def cleanup_orphaned_temp_files_for(paths, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
+    """Same sweep as `cleanup_orphaned_temp_files`, but scoped to the temp
+    files a write to one of `paths` could have left behind -- only
+    `<name>.<uuid4 hex>.tmp` in each path's own parent folder, never a
+    recursive scan. For a caller whose write surface is a handful of
+    known files inside folders it doesn't own (a user's repository root,
+    `.github/instructions/`, `~/.claude/skills/`), where sweeping the
+    whole folder would reach content this tool never wrote."""
+    candidates = []
+    for path in dict.fromkeys(Path(path) for path in paths):
+        own_temp = re.compile(re.escape(path.name) + _OWN_TEMP_SUFFIX)
+        candidates.extend(
+            candidate
+            for candidate in path.parent.glob(glob.escape(path.name) + ".*.tmp")
+            if own_temp.fullmatch(candidate.name)
+        )
+    return _remove_orphans(candidates, max_age_seconds, warnings)
+
+
+def _remove_orphans(candidates, max_age_seconds, warnings):
     now = time.time()
     removed = []
     skipped = []
-    for candidate in directory.rglob("*.tmp"):
+    for candidate in candidates:
         try:
             age = now - candidate.stat().st_mtime
         except OSError:

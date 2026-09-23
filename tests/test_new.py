@@ -234,7 +234,7 @@ def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path
     behind forever, no cleanup, no warning."""
     _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
-    orphan = adr_dir / "leftover.md.deadbeef.tmp"
+    orphan = adr_dir / "leftover.md.0123456789abcdef0123456789abcdef.tmp"
     orphan.write_text("never committed")
     old_time = time.time() - 999
     os.utime(orphan, (old_time, old_time))
@@ -242,7 +242,7 @@ def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path
     result = new.run(["--path", str(tmp_path), "--title", "Triggers cleanup"])
 
     assert not orphan.exists()
-    assert any("leftover.md.deadbeef.tmp" in warning for warning in result["warnings"])
+    assert any("leftover.md.0123456789abcdef0123456789abcdef.tmp" in warning for warning in result["warnings"])
 
 
 def test_new_reports_a_reclaimed_stale_lock_as_a_warning(tmp_path):

@@ -7,7 +7,7 @@ import re
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files_for
 from adrpy.core.errors import UsageError
 from adrpy.core.hashing import build_marker, check_drift
 from adrpy.core.io_retry import read_with_permission_retry
@@ -300,23 +300,18 @@ def _expand(names, universe):
     return list(dict.fromkeys(names))
 
 
-def _cleanup_orphaned_temp_files(target_dir, scope, warnings):
-    """Round 37, Class P8: every one of the 8 core `adrpy` mutating
-    commands sweeps its own working folder for `*.tmp` files orphaned by
-    an earlier interrupted write before doing anything else -- this
-    module never did, despite atomic_write_text leaving the exact same
-    kind of orphan behind on an interrupted install/remove.
-
-    `--target project` writes are confined to `target_dir` (every
-    provider's project_path is relative to it); `--target global`'s only
-    provider is `claude`, whose global_path is always under
-    `~/.claude/skills/` (providers.py) -- scanning that one subdirectory
-    instead of the whole home directory avoids an expensive, unbounded
-    rglob over content this tool never touches."""
-    directory = Path(target_dir) if scope == "project" else Path.home() / ".claude" / "skills"
-    if not directory.is_dir():
-        return
-    warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(directory, warnings=warnings))
+def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope, warnings):
+    """Sweeps the temp files an earlier interrupted write of this same
+    request could have left behind, like the 8 core `adrpy` mutating
+    commands do for their own folder -- but only the exact
+    `<name>.<uuid4 hex>.tmp` next to each file this call writes, never a
+    folder-wide scan: every folder written here (the repository root,
+    `.github/instructions/`, `~/.claude/skills/`) also holds content
+    this tool never wrote."""
+    paths = [_resolve_path(provider, skill, target_dir, scope) for skill in skill_names for provider in provider_names]
+    if any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
+        paths.extend(_shared_doc_path(target_dir, skill) for skill in skill_names)
+    warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for(paths, warnings=warnings))
     if warning:
         warnings.append(warning)
 
@@ -329,7 +324,7 @@ def install(target_dir, providers, skills, scope, force):
     installed = []
     skipped = []
     warnings = []
-    _cleanup_orphaned_temp_files(target_dir, scope, warnings)
+    _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope, warnings)
 
     for skill_name in skill_names:
         meta = resources.load_meta(skill_name)
@@ -457,7 +452,7 @@ def remove(target_dir, providers, skills, scope, force):
     removed = []
     skipped = []
     warnings = []
-    _cleanup_orphaned_temp_files(target_dir, scope, warnings)
+    _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope, warnings)
 
     for skill_name in skill_names:
         any_stub_removed = False

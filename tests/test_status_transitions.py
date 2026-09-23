@@ -243,7 +243,7 @@ def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
     cleanup instead of an encoding-repair warning for the same reason as
     the test above -- refdate-before-history also fails before any write."""
     _, adr_path = _setup_repo(tmp_path)  # created with refdate 2026-01-01
-    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path = adr_path.parent / "orphan.md.0123456789abcdef0123456789abcdef.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
     old_time = time.time() - 999
     os.utime(orphan_path, (old_time, old_time))
@@ -263,7 +263,7 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
     just the in-process exception attribute."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    orphan_path = adr_path.parent / "orphan.md.abc123.tmp"
+    orphan_path = adr_path.parent / "orphan.md.0123456789abcdef0123456789abcdef.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
     old_time = time.time() - 999
     os.utime(orphan_path, (old_time, old_time))
@@ -336,7 +336,7 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
         handle.write(b"Invalid byte here: \xa4 end.\n")
 
     adr_dir = tmp_path / "doc" / "adr"
-    orphan_path = adr_dir / "orphan.md.abc123.tmp"
+    orphan_path = adr_dir / "orphan.md.0123456789abcdef0123456789abcdef.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
     old_time = time.time() - 999
     os.utime(orphan_path, (old_time, old_time))
