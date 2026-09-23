@@ -1,0 +1,5 @@
+# Drift marker: hash canonicalizes newlines first, and the marker is found by position, not leftmost match
+
+**Front:** Round 37: hash-marker front | **Severity:** Medium | **Resolution:** Direct | **Round:** 37
+
+Two latent Medium findings, both unreachable by the 3 bundled skills today but real for any future skill content: (1) the hash was computed before atomic_write_text's newline normalization, so content carrying a literal CRLF would report 'drifted' immediately after its own install; (2) core/hashing.py found the marker with a leftmost .search(), so a marker-shaped string inside a frontmatter block ahead of the real marker was matched first, breaking strip_marker(insert_marker(c)) == c. Fixed in 479bd63: the hash canonicalizes newlines before hashing, and _MARKER_RE is anchored at the start of the text (after an optional frontmatter block) and used with .match(); strip_marker preserves the captured frontmatter. Red confirmed for all 5 new assertions against the pre-fix hashing.py.

@@ -1,0 +1,5 @@
+# adrpy-skills' JSON contract vocabulary completed, and list now reports the shared-doc row
+
+**Front:** Round 37: usability front | **Severity:** Medium | **Resolution:** Direct | **Round:** 37
+
+The usability front found the install/remove/list contract was not fully discoverable: 'malformed' was a real skipped[].reason for both install and remove but documented in neither (Medium); no single place enumerated the closed set of reasons (Medium); remove's describe() never named its own 'shared-doc' row nor its asymmetry with install (no shared-doc-blocked concept); and list could not report the shared doc's own state at all, so it could never preview an install's shared-doc-blocked skip (Medium). Fixed in 2da2033: describe()/doc pages updated, doc/skills/README.md enumerates foreign/drifted/malformed/shared-doc-blocked, and list_installed() now adds one shared-doc row per skill whenever a stub-mode provider is requested, mirroring install/remove's own needs_shared_doc check. 3 tests that assumed the provider row was rows[0] now select by provider.
