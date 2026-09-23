@@ -726,8 +726,13 @@ def list_installed(target_dir, providers, skills):
         if needs_shared_doc:
             shared_path = _shared_doc_path(target_dir, skill_name)
             shared_existing = _read_text(shared_path)
-            shared_installed = shared_existing is not None
-            shared_drifted = None if not shared_installed else check_drift(shared_existing) in ("drifted", "foreign")
+            shared_status = check_drift(shared_existing)
+            # Same scope as remove: a file with no marker that no stub
+            # points at is the user's own, not a shared doc of this tool.
+            if shared_status == "foreign" and not _other_stub_providers_reference(target_dir, skill_name, "project", None):
+                shared_status = "absent"
+            shared_installed = shared_status != "absent"
+            shared_drifted = None if not shared_installed else shared_status in ("drifted", "foreign")
             rows.append(
                 {
                     "skill": skill_name,

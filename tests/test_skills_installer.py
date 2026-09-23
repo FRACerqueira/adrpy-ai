@@ -1856,3 +1856,32 @@ class TestAnUnreadableAgentsmdNeverBlocksAnotherProvidersRemove:
         with pytest.raises(CommandError) as excinfo:
             installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
         assert excinfo.value.code == "io-error"
+
+
+class TestListAgreesWithRemoveOnAHandWrittenSharedDocPath:
+    def _hand_written(self, tmp_path):
+        doc = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        doc.parent.mkdir(parents=True)
+        doc.write_text("# My own notes\n", encoding="utf-8")
+
+    def _shared_row(self, tmp_path):
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        return [row for row in rows if row["provider"] == "shared-doc"][0]
+
+    def test_a_hand_written_file_with_no_stub_is_not_reported_as_the_shared_doc(self, tmp_path):
+        self._hand_written(tmp_path)
+
+        row = self._shared_row(tmp_path)
+
+        assert row["installed"] is False and row["drifted"] is None
+
+    def test_the_same_file_with_a_stub_pointing_at_it_is_reported_and_flagged(self, tmp_path):
+        # Positive control: then it's what install would refuse to overwrite.
+        self._hand_written(tmp_path)
+        stub = tmp_path / ".github" / "instructions" / "comment-audit.instructions.md"
+        stub.parent.mkdir(parents=True)
+        stub.write_text("stub\n", encoding="utf-8")
+
+        row = self._shared_row(tmp_path)
+
+        assert row["installed"] is True and row["drifted"] is True

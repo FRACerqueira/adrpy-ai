@@ -23,6 +23,8 @@ def describe():
             "skill is included under provider 'shared-doc' (project scope only) for the one shared "
             "doc/ai-skills/<name>.md file its stub points at -- same shared-doc concept install/"
             "remove already report under that same provider name in their own `installed`/`removed`. "
+            "A file at that path with no adrpy-skills marker that no stub points at is the user's own, "
+            "and is reported as not installed -- the same scope remove uses. "
             "Read-only in the strict sense: computes a hash to determine drift, but never writes "
             "anything back, regardless of what it finds."
         ),
