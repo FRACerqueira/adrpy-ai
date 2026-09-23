@@ -37,7 +37,8 @@ Removes a `drifted` or `foreign` file/block instead of skipping it. Presence-onl
 | Code | Condition |
 |---|---|
 | `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
-| `io-error` | A write/delete failed for a reason not covered by a more specific code (permission denied, etc.). |
+| `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). data.removed/data.skipped list what this same call had already deleted before the failure, and warnings carries the warnings already collected -- the same shapes as the success result, as far as the call got. |
+| `interrupted` | Interrupted (Ctrl+C) partway through; data.removed/data.skipped and warnings report what was already done, as for io-error. |
 
 ## Example
 

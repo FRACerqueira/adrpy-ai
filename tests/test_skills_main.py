@@ -163,3 +163,80 @@ class TestCliDispatch:
         assert exit_code != 0
         assert out["success"] is False
         assert out["code"] == "interrupted"
+
+
+class TestPartialEffectsSurviveAFailure:
+    """A failure partway through install/remove must still report what
+    that same call already wrote or deleted, and the warnings it already
+    collected -- the caller can't otherwise tell what changed on disk."""
+
+    @staticmethod
+    def _isolate_home(tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+
+    @staticmethod
+    def _fail_on_write(monkeypatch, failing_call, error):
+        from adrpy.skills import installer as installer_module
+
+        real_write = installer_module.atomic_write_text
+        calls = {"n": 0}
+
+        def write(path, content):
+            calls["n"] += 1
+            if calls["n"] == failing_call:
+                raise error
+            return real_write(path, content)
+
+        monkeypatch.setattr(installer_module, "atomic_write_text", write)
+
+    def test_an_io_error_midway_through_install_reports_what_was_already_written(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        self._fail_on_write(monkeypatch, 3, OSError(28, "No space left on device"))
+
+        exit_code, out = _run(
+            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "comment-audit,decision-log"],
+            capsys,
+        )
+
+        assert exit_code != 0
+        assert out["code"] == "io-error"
+        written = [(row["provider"], row["skill"]) for row in out["data"]["installed"]]
+        assert written == [("claude", "comment-audit"), ("cursor", "comment-audit")]
+        assert out["warnings"] == []
+
+    def test_an_interrupt_midway_through_install_reports_what_was_already_written(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        self._fail_on_write(monkeypatch, 2, KeyboardInterrupt())
+
+        exit_code, out = _run(
+            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "comment-audit"], capsys
+        )
+
+        assert out["code"] == "interrupted"
+        assert [row["provider"] for row in out["data"]["installed"]] == ["claude"]
+
+    def test_a_non_utf8_agentsmd_is_an_io_error_naming_the_file_not_an_internal_error(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        (tmp_path / "AGENTS.md").write_bytes("# Notas do projeto\n".encode("utf-16"))
+
+        main(["list", "--path", str(tmp_path), "--provider", "agentsmd"])
+        captured = capsys.readouterr()
+
+        assert json.loads(captured.out)["code"] == "io-error"
+        assert "AGENTS.md" in captured.err and "UTF-8" in captured.err
+
+    def test_remove_reports_deletions_made_before_an_unreadable_agentsmd(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        main(["install", "--path", str(tmp_path), "--provider", "claude", "--skill", "comment-audit"])
+        capsys.readouterr()
+        (tmp_path / "AGENTS.md").write_bytes("# Notas do projeto\n".encode("utf-16"))
+
+        exit_code, out = _run(
+            ["remove", "--path", str(tmp_path), "--provider", "claude,agentsmd", "--skill", "comment-audit"], capsys
+        )
+
+        assert out["code"] == "io-error"
+        assert [row["provider"] for row in out["data"]["removed"]] == ["claude"]
+        assert not (tmp_path / ".claude" / "skills" / "comment-audit" / "SKILL.md").exists()

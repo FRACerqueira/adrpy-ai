@@ -2,7 +2,7 @@ import os
 import time
 from pathlib import Path
 
-from adrpy.core.errors import UsageError
+from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.hashing import check_drift
 from adrpy.skills import installer
 
@@ -1381,8 +1381,9 @@ class TestCoverageOfRecentGuarantees:
         monkeypatch.setattr(Path, "open", denied_open)
         monkeypatch.setattr("adrpy.core.io_retry.time.sleep", lambda _seconds: None)
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(CommandError) as excinfo:
             installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        assert excinfo.value.code == "io-error"
 
         monkeypatch.undo()
         assert agents_md.read_bytes() == before
@@ -1494,3 +1495,44 @@ class TestCoverageOfRecentGuarantees:
         )
 
         assert installer._agentsmd_block_state(text, "comment-audit") == "malformed"
+
+
+class TestRemoveRetriesATransientDeleteFailure:
+    """Reads and writes already absorb a transient PermissionError (an
+    editor, an agent or an antivirus scanner briefly holding the file);
+    remove's own deletes must too, or the call fails with part of it
+    already done."""
+
+    @staticmethod
+    def _unlink_fails_once(monkeypatch, target):
+        real_unlink = Path.unlink
+        failures = {"left": 1}
+
+        def flaky_unlink(self, *args, **kwargs):
+            if self == target and failures["left"]:
+                failures["left"] -= 1
+                raise PermissionError(32, "The process cannot access the file", str(self))
+            return real_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", flaky_unlink)
+        monkeypatch.setattr("adrpy.core.io_retry.time.sleep", lambda _seconds: None)
+
+    def test_a_provider_file_held_open_for_a_moment_is_still_removed(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        target = tmp_path / ".cursor" / "rules" / "comment-audit.mdc"
+        self._unlink_fails_once(monkeypatch, target)
+
+        result = installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert [row["provider"] for row in result["removed"]] == ["cursor"]
+        assert not target.exists()
+
+    def test_a_shared_doc_held_open_for_a_moment_is_still_removed(self, tmp_path, monkeypatch):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        self._unlink_fails_once(monkeypatch, shared)
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert "shared-doc" in {row["provider"] for row in result["removed"]}
+        assert not shared.exists()

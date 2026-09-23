@@ -5,7 +5,7 @@ surface or `describe()` contracts."""
 import sys
 from importlib.metadata import PackageNotFoundError, metadata
 
-from adrpy.core.errors import UsageError
+from adrpy.core.errors import CommandError, UsageError
 from adrpy.core.output import EXIT_SUCCESS, emit_failure, emit_success, emit_usage_failure
 from adrpy.skills.registry import COMMANDS
 
@@ -45,6 +45,8 @@ def main(argv=None):
         data = command.run(rest)
     except UsageError as error:
         return emit_usage_failure("usage-error", str(error))
+    except CommandError as error:
+        return emit_failure(error.code, error.detail, error.data, error.warnings)
     except OSError as error:
         return emit_failure("io-error", str(error))
     except KeyboardInterrupt:

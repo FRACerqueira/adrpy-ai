@@ -29,7 +29,7 @@ Repository root to inspect for project-scope entries. Defaults to `.`.
 | Code | Condition |
 |---|---|
 | `usage-error` | An unknown `--provider` or `--skill` value was given. |
-| `io-error` | A read failed for a reason not covered by a more specific code (permission denied, etc.). |
+| `io-error` | A read failed (permission denied, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). |
 
 ## Example
 

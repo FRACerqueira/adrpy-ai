@@ -77,7 +77,18 @@ def describe():
                     "global-scope concept (anything but claude)."
                 ),
             },
-            {"code": "io-error", "condition": "A write/delete failed for a reason not covered by a more specific code (permission denied, etc.)."},
+            {
+                "code": "io-error",
+                "condition": (
+                    "A read, write or delete failed (permission denied, full disk, a file over the 10MB read "
+                    "limit, or a file that is not valid UTF-8 -- the detail names it). "
+                    "data.removed/data.skipped list what this same call had already deleted before the failure, and warnings carries the warnings already collected -- the same shapes as the success result, as far as the call got."
+                ),
+            },
+            {
+                "code": "interrupted",
+                "condition": "Interrupted (Ctrl+C) partway through; data.removed/data.skipped and warnings report what was already done, as for io-error.",
+            },
         ],
     }
 
