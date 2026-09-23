@@ -329,12 +329,15 @@ def _agentsmd_force_strip_all(file_text, skill_name):
     return "".join(pieces)
 
 
-def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provider):
+def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provider, warnings=None):
     """True if some OTHER stub-mode provider (already installed, not part
     of this same call, or part of it but not the one being removed) still
     points at the shared doc for this skill. A malformed agentsmd block
     still counts as "referencing" the skill -- it's evidence the skill is
-    still (unsafely) present there, not evidence it's gone."""
+    still (unsafely) present there, not evidence it's gone. So does an
+    AGENTS.md this call can't read (not UTF-8, over the read limit): the
+    shared doc is kept, with a warning, rather than failing a remove that
+    never asked to touch AGENTS.md."""
     for provider_name, spec in PROVIDERS.items():
         if provider_name == exclude_provider or spec["mode"] not in ("stub", "stub_block"):
             continue
@@ -342,7 +345,15 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
             continue
         path = _resolve_path(provider_name, skill_name, target_dir, scope)
         if provider_name == "agentsmd":
-            agents_text = _read_text(path)
+            try:
+                agents_text = _read_text(path)
+            except OSError as error:
+                if warnings is not None:
+                    warnings.append(
+                        f"shared-doc/{skill_name}: kept -- AGENTS.md could not be read to check whether it still "
+                        f"points at it ({error})."
+                    )
+                return True
             if _agentsmd_block_state(agents_text, skill_name) != "absent":
                 return True
             # Body text a --force cleanup of a malformed block left in place
@@ -668,8 +679,9 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
             # an interrupted install, or whose stub was deleted by hand, has
             # no other way to be removed.
             if any_stub_removed or any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
-                still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None)
-                if still_referenced and any_stub_removed:
+                warnings_before = len(warnings)
+                still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None, warnings)
+                if still_referenced and any_stub_removed and len(warnings) == warnings_before:
                     warnings.append(
                         f"shared-doc/{skill_name}: kept -- another stub-mode provider, or text in AGENTS.md, "
                         "still points at it."

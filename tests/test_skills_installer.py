@@ -1834,3 +1834,25 @@ class TestEditorBomOnAToolWrittenFile:
         result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
 
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("cursor", "drifted")}
+
+
+class TestAnUnreadableAgentsmdNeverBlocksAnotherProvidersRemove:
+    def test_remove_of_copilot_keeps_the_shared_doc_and_warns_instead_of_failing(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        (tmp_path / "AGENTS.md").write_bytes("# Notas do projeto\n".encode("utf-16"))
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert [row["provider"] for row in result["removed"]] == ["copilot"]
+        assert shared.exists()
+        kept = [w for w in result["warnings"] if w.startswith("shared-doc/comment-audit: kept")]
+        assert len(kept) == 1 and "could not be read" in kept[0]
+
+    def test_remove_of_agentsmd_itself_still_fails_on_an_unreadable_agentsmd(self, tmp_path):
+        # Positive control: the block itself can't be removed safely.
+        (tmp_path / "AGENTS.md").write_bytes("# Notas\n".encode("utf-16"))
+
+        with pytest.raises(CommandError) as excinfo:
+            installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        assert excinfo.value.code == "io-error"
