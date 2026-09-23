@@ -13,6 +13,7 @@ from adrpy.core.atomic_write import RETRY_ATTEMPTS, RETRY_DELAY_SECONDS, atomic_
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.hashing import build_marker, check_drift
 from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.output import explain
 from adrpy.core.security import is_within
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 from adrpy.skills import resources
@@ -216,78 +217,157 @@ _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy
 # the read-only `list` command) -- this pattern can't backtrack that way
 # since it never spans more than one tag. A tag is a whole line, as
 # _AGENTSMD_BLOCK_TEMPLATE writes it: the same text quoted inside a line of
-# the user's own prose is not a tag, and --force must never strip it. What
-# an editor adds around that line is tolerated: surrounding spaces/tabs,
-# and a BOM at the very start of the file (kept outside the match, so a
-# rewrite preserves it) -- otherwise a block the tool itself wrote reads
-# as "malformed" and --force appends a second copy of it.
-_AGENTSMD_TAG_RE = re.compile(
-    r"(?:^|(?<=\A\ufeff))[ \t]*<!-- adrpy:skills:([^:\n]+):(start|end) -->[ \t]*(?:\n|\Z)", re.MULTILINE
-)
+# the user's own prose is not a tag, and --force must never strip it.
+# Trailing spaces/tabs are tolerated, and so is any run of BOMs at the very
+# start of the file (skipped by offset, so a rewrite preserves them).
+#
+# Indentation is captured, not limited, because the shape of a line can't
+# say who owns it (Round 39, S1): a block an editor re-indented and the
+# user's quoted example look alike. Tags at 0-3 spaces are this tool's
+# syntax, whatever surrounds them. Past that -- where CommonMark starts an
+# indented code block -- only the block's own marker hash proves it is the
+# tool's (see _agentsmd_locate); anything else there is the user's text.
+_AGENTSMD_TAG_RE = re.compile(r"^([ \t]*)<!-- adrpy:skills:([^:\n]+):(start|end) -->[ \t]*(?:\n|\Z)", re.MULTILINE)
+_AGENTSMD_CANONICAL_INDENT_RE = re.compile(r" {0,3}\Z")
+
+
+def _agentsmd_tag_lines(file_text):
+    """Every tag line at any indentation, in document order, as (name,
+    kind, match_start, match_end, indent) tuples -- a single linear pass."""
+    text = file_text or ""
+    offset = len(text) - len(text.lstrip("\ufeff"))
+    return [
+        (m.group(2), m.group(3), m.start() + offset, m.end() + offset, m.group(1))
+        for m in _AGENTSMD_TAG_RE.finditer(text[offset:])
+    ]
 
 
 def _agentsmd_all_tags(file_text):
-    """Every adrpy:skills marker tag in `file_text`, in document order, as
-    (name, kind, match_start, match_end) tuples -- a single linear pass."""
-    return [(m.group(1), m.group(2), m.start(), m.end()) for m in _AGENTSMD_TAG_RE.finditer(file_text or "")]
+    """The tag lines at this tool's own position (0-3 spaces)."""
+    return [t for t in _agentsmd_tag_lines(file_text) if _AGENTSMD_CANONICAL_INDENT_RE.match(t[4])]
 
 
-def _agentsmd_own_tags(file_text, skill_name):
-    """This skill's own (start, end) tag tuples when it has exactly one
-    well-formed block, else None: absent, or malformed -- more than one
-    `:start`, more than one `:end`, a `:start` with no `:end`, a `:end`
-    with no `:start`, in any combination, or another skill's tag between
-    its own two (a nested or overlapping block, only reachable by hand-
-    editing -- replacing such a span would delete or split that other
-    skill's block)."""
-    all_tags = _agentsmd_all_tags(file_text)
-    tags = [t for t in all_tags if t[0] == skill_name]
-    starts = [t for t in tags if t[1] == "start"]
-    ends = [t for t in tags if t[1] == "end"]
+def _agentsmd_own_tags(tags, skill_name):
+    """This skill's own (start, end) tag tuples among `tags` when it has
+    exactly one well-formed block, else None: more than one `:start`, more
+    than one `:end`, a `:start` with no `:end`, a `:end` with no `:start`,
+    in any combination, or another skill's tag between its own two (a
+    nested or overlapping block, only reachable by hand-editing --
+    replacing such a span would delete or split that other skill's
+    block)."""
+    mine = [t for t in tags if t[0] == skill_name]
+    starts = [t for t in mine if t[1] == "start"]
+    ends = [t for t in mine if t[1] == "end"]
     if len(starts) != 1 or len(ends) != 1 or starts[0][2] > ends[0][2]:
         return None
-    if any(t[0] != skill_name and starts[0][3] <= t[2] < ends[0][2] for t in all_tags):
+    if any(t[0] != skill_name and starts[0][3] <= t[2] < ends[0][2] for t in tags):
         return None
     return starts[0], ends[0]
 
 
+def _dedent(text, indent):
+    return "".join(line[len(indent):] if line.startswith(indent) else line for line in text.splitlines(keepends=True))
+
+
+def _indent(text, indent):
+    return "".join(indent + line if line.strip("\n") else line for line in text.splitlines(keepends=True))
+
+
+def _agentsmd_locate(file_text, skill_name):
+    """(state, span, indent, note, inner) for this skill's block in AGENTS.md.
+
+    Tags at 0-3 spaces are this tool's syntax: `state` is check_drift's
+    own verdict on the block's content (relative to its start tag's
+    indentation), or "malformed" for a shape it can't safely rewrite.
+    Only when there are none, an indented pair (same indentation) whose
+    content hashes clean is the tool's block, re-indented by an editor.
+    Any other indented copy is the user's text: "absent", with `note`
+    saying why ("edited": its marker no longer matches; "unmarked": it
+    has no valid marker; "unpaired": its indented tags are repeated,
+    unpaired, at different indentations, or split by another skill's tag)
+    so install/remove can say so.
+    `inner` is the
+    block's content between its tags, de-indented -- what was hashed."""
+    text = file_text or ""
+    tags = _agentsmd_tag_lines(text)
+    canonical = [t for t in tags if _AGENTSMD_CANONICAL_INDENT_RE.match(t[4])]
+    if any(t[0] == skill_name for t in canonical):
+        own = _agentsmd_own_tags(canonical, skill_name)
+        if own is None:
+            return "malformed", None, "", None, None
+        indent = own[0][4]
+        inner = _dedent(text[own[0][3] : own[1][2]], indent)
+        return check_drift(inner), (own[0][2], own[1][3]), indent, None, inner
+    if not any(t[0] == skill_name for t in tags):
+        return "absent", None, "", None, None
+    own = _agentsmd_own_tags(tags, skill_name)
+    if own is None or own[0][4] != own[1][4]:
+        return "absent", None, "", "unpaired", None
+    indent = own[0][4]
+    inner = _dedent(text[own[0][3] : own[1][2]], indent)
+    drift = check_drift(inner)
+    if drift == "clean":
+        return "clean", (own[0][2], own[1][3]), indent, None, inner
+    if drift == "drifted":
+        return "absent", None, "", "edited", None
+    return "absent", None, "", "unmarked", None
+
+
 def _agentsmd_skill_span(file_text, skill_name):
     """This skill's own complete block span -- (start, end) covering both
-    tag lines and everything between them -- or None when this skill has
-    no single well-formed block (see _agentsmd_own_tags)."""
-    own = _agentsmd_own_tags(file_text, skill_name)
-    if own is None:
-        return None
-    return own[0][2], own[1][3]
+    tag lines and everything between them -- or None (see
+    _agentsmd_locate)."""
+    return _agentsmd_locate(file_text, skill_name)[1]
 
 
 def _agentsmd_extract_inner(file_text, skill_name):
     """The block's own content, excluding the `start`/`end` wrapper lines
-    -- this is what was actually hashed (`marker + inner`), so drift
-    checks must run against this, never the whole wrapped block. None when
-    this skill has no single well-formed block."""
-    own = _agentsmd_own_tags(file_text, skill_name)
-    if own is None:
-        return None
-    return file_text[own[0][3] : own[1][2]]
+    and its indentation -- this is what was actually hashed (`marker +
+    inner`), so drift checks must run against this, never the whole
+    wrapped block. None when this skill has no block."""
+    return _agentsmd_locate(file_text, skill_name)[4]
 
 
 def _agentsmd_block_state(file_text, skill_name):
-    """Like check_drift, but first detects malformed shapes unique to
-    AGENTS.md's marked-block format (see _agentsmd_skill_span) -- reported
-    as "malformed" and blocked the same as a foreign file (see
-    _blocks_write) instead of being touched."""
-    text = file_text or ""
-    if any(t[0] == skill_name for t in _agentsmd_all_tags(text)) and _agentsmd_skill_span(text, skill_name) is None:
-        return "malformed"
-    return check_drift(_agentsmd_extract_inner(text, skill_name))
+    """Like check_drift, for this skill's block in AGENTS.md (see
+    _agentsmd_locate) -- "malformed" is blocked the same as a foreign file
+    (see _blocks_write) instead of being touched."""
+    return _agentsmd_locate(file_text, skill_name)[0]
+
+
+def _agentsmd_is_indented(file_text, skill_name):
+    """True when this skill's block is an indented copy adopted by its
+    marker hash, not one at the tool's own position."""
+    indent = _agentsmd_locate(file_text, skill_name)[2]
+    return not _AGENTSMD_CANONICAL_INDENT_RE.match(indent)
+
+
+def _agentsmd_user_copy_warning(file_text, skill_name):
+    """The warning for an indented copy treated as the user's own text, or
+    None."""
+    note = _agentsmd_locate(file_text, skill_name)[3]
+    if note is None:
+        return None
+    why = {
+        "edited": "its marker no longer matches (edited)",
+        "unmarked": "it carries no valid marker",
+        "unpaired": "its tags are repeated, unpaired, at different indentations, or split by another skill's tag",
+    }[note]
+    return (
+        f"agentsmd/{skill_name}: an indented copy of its tags is treated as your own text, since {why}; "
+        "left untouched."
+    )
 
 
 def _agentsmd_replace_or_append(file_text, skill_name, new_block):
-    span = _agentsmd_skill_span(file_text, skill_name)
+    _state, span, indent, _note, _inner = _agentsmd_locate(file_text, skill_name)
     if span is not None:
         start, end = span
-        return file_text[:start] + new_block + file_text[end:]
+        return file_text[:start] + _indent(new_block, indent) + file_text[end:]
+    return _agentsmd_append(file_text, new_block)
+
+
+def _agentsmd_append(file_text, new_block):
     if not file_text:
         return new_block
     sep = "\n" if file_text.endswith("\n") else "\n\n"
@@ -322,11 +402,19 @@ def _agentsmd_force_strip_all(file_text, skill_name):
         return file_text
     pieces = []
     cursor = 0
-    for _, _, tag_start, tag_end in tags:
+    for _, _, tag_start, tag_end, _ in tags:
         pieces.append(file_text[cursor:tag_start])
         cursor = tag_end
     pieces.append(file_text[cursor:])
     return "".join(pieces)
+
+
+def _stub_writable(provider_name, skill_name, target_dir, scope, force):
+    """Whether install would write this stub-mode provider's own file."""
+    path = _resolve_path(provider_name, skill_name, target_dir, scope)
+    text = _read_text(path)
+    status = _agentsmd_block_state(text, skill_name) if provider_name == "agentsmd" else check_drift(text)
+    return not _blocks_write(status, force)
 
 
 def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provider, warnings=None):
@@ -351,16 +439,17 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
                 if warnings is not None:
                     warnings.append(
                         f"shared-doc/{skill_name}: kept -- AGENTS.md could not be read to check whether it still "
-                        f"points at it ({error})."
+                        f"points at it ({explain(error)})."
                     )
                 return True
             if _agentsmd_block_state(agents_text, skill_name) != "absent":
                 return True
             # Body text a --force cleanup of a malformed block left in place
             # (see _agentsmd_force_strip_all), or the user's own prose, still
-            # points readers here -- in either path spelling.
-            shared_rel = SHARED_DOC_PATH.format(name=skill_name)
-            if agents_text and (shared_rel in agents_text or shared_rel.replace("/", "\\") in agents_text):
+            # points readers here -- in any separator or letter case, since
+            # keeping the doc is the safe side of a mismatch.
+            shared_rel = SHARED_DOC_PATH.format(name=skill_name).lower()
+            if agents_text and shared_rel in agents_text.replace("\\", "/").lower():
                 return True
         elif path.exists():
             return True
@@ -379,14 +468,29 @@ def _expand_problem(names, universe, flag):
     return None
 
 
-def _expand_all(providers, skills):
-    """Validates --provider and --skill together, reporting every problem
-    in one usage-error instead of stopping at the first flag."""
+def _expand_all(providers, skills, scope=None):
+    """Validates --provider, --skill and (when given) --target together,
+    reporting every problem in one usage-error instead of stopping at the
+    first flag."""
+    target_problem = None
+    if scope is not None and scope not in ("project", "global"):
+        target_problem = f"Unknown --target value: {scope!r}. Valid values: global, project."
+    elif scope == "global":
+        # Known names only: an unknown one is reported by the --provider check.
+        chosen = list(PROVIDERS) if providers == ["all"] else [name for name in providers if name in PROVIDERS]
+        unsupported = [name for name in dict.fromkeys(chosen) if PROVIDERS[name]["global_path"] is None]
+        if unsupported:
+            supported = ", ".join(name for name, spec in PROVIDERS.items() if spec["global_path"] is not None)
+            target_problem = (
+                f"--target global is not supported for provider(s): {', '.join(unsupported)}. "
+                f"Use --provider {supported} (or omit --provider)."
+            )
     problems = [
         problem
         for problem in (
             _expand_problem(providers, PROVIDERS, "--provider"),
             _expand_problem(skills, resources.SKILL_NAMES, "--skill"),
+            target_problem,
         )
         if problem
     ]
@@ -468,13 +572,13 @@ def _report_partial_effects(data, warnings):
     try:
         yield
     except OSError as error:
-        raise CommandError(FailureCodes.IO_ERROR, str(error), data=data, warnings=list(warnings)) from error
+        raise CommandError(FailureCodes.IO_ERROR, explain(error), data=data, warnings=list(warnings)) from error
     except KeyboardInterrupt as error:
         raise CommandError("interrupted", "Interrupted (Ctrl+C).", data=data, warnings=list(warnings)) from error
 
 
 def install(target_dir, providers, skills, scope, force, allow_external_links=False):
-    provider_names, skill_names = _expand_all(providers, skills)
+    provider_names, skill_names = _expand_all(providers, skills, scope)
     _validate_scope(provider_names, scope)
     _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
@@ -509,6 +613,14 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
             # a blocked shared-doc write used to be silently disconnected from
             # whether the providers depending on it were allowed to proceed.
             shared_doc_blocked = False
+            # A new shared doc only when some stub-mode provider in this call
+            # will actually be written -- otherwise nothing would point at it,
+            # and no later remove would ever find a reason to delete it.
+            if needs_shared_doc and not _shared_doc_path(target_dir, skill_name).exists():
+                needs_shared_doc = any(
+                    PROVIDERS[name]["mode"] != "full" and _stub_writable(name, skill_name, target_dir, scope, force)
+                    for name in provider_names
+                )
             if needs_shared_doc:
                 shared_path = _shared_doc_path(target_dir, skill_name)
                 shared_status = check_drift(_read_text(shared_path))
@@ -552,6 +664,9 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
                 if provider_name == "agentsmd":
                     existing_file = _read_text(path)
                     status = _agentsmd_block_state(existing_file, skill_name)
+                    copy_warning = _agentsmd_user_copy_warning(existing_file, skill_name)
+                    if copy_warning:
+                        warnings.append(copy_warning)
                     if _blocks_write(status, force):
                         skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
                         continue
@@ -574,7 +689,13 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
                     marker = build_marker(marker_version, inner)
                     body = marker + "\n" + inner
                     new_block = _AGENTSMD_BLOCK_TEMPLATE.format(name=skill_name, body=body)
-                    new_file = _agentsmd_replace_or_append(existing_file, skill_name, new_block)
+                    if status == "malformed":
+                        # Decided on the file as found: re-locating after the
+                        # strip would adopt an indented copy the user wrote,
+                        # which the 0-3-space tags made their own text.
+                        new_file = _agentsmd_append(existing_file, new_block)
+                    else:
+                        new_file = _agentsmd_replace_or_append(existing_file, skill_name, new_block)
                     path.parent.mkdir(parents=True, exist_ok=True)
                     attempts = atomic_write_text(path, new_file)
                     warning = retry_warning(attempts)
@@ -607,7 +728,7 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
 
 
 def remove(target_dir, providers, skills, scope, force, allow_external_links=False):
-    provider_names, skill_names = _expand_all(providers, skills)
+    provider_names, skill_names = _expand_all(providers, skills, scope)
     _validate_scope(provider_names, scope)
     _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
@@ -633,7 +754,20 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
                         continue
                     status = _agentsmd_block_state(file_text, skill_name)
                     if status == "absent":
-                        warnings.append(f"agentsmd/{skill_name}: not installed, nothing to remove.")
+                        warnings.append(
+                            _agentsmd_user_copy_warning(file_text, skill_name)
+                            or f"agentsmd/{skill_name}: not installed, nothing to remove."
+                        )
+                        continue
+                    if not force and _agentsmd_is_indented(file_text, skill_name):
+                        # Proven the tool's by its hash, but byte for byte what
+                        # a verbatim copy the user quoted would also be -- so
+                        # deleting it takes --force.
+                        skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": "indented"})
+                        warnings.append(
+                            f"agentsmd/{skill_name}: its block is indented as a code block and may be your own "
+                            "verbatim copy; removed only with --force."
+                        )
                         continue
                     if _blocks_write(status, force):
                         skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
@@ -681,7 +815,12 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
             if any_stub_removed or any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
                 warnings_before = len(warnings)
                 still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None, warnings)
-                if still_referenced and any_stub_removed and len(warnings) == warnings_before:
+                if (
+                    still_referenced
+                    and any_stub_removed
+                    and len(warnings) == warnings_before
+                    and _shared_doc_path(target_dir, skill_name).exists()
+                ):
                     warnings.append(
                         f"shared-doc/{skill_name}: kept -- another stub-mode provider, or text in AGENTS.md, "
                         "still points at it."

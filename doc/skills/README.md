@@ -92,6 +92,19 @@ checks that marker before touching the file again:
   Freely overwritten -- this is what makes a routine `pip install
   --upgrade adrpy-ai` followed by a re-run actually pick up an update.
 
+In `AGENTS.md`, tags indented 0-3 spaces are this tool's own syntax. Past
+that (four spaces or a tab, where Markdown starts an indented code
+block), a copy of a skill's tags counts as its block only when the
+marker's hash still matches -- a block an editor re-indented, which
+`install` updates in place, keeping the indentation. Any other indented
+copy (no marker, edited since, or repeated/unpaired tags) is your own
+text: never touched, even
+with `--force`, and `install` appends a new block with a warning saying
+why. Accepted limitation: a verbatim indented copy of the tool's block,
+left alone in the file, is indistinguishable from a re-indented block
+and is treated as one -- which is why `remove` deletes an indented block
+only with `--force` (reason `indented`).
+
 `foreign`, `drifted`, and `malformed` all require `--force` to overwrite
 (`install`) or delete (`remove`) -- including the one shared
 `doc/ai-skills/<name>.md` file itself, and every code path `remove` uses
@@ -109,8 +122,9 @@ reported in `warnings`. No other file is ever deleted without `--force`.
 
 The full, closed set of values `skipped[].reason` can ever take, across
 both `install` and `remove`, is exactly: `foreign`, `drifted`,
-`malformed` (the three drift statuses above), plus one more that isn't a
-drift status at all -- **`shared-doc-blocked`** (`install` only): a
+`malformed` (the three drift statuses above), **`indented`** (`remove`
+only, `agentsmd`: see the indentation note above), plus one more that
+isn't a drift status at all -- **`shared-doc-blocked`** (`install` only): a
 stub-mode provider's own file/block was skipped not because of its own
 drift status, but because the one shared doc it would point at was
 itself `foreign`/`drifted` and blocked. `remove` has no equivalent --

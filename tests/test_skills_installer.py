@@ -1885,3 +1885,286 @@ class TestListAgreesWithRemoveOnAHandWrittenSharedDocPath:
         row = self._shared_row(tmp_path)
 
         assert row["installed"] is True and row["drifted"] is True
+
+
+class TestAgentsmdAndSharedDocEdgeCases:
+    def _installed_text(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        return (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("indent", ["    ", "\t"])
+    def test_a_tag_indented_as_a_markdown_code_block_is_not_a_tag(self, tmp_path, indent):
+        # CommonMark: four spaces or a tab make an indented code block --
+        # an example quoted there is the user's content, not a block.
+        example = (
+            "Example:\n\n"
+            f"{indent}<!-- adrpy:skills:comment-audit:start -->\n"
+            f"{indent}example body\n"
+            f"{indent}<!-- adrpy:skills:comment-audit:end -->\n"
+        )
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(example, encoding="utf-8")
+
+        assert installer._agentsmd_block_state(example, "comment-audit") == "absent"
+        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+        assert agents_md.read_text(encoding="utf-8").startswith(example)
+
+    def test_up_to_three_spaces_before_a_tag_still_count(self, tmp_path):
+        text = self._installed_text(tmp_path).replace(
+            "<!-- adrpy:skills:decision-log:start -->", "   <!-- adrpy:skills:decision-log:start -->", 1
+        )
+        assert installer._agentsmd_block_state(text, "decision-log") == "clean"
+
+    @pytest.mark.parametrize("spelling", [
+        "doc/ai-skills\\decision-log.md",
+        "Doc/AI-Skills/Decision-Log.md",
+        "DOC\\AI-SKILLS\\DECISION-LOG.MD",
+    ])
+    def test_any_spelling_of_the_shared_doc_path_counts_as_a_reference(self, tmp_path, spelling):
+        installer.install(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+        (tmp_path / "AGENTS.md").write_text("See " + spelling + " for details.\n", encoding="utf-8")
+        shared = tmp_path / "doc" / "ai-skills" / "decision-log.md"
+
+        installer.remove(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+
+        assert shared.exists()
+
+    def test_more_than_one_leading_bom_still_reads_clean(self, tmp_path):
+        from adrpy.core.hashing import check_drift
+
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        text = (tmp_path / ".cursor" / "rules" / "comment-audit.mdc").read_text(encoding="utf-8")
+
+        assert check_drift("\ufeff\ufeff" + text) == "clean"
+
+    def test_an_invalid_target_is_reported_together_with_invalid_providers(self, tmp_path):
+        with pytest.raises(UsageError) as excinfo:
+            installer.install(str(tmp_path), ["bogus"], ["comment-audit"], "golbal", False)
+
+        assert "--provider" in str(excinfo.value) and "--target" in str(excinfo.value)
+
+
+class TestBomRunsAndCombinedUsageErrors:
+    def test_an_agentsmd_starting_with_two_boms_still_reads_its_block_clean(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        text = "\ufeff\ufeff" + (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+
+        assert installer._agentsmd_block_state(text, "decision-log") == "clean"
+
+    def test_a_global_scope_incompatibility_is_reported_with_the_other_problems(self, tmp_path):
+        with pytest.raises(UsageError) as excinfo:
+            installer.install(str(tmp_path), ["cursor"], ["nope"], "global", False)
+
+        assert "--skill" in str(excinfo.value) and "not supported" in str(excinfo.value)
+
+
+def test_a_global_incompatibility_is_reported_alongside_an_unknown_provider(tmp_path):
+    with pytest.raises(UsageError) as excinfo:
+        installer.install(str(tmp_path), ["cursor", "bogus"], ["decision-log"], "global", False)
+
+    message = str(excinfo.value)
+    assert "bogus" in message and "not supported for provider(s): cursor" in message
+
+
+START = "<!-- adrpy:skills:decision-log:start -->"
+END = "<!-- adrpy:skills:decision-log:end -->"
+
+
+def _block_of(text):
+    """(before, block, after) around the decision-log block."""
+    i = text.index(START)
+    j = text.index(END) + len(END) + 1
+    return text[:i], text[i:j], text[j:]
+
+
+def _indent_block(block, prefix, tags_only):
+    lines = block.split("\n")
+    return "\n".join(
+        prefix + line if line and (not tags_only or line.startswith("<!-- adrpy:skills:")) else line
+        for line in lines
+    )
+
+
+class TestAgentsmdOwnershipIsProvedByTheMarkerHash:
+    """Round 39, S1. Tags at 0-3 spaces are the tool's syntax. Below that,
+    only the marker's hash proves a block is the tool's: an indented pair
+    whose content still hashes clean is adopted in place; any other
+    indented copy is the user's text, never touched and never blocking."""
+
+    def _installed(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        return tmp_path / "AGENTS.md"
+
+    def _reindented(self, tmp_path, prefix, tags_only):
+        agents_md = self._installed(tmp_path)
+        before, block, after = _block_of(agents_md.read_text(encoding="utf-8"))
+        text = "Docs:\n\n" + before + _indent_block(block, prefix, tags_only) + after
+        agents_md.write_text(text, encoding="utf-8")
+        return agents_md, text
+
+    @pytest.mark.parametrize("prefix, tags_only", [("    ", True), ("    ", False), ("\t", False)])
+    def test_a_reindented_tool_block_is_updated_in_place_without_force(self, tmp_path, prefix, tags_only):
+        agents_md, text = self._reindented(tmp_path, prefix, tags_only)
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        after = agents_md.read_text(encoding="utf-8")
+        assert [row["provider"] for row in result["installed"] if row["provider"] == "agentsmd"] == ["agentsmd"]
+        assert after.count(START) == 1
+        assert after.startswith("Docs:\n\n" + prefix + START)
+        assert installer._agentsmd_block_state(after, "decision-log") == "clean"
+        row = [r for r in installer.list_installed(str(tmp_path), ["agentsmd"], ["decision-log"])["skills"]
+               if r["provider"] == "agentsmd"][0]
+        assert row["installed"] is True and row["drifted"] is False
+
+    def test_remove_needs_force_for_a_reindented_block(self, tmp_path):
+        agents_md, text = self._reindented(tmp_path, "    ", False)
+
+        result = installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        assert agents_md.read_text(encoding="utf-8") == text
+        assert {(r["provider"], r["reason"]) for r in result["skipped"]} == {("agentsmd", "indented")}
+        assert any(w.startswith("agentsmd/decision-log:") and "--force" in w for w in result["warnings"])
+
+        installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", True)
+
+        after = agents_md.read_text(encoding="utf-8")
+        assert START not in after and END not in after
+        assert not (tmp_path / "doc" / "ai-skills" / "decision-log.md").exists()
+
+    @pytest.mark.parametrize("indent", ["    ", "\t"])
+    def test_an_unmarked_indented_example_is_never_touched_and_never_blocks(self, tmp_path, indent):
+        example = f"Example:\n\n{indent}{START}\n{indent}example body\n{indent}{END}\n"
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(example, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        after = agents_md.read_text(encoding="utf-8")
+        assert after.startswith(example) and after.count(START) == 2
+        assert any("no valid marker" in w for w in result["warnings"])
+        for force in (False, True):
+            installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", force)
+            assert agents_md.read_text(encoding="utf-8").startswith(example)
+        # Only the separator install added before its block may remain.
+        assert agents_md.read_text(encoding="utf-8").rstrip("\n") == example.rstrip("\n")
+        # Nothing of the tool's is left pointing at the shared doc, so it goes.
+        assert not (tmp_path / "doc" / "ai-skills" / "decision-log.md").exists()
+
+    @pytest.mark.parametrize("corruption", ["body", "hash"])
+    def test_an_indented_copy_whose_hash_does_not_match_is_not_adopted(self, tmp_path, corruption):
+        # Adversarial positive control: carrying a marker is not enough.
+        agents_md = self._installed(tmp_path)
+        before, block, after = _block_of(agents_md.read_text(encoding="utf-8"))
+        if corruption == "body":
+            lines = block.split("\n")
+            lines[2] = lines[2] + "!"
+            block = "\n".join(lines)
+        else:
+            head, _, rest = block.partition("sha256:")
+            block = head + "sha256:" + "0" * 64 + rest[64:]
+        copy = _indent_block(block, "    ", False)
+        agents_md.write_text(before + copy + after, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        text = agents_md.read_text(encoding="utf-8")
+        assert copy in text and text.count(START) == 2
+        assert any("edited" in w for w in result["warnings"])
+
+    def test_a_verbatim_indented_copy_left_alone_is_adopted_as_the_tools_block(self, tmp_path):
+        # Accepted limitation (Round 39, S1): a verbatim, indented copy of the
+        # tool's block is byte-for-byte what an editor re-indenting that block
+        # produces, so it is treated as the tool's block. Pinned so a future
+        # change does not "fix" one reading by silently breaking the other.
+        agents_md, _ = self._reindented(tmp_path, "    ", False)
+        before = agents_md.read_text(encoding="utf-8")
+        assert installer._agentsmd_block_state(before, "decision-log") == "clean"
+
+    @pytest.mark.parametrize("boms", [1, 2, 3, 4, 5])
+    def test_any_number_of_leading_boms_reads_clean_and_survives_a_rewrite(self, tmp_path, boms):
+        agents_md = self._installed(tmp_path)
+        agents_md.write_text("\ufeff" * boms + agents_md.read_text(encoding="utf-8"), encoding="utf-8")
+
+        assert installer._agentsmd_block_state(agents_md.read_text(encoding="utf-8"), "decision-log") == "clean"
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        after = agents_md.read_text(encoding="utf-8")
+        assert after.startswith("\ufeff" * boms + START) and after.count(START) == 1
+
+    def test_a_block_indented_as_a_list_item_is_the_tools_block(self, tmp_path):
+        agents_md, text = self._reindented(tmp_path, "  ", False)
+
+        assert installer._agentsmd_block_state(text, "decision-log") == "clean"
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        assert agents_md.read_text(encoding="utf-8").count(START) == 1
+
+    def test_a_canonical_block_and_a_verbatim_copy_only_the_canonical_one_is_touched(self, tmp_path):
+        agents_md = self._installed(tmp_path)
+        before, block, after = _block_of(agents_md.read_text(encoding="utf-8"))
+        copy = _indent_block(block, "    ", False)
+        agents_md.write_text(before + block + "\nQuoted:\n\n" + copy + after, encoding="utf-8")
+
+        installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        text = agents_md.read_text(encoding="utf-8")
+        assert copy in text and text.count(START) == 1
+
+    def test_the_shared_doc_is_not_written_when_no_stub_can_be(self, tmp_path):
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(f"```\n{START}\nexample\n{END}\n```\n", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        assert {(r["provider"], r["reason"]) for r in result["skipped"]} == {("agentsmd", "foreign")}
+        assert not (tmp_path / "doc" / "ai-skills" / "decision-log.md").exists()
+
+    def test_a_fenced_example_at_column_zero_is_still_the_tools_syntax(self, tmp_path):
+        text = f"```\n{START}\nexample\n{END}\n```\n"
+        assert installer._agentsmd_block_state(text, "decision-log") == "foreign"
+
+    def test_kept_is_not_reported_for_a_shared_doc_that_does_not_exist(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+        (tmp_path / "doc" / "ai-skills" / "decision-log.md").unlink()
+        (tmp_path / "AGENTS.md").write_text("See doc/ai-skills/decision-log.md.\n", encoding="utf-8")
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+
+        assert not any(w.startswith("shared-doc/decision-log: kept") for w in result["warnings"])
+
+    def test_many_unmatched_indented_start_tags_stays_fast(self, tmp_path):
+        content = ("    " + START + "\n" + "x" * 200 + "\n") * 3000
+        (tmp_path / "AGENTS.md").write_text(content, encoding="utf-8")
+
+        started = time.monotonic()
+        installer.list_installed(str(tmp_path), ["agentsmd"], ["decision-log"])
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 3.0, f"took {elapsed:.2f}s against adversarial indented tags"
+
+    def test_force_over_a_malformed_block_never_adopts_an_indented_copy(self, tmp_path):
+        # The ownership decision is made on the file as found: with a tag at
+        # 0-3 spaces present, the indented copy is the user's text, and
+        # stripping the malformed tags must not turn it into the tool's.
+        agents_md = self._installed(tmp_path)
+        _, block, _ = _block_of(agents_md.read_text(encoding="utf-8"))
+        copy = _indent_block(block, "    ", False)
+        agents_md.write_text(f"# P\n\n{START}\norphan body\n\nExample:\n\n{copy}", encoding="utf-8")
+
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", True)
+
+        text = agents_md.read_text(encoding="utf-8")
+        assert copy in text
+        assert text.count(START) == 2 and text.rstrip("\n").endswith(END)
+
+    def test_an_indented_copy_with_mismatched_tag_indentation_is_reported_as_such(self, tmp_path):
+        agents_md = self._installed(tmp_path)
+        before, block, after = _block_of(agents_md.read_text(encoding="utf-8"))
+        copy = _indent_block(block, "    ", False).replace("    " + END, "      " + END)
+        agents_md.write_text(before + copy + after, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        assert any("repeated, unpaired, at different indentations" in w for w in result["warnings"])
+        assert copy in agents_md.read_text(encoding="utf-8")
