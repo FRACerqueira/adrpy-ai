@@ -70,7 +70,8 @@ def describe():
             "undoing an earlier successor, which looks identical on disk -- is refused with "
             "supersede-successor-already-exists (data.file/data.files name it) instead of being guessed "
             "at: reject it to create a new successor, or --resume to use it (one approved since must be "
-            "undone back to Proposed first -- neither reject nor --resume accepts an Accepted successor). "
+            "undone back to Proposed first -- neither reject nor --resume accepts an Accepted successor; one "
+            "itself superseded since needs its own successor rejected first, which reverts it, then undo). "
             "A Rejected successor is the "
             "normal end of an earlier attempt and never counts. --resume itself fails with "
             "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
@@ -332,9 +333,11 @@ def run(args):
                 raise CommandError(
                     FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
                     f"{len(orphans)} existing successor(s) already point at this decision "
-                    f"({', '.join(orphan[0].name for orphan in orphans)}). Reject it to create a new "
-                    "successor, or re-run with --resume to finish superseding onto it -- if it was approved "
-                    "since, undo it first; neither reject nor --resume accepts an Accepted successor.",
+                    f"({', '.join(orphan[0].name for orphan in orphans)}). Re-run with --resume to finish "
+                    "superseding onto it, or reject it to create a new successor. First, if it was approved "
+                    "since, undo it; if it was itself superseded since, reject its own successor (which reverts "
+                    "it) and then undo it. To reject it when this decision has version/revision siblings, run "
+                    "--resume first and then reject it.",
                     data={"file": orphan_files[0], "files": orphan_files},
                     warnings=warnings,
                 )
