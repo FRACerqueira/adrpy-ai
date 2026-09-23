@@ -651,3 +651,16 @@ def test_keyboard_interrupt_still_emits_json_on_stdout(capsys, monkeypatch):
     assert exit_code == EXIT_FAILURE
     assert payload["success"] is False
     assert payload["code"] == "interrupted"
+
+
+def test_an_adrpy_failure_carries_its_detail_on_stdout_and_the_same_text_on_stderr(tmp_path, capsys):
+    # ADR010V01, on adrpy's own entry point.
+    from adrpy.__main__ import main as adrpy_main
+
+    adrpy_main(["frobnicate"])
+    captured = capsys.readouterr()
+    out = json.loads(captured.out)
+
+    assert out["code"] == "unknown-command"
+    assert "frobnicate" in out["detail"]
+    assert captured.err.strip() == out["detail"]

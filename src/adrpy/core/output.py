@@ -1,4 +1,11 @@
-"""JSON output contract shared by every command."""
+"""JSON output contract shared by every command.
+
+A failure's human-readable explanation (`detail`) is part of the stdout
+JSON and is also written, as the same text, to stderr -- a copy for a
+human watching a terminal while stdout is piped, outside the contract
+(ADR010V01). `detail`'s wording is for people: callers decide on `code`
+and `data`, never by parsing `detail`.
+"""
 
 import json
 import sys
@@ -15,6 +22,8 @@ def emit_success(data):
 
 def emit_failure(code, detail=None, data=None, warnings=None):
     payload = {"success": False, "code": code}
+    if detail:
+        payload["detail"] = detail
     if data:
         payload["data"] = data
     # `if warnings:` would treat an explicitly empty list (a command's own
@@ -37,7 +46,10 @@ def emit_usage_failure(code, detail=None):
     -- exit code 2, not 1. A UsageError printing free text to stderr with
     NOTHING on stdout would force an agent to parse two different shapes
     of failure depending on which layer caught the mistake."""
-    print(json.dumps({"success": False, "code": code}))
+    payload = {"success": False, "code": code}
+    if detail:
+        payload["detail"] = detail
+    print(json.dumps(payload))
     if detail:
         print(detail, file=sys.stderr)
     return EXIT_USAGE_ERROR

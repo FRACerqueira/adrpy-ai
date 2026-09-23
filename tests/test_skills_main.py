@@ -57,7 +57,7 @@ class TestCliDispatch:
     def test_unknown_verb_is_a_usage_error(self, capsys):
         exit_code, out = _run(["frobnicate"], capsys)
         assert exit_code == 2
-        assert out == {"success": False, "code": "unknown-command"}
+        assert out == {"success": False, "code": "unknown-command", "detail": "Unknown command: frobnicate"}
 
     def test_unknown_flag_is_a_usage_error(self, tmp_path, capsys):
         exit_code, out = _run(["install", "--bogus", "x"], capsys)
@@ -294,3 +294,24 @@ class TestCliErgonomics:
         _, out, err = self._run_err(["install", "-t", "global", "-p", "all", "-s", "comment-audit"], capsys)
         assert out["code"] == "usage-error"
         assert "--provider claude" in err
+
+
+class TestFailureDetailOnStdout:
+    """ADR010V01: a failure's human-readable explanation is in the stdout
+    JSON as `detail`, and stderr keeps the same text as a copy."""
+
+    def test_a_usage_error_carries_its_detail_on_stdout_and_the_same_text_on_stderr(self, tmp_path, capsys):
+        main(["install", "--path", str(tmp_path), "-p", "bogus"])
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+
+        assert out["code"] == "usage-error"
+        assert "--provider" in out["detail"] and "bogus" in out["detail"]
+        assert captured.err.strip() == out["detail"]
+
+    def test_a_command_failure_carries_its_detail_on_stdout(self, tmp_path, capsys):
+        main(["list", "--path", str(tmp_path / "missing")])
+        out = json.loads(capsys.readouterr().out)
+
+        assert out["code"] == "target-directory-not-found"
+        assert "not an existing directory" in out["detail"]

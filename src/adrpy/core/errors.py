@@ -9,7 +9,7 @@ class CommandError(Exception):
         """`data`: a structured payload for a failure that isn't fully
         explained by `code` alone -- e.g. not-latest-version needs to
         name WHICH version actually is the latest, which a fixed code
-        string can't carry and `detail` (stderr-only free text) isn't
+        string can't carry and `detail` (free text for humans -- in the stdout JSON and copied to stderr, never a contract; ADR010V01) isn't
         part of the JSON contract.
 
         `warnings`: a real side effect (an encoding repair, an
