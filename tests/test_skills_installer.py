@@ -1297,6 +1297,8 @@ class TestOrphanedTempFileCleanup:
     @pytest.mark.parametrize("name", [
         "comment-audit.mdc.notes.tmp",
         f"comment-audit.mdc.{OWN_TEMP_HEX[:31]}.tmp",
+        f"comment-audit.mdc.{OWN_TEMP_HEX}0.tmp",
+        f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp.notes.tmp",
         f"other-rule.mdc.{OWN_TEMP_HEX}.tmp",
     ])
     def test_a_near_miss_tmp_next_to_a_written_file_is_left_alone(self, tmp_path, name):
@@ -1356,3 +1358,139 @@ class TestOrphanedTempFileCleanup:
         installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
 
         assert foreign.exists()
+
+
+class TestCoverageOfRecentGuarantees:
+    """Each test here pins a guarantee a mutation of the production code
+    could otherwise break while the whole suite stayed green."""
+
+    def test_a_persistent_read_error_on_agentsmd_propagates_and_leaves_it_untouched(self, tmp_path, monkeypatch):
+        # Only FileNotFoundError may read as "absent": swallowing any other
+        # OSError would make install replace the user's whole AGENTS.md
+        # with a lone generated block.
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("# My project notes\n\nKeep these.\n", encoding="utf-8")
+        before = agents_md.read_bytes()
+        real_open = Path.open
+
+        def denied_open(self, *args, **kwargs):
+            if self == agents_md:
+                raise PermissionError(13, "Access is denied", str(self))
+            return real_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", denied_open)
+        monkeypatch.setattr("adrpy.core.io_retry.time.sleep", lambda _seconds: None)
+
+        with pytest.raises(PermissionError):
+            installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+
+        monkeypatch.undo()
+        assert agents_md.read_bytes() == before
+
+    def test_the_read_cap_bounds_bytes_read_not_just_the_returned_length(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)
+        monkeypatch.setattr(installer, "_READ_TEXT_CHUNK_SIZE", 10)
+        oversized = tmp_path / "oversized.md"
+        oversized.write_bytes(b"x" * 5000)
+        read_sizes = []
+        real_open = Path.open
+
+        class CountingHandle:
+            def __init__(self, handle):
+                self._handle = handle
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return self._handle.__exit__(*exc)
+
+            def read(self, size):
+                data = self._handle.read(size)
+                read_sizes.append(len(data))
+                return data
+
+        def counting_open(self, *args, **kwargs):
+            return CountingHandle(real_open(self, *args, **kwargs))
+
+        monkeypatch.setattr(Path, "open", counting_open)
+
+        with pytest.raises(OSError, match="read limit"):
+            installer._read_text(oversized)
+        assert sum(read_sizes) <= 100 + 10
+
+    def test_one_byte_over_the_cap_is_already_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)
+        just_over = tmp_path / "just-over.md"
+        just_over.write_bytes(b"x" * 101)
+
+        with pytest.raises(OSError, match="read limit"):
+            installer._read_text(just_over)
+
+    def test_a_lone_cr_file_reads_back_with_lf_line_endings(self, tmp_path):
+        classic_mac = tmp_path / "notes.md"
+        classic_mac.write_bytes(b"line one\rline two\r")
+
+        assert installer._read_text(classic_mac) == "line one\nline two\n"
+
+    def test_a_blocked_shared_doc_never_blocks_a_full_mode_provider(self, tmp_path):
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("hand-written, no marker\n", encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["claude", "agentsmd"], ["comment-audit"], "project", False)
+
+        assert "claude" in {row["provider"] for row in result["installed"]}
+        reasons = {row["provider"]: row["reason"] for row in result["skipped"]}
+        assert reasons == {"shared-doc": "foreign", "agentsmd": "shared-doc-blocked"}
+
+    @pytest.mark.parametrize("provider,stub_path", [
+        ("agentsmd", "AGENTS.md"),
+        ("copilot", ".github/instructions/comment-audit.instructions.md"),
+    ])
+    def test_a_stub_write_never_reports_the_shared_docs_retry_count(self, tmp_path, monkeypatch, provider, stub_path):
+        # The shared doc is always written first in the same loop; its
+        # attempt count must never be reported under the stub's own name.
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+
+        def write(path, content):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+            return 2 if Path(path) == shared else 1
+
+        monkeypatch.setattr(installer, "atomic_write_text", write)
+
+        result = installer.install(str(tmp_path), [provider], ["comment-audit"], "project", False)
+
+        assert any(w.startswith("shared-doc/comment-audit: ") for w in result["warnings"])
+        assert not any(w.startswith(f"{provider}/comment-audit: ") for w in result["warnings"])
+
+    def test_an_orphan_the_sweep_cannot_remove_is_reported_in_install_warnings(self, tmp_path, monkeypatch):
+        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        orphan.parent.mkdir(parents=True)
+        orphan.write_text("never committed", encoding="utf-8")
+        old_time = time.time() - 999
+        os.utime(orphan, (old_time, old_time))
+        real_unlink = Path.unlink
+
+        def stuck_unlink(self, *args, **kwargs):
+            if self == orphan:
+                raise PermissionError(13, "Access is denied", str(self))
+            return real_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", stuck_unlink)
+
+        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert any("could not be checked/removed" in w and orphan.name in w for w in result["warnings"])
+
+    def test_another_skills_tag_right_after_this_skills_start_tag_is_malformed(self):
+        text = (
+            "<!-- adrpy:skills:comment-audit:start -->\n"
+            "<!-- adrpy:skills:decision-log:start -->\n"
+            "body\n"
+            "<!-- adrpy:skills:comment-audit:end -->\n"
+            "<!-- adrpy:skills:decision-log:end -->\n"
+        )
+
+        assert installer._agentsmd_block_state(text, "comment-audit") == "malformed"

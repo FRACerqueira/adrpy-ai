@@ -294,6 +294,7 @@ def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be
         "notes.tmp",
         "0001-decision.md.tmp",
         f"0001-decision.md.{OWN_TEMP_HEX[:31]}.tmp",
+        f"0001-decision.md.{OWN_TEMP_HEX}0.tmp",
         f"0001-decision.md.{OWN_TEMP_HEX.upper()}.tmp",
         f"0001-decision.md.{OWN_TEMP_HEX}.tmp.bak",
         f".{OWN_TEMP_HEX}.tmp",
