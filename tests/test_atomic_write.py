@@ -378,3 +378,25 @@ def test_normalize_newlines_does_not_treat_unicode_separators_as_line_breaks(sep
     rewrite, separately confirmed live to match the reference tool exactly)."""
     text = f"before{separator}after"
     assert normalize_newlines(text) == text
+
+
+def test_cleanup_never_follows_a_link_out_of_the_swept_folder(tmp_path):
+    import subprocess
+    import sys
+
+    folder, outside = tmp_path / "decisions", tmp_path / "outside"
+    folder.mkdir()
+    outside.mkdir()
+    victim = outside / f"notes.md.{OWN_TEMP_HEX}.tmp"
+    victim.write_text("user data")
+    old_time = time.time() - 60
+    os.utime(victim, (old_time, old_time))
+    if sys.platform == "win32":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(folder / "sub"), str(outside)], check=True, capture_output=True)
+    else:
+        os.symlink(outside, folder / "sub", target_is_directory=True)
+
+    removed = cleanup_orphaned_temp_files(folder, max_age_seconds=30)
+
+    assert removed == []
+    assert victim.exists()

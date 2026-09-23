@@ -14,6 +14,8 @@ import time
 import uuid
 from pathlib import Path
 
+from adrpy.core.security import is_within
+
 RETRY_ATTEMPTS = 5
 RETRY_DELAY_SECONDS = 0.05
 ORPHAN_MAX_AGE_SECONDS = 30
@@ -228,8 +230,15 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     leave an orphan inside a subfolder unfound and unreported (a
     housekeeping leak, not a correctness issue -- temp files never
     collide by name and are never read by anything)."""
+    # is_within: rglob descends into a junction/symlink planted inside
+    # the folder, which every other rglob consumer in this codebase
+    # already guards against (core/security.py).
+    root = Path(directory)
+    resolved_root = root.resolve()
     candidates = (
-        candidate for candidate in Path(directory).rglob("*.tmp") if _OWN_TEMP_NAME.fullmatch(candidate.name)
+        candidate
+        for candidate in root.rglob("*.tmp")
+        if _OWN_TEMP_NAME.fullmatch(candidate.name) and is_within(root, candidate, resolved_base=resolved_root)
     )
     return _remove_orphans(candidates, max_age_seconds, warnings)
 

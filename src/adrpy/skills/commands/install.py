@@ -80,8 +80,20 @@ def describe():
                     "Presence-only: pass just '--force', not '--force true/false'."
                 ),
             },
+            {
+                "name": "allow-external-links",
+                "type": "switch",
+                "required": False,
+                "description": (
+                    "Allows a file this call writes or removes to resolve, through a junction or symlink, "
+                    "outside the target (--path, or the home directory for --target global) -- e.g. a "
+                    "dotfiles setup linking .claude/skills elsewhere. Without it, such a call fails with "
+                    "path-outside-repository before touching anything. Presence-only."
+                ),
+            },
         ],
         "failure_codes": [
+            {"code": "path-outside-repository", "condition": "A file this call would write or remove resolves, through a junction or symlink, outside the target (data.file/data.resolved name it) and --allow-external-links was not given -- nothing was written or removed."},
             {
                 "code": "usage-error",
                 "condition": (
@@ -110,7 +122,7 @@ def run(args):
     flags = parse_flags(
         args,
         optional=("provider", "target", "path", "skill"),
-        switches=("force",),
+        switches=("force", "allow-external-links"),
         aliases={"p": "provider", "t": "target", "s": "skill", "f": "force"},
     )
     providers = _split(flags.get("provider"))
@@ -121,6 +133,7 @@ def run(args):
         skills=skills,
         scope=flags.get("target", "project"),
         force=flags.get("force", False),
+        allow_external_links=flags.get("allow-external-links", False),
     )
 
 

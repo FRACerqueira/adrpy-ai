@@ -137,6 +137,19 @@ treat `list`'s `drifted: false` as "matches its own recorded hash," not
 as "verified authentic" -- it was never meant to defend against someone
 who already has write access to your target directory or home folder.
 
+## Links that lead outside the target
+
+`install` and `remove` refuse, before touching anything, when a file they
+would write or remove resolves -- through a junction or symlink planted
+inside `--path` (or under your home directory, for `--target global`) --
+to somewhere outside it, with `path-outside-repository`. Without this, a
+cloned repository carrying such a link could have `remove` delete, or
+`install` overwrite, a file elsewhere on your machine, and an `AGENTS.md`
+that is itself a link could have its target's content copied into the
+repository. If the link is intended (a dotfiles setup linking
+`.claude/skills` or `~/.claude` elsewhere, say), pass
+`--allow-external-links`.
+
 ## Known limitation: no cross-process lock on `AGENTS.md`
 
 Unlike `adrpy`'s own repository-wide lock (ADR001V01), `adrpy-skills`

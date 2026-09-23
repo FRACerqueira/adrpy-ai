@@ -1623,3 +1623,84 @@ class TestAgentsmdTagsAreWholeLines:
         result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
 
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("agentsmd", "malformed")}
+
+
+def _link_dir(link, target):
+    """A directory link without admin rights: a junction on Windows, a
+    symlink elsewhere."""
+    import subprocess
+    import sys
+
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+class TestWritesStayInsideTheTarget:
+    """A link planted inside --path (or under the home directory, for
+    --target global) must not redirect a write or a delete outside it,
+    unless the caller opts in with --allow-external-links."""
+
+    def test_install_refuses_to_write_through_a_link_leading_outside(self, tmp_path):
+        repo, outside = tmp_path / "repo", tmp_path / "outside"
+        repo.mkdir()
+        outside.mkdir()
+        _link_dir(repo / ".claude" / "skills", outside)
+
+        with pytest.raises(CommandError) as excinfo:
+            installer.install(str(repo), ["claude"], ["comment-audit"], "project", False)
+
+        assert excinfo.value.code == "path-outside-repository"
+        assert list(outside.iterdir()) == []
+
+    def test_remove_refuses_to_delete_through_a_link_leading_outside(self, tmp_path):
+        repo, outside = tmp_path / "repo", tmp_path / "outside"
+        repo.mkdir()
+        outside.mkdir()
+        installer.install(str(outside.parent / "seed"), ["claude"], ["comment-audit"], "project", False)
+        (outside / "comment-audit").mkdir()
+        victim = outside / "comment-audit" / "SKILL.md"
+        victim.write_bytes((tmp_path / "seed" / ".claude" / "skills" / "comment-audit" / "SKILL.md").read_bytes())
+        _link_dir(repo / ".claude" / "skills", outside)
+
+        with pytest.raises(CommandError) as excinfo:
+            installer.remove(str(repo), ["claude"], ["comment-audit"], "project", False)
+
+        assert excinfo.value.code == "path-outside-repository"
+        assert victim.exists()
+
+    def test_allow_external_links_opts_in(self, tmp_path):
+        repo, outside = tmp_path / "repo", tmp_path / "outside"
+        repo.mkdir()
+        outside.mkdir()
+        _link_dir(repo / ".claude" / "skills", outside)
+
+        installer.install(str(repo), ["claude"], ["comment-audit"], "project", False, allow_external_links=True)
+
+        assert (outside / "comment-audit" / "SKILL.md").exists()
+
+    def test_a_link_that_stays_inside_the_target_is_fine(self, tmp_path):
+        # Positive control: only leaving the target is refused.
+        repo = tmp_path / "repo"
+        (repo / "shared" / "skills").mkdir(parents=True)
+        _link_dir(repo / ".claude" / "skills", repo / "shared" / "skills")
+
+        result = installer.install(str(repo), ["claude"], ["comment-audit"], "project", False)
+
+        assert [row["provider"] for row in result["installed"]] == ["claude"]
+        assert (repo / "shared" / "skills" / "comment-audit" / "SKILL.md").exists()
+
+    def test_global_scope_refuses_a_link_leading_outside_home(self, tmp_path, monkeypatch):
+        home, outside = tmp_path / "home", tmp_path / "dotfiles"
+        home.mkdir()
+        outside.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        _link_dir(home / ".claude", outside)
+
+        with pytest.raises(CommandError) as excinfo:
+            installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+
+        assert excinfo.value.code == "path-outside-repository"
+        assert list(outside.iterdir()) == []

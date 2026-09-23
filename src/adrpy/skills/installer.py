@@ -13,6 +13,7 @@ from adrpy.core.atomic_write import RETRY_ATTEMPTS, RETRY_DELAY_SECONDS, atomic_
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.hashing import build_marker, check_drift
 from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.security import is_within
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 from adrpy.skills import resources
 from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
@@ -354,6 +355,40 @@ def _expand(names, universe):
     return list(dict.fromkeys(names))
 
 
+def _write_surface(target_dir, provider_names, skill_names, scope):
+    """Every file this install/remove call may write or delete: each
+    provider x skill path, plus the shared doc when a stub provider is
+    involved."""
+    paths = [_resolve_path(provider, skill, target_dir, scope) for skill in skill_names for provider in provider_names]
+    if any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
+        paths.extend(_shared_doc_path(target_dir, skill) for skill in skill_names)
+    return paths
+
+
+def _reject_paths_leaving_the_target(paths, target_dir, scope, allow_external_links):
+    """A junction or symlink planted inside --path (or under the home
+    directory, for --target global) would otherwise redirect writes and
+    deletes outside it -- reproduced: remove deleted a tool-written file in
+    another directory, reported under the in-repo path, with no --force.
+    Every path must resolve inside the target, before any side effect,
+    the same real-path containment the core CLI applies to its own
+    folders (core/security.py). Opting out is explicit: a dotfiles setup
+    linking ~/.claude or .claude/skills elsewhere is legitimate, and
+    --allow-external-links says so."""
+    if allow_external_links:
+        return
+    base = Path.home() if scope == "global" else Path(target_dir)
+    resolved_base = base.resolve()
+    for path in paths:
+        if not is_within(base, path, resolved_base=resolved_base):
+            raise CommandError(
+                FailureCodes.PATH_OUTSIDE_REPOSITORY,
+                f"{path} resolves to {path.resolve()}, outside {resolved_base} (through a link); nothing was "
+                "written or removed. Pass --allow-external-links if that link is intended.",
+                data={"file": str(path), "resolved": str(path.resolve())},
+            )
+
+
 def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope, warnings):
     """Sweeps the temp files an earlier interrupted write of this same
     request could have left behind, like the 8 core `adrpy` mutating
@@ -362,9 +397,7 @@ def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope,
     folder-wide scan: every folder written here (the repository root,
     `.github/instructions/`, `~/.claude/skills/`) also holds content
     this tool never wrote."""
-    paths = [_resolve_path(provider, skill, target_dir, scope) for skill in skill_names for provider in provider_names]
-    if any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
-        paths.extend(_shared_doc_path(target_dir, skill) for skill in skill_names)
+    paths = _write_surface(target_dir, provider_names, skill_names, scope)
     warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for(paths, warnings=warnings))
     if warning:
         warnings.append(warning)
@@ -386,10 +419,13 @@ def _report_partial_effects(data, warnings):
         raise CommandError("interrupted", "Interrupted (Ctrl+C).", data=data, warnings=list(warnings)) from error
 
 
-def install(target_dir, providers, skills, scope, force):
+def install(target_dir, providers, skills, scope, force, allow_external_links=False):
     provider_names = _expand(providers, PROVIDERS)
     skill_names = _expand(skills, resources.SKILL_NAMES)
     _validate_scope(provider_names, scope)
+    _reject_paths_leaving_the_target(
+        _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links
+    )
     marker_version = _package_version()
     installed = []
     skipped = []
@@ -516,10 +552,13 @@ def install(target_dir, providers, skills, scope, force):
     return {"installed": installed, "skipped": skipped, "warnings": warnings}
 
 
-def remove(target_dir, providers, skills, scope, force):
+def remove(target_dir, providers, skills, scope, force, allow_external_links=False):
     provider_names = _expand(providers, PROVIDERS)
     skill_names = _expand(skills, resources.SKILL_NAMES)
     _validate_scope(provider_names, scope)
+    _reject_paths_leaving_the_target(
+        _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links
+    )
     removed = []
     skipped = []
     warnings = []
