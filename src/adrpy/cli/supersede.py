@@ -69,7 +69,9 @@ def describe():
             "successor pointing back at this decision -- left by that failure, or by rejecting and then "
             "undoing an earlier successor, which looks identical on disk -- is refused with "
             "supersede-successor-already-exists (data.file/data.files name it) instead of being guessed "
-            "at: reject it to create a new successor, or --resume to use it. A Rejected successor is the "
+            "at: reject it to create a new successor, or --resume to use it (one approved since must be "
+            "undone back to Proposed first -- neither reject nor --resume accepts an Accepted successor). "
+            "A Rejected successor is the "
             "normal end of an earlier attempt and never counts. --resume itself fails with "
             "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
             "one such successor exists and it is still Proposed with its own Created status and date, and "
@@ -331,7 +333,8 @@ def run(args):
                     FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
                     f"{len(orphans)} existing successor(s) already point at this decision "
                     f"({', '.join(orphan[0].name for orphan in orphans)}). Reject it to create a new "
-                    "successor, or re-run with --resume to finish superseding onto it.",
+                    "successor, or re-run with --resume to finish superseding onto it -- if it was approved "
+                    "since, undo it first; neither reject nor --resume accepts an Accepted successor.",
                     data={"file": orphan_files[0], "files": orphan_files},
                     warnings=warnings,
                 )
@@ -350,7 +353,8 @@ def run(args):
                     raise CommandError(
                         FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
                         f"--resume needs exactly one existing successor of this decision, still Proposed "
-                        f"since its own creation; found {len(orphans)} non-Rejected one(s).",
+                        f"since its own creation; found {len(orphans)} non-Rejected one(s). One approved "
+                        "since can be undone back to Proposed first.",
                         data=data,
                         warnings=warnings,
                     )

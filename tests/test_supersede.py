@@ -747,3 +747,21 @@ def test_an_unreadable_file_pointing_back_is_named_in_the_error(tmp_path):
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.data["file"] == str(broken)
+
+
+def test_an_orphan_approved_since_is_recovered_by_undo_then_resume(tmp_path, monkeypatch):
+    # The recovery path the refusal messages name: neither reject nor
+    # --resume accepts an Accepted successor, so undo comes first.
+    from adrpy.cli import reject, undo
+
+    tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
+    approve.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-07"])
+    assert excinfo.value.code == "already-accepted"
+
+    undo.run(["--file", str(successor_path)])
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
+
+    assert result["created"] == str(successor_path)
+    assert "|Superseded|Superseded (2026-01-07) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
