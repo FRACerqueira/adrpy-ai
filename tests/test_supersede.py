@@ -1,6 +1,7 @@
 import os
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 from adrpy.cli import approve, init, new, supersede, version
 from adrpy.core.errors import CommandError
@@ -765,3 +766,62 @@ def test_an_orphan_approved_since_is_recovered_by_undo_then_resume(tmp_path, mon
 
     assert result["created"] == str(successor_path)
     assert "|Superseded|Superseded (2026-01-07) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
+
+
+def test_resume_records_a_supersede_chain_that_migrate_brought_in(tmp_path):
+    # Both files are migrated placeholders (no Created status of their
+    # own): the chain was recorded by hand before adrpy, in the filenames.
+    # --resume, explicitly, adopts it -- marking the predecessor without
+    # touching the successor.
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_migrate import _init_repo_with_pattern, _write_legacy_file
+    from adrpy.cli import migrate
+
+    _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "ADR001V01-use-x.md", "# Use X\n\nold\n")
+    _write_legacy_file(tmp_path, "ADR002V01-use-y--001.md", "# Use Y\n\nnew\n")
+    migrate.run(["--path", str(tmp_path)])
+    adr_dir = tmp_path / "doc" / "adr"
+    predecessor, successor = adr_dir / "ADR001V01-use-x.md", adr_dir / "ADR002V01-use-y--001.md"
+    successor_before = successor.read_bytes()
+
+    result = supersede.run(["--file", str(predecessor), "--refdate", "2026-01-05", "--resume"])
+
+    assert result["created"] == str(successor)
+    assert "|Superseded|Superseded (2026-01-05) <!-- Superseded --> : 002|" in predecessor.read_text(encoding="utf-8")
+    assert successor.read_bytes() == successor_before
+    assert result["status"] is None  # the placeholder has no status of its own to report
+
+
+def test_resume_never_adopts_a_migrated_placeholder_for_a_normal_predecessor(tmp_path):
+    # Only a chain of two migrated placeholders is adopted; a placeholder
+    # pointing at a decision this tool created and approved proves nothing.
+    # migrate refuses to run once tool-created decisions exist, so this
+    # shape is only reachable by hand: the placeholder is built elsewhere.
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_migrate import _init_repo_with_pattern, _write_legacy_file
+    from adrpy.cli import migrate
+
+    other, repo = tmp_path / "other", tmp_path / "repo"
+    other.mkdir()
+    repo.mkdir()
+    _init_repo_with_pattern(other)
+    _write_legacy_file(other, "ADR002V01-use-y--001.md", "# Use Y\n\nnew\n")
+    migrate.run(["--path", str(other)])
+    _init_repo_with_pattern(repo)
+    new.run(["--path", str(repo), "--title", "Use X", "--refdate", "2026-01-01"])
+    predecessor = repo / "doc" / "adr" / "ADR001V01-use-x.md"
+    approve.run(["--file", str(predecessor), "--refdate", "2026-01-02"])
+    placeholder = other / "doc" / "adr" / "ADR002V01-use-y--001.md"
+    (repo / "doc" / "adr" / placeholder.name).write_bytes(placeholder.read_bytes())
+    before = predecessor.read_text(encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(predecessor), "--refdate", "2026-01-05", "--resume"])
+
+    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
+    assert predecessor.read_text(encoding="utf-8") == before

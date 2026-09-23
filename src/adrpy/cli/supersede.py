@@ -75,7 +75,9 @@ def describe():
             "A Rejected successor is the "
             "normal end of an earlier attempt and never counts. --resume itself fails with "
             "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
-            "one such successor exists and it is still Proposed with its own Created status and date, and "
+            "one such successor exists and it is still Proposed with its own Created status and date -- or "
+            "both it and this decision are migrated placeholders with no status yet (a chain recorded in the "
+            "filenames before adrpy, adopted as is; `status` is then null) -- and "
             "with refdate-before-history if --refdate is before that successor's creation; no write is "
             "made in any of these cases. To reject a successor whose predecessor has version/revision "
             "siblings and was never marked Superseded, first run supersede --resume on that predecessor, "
@@ -184,7 +186,7 @@ def describe():
                 FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
                 FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-run supersede with --resume to finish.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the FIRST of the two writes) failed -- nothing was written (data.intended_successor names the file that would have been created).",
-                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date (data.files names what was found) -- no write was made.",
+                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date, or a migrated placeholder successor of a migrated placeholder (data.files names what was found) -- no write was made.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS: "A non-Rejected successor already points back at this decision (data.file/data.files name it) and --resume was not given -- no write was made; reject it to create a new successor, or re-run with --resume.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -342,12 +344,18 @@ def run(args):
                     warnings=warnings,
                 )
             if resume:
+                # A migrated placeholder has no Created status of its own;
+                # it is adopted only when the predecessor is a migrated
+                # placeholder too -- a supersede chain recorded by hand, in
+                # the filenames, before adrpy managed these files.
                 resumable = (
                     len(orphans) == 1
-                    and orphans[0][2].status_create is not None
-                    and orphans[0][2].date_create is not None
                     and orphans[0][2].status_update is None
                     and orphans[0][2].status_change is None
+                    and (
+                        (orphans[0][2].status_create is not None and orphans[0][2].date_create is not None)
+                        or (orphans[0][2].is_migrated and header.is_migrated)
+                    )
                 )
                 if not resumable:
                     data = {"files": orphan_files}
@@ -356,13 +364,16 @@ def run(args):
                     raise CommandError(
                         FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
                         f"--resume needs exactly one existing successor of this decision, still Proposed "
-                        f"since its own creation; found {len(orphans)} non-Rejected one(s). One approved "
+                        f"since its own creation (or, when both files are migrated placeholders, never "
+                        f"given a status at all); found {len(orphans)} non-Rejected one(s). One approved "
                         "since can be undone back to Proposed first.",
                         data=data,
                         warnings=warnings,
                     )
                 orphan_path, orphan_info, orphan_header = orphans[0]
-                validate_refdate_not_before(refdate, orphan_header.date_create)
+                if orphan_header.date_create is not None:
+                    validate_refdate_not_before(refdate, orphan_header.date_create)
+                resumed_status = orphan_header.status_create
                 successor_path = orphan_path
                 successor_number = orphan_info.number
                 warnings.append(
@@ -451,4 +462,9 @@ def run(args):
                 warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
-    return {"predecessor": str(path), "created": str(successor_path), "status": "Proposed", "warnings": warnings}
+    return {
+        "predecessor": str(path),
+        "created": str(successor_path),
+        "status": resumed_status if resume else "Proposed",
+        "warnings": warnings,
+    }
