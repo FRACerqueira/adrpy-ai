@@ -320,7 +320,7 @@ succeeds or fails:
 ```
 
 ```json
-{"success": false, "code": "repository-locked", "data": {"...": "..."}, "warnings": []}
+{"success": false, "code": "repository-locked", "detail": "...", "data": {"...": "..."}, "warnings": []}
 ```
 
 `code` is always a stable, documented string (`repository-locked`,
@@ -335,6 +335,15 @@ command's own dependencies performed silently (a retried write, a
 reclaimed stale lock, orphaned temp-file cleanup, an encoding repair) --
 information that would otherwise be discarded before it ever reached
 anywhere a caller could see it.
+
+A failure also carries `detail`, a human-readable explanation (which
+flag, which file, what to do next), whenever one exists
+([ADR010](adr/ADR010V01-failure-responses-carry-a-human-readable-detail-in-the-stdout-json,-with-stderr-kept-as-a-copy-outside-the-contract.md)).
+It is for people: decide on `code` and `data`, never by parsing
+`detail`, whose wording may change in any release. The same text is
+also written to stderr, so it stays visible in a terminal while stdout
+is piped elsewhere -- that copy is a convenience outside the contract,
+and nothing may depend on it.
 
 ## Where to go deeper
 

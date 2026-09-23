@@ -28,7 +28,7 @@ A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueir
 ## Why adrpy-ai
 
 - **No wizard, ever.** Every command is fully driven by flags. Nothing waits for a keypress, so it's safe to script and safe for an agent to call without a human in the loop.
-- **JSON in, JSON out.** Every response is a single JSON object on stdout (`{"success": true/false, "data"/"code": ...}`), with a fixed, documented set of failure codes per command — no output your own tooling has to guess the shape of.
+- **JSON in, JSON out.** Every response is a single JSON object on stdout (`{"success": true/false, "data"/"code": ...}`), with a fixed, documented set of failure codes per command — no output your own tooling has to guess the shape of. A failure also carries `detail`, a human-readable explanation to show a person; decide on `code`/`data`, not on `detail`'s wording. The same text is copied to stderr for terminal use, outside the contract.
 - **Self-documenting.** `adrpy help <command>` returns the exact same structured contract (arguments, types, failure codes) this README describes — the documentation and the code can't silently drift apart, because they're the same artifact.
 - **Zero runtime dependencies.** `pip install adrpy-ai` (or install from source) pulls in nothing else.
 - **A full lifecycle, not just file creation.** `init`, `new`, `approve`, `reject`, `undo`, `supersede`, `version`, `revise`, `migrate`, `config`, `installconfig` — the whole decision lifecycle, not a one-shot generator.
