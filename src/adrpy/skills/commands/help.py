@@ -34,6 +34,7 @@ def describe():
             },
         ],
         "failure_codes": [
+            {"code": "usage-error", "condition": "An unrecognized argument, or more than one command name, was given."},
             {"code": "unknown-command", "condition": "The named `command` doesn't match any registered command."},
         ],
     }

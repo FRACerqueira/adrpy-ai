@@ -24,6 +24,7 @@ Return every command's full description and argument list at once, instead of th
 
 | Code | Condition |
 |---|---|
+| `usage-error` | An unrecognized argument, or more than one command name, was given. |
 | `unknown-command` | The named `command` doesn't match any registered command. |
 
 ## Example
