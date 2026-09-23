@@ -329,7 +329,12 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
             continue
         path = _resolve_path(provider_name, skill_name, target_dir, scope)
         if provider_name == "agentsmd":
-            if _agentsmd_block_state(_read_text(path), skill_name) != "absent":
+            agents_text = _read_text(path)
+            if _agentsmd_block_state(agents_text, skill_name) != "absent":
+                return True
+            # Body text a --force cleanup of a malformed block left in place
+            # (see _agentsmd_force_strip_all) still points readers here.
+            if agents_text and SHARED_DOC_PATH.format(name=skill_name) in agents_text:
                 return True
         elif path.exists():
             return True
@@ -544,6 +549,11 @@ def remove(target_dir, providers, skills, scope, force):
                         # only reachable here via --force, same as install()'s own
                         # malformed-cleanup path.
                         new_file = _agentsmd_force_strip_all(file_text, skill_name)
+                        warnings.append(
+                            f"agentsmd/{skill_name}: malformed, tags removed (--force) -- any orphaned body text "
+                            "between them was left in place, since its true boundary can't be determined safely; "
+                            "while it still names the shared doc, that doc is kept."
+                        )
                     else:
                         new_file = _agentsmd_remove_block(file_text, skill_name)
                     # Never delete AGENTS.md itself, even if this empties it --
@@ -570,7 +580,10 @@ def remove(target_dir, providers, skills, scope, force):
                 if spec["mode"] in ("stub", "stub_block"):
                     any_stub_removed = True
 
-            if any_stub_removed:
+            # Also when no stub was removed in this call: a shared doc left by
+            # an interrupted install, or whose stub was deleted by hand, has
+            # no other way to be removed.
+            if any_stub_removed or any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
                 still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None)
                 if not still_referenced:
                     shared_path = _shared_doc_path(target_dir, skill_name)

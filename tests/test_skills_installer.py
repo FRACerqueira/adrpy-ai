@@ -1536,3 +1536,54 @@ class TestRemoveRetriesATransientDeleteFailure:
 
         assert "shared-doc" in {row["provider"] for row in result["removed"]}
         assert not shared.exists()
+
+
+class TestSharedDocNeverDanglesNorStrands:
+    """remove must never delete the shared doc while something in the
+    repository still points readers at it, and must be able to remove it
+    once nothing does -- whether or not a stub was removed in the same call."""
+
+    def test_force_removing_a_malformed_block_warns_and_keeps_the_shared_doc_it_still_points_at(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text(
+            agents_md.read_text(encoding="utf-8") + "<!-- adrpy:skills:decision-log:end -->\n", encoding="utf-8"
+        )
+        shared = tmp_path / "doc" / "ai-skills" / "decision-log.md"
+
+        result = installer.remove(str(tmp_path), ["agentsmd"], ["decision-log"], "project", True)
+
+        assert "doc/ai-skills/decision-log.md" in agents_md.read_text(encoding="utf-8")
+        assert shared.exists()
+        assert "shared-doc" not in {row["provider"] for row in result["removed"]}
+        assert any(w.startswith("agentsmd/decision-log: malformed") and "left in place" in w for w in result["warnings"])
+
+    def test_a_shared_doc_no_stub_points_at_is_removed_even_if_no_stub_was_removed_now(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert not shared.exists()
+        assert "shared-doc" in {row["provider"] for row in result["removed"]}
+
+    def test_a_shared_doc_another_stub_still_points_at_is_kept(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["comment-audit"], "project", False)
+        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+
+        installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert shared.exists()
+
+    def test_an_edited_orphaned_shared_doc_still_needs_force(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared.write_text(shared.read_text(encoding="utf-8") + "\nmy own note\n", encoding="utf-8")
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert shared.exists()
+        assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("shared-doc", "drifted")}
