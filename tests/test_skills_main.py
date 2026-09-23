@@ -5,6 +5,8 @@ from adrpy.skills.__main__ import main
 from adrpy.skills.providers import PROVIDERS
 from adrpy.skills.resources import SKILL_NAMES
 
+import pytest
+
 
 def _run(argv, capsys):
     exit_code = main(argv)
@@ -240,3 +242,55 @@ class TestPartialEffectsSurviveAFailure:
         assert out["code"] == "io-error"
         assert [row["provider"] for row in out["data"]["removed"]] == ["claude"]
         assert not (tmp_path / ".claude" / "skills" / "comment-audit" / "SKILL.md").exists()
+
+
+class TestCliErgonomics:
+    @staticmethod
+    def _isolate_home(tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        return home
+
+    def _run_err(self, argv, capsys):
+        exit_code = main(argv)
+        captured = capsys.readouterr()
+        return exit_code, json.loads(captured.out), captured.err
+
+    def test_target_tolerates_surrounding_spaces_like_provider_and_skill(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        exit_code, out = _run(
+            ["install", "--path", str(tmp_path), "-p", " cursor", "-s", " comment-audit", "-t", " project"], capsys
+        )
+        assert exit_code == 0 and out["success"] is True
+
+    def test_unknown_values_name_their_flag_and_are_reported_together(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        _, out, err = self._run_err(["install", "--path", str(tmp_path), "-p", "claude,bogus", "-s", "nope"], capsys)
+        assert out["code"] == "usage-error"
+        assert "--provider" in err and "bogus" in err and "--skill" in err and "nope" in err
+
+    def test_help_for_an_unknown_command_is_unknown_command_like_adrpy(self, capsys):
+        exit_code, out = _run(["help", "nosuch"], capsys)
+        assert out["code"] == "unknown-command"
+
+    @pytest.mark.parametrize("verb", ["install", "remove", "list"])
+    def test_a_missing_path_is_refused_not_created(self, tmp_path, monkeypatch, capsys, verb):
+        self._isolate_home(tmp_path, monkeypatch)
+        missing = tmp_path / "does" / "not" / "exist"
+        exit_code, out = _run([verb, "--path", str(missing), "-p", "cursor", "-s", "comment-audit"], capsys)
+        assert out["code"] == "target-directory-not-found"
+        assert not missing.exists()
+
+    def test_target_global_with_no_provider_defaults_to_the_global_capable_ones(self, tmp_path, monkeypatch, capsys):
+        home = self._isolate_home(tmp_path, monkeypatch)
+        exit_code, out = _run(["install", "-t", "global", "-s", "comment-audit"], capsys)
+        assert exit_code == 0
+        assert [row["provider"] for row in out["data"]["installed"]] == ["claude"]
+        assert (home / ".claude" / "skills" / "comment-audit" / "SKILL.md").exists()
+
+    def test_an_explicit_all_with_target_global_suggests_the_provider_to_use(self, tmp_path, monkeypatch, capsys):
+        self._isolate_home(tmp_path, monkeypatch)
+        _, out, err = self._run_err(["install", "-t", "global", "-p", "all", "-s", "comment-audit"], capsys)
+        assert out["code"] == "usage-error"
+        assert "--provider claude" in err

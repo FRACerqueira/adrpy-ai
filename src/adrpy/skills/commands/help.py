@@ -1,7 +1,7 @@
 """`help` command: lists available adrpy-skills commands, or describes
 one of them in full -- mirrors adrpy's own `help` command."""
 
-from adrpy.core.errors import UsageError
+from adrpy.core.errors import CommandError, FailureCodes, UsageError
 
 
 def describe():
@@ -34,7 +34,7 @@ def describe():
             },
         ],
         "failure_codes": [
-            {"code": "usage-error", "condition": "The named `command` doesn't match any registered command."},
+            {"code": "unknown-command", "condition": "The named `command` doesn't match any registered command."},
         ],
     }
 
@@ -58,7 +58,7 @@ def run(args):
         name = positional[0]
         command = COMMANDS.get(name)
         if command is None:
-            raise UsageError(f"No such command: {name}")
+            raise CommandError(FailureCodes.UNKNOWN_COMMAND, f"No such command: {name}")
         return {"commands": [command.describe()]}
 
     if full:

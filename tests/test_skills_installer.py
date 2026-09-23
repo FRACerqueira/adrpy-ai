@@ -1659,7 +1659,8 @@ class TestWritesStayInsideTheTarget:
         repo, outside = tmp_path / "repo", tmp_path / "outside"
         repo.mkdir()
         outside.mkdir()
-        installer.install(str(outside.parent / "seed"), ["claude"], ["comment-audit"], "project", False)
+        (tmp_path / "seed").mkdir()
+        installer.install(str(tmp_path / "seed"), ["claude"], ["comment-audit"], "project", False)
         (outside / "comment-audit").mkdir()
         victim = outside / "comment-audit" / "SKILL.md"
         victim.write_bytes((tmp_path / "seed" / ".claude" / "skills" / "comment-audit" / "SKILL.md").read_bytes())
@@ -1732,3 +1733,28 @@ class TestRemoveNeverReachesAHandWrittenSharedDoc:
         result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["comment-audit"], "project", False)
 
         assert result["skipped"] == []
+
+
+class TestWarningsSayWhere:
+    def test_orphan_cleanup_warning_names_each_file_relative_to_the_target(self, tmp_path):
+        old_time = time.time() - 999
+        orphans = [
+            tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp",
+            tmp_path / ".cursor" / "rules" / f"decision-log.mdc.{OWN_TEMP_HEX}.tmp",
+        ]
+        for orphan in orphans:
+            orphan.parent.mkdir(parents=True, exist_ok=True)
+            orphan.write_text("never committed", encoding="utf-8")
+            os.utime(orphan, (old_time, old_time))
+
+        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit", "decision-log"], "project", False)
+
+        warning = [w for w in result["warnings"] if "orphaned temp file" in w][0]
+        assert str(Path(".cursor") / "rules" / orphans[0].name) in warning
+
+    def test_remove_says_why_it_kept_a_shared_doc_another_stub_still_uses(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["comment-audit"], "project", False)
+
+        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+
+        assert any(w.startswith("shared-doc/comment-audit: kept") for w in result["warnings"])

@@ -14,7 +14,7 @@ Deletes the requested (provider, skill) pairs, or -- for `agentsmd` -- strips on
 
 ### `--provider` / `-p` *(optional, string)*
 
-Comma-separated list of providers to remove from: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all`.
+Comma-separated list of providers to remove from: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` -- or, with `--target global`, to every provider that has a global scope (`claude`).
 
 ### `--skill` / `-s` *(optional, string)*
 
@@ -40,6 +40,7 @@ Allows a file this call writes or removes to resolve, through a junction or syml
 
 | Code | Condition |
 |---|---|
+| `target-directory-not-found` | `--path` does not point to an existing directory (never created) -- nothing was written. |
 | `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (`data.file`/`data.resolved` name it) and `--allow-external-links` was not given -- nothing was written or removed. |
 | `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
 | `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). `data.removed`/`data.skipped` list what this same call had already deleted before the failure, and `warnings` carries the `warnings` already collected -- the same shapes as the success result, as far as the call got. |

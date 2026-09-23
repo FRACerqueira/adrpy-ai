@@ -14,7 +14,7 @@ Writes the requested (provider, skill) pairs to disk, wrapped in the shape each 
 
 ### `--provider` / `-p` *(optional, string)*
 
-Comma-separated list of providers to install for: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` (every bundled provider) when omitted.
+Comma-separated list of providers to install for: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` (every bundled provider) when omitted -- or, with `--target global`, to every provider that has a global scope (`claude`).
 
 ### `--skill` / `-s` *(optional, string)*
 
@@ -40,6 +40,7 @@ Allows a file this call writes or removes to resolve, through a junction or syml
 
 | Code | Condition |
 |---|---|
+| `target-directory-not-found` | `--path` does not point to an existing directory (never created) -- nothing was written. |
 | `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (`data.file`/`data.resolved` name it) and `--allow-external-links` was not given -- nothing was written or removed. |
 | `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
 | `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). `data.installed`/`data.skipped` list what this same call had already written before the failure, and `warnings` carries the `warnings` already collected -- the same shapes as the success result, as far as the call got. |

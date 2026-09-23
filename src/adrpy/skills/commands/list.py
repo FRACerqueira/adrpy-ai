@@ -49,6 +49,7 @@ def describe():
             },
         ],
         "failure_codes": [
+            {"code": "target-directory-not-found", "condition": "--path does not point to an existing directory (never created) -- nothing was written."},
             {"code": "usage-error", "condition": "An unknown --provider or --skill value was given."},
             {"code": "io-error", "condition": "A read failed (permission denied, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it)."},
         ],

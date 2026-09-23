@@ -57,10 +57,21 @@ def attach_warnings(warnings):
         raise CommandError(FailureCodes.IO_ERROR, str(error), warnings=list(warnings)) from error
 
 
-def orphan_cleanup_warning(removed):
+def orphan_cleanup_warning(removed, relative_to=None):
+    """`relative_to`: name each file by its path under that folder instead
+    of its bare name -- for a caller whose sweep spans several folders."""
     if not removed:
         return None
-    names = ", ".join(path.name for path in removed)
+
+    def label(path):
+        if relative_to is not None:
+            try:
+                return str(path.relative_to(relative_to))
+            except ValueError:
+                pass
+        return path.name
+
+    names = ", ".join(label(path) for path in removed)
     return f"Removed {len(removed)} orphaned temp file(s) left by an earlier interrupted write: {names}."
 
 

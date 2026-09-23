@@ -153,7 +153,7 @@ def _validate_scope(provider_names, scope):
     disk just because a later provider in the list turns out to be the
     one that fails.
 
-    --provider/--skill both reject an unrecognized value via _expand();
+    --provider/--skill both reject an unrecognized value via _expand_all();
     --target never did -- a typo (e.g. "golbal") silently fell through
     to the "project" branch in _resolve_path, writing into the current
     directory instead of failing loudly. Found by a Round 37 usability
@@ -164,7 +164,11 @@ def _validate_scope(provider_names, scope):
         return
     unsupported = [name for name in provider_names if PROVIDERS[name]["global_path"] is None]
     if unsupported:
-        raise UsageError(f"--target global is not supported for provider(s): {', '.join(unsupported)}.")
+        supported = ", ".join(name for name, spec in PROVIDERS.items() if spec["global_path"] is not None)
+        raise UsageError(
+            f"--target global is not supported for provider(s): {', '.join(unsupported)}. "
+            f"Use --provider {supported} (or omit --provider)."
+        )
 
 
 def _blocks_write(status, force):
@@ -344,15 +348,45 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
     return False
 
 
-def _expand(names, universe):
+def _expand_problem(names, universe, flag):
+    """The usage problem with one --provider/--skill value list, or None."""
     if names == ["all"]:
-        return list(universe)
+        return None
     if not names:
-        raise UsageError("No values given (empty after splitting on comma).")
+        return f"No {flag} values given (empty after splitting on comma)."
     unknown = [name for name in names if name not in universe]
     if unknown:
-        raise UsageError(f"Unknown value(s): {', '.join(unknown)}. Valid values: {', '.join(sorted(universe))}.")
-    return list(dict.fromkeys(names))
+        return f"Unknown {flag} value(s): {', '.join(unknown)}. Valid values: {', '.join(sorted(universe))}."
+    return None
+
+
+def _expand_all(providers, skills):
+    """Validates --provider and --skill together, reporting every problem
+    in one usage-error instead of stopping at the first flag."""
+    problems = [
+        problem
+        for problem in (
+            _expand_problem(providers, PROVIDERS, "--provider"),
+            _expand_problem(skills, resources.SKILL_NAMES, "--skill"),
+        )
+        if problem
+    ]
+    if problems:
+        raise UsageError(" ".join(problems))
+    expand = lambda names, universe: list(universe) if names == ["all"] else list(dict.fromkeys(names))  # noqa: E731
+    return expand(providers, PROVIDERS), expand(skills, resources.SKILL_NAMES)
+
+
+def _require_target_dir(target_dir, scope):
+    """A --path that doesn't exist is a typo, not a request to create a
+    new directory tree -- refused the same way adrpy's own commands refuse
+    it. Irrelevant for --target global, which never writes under --path."""
+    if scope == "project" and not Path(target_dir).is_dir():
+        raise CommandError(
+            FailureCodes.TARGET_DIRECTORY_NOT_FOUND,
+            f"{target_dir}: not an existing directory; nothing was written.",
+            data={"path": str(target_dir)},
+        )
 
 
 def _write_surface(target_dir, provider_names, skill_names, scope):
@@ -398,7 +432,8 @@ def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope,
     `.github/instructions/`, `~/.claude/skills/`) also holds content
     this tool never wrote."""
     paths = _write_surface(target_dir, provider_names, skill_names, scope)
-    warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for(paths, warnings=warnings))
+    base = Path.home() if scope == "global" else Path(target_dir)
+    warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for(paths, warnings=warnings), relative_to=base)
     if warning:
         warnings.append(warning)
 
@@ -420,9 +455,9 @@ def _report_partial_effects(data, warnings):
 
 
 def install(target_dir, providers, skills, scope, force, allow_external_links=False):
-    provider_names = _expand(providers, PROVIDERS)
-    skill_names = _expand(skills, resources.SKILL_NAMES)
+    provider_names, skill_names = _expand_all(providers, skills)
     _validate_scope(provider_names, scope)
+    _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
         _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links
     )
@@ -553,9 +588,9 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
 
 
 def remove(target_dir, providers, skills, scope, force, allow_external_links=False):
-    provider_names = _expand(providers, PROVIDERS)
-    skill_names = _expand(skills, resources.SKILL_NAMES)
+    provider_names, skill_names = _expand_all(providers, skills)
     _validate_scope(provider_names, scope)
+    _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
         _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links
     )
@@ -626,6 +661,11 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
             # no other way to be removed.
             if any_stub_removed or any(PROVIDERS[name]["mode"] != "full" for name in provider_names):
                 still_referenced = _other_stub_providers_reference(target_dir, skill_name, scope, None)
+                if still_referenced and any_stub_removed:
+                    warnings.append(
+                        f"shared-doc/{skill_name}: kept -- another stub-mode provider, or text in AGENTS.md, "
+                        "still points at it."
+                    )
                 if not still_referenced:
                     shared_path = _shared_doc_path(target_dir, skill_name)
                     shared_existing = _read_text(shared_path)
@@ -649,8 +689,8 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
 
 
 def list_installed(target_dir, providers, skills):
-    provider_names = _expand(providers, PROVIDERS)
-    skill_names = _expand(skills, resources.SKILL_NAMES)
+    provider_names, skill_names = _expand_all(providers, skills)
+    _require_target_dir(target_dir, "project")
     rows = []
 
     # Mirrors install()/remove()'s own `needs_shared_doc` -- the one

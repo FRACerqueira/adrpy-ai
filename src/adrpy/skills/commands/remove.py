@@ -3,6 +3,7 @@ same drift protection as `install` -- see ADR009V01."""
 
 from adrpy.core.args import parse_flags
 from adrpy.skills import installer
+from adrpy.skills.providers import PROVIDERS
 from adrpy.skills.resources import SKILL_NAMES
 
 
@@ -41,7 +42,7 @@ def describe():
                 "alias": "-p",
                 "type": "string",
                 "required": False,
-                "description": "Comma-separated list of providers to remove from: claude, cursor, copilot, agentsmd. Defaults to 'all'.",
+                "description": "Comma-separated list of providers to remove from: claude, cursor, copilot, agentsmd. Defaults to 'all' -- or, with --target global, to every provider that has a global scope (claude).",
             },
             {
                 "name": "skill",
@@ -83,6 +84,7 @@ def describe():
             },
         ],
         "failure_codes": [
+            {"code": "target-directory-not-found", "condition": "--path does not point to an existing directory (never created) -- nothing was written."},
             {"code": "path-outside-repository", "condition": "A file this call would write or remove resolves, through a junction or symlink, outside the target (data.file/data.resolved name it) and --allow-external-links was not given -- nothing was written or removed."},
             {
                 "code": "usage-error",
@@ -115,11 +117,18 @@ def run(args):
         switches=("force", "allow-external-links"),
         aliases={"p": "provider", "t": "target", "s": "skill", "f": "force"},
     )
+    scope = flags.get("target", "project").strip()
+    # Omitted --provider with --target global means "every provider that
+    # has a global scope", not "every provider" (which would always fail).
+    if "provider" not in flags and scope == "global":
+        providers = [provider for provider, spec in PROVIDERS.items() if spec["global_path"] is not None]
+    else:
+        providers = _split(flags.get("provider"))
     return installer.remove(
         target_dir=flags.get("path", "."),
-        providers=_split(flags.get("provider")),
+        providers=providers,
         skills=_split(flags.get("skill")),
-        scope=flags.get("target", "project"),
+        scope=scope,
         force=flags.get("force", False),
         allow_external_links=flags.get("allow-external-links", False),
     )
