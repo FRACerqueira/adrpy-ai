@@ -110,6 +110,16 @@ def atomic_write_text(path, content):
     return atomic_write_bytes(path, normalize_newlines(content).encode("utf-8"))
 
 
+def _temp_vanished(error, path):
+    """True when os.replace found our own temp file already gone while the
+    destination folder still exists -- a concurrent orphan sweep removed
+    it because its mtime looked older than ORPHAN_MAX_AGE_SECONDS (a writer
+    stalled that long, or a network share's server clock running behind).
+    Rewriting it recovers; a missing destination folder does not, and
+    still fails at once."""
+    return isinstance(error, FileNotFoundError) and Path(path).parent.is_dir()
+
+
 def atomic_write_bytes(path, content_bytes):
     """Same atomicity guarantees as atomic_write_text, but no newline
     normalization at all -- for the one real case where that would be
@@ -143,7 +153,7 @@ def atomic_write_bytes(path, content_bytes):
         except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)
-            if not isinstance(error, PermissionError):
+            if not (isinstance(error, PermissionError) or _temp_vanished(error, path)):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
         except BaseException:
@@ -192,7 +202,7 @@ def atomic_write_chunks(path, chunks_factory):
         except OSError as error:
             last_error = error
             temp_path.unlink(missing_ok=True)
-            if not isinstance(error, PermissionError):
+            if not (isinstance(error, PermissionError) or _temp_vanished(error, path)):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
         except BaseException:
@@ -269,6 +279,10 @@ def _remove_orphans(candidates, max_age_seconds, warnings):
     for candidate in candidates:
         try:
             age = now - candidate.stat().st_mtime
+        except FileNotFoundError:
+            # Gone since the scan listed it -- typically a concurrent write
+            # finishing its own os.replace. Nothing left to clean up.
+            continue
         except OSError:
             skipped.append(candidate)
             continue

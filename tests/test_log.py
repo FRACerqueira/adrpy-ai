@@ -847,3 +847,30 @@ def test_log_reports_the_entry_already_written_when_an_unrecognized_file_blocks_
     assert excinfo.value.data == {"file": str(created)}
     assert created.exists()  # the entry write itself really did succeed
     assert "not-a-real-entry-name.md" in excinfo.value.detail  # the underlying cause is still named
+
+
+def test_an_identical_retry_after_an_index_failure_still_brings_the_index_up_to_date(tmp_path, monkeypatch):
+    # After log-index-regeneration-failed, the entry exists; re-running the
+    # same call can only say log-entry-already-exists -- but it must still
+    # leave INDEX.md listing that entry, or the index never converges.
+    _init_repo(tmp_path)
+    args = [
+        "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+        "--summary", "Stranded entry", "--body", "x", "--refdate", "2026-09-18",
+    ]
+    real_regenerate = log.regenerate_index
+
+    def flaky_regenerate_index(_log_dir, **_kwargs):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(log, "regenerate_index", flaky_regenerate_index)
+    with pytest.raises(CommandError):
+        log.run(args)
+    monkeypatch.setattr(log, "regenerate_index", real_regenerate)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(args)
+
+    assert excinfo.value.code == "log-entry-already-exists"
+    index = (tmp_path / "doc" / "decision-log" / "INDEX.md").read_text(encoding="utf-8")
+    assert "Stranded entry" in index

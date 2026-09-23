@@ -68,7 +68,9 @@ def describe():
             "fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr "
             "while this call was acquiring the lock -- no write was made either way; retry. May also fail with "
             "log-entry-already-exists (data.file: the bare filename) if an entry with the same "
-            "date/classification/scope/slug already exists -- no write was made; this is a signal the new "
+            "date/classification/scope/slug already exists -- no entry was written (INDEX.md is still "
+            "regenerated, so an identical retry after log-index-regeneration-failed brings the index up to "
+            "date); this is a signal the new "
             "entry is a likely duplicate or should be a retraction of the existing one, not an accident to "
             "silently rename around. An existing file in the decision-log directory that doesn't match the "
             "expected naming shape refuses to be guessed past, but WHEN this surfaces depends on "
@@ -216,7 +218,7 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "summary/front/reopenwhen is non-empty but blank after stripping whitespace.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content -- Round/INDEX.md can't be safely computed while it's present.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under folderlog could not be scanned.",
-                FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists.",
+                FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one.",
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED: "The entry itself was written, but regenerating INDEX.md afterward failed.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -342,6 +344,16 @@ def run(args):
             # a stricter regex.
             file_path = resolve_within(log_dir, filename)
             if file_path.exists():
+                # An identical retry after log-index-regeneration-failed
+                # lands here forever; rebuilding INDEX.md (a full,
+                # idempotent regeneration from the entries on disk) lets
+                # that retry still converge. Best-effort: the refusal below
+                # is the answer either way.
+                try:
+                    lock.verify_still_held()
+                    regenerate_index(log_dir, warnings=warnings)
+                except (OSError, LockLostError, CommandError):
+                    pass
                 raise CommandError(
                     FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
                     f"Decision-log entry already exists: {filename}",

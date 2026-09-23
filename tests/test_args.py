@@ -85,3 +85,23 @@ def test_switch_never_consumes_the_next_token_as_a_value():
     values = parse_flags(["--empty", "--file", "x"], required=("file",), switches=("empty",))
 
     assert values == {"empty": True, "file": "x"}
+
+
+def test_a_flag_given_twice_is_a_usage_error_not_last_wins():
+    with pytest.raises(UsageError, match="more than once"):
+        parse_flags(["--provider", "claude", "--provider", "cursor"], optional=("provider",))
+
+
+def test_a_flag_given_twice_through_its_alias_is_also_caught():
+    with pytest.raises(UsageError, match="more than once"):
+        parse_flags(["-p", "claude", "--provider", "cursor"], optional=("provider",), aliases={"p": "provider"})
+
+
+def test_a_known_flag_in_a_value_position_means_the_value_is_missing():
+    with pytest.raises(UsageError, match="requires a value"):
+        parse_flags(["-p", "--path", "x"], optional=("provider", "path"), aliases={"p": "provider"})
+
+
+def test_a_value_that_merely_looks_like_an_unknown_flag_is_still_a_value():
+    # Positive control: only an actual flag of this command is rejected.
+    assert parse_flags(["--title", "--not-a-flag"], optional=("title",)) == {"title": "--not-a-flag"}

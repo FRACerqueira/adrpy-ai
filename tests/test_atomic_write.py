@@ -400,3 +400,43 @@ def test_cleanup_never_follows_a_link_out_of_the_swept_folder(tmp_path):
 
     assert removed == []
     assert victim.exists()
+
+
+def test_a_temp_file_that_vanishes_before_replace_is_rewritten_and_the_write_still_lands(tmp_path, monkeypatch):
+    # A concurrent sweep can delete an in-flight temp file whose mtime looks
+    # old (a writer stalled over 30s, or a server clock skewed on a network
+    # share); the write must recover by rewriting it, not fail.
+    target = tmp_path / "decision.md"
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def replace_after_temp_vanished(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            os.unlink(src)
+            raise FileNotFoundError(2, "No such file or directory", str(src))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", replace_after_temp_vanished)
+    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+
+    attempts = atomic_write_text(target, "content")
+
+    assert attempts == 2
+    assert target.read_text() == "content"
+
+
+def test_a_missing_destination_folder_still_fails_at_once(tmp_path):
+    # Positive control: FileNotFoundError that retrying can't fix.
+    with pytest.raises(FileNotFoundError):
+        atomic_write_text(tmp_path / "no-such-folder" / "decision.md", "content")
+
+
+def test_a_temp_file_that_vanished_before_the_sweep_reached_it_is_not_reported_as_stuck(tmp_path):
+    from adrpy.core.atomic_write import _remove_orphans
+
+    warnings = []
+    removed = _remove_orphans([tmp_path / f"gone.md.{OWN_TEMP_HEX}.tmp"], 30, warnings)
+
+    assert removed == []
+    assert warnings == []
