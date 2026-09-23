@@ -1704,3 +1704,31 @@ class TestWritesStayInsideTheTarget:
 
         assert excinfo.value.code == "path-outside-repository"
         assert list(outside.iterdir()) == []
+
+
+class TestRemoveNeverReachesAHandWrittenSharedDoc:
+    """Removing a skill's stubs may clean up the shared doc the tool wrote
+    for them -- never a file at that path the user wrote themselves, which
+    carries no marker. Only when a stub is actually removed in the same
+    call does the existing foreign/--force rule apply to it."""
+
+    def _hand_written(self, tmp_path):
+        doc = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        doc.parent.mkdir(parents=True)
+        doc.write_text("# My own hand-written notes\n", encoding="utf-8")
+        return doc
+
+    def test_force_remove_with_no_stub_installed_never_deletes_a_hand_written_doc(self, tmp_path):
+        doc = self._hand_written(tmp_path)
+
+        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["comment-audit"], "project", True)
+
+        assert doc.exists()
+        assert result["removed"] == []
+
+    def test_remove_with_no_stub_installed_does_not_report_a_hand_written_doc(self, tmp_path):
+        self._hand_written(tmp_path)
+
+        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["comment-audit"], "project", False)
+
+        assert result["skipped"] == []

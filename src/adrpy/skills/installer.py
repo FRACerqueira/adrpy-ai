@@ -629,8 +629,14 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
                 if not still_referenced:
                     shared_path = _shared_doc_path(target_dir, skill_name)
                     shared_existing = _read_text(shared_path)
-                    if shared_existing is not None:
-                        shared_status = check_drift(shared_existing)
+                    shared_status = check_drift(shared_existing)
+                    # With no stub removed in this call, only a shared doc the
+                    # tool itself wrote (it carries the marker) is in scope --
+                    # a file the user wrote at that path is never reported,
+                    # and never deleted, even with --force.
+                    if shared_status == "foreign" and not any_stub_removed:
+                        shared_status = "absent"
+                    if shared_status != "absent":
                         if _blocks_write(shared_status, force):
                             skipped.append(
                                 {"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status}
