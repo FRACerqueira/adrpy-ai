@@ -216,8 +216,14 @@ _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy
 # the read-only `list` command) -- this pattern can't backtrack that way
 # since it never spans more than one tag. A tag is a whole line, as
 # _AGENTSMD_BLOCK_TEMPLATE writes it: the same text quoted inside a line of
-# the user's own prose is not a tag, and --force must never strip it.
-_AGENTSMD_TAG_RE = re.compile(r"^<!-- adrpy:skills:([^:\n]+):(start|end) -->(?:\n|\Z)", re.MULTILINE)
+# the user's own prose is not a tag, and --force must never strip it. What
+# an editor adds around that line is tolerated: surrounding spaces/tabs,
+# and a BOM at the very start of the file (kept outside the match, so a
+# rewrite preserves it) -- otherwise a block the tool itself wrote reads
+# as "malformed" and --force appends a second copy of it.
+_AGENTSMD_TAG_RE = re.compile(
+    r"(?:^|(?<=\A\ufeff))[ \t]*<!-- adrpy:skills:([^:\n]+):(start|end) -->[ \t]*(?:\n|\Z)", re.MULTILINE
+)
 
 
 def _agentsmd_all_tags(file_text):
@@ -340,8 +346,10 @@ def _other_stub_providers_reference(target_dir, skill_name, scope, exclude_provi
             if _agentsmd_block_state(agents_text, skill_name) != "absent":
                 return True
             # Body text a --force cleanup of a malformed block left in place
-            # (see _agentsmd_force_strip_all) still points readers here.
-            if agents_text and SHARED_DOC_PATH.format(name=skill_name) in agents_text:
+            # (see _agentsmd_force_strip_all), or the user's own prose, still
+            # points readers here -- in either path spelling.
+            shared_rel = SHARED_DOC_PATH.format(name=skill_name)
+            if agents_text and (shared_rel in agents_text or shared_rel.replace("/", "\\") in agents_text):
                 return True
         elif path.exists():
             return True

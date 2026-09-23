@@ -1758,3 +1758,55 @@ class TestWarningsSayWhere:
         result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
 
         assert any(w.startswith("shared-doc/comment-audit: kept") for w in result["warnings"])
+
+
+class TestToolWrittenAgentsmdSurvivesEditorArtifacts:
+    """What an editor adds around a block the tool wrote -- a BOM at the
+    very start of the file, trailing spaces, indentation -- must not turn
+    it into "malformed" (and make --force append a second copy of it)."""
+
+    def _installed(self, tmp_path):
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+        return tmp_path / "AGENTS.md"
+
+    def test_a_bom_before_the_first_block_keeps_it_clean(self, tmp_path):
+        agents_md = self._installed(tmp_path)
+        agents_md.write_bytes(b"\xef\xbb\xbf" + agents_md.read_bytes())
+
+        text = installer._read_text(agents_md)
+
+        assert installer._agentsmd_block_state(text, "decision-log") == "clean"
+
+    def test_force_over_a_bom_prefixed_block_never_duplicates_it(self, tmp_path):
+        agents_md = self._installed(tmp_path)
+        agents_md.write_bytes(b"\xef\xbb\xbf" + agents_md.read_bytes())
+
+        installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", True)
+
+        after = agents_md.read_text(encoding="utf-8-sig")
+        assert after.count("<!-- adrpy:skills:decision-log:start -->") == 1
+        assert after.count("See `doc/ai-skills/decision-log.md`") == 1
+
+    @pytest.mark.parametrize("edit", ["trailing-space", "indent"])
+    def test_whitespace_around_a_tag_line_keeps_the_block_recognized(self, tmp_path, edit):
+        agents_md = self._installed(tmp_path)
+        text = agents_md.read_text(encoding="utf-8")
+        start = "<!-- adrpy:skills:decision-log:start -->"
+        text = text.replace(start, start + "  " if edit == "trailing-space" else "  " + start, 1)
+        agents_md.write_text(text, encoding="utf-8")
+
+        result = installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
+
+        assert "agentsmd" in {row["provider"] for row in result["installed"]}
+        assert agents_md.read_text(encoding="utf-8").count("adrpy:skills:decision-log:start") == 1
+
+
+class TestSharedDocReferenceSpellings:
+    def test_a_backslash_spelling_of_the_shared_doc_path_still_counts_as_a_reference(self, tmp_path):
+        installer.install(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+        (tmp_path / "AGENTS.md").write_text(r"See doc\ai-skills\decision-log.md for details." + "\n", encoding="utf-8")
+        shared = tmp_path / "doc" / "ai-skills" / "decision-log.md"
+
+        installer.remove(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
+
+        assert shared.exists()
