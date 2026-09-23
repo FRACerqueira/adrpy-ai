@@ -6,8 +6,8 @@
 |Revision||
 |Scope|core/lock.py|
 |Domain|concurrency|
-|Created|Proposed (2026-09-16)|
-|Changed|Accepted (2026-09-16)|
+|Created|Proposed (2026-09-16) <!-- Proposed -->|
+|Changed|Accepted (2026-09-16) <!-- Accepted -->|
 |Superseded||
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---

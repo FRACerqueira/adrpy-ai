@@ -6,8 +6,8 @@
 |Revision||
 |Scope|install-config|
 |Domain|configuration|
-|Created|Proposed (2026-09-18)|
-|Changed|Accepted (2026-09-18)|
+|Created|Proposed (2026-09-18) <!-- Proposed -->|
+|Changed|Accepted (2026-09-18) <!-- Accepted -->|
 |Superseded||
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---

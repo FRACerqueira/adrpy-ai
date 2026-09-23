@@ -1,7 +1,7 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
 |Adr-Plus Fields|Values|
 |--|--|
-|File title md|decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr|
+|File title md|Decision-log directory becomes an independent, recursively-scanned config field instead of a fixed sibling of folderadr|
 |Version|01|
 |Revision||
 |Scope|decision-log|

@@ -6,8 +6,8 @@
 |Revision||
 |Scope|header|
 |Domain|correctness|
-|Created|Proposed (2026-09-20)|
-|Changed|Accepted (2026-09-20)|
+|Created|Proposed (2026-09-20) <!-- Proposed -->|
+|Changed|Accepted (2026-09-20) <!-- Accepted -->|
 |Superseded||
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---
