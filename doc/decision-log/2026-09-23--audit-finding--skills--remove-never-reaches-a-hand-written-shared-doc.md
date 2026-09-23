@@ -1,0 +1,5 @@
+# remove never deletes a file the user wrote at the shared-doc path
+
+**Front:** Round 38: re-verification of the C5 fix at round close | **Severity:** High | **Resolution:** Direct | **Round:** 38
+
+3b1c720 made remove consider the shared doc whenever a stub-mode provider is requested. For a file the user wrote themselves at doc/ai-skills/<name>.md (no marker, no stub ever installed), `remove -s <name> --force` then deleted it, and a plain remove reported a new 'shared-doc foreign' skipped row. Found by re-checking the fix before closing the round. It is the same invariant as the P8 fix (2026-09-23--audit-finding--skills--orphan-sweep-deleted-users-own-tmp-files.md): a deletion reaches only what the tool created. Red: the file was deleted and the spurious row appeared, both green against 3b1c720~1. Fixed in 586fe34: with no stub removed in the call, only a shared doc carrying the tool's marker is in scope. When a stub is removed in the same call, the existing foreign/--force rule applies unchanged.

@@ -1,0 +1,5 @@
+# The shared doc is kept while AGENTS.md still names it, and a stranded one can now be removed
+
+**Front:** Round 38: usability, hash-marker and stability fronts (independently corroborated) | **Severity:** Medium | **Resolution:** Direct | **Round:** 38
+
+Two problems. First, remove --force on a malformed AGENTS.md block leaves the block's orphaned body text in place, and that text still says to see doc/ai-skills/<name>.md. The same call nevertheless deleted the shared doc and reported clean success with no warning. Second, a shared doc left by an interrupted install, or whose stub was deleted by hand, could never be removed, even with --force, because remove only considered it when a stub was removed in the same call. 3b1c720 makes remove warn and count leftover AGENTS.md text naming the doc as a reference, and makes it consider the shared doc whenever a stub-mode provider is requested. That second change introduced a regression, recorded as remove-never-reaches-a-hand-written-shared-doc.
