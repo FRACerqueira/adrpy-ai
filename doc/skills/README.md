@@ -161,7 +161,10 @@ losing one of the two updates. The same race can also cross files: an
 `install` of a stub-mode provider running while a `remove` of another one
 deletes the shared doc can leave the new stub pointing at a shared doc
 that is gone -- `list` then shows it (`shared-doc` not installed, the stub
-installed), and re-running `install` repairs it. Measured risk in this tool's actual usage
+installed), and re-running `install` repairs it. For the same reason, a
+`list` running while another call writes reads each file at a different
+moment, so its rows can mix before-and-after states that never existed
+on disk together -- re-run it once the other call finishes. Measured risk in this tool's actual usage
 pattern (a one-off installer invocation, not a long-running service) is
 very low -- real, staggered process launches did not reproduce the race,
 only an artificially widened window did -- so this is accepted as a known
