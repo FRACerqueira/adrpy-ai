@@ -1,0 +1,3 @@
+# reject refuses a successor undone after another successor took over, while approve accepts it
+
+With tool commands only: supersede P gives S1; reject S1; supersede P gives S2; undo S1 (Proposed again). Then reject S1 fails with superseded-predecessor-not-found, while approve S1 succeeds and leaves two live successors of P. Existed before Round 39. reject only reverts a Superseded mark that names the successor being rejected, and never guesses otherwise; its describe() rationale was corrected (C3a). Not fixed, by the owner's decision: the path needs an undo of a rejected successor after a new one was created. Visibility: explore shows both successors pointing back at P.
