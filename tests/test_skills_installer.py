@@ -1810,3 +1810,27 @@ class TestSharedDocReferenceSpellings:
         installer.remove(str(tmp_path), ["copilot"], ["decision-log"], "project", False)
 
         assert shared.exists()
+
+
+class TestEditorBomOnAToolWrittenFile:
+    def _installed_with_bom(self, tmp_path):
+        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        target = tmp_path / ".cursor" / "rules" / "comment-audit.mdc"
+        target.write_bytes(b"\xef\xbb\xbf" + target.read_bytes())
+        return target
+
+    def test_a_bom_an_editor_added_keeps_the_file_clean_not_foreign(self, tmp_path):
+        target = self._installed_with_bom(tmp_path)
+
+        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert [row["provider"] for row in result["installed"]] == ["cursor"]
+        assert result["skipped"] == []
+
+    def test_a_real_edit_behind_a_bom_is_still_drifted(self, tmp_path):
+        target = self._installed_with_bom(tmp_path)
+        target.write_bytes(target.read_bytes() + b"\nmy own note\n")
+
+        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+
+        assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("cursor", "drifted")}
