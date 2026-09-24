@@ -2,7 +2,14 @@ name: Publish
 
 on:
   push:
-    tags: ["v*"]
+    # A release tag only (v1.2.3): a pre-release tag such as v1.2.3rc1 or
+    # v1.2.3.dev1 does not publish.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+# Least privilege: read-only by default; only the two publish jobs add
+# id-token: write, for Trusted Publishing.
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -78,6 +85,9 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          # A re-run of the same tag (e.g. after PyPI itself failed) must
+          # not stop at TestPyPI, which already has these files.
+          skip-existing: true
 
   publish-pypi:
     needs: publish-testpypi

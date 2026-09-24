@@ -18,7 +18,13 @@ from adrpy.core.atomic_write import (
     split_real_lines,
 )
 from adrpy.core.casing import unique_title_key
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, _STATUS_LABEL_FIELDS, load_repo_config
+from adrpy.core.config import (
+    LENREVISION_MAX,
+    LENVERSION_MAX,
+    SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    _STATUS_LABEL_FIELDS,
+    load_repo_config,
+)
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.family import is_successor, locking_member
 from adrpy.core.consistency import validate_repository
@@ -809,6 +815,14 @@ class Context:
     warnings: list
 
 
+def _widening_hint(field, needed, maximum):
+    """The way out when a new number does not fit its field's width:
+    `config` widens it, up to that field's maximum."""
+    if needed > maximum:
+        return f" {field}'s maximum ({maximum}) is too narrow for it: this family has no room for another one."
+    return f" Widen it with `adrpy config --path <repository> --{field} {needed}`, then run this command again."
+
+
 def _new_version(config, members, warnings):
     latest = latest_in_family(members)
     if latest is None:
@@ -819,7 +833,8 @@ def _new_version(config, members, warnings):
     if len(str(new_version)) > config.lenversion:
         raise CommandError(
             FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION,
-            f"New version {new_version} does not fit in lenversion={config.lenversion}.",
+            f"New version {new_version} does not fit in lenversion={config.lenversion}."
+            + _widening_hint("lenversion", len(str(new_version)), LENVERSION_MAX),
             data={"new_version": new_version, "lenversion": config.lenversion},
             warnings=warnings,
         )
@@ -845,7 +860,8 @@ def _new_revision(config, filename_info, members, warnings):
     if len(str(new_revision)) > config.lenrevision:
         raise CommandError(
             FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
-            f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
+            f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}."
+            + _widening_hint("lenrevision", len(str(new_revision)), LENREVISION_MAX),
             data={"new_revision": new_revision, "lenrevision": config.lenrevision},
             warnings=warnings,
         )

@@ -198,3 +198,12 @@ def test_write_reports_a_retry_warning_when_the_write_needed_several_attempts(tm
     result = installconfig.run(["--prefix", "XYZ"])
 
     assert result["warnings"] == ["Write succeeded only after 3 attempts due to transient contention."]
+
+
+@pytest.mark.parametrize("value", ["\u0664", "4_0", "+4"])
+def test_an_integer_field_takes_only_plain_ascii_digits(value):
+    # Plain int() would take all three (as 4, 40 and 4).
+    with pytest.raises(CommandError) as excinfo:
+        installconfig.run(["--lenseq", value])
+
+    assert excinfo.value.code == "field-not-an-integer"

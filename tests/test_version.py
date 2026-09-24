@@ -80,6 +80,43 @@ def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
     # The real number was only ever in `detail`
     # (stderr, free text).
     assert excinfo.value.data == {"new_version": 100, "lenversion": 2}
+    # The way out is widening lenversion, by name.
+    assert "`adrpy config --path <repository> --lenversion 3`" in excinfo.value.detail
+    from adrpy.cli import config as config_cmd
+
+    config_cmd.run(["--path", str(tmp_path), "--lenversion", "3"])
+    assert version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"].endswith("ADR001V100-existing.md")
+
+
+def test_lenversion_too_small_at_the_maximum_width_offers_no_config_way_out(tmp_path):
+    # At lenversion's maximum, config would refuse a wider value
+    # (config-lenversion-too-large): the detail must not suggest it.
+    from adrpy.core.config import LENVERSION_MAX
+
+    init.run(["--path", str(tmp_path)])
+    config_path = tmp_path / "adr-config.adrplus"
+    from adrpy.cli import config as config_cmd
+
+    config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX)])
+    config = load_repo_config(config_path)
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=10**LENVERSION_MAX - 1,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = tmp_path / "doc" / "adr" / f"ADR001V{10**LENVERSION_MAX - 1}-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "lenversion-too-small-for-new-version"
+    assert "adrpy config" not in excinfo.value.detail
+    assert f"maximum ({LENVERSION_MAX})" in excinfo.value.detail
 
 
 def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
@@ -216,6 +253,8 @@ def test_version_rejects_when_sibling_superseded(tmp_path):
 
     assert excinfo.value.code == "family-member-superseded"
     assert excinfo.value.data["superseded_file"] == str(adr_path.resolve())
+    # The successor's number as an int, not the raw Superseded cell text.
+    assert excinfo.value.data["successor_number"] == 2
 
 
 def test_version_rejects_when_sibling_pending(tmp_path):
@@ -248,6 +287,23 @@ def test_version_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     assert excinfo.value.data["latest_file"] == str(v2_path)
     assert excinfo.value.data["latest_version"] == 2
     assert excinfo.value.data["latest_status"] == "Accepted"
+
+
+def test_not_latest_version_names_the_newest_live_member_not_a_newer_rejected_one(tmp_path):
+    """V02 (Accepted) locks V01; V03 is newer but Rejected, so it locks
+    nothing -- data.latest_file must name V02, the member that does."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v2_path = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", v2_path, "--refdate", "2026-01-04"])
+    v3_path = version.run(["--file", v2_path, "--refdate", "2026-01-05"])["created"]
+    reject.run(["--file", v3_path, "--refdate", "2026-01-06"])
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(Path(v2_path).resolve())
+    assert excinfo.value.data["latest_version"] == 2
 
 
 def test_version_allows_branching_from_older_when_latest_rejected(tmp_path):

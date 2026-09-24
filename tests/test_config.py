@@ -827,3 +827,10 @@ def test_an_integer_field_takes_only_plain_ascii_digits(tmp_path, value):
         config_cmd.run(["--path", str(tmp_path), "--lenseq", value])
 
     assert excinfo.value.code == "field-not-an-integer"
+
+
+def test_the_pt_br_language_pack_spells_arquivo():
+    # AdrPlus's own pt-BR resource has the same typo; adrpy is the reference.
+    from adrpy.core.config import load_language_pack
+
+    assert load_language_pack("pt-br")["headertitlefile"].endswith(" do arquivo md")

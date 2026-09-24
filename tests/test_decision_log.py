@@ -568,3 +568,19 @@ def test_validate_round_not_regressing_rejects_the_adjacent_lower_boundary():
 
     assert excinfo.value.code == "log-round-too-low"
     assert excinfo.value.data == {"round": 4, "current_max": 5}
+
+
+@pytest.mark.parametrize("round_text", ["\u0665", "+5", "5_0"])
+def test_max_existing_round_fails_closed_on_a_round_int_would_otherwise_accept(tmp_path, round_text):
+    # Plain int() would read all three as a Round (5, 5 and 50).
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    (log_dir / "2026-01-01--audit-finding--lock--first.md").write_text(
+        "# First\n\n**Front:** stability | **Severity:** High | **Resolution:** Direct | "
+        f"**Round:** {round_text}\n\nbody\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        max_existing_round(log_dir)
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"

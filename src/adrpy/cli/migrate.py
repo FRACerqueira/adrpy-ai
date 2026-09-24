@@ -36,6 +36,7 @@ from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
+from adrpy.core.text import is_ascii_digits
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -66,6 +67,17 @@ def _stream_migrated_candidate(candidate_path, header_text):
                     chunk = chunk[3:]
                 first_chunk = False
             yield chunk
+
+
+def _carries_supersede_suffix(parsed, config):
+    """True when a scanned name ends in a supersede suffix: a doubled
+    separator, then only ASCII digits. parse_filename splits it off a
+    current name (superseded_from); a legacy name is sliced by position,
+    so there the suffix is still at the end of its title."""
+    if parsed.superseded_from is not None:
+        return True
+    _head, separator, tail = (parsed.title or "").rpartition(config.separator * 2)
+    return bool(separator) and is_ascii_digits(tail)
 
 
 def describe():
@@ -283,7 +295,7 @@ def run(args):
         # the project owner): a file already claiming to be a
         # successor before migration (a --NNN suffix) is refused, so no
         # chain ever enters from outside.
-        successor_files = [str(path) for parsed, path, _header in entries if parsed.superseded_from is not None]
+        successor_files = [str(path) for parsed, path, _header in entries if _carries_supersede_suffix(parsed, config)]
         if successor_files:
             raise CommandError(
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST,

@@ -30,6 +30,8 @@ pip install -e ".[dev]"
 adrpy help
 ```
 
+The version comes from git (hatch-vcs), so build from a git checkout. A source tree without `.git` — e.g. one exported with `git archive` — fails to build with "unable to detect version"; set the version explicitly there, e.g. `SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 python -m build`.
+
 `adrpy-ai` has zero runtime dependencies by design (`dependencies = []` in `pyproject.toml`) — a pull request adding one is a significant decision on its own and should be discussed in an issue first, not just implemented.
 
 ## Running Tests

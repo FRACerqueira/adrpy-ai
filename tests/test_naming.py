@@ -89,6 +89,12 @@ def test_parse_migration_pattern_rejects_malformed_text():
     assert parse_migration_pattern("not-a-pattern") is None
 
 
+@pytest.mark.parametrize("pattern", ["N\uff10\uff10:\uff10\uff14T\uff10\uff14", "N00:04T04P\u0661\u0662:\u0660\u0663"])
+def test_parse_migration_pattern_takes_only_ascii_digits(pattern):
+    # Other scripts' digits match a Unicode \d and int() reads them.
+    assert parse_migration_pattern(pattern) is None
+
+
 def test_parses_the_migration_guide_example_filename():
     """The literal example from MigrationGuide.md's "Example: Complete
     Migration Workflow" section."""

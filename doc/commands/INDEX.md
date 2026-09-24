@@ -41,4 +41,4 @@ merged into the table of every command that can return them.
 checks that every code appears in at least one command's table; whether
 each table lists every code its own command can return is kept by review.
 
-Four codes any command can return are not repeated on every page: `usage-error` (a malformed invocation, exit code 2), `unknown-command`, `interrupted` (Ctrl+C; `migrate` adds `data` when it already wrote something) and `internal-error` (a genuinely unexpected exception).
+Four codes any command can return are not repeated on every page: `usage-error` (a malformed invocation, exit code 2), `unknown-command`, `interrupted` (Ctrl+C; `migrate` adds `data` once it has persisted a fallback migrationpattern or started migrating files -- `data.results`, possibly empty) and `internal-error` (a genuinely unexpected exception).

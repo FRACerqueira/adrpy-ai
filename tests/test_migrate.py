@@ -889,3 +889,77 @@ def test_a_tool_managed_repository_with_a_successor_is_refused_as_already_manage
         migrate.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "already-tool-created-adrs-exist"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        # A legacy name keeps its whole tail as the title; the suffix is
+        # found there, by the same rule as a current name's.
+        "0005Epsilon--004.md",
+        "0004Delta--009.md",
+        # Any suffix counts, not only one naming a lower number.
+        "ADR004V01-delta--009.md",
+    ],
+)
+def test_migrate_refuses_a_supersede_suffix_whatever_the_naming_scheme(tmp_path, name):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    successor = _write_legacy_file(tmp_path, name, "# Claimed successor\n")
+    before = {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")}
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-successor-files-exist"
+    assert excinfo.value.data["files"] == [str(successor)]
+    assert {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")} == before
+
+
+def test_a_legacy_title_with_a_doubled_separator_but_no_number_after_it_is_migrated(tmp_path):
+    # Only the doubled separator followed by nothing but digits is a
+    # suffix; anything else is title text.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0006Zeta--notes.md", "# Zeta\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy)]
+
+
+def test_a_damaged_header_is_reported_before_a_valid_tool_created_decision(tmp_path):
+    # Both refuse the whole run; the damaged header comes first, naming
+    # the file to repair, even when a valid tool-created decision is
+    # there too.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Tool made"])
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    lines = build_header(cfg, DecisionRecord(number=2, title="Second", version=1)).split("\n")
+    lines[3] = "broken title row"
+    damaged = tmp_path / "doc" / "adr" / "0002Second.md"
+    damaged.write_bytes(("\n".join(lines) + "# body\n").encode("utf-8"))
+    _write_legacy_file(tmp_path, "0003Legacy.md", "# Legacy\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-invalid-headers-exist"
+    assert excinfo.value.data["files"] == [str(damaged)]
+
+
+def test_an_interrupt_once_the_per_file_loop_started_is_reported_even_with_no_file_done(tmp_path, monkeypatch):
+    # The repository's own pattern is used (nothing persisted), and the
+    # first file is interrupted: data.results is present, and empty.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "interrupted"
+    assert excinfo.value.data == {"results": []}

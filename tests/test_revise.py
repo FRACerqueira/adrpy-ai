@@ -276,6 +276,12 @@ def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
         revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "lenrevision-too-small-for-new-revision"
+    # The way out is widening lenrevision, by name.
+    assert "`adrpy config --path <repository> --lenrevision 2`" in excinfo.value.detail
+    from adrpy.cli import config as config_cmd
+
+    config_cmd.run(["--path", str(tmp_path), "--lenrevision", "2"])
+    assert revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"].endswith("ADR001V01R10-existing.md")
     assert excinfo.value.data == {"new_revision": 10, "lenrevision": 1}
 
 
@@ -575,3 +581,31 @@ def test_revise_numbers_a_migrated_placeholder_by_its_filename_version(tmp_path)
 
 
 
+
+
+def test_revise_of_an_older_revision_is_allowed_when_every_newer_revision_is_rejected(tmp_path):
+    """Two newer revisions of the same version, both Rejected, lock
+    nothing: R01 stays the live member and can be revised again (the
+    per-revision half of the rule that rejected attempts never lock what
+    came before them)."""
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", r02, "--refdate", "2026-01-04"])
+    r03 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"]
+    reject.run(["--file", r03, "--refdate", "2026-01-06"])
+
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
+
+    assert os.path.basename(result["created"]) == "ADR001V01R04-use-postgre-sql.md"
+
+
+def test_revise_refdate_is_bounded_by_the_target_not_by_a_newer_rejected_revision(tmp_path):
+    """--refdate must not be before the TARGET's own last date (R01,
+    approved 2026-01-02); R02's later rejection date plays no part."""
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-10"])["created"]
+    reject.run(["--file", r02, "--refdate", "2026-01-20"])
+
+    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert os.path.basename(result["created"]) == "ADR001V01R03-use-postgre-sql.md"
