@@ -49,7 +49,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from adrpy.core.args import parse_flags, plain_int
+from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import (
@@ -65,6 +65,7 @@ from adrpy.core.config import (
 )
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import resolve_install_config_path
+from adrpy.core.text import parse_ascii_int
 from adrpy.core.warnings import retry_warning
 
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS
@@ -339,7 +340,7 @@ def run(args):
     for field in _INT_FIELDS:
         if field in flags:
             try:
-                merged[field] = plain_int(flags[field])
+                merged[field] = parse_ascii_int(flags[field])
             except ValueError as error:
                 raise CommandError(
                     FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"

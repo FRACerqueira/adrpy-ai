@@ -623,7 +623,7 @@ def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_
     """This read must tolerate a transient PermissionError, matching the
     write side (atomic_write.py), which already retries this project's
     own documented Windows "pending delete"/sharing-violation contention
-    window. Uses the shared helper (core/io_retry.py), not an independent
+    window. Uses the shared helper (core/fs.py), not an independent
     copy of the loop."""
     target = tmp_path / "flaky.md"
     header_lines = [f"line{i}" for i in range(12)]

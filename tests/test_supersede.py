@@ -32,13 +32,23 @@ def _setup_accepted_repo(tmp_path):
 SUCCESSOR_NAME = "ADR002V01-use-postgre-sql--001.md"
 
 
+def _fail_commit(monkeypatch, *, exclusive):
+    """Fails the commit of the successor (created exclusively) or of the
+    predecessor (replaced) -- every file is already prepared by then."""
+    from adrpy.core import lifecycle
+
+    real_commit = lifecycle.commit_write
+
+    def failing_commit(prepared, exclusive=False, _fail=exclusive):
+        if exclusive == _fail:
+            raise OSError("simulated disk failure")
+        return real_commit(prepared, exclusive=exclusive)
+
+    monkeypatch.setattr(lifecycle, "commit_write", failing_commit)
+
+
 def _fail_predecessor_write(monkeypatch):
-    from adrpy.cli import supersede as supersede_module
-
-    def failing_mark(*_args, **_kwargs):
-        raise OSError("simulated disk failure")
-
-    monkeypatch.setattr(supersede_module, "mark_superseded", failing_mark)
+    _fail_commit(monkeypatch, exclusive=False)
 
 
 def test_supersede_writes_nothing_when_the_successor_write_fails(tmp_path, monkeypatch):
@@ -47,12 +57,7 @@ def test_supersede_writes_nothing_when_the_successor_write_fails(tmp_path, monke
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     before = adr_path.read_text(encoding="utf-8")
 
-    from adrpy.cli import supersede as supersede_module
-
-    def flaky_write(path, content):
-        raise OSError("simulated disk failure")
-
-    monkeypatch.setattr(supersede_module, "atomic_write_text", flaky_write)
+    _fail_commit(monkeypatch, exclusive=True)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
@@ -75,9 +80,8 @@ def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
-    assert excinfo.value.code == "supersede-write-failed"
-    assert excinfo.value.data["successor"] == str(successor_path)
-    assert excinfo.value.data["predecessor_status"] == "Accepted"
+    assert excinfo.value.code == "multi-file-write-partially-applied"
+    assert excinfo.value.data == {"applied": [str(successor_path)], "pending": [str(adr_path)]}
     assert successor_path.exists()
     assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
 
@@ -494,7 +498,7 @@ def test_supersede_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_pat
     """encoding_repaired_
     warning claims "the file has been rewritten... bytes are now lost" --
     false whenever the command fails before ever reaching its own write
-    (mark_superseded, here blocked by the target still being Proposed)."""
+    (prepare_mark_superseded, here blocked by the target still being Proposed)."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-use-postgre-sql.md"
@@ -524,19 +528,17 @@ def test_supersede_reports_a_retry_warning_when_the_successor_write_needed_sever
 ):
     """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
-    supersede.py imports and calls atomic_write_text directly for the
-    SUCCESSOR write (unlike the predecessor's own mark_superseded write,
-    which goes through core.lifecycle's own reference)."""
-    from adrpy.cli import supersede as supersede_module
+    The successor's commit is the exclusive one."""
+    from adrpy.core import lifecycle
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    real_atomic_write_text = supersede_module.atomic_write_text
+    real_commit = lifecycle.commit_write
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
-        return 3
+    def flaky_commit(prepared, exclusive=False):
+        real_commit(prepared, exclusive=exclusive)
+        return 3 if exclusive else 1
 
-    monkeypatch.setattr(supersede_module, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(lifecycle, "commit_write", flaky_commit)
 
     result = supersede.run(["--file", str(adr_path)])
 
@@ -892,7 +894,7 @@ def test_a_failed_predecessor_write_tells_you_to_resume(tmp_path, monkeypatch):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "supersede-write-failed"
+    assert excinfo.value.code == "multi-file-write-partially-applied"
     assert "supersede --resume" in excinfo.value.detail
 
 

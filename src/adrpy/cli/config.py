@@ -18,7 +18,7 @@ presence-only switch, since either direction is a real edit.
 import json
 from dataclasses import asdict
 
-from adrpy.core.args import parse_flags, plain_int
+from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
@@ -29,6 +29,7 @@ from adrpy.core.lifecycle import (
     reject_status_or_separator_change_if_decisions_exist,
     resolve_target_and_config,
 )
+from adrpy.core.text import parse_ascii_int
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
 
@@ -295,7 +296,7 @@ def run(args):
         for field in _INT_FIELDS:
             if field in flags:
                 try:
-                    merged[field] = plain_int(flags[field])
+                    merged[field] = parse_ascii_int(flags[field])
                 except ValueError as error:
                     raise CommandError(
                         FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"

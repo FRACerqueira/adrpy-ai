@@ -22,7 +22,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text
+from adrpy.core.fs import cleanup_orphaned_temp_files
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header, has_header_shape, parse_header
@@ -202,8 +203,13 @@ def run(args):
                     "config (see installconfig) has none either.",
                     warnings=warnings,
                 )
-            # Persists the found value back into the repo's own
-            # config, matching the reference tool's own behavior.
+            # Persists the found value back into the repo's own config
+            # now, as its own write, before any candidate is looked at:
+            # the repository then carries the pattern it was migrated
+            # with, and later commands read it directly, whatever this
+            # run's outcome. Every result reports it
+            # (migrationpattern_persisted), so a refusal below never
+            # reads as "nothing written".
             merged = asdict(config)
             merged["migrationpattern"] = fallback_pattern
             merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
@@ -381,14 +387,13 @@ def run(args):
                 # never assembled as one in-memory bytes object (the
                 # original content's own line endings, and anything
                 # else about its bytes, still pass through completely
-                # untouched; only the header text is new). Retries a
-                # transient PermissionError on EITHER the source read
-                # or the destination write via one shared retry budget
-                # (atomic_write_chunks' own loop calls the chunk
-                # generator, which does the source read, from inside
-                # the same try/except as the destination write) --
-                # deliberately combined, not two independent budgets;
-                # see ADR006V01's own "Negative Consequences".
+                # untouched; only the header text is new). A transient
+                # PermissionError on EITHER the source read or the temp
+                # write retries the whole temp write, the chunk
+                # generator included, from one shared budget; the
+                # commit that follows has its own and never reads the
+                # source again. Each candidate is prepared and committed
+                # on its own: best-effort per file.
                 attempts = atomic_write_chunks(
                     candidate_path,
                     lambda: _stream_migrated_candidate(candidate_path, header_text),

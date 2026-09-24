@@ -8,19 +8,22 @@ never a collision-disambiguator. `--open` is permanently not implemented
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import normalize_newlines
+from adrpy.core.fs import prepare_write
 from adrpy.core.lifecycle import (
+    commit_in_order,
+    discard_prepared,
     failure_codes,
-    mark_superseded,
     next_number,
     prepare,
+    prepare_mark_superseded,
     read_target,
     scan_decisions,
     validate_refdate_not_before,
 )
 from adrpy.core.naming import build_filename
 from adrpy.core.security import resolve_within
-from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning
 
 
 def _not_resumable_reason(orphans):
@@ -57,11 +60,13 @@ def describe():
             "Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has "
             "already been superseded, or family-member-pending if another member is still "
             "unresolved (Proposed) -- no write is made either way. "
-            "This is two writes in sequence, not one, successor first: a failure creating the "
-            "successor (supersede-successor-write-failed) means nothing was written. A failure "
-            "marking the predecessor Superseded afterward (supersede-write-failed) means success=false "
-            "even though the successor already exists -- that code's own `data.successor` names it, "
-            "and `data.predecessor_status` is still Accepted. The successor keeps its number on disk, so "
+            "This is two writes, not one: both files are prepared first, then committed successor "
+            "first: a failure preparing either file or creating the successor "
+            "(supersede-successor-write-failed) means nothing was written. A failure "
+            "marking the predecessor Superseded afterward (multi-file-write-partially-applied) means "
+            "success=false even though the successor already exists -- that code's own `data.applied` "
+            "names it, and `data.pending` the predecessor, still Accepted; --resume failing to mark the "
+            "predecessor reports the same code. The successor keeps its number on disk, so "
             "no later `new` can take it; re-run with --resume to finish: it finds that successor "
             "(the existing file whose supersede suffix points back at this decision), marks only the "
             "predecessor, and says so in `warnings`. Without --resume, any existing non-Rejected "
@@ -98,7 +103,7 @@ def describe():
             "already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own "
             "current status makes Superseded unreachable from here) if the target isn't eligible -- no "
             "write is made. Fails with file-already-exists (data.file names it) if the successor's own "
-            "resulting filename already exists on disk -- no write is made either."
+            "resulting filename already exists on disk when it is created -- no write is made either."
         ),
         "arguments": [
             {
@@ -178,8 +183,8 @@ def describe():
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
-                FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-run supersede with --resume to finish.",
-                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the FIRST of the two writes) failed -- nothing was written (data.intended_successor names the file that would have been created).",
+                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.applied names it, data.pending the predecessor); re-run supersede with --resume to finish.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "Preparing either file, or creating the successor (the FIRST of the two commits), failed -- nothing was written (data.intended_successor names the file that would have been created).",
                 FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date (data.files names what was found) -- no write was made.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS: "A non-Rejected successor already points back at this decision (data.file/data.files name it) and --resume was not given -- no write was made; reject it to create a new successor, or re-run with --resume.",
             },
@@ -308,58 +313,73 @@ def run(args):
             )
             filename = build_filename(config, successor)
             successor_path = resolve_within(folder, filename)
-            if successor_path.exists():
-                raise CommandError(
-                    FailureCodes.FILE_ALREADY_EXISTS,
-                    f"File already exists: {filename}",
-                    data={"file": filename},
-                    warnings=warnings,
-                )
-
             content = build_header(config, successor) + config.template
-            try:
-                attempts = atomic_write_text(successor_path, content)
-            except OSError as error:
-                # The FIRST write -- nothing has been written yet.
-                raise CommandError(
-                    FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
-                    f"{successor_path}: {error}",
-                    data={"intended_successor": str(successor_path)},
-                    warnings=warnings,
-                ) from error
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
 
+        # Every file is prepared before any is committed: a failure up to
+        # here leaves nothing written and no temp file behind.
+        prepared = []
         try:
-            _record, body_encoding_repaired, attempts = mark_superseded(
+            if not resume:
+                prepared.append(prepare_write(successor_path, normalize_newlines(content).encode("utf-8")))
+            _record, body_encoding_repaired, predecessor_prepared = prepare_mark_superseded(
                 path, config, header, filename_info, successor_number, refdate
             )
-            # Accurate only because the write above already succeeded.
-            # ADR006V01: combines the header's own flag (known since
-            # load_target) with the body's own (only known now, from
-            # the streamed write).
-            if ctx.encoding_repaired or body_encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
-        except OSError as error:
-            # The successor already exists on disk (written above, or
-            # found and resumed onto) and still holds its number, so no
-            # later `new` can take it; re-running supersede on this same
-            # file resumes onto it.
+            prepared.append(predecessor_prepared)
+        except BaseException as error:
+            discard_prepared(prepared)
+            if not isinstance(error, OSError):
+                raise
+            if resume:
+                # The successor was written by the earlier call.
+                raise CommandError(
+                    FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED,
+                    f"{path}: {error}. Already written: {successor_path}; not written: {path}. Run supersede "
+                    "--resume on this decision to finish.",
+                    data={"applied": [str(successor_path)], "pending": [str(path)]},
+                    warnings=warnings,
+                ) from error
             raise CommandError(
-                FailureCodes.SUPERSEDE_WRITE_FAILED,
-                f"{path}: {error}. The successor ({successor_path}) was created; run supersede --resume on "
-                "this decision to finish.",
-                data={
-                    "predecessor": str(path),
-                    "predecessor_status": "Accepted",
-                    "successor": str(successor_path),
-                },
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
+                f"{error}. Nothing was written.",
+                data={"intended_successor": str(successor_path)},
                 warnings=warnings,
             ) from error
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+
+        # ADR006V01: combines the header's own flag (known since
+        # load_target) with the body's own (only known now, from the
+        # streamed read); reported only once the predecessor is written.
+        predecessor_warnings = []
+        if ctx.encoding_repaired or body_encoding_repaired:
+            predecessor_warnings.append(encoding_repaired_warning(path))
+        # Successor first, created exclusively: a name taken since the
+        # scan is refused with nothing written. Then the predecessor; if
+        # that fails, the successor is on disk and keeps its number, so
+        # no later `new` can take it, and --resume finishes onto it.
+        steps = [(predecessor_prepared, False, predecessor_warnings)]
+        if not resume:
+            steps.insert(0, (prepared[0], True, []))
+        try:
+            commit_in_order(
+                steps,
+                warnings,
+                already_applied=[successor_path] if resume else (),
+                hint="Run supersede --resume on this decision to finish.",
+            )
+        except FileExistsError as error:
+            raise CommandError(
+                FailureCodes.FILE_ALREADY_EXISTS,
+                f"File already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
+            ) from error
+        except OSError as error:
+            # The first commit, the successor's: nothing has been written.
+            raise CommandError(
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
+                f"{successor_path}: {error}",
+                data={"intended_successor": str(successor_path)},
+                warnings=warnings,
+            ) from error
 
     # Canonical keyword, not the repo's configured status label.
     return {

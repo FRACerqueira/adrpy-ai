@@ -16,6 +16,23 @@ import pytest
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
 
 
+
+def _fail_nth_reject_commit(monkeypatch, n):
+    """Fails the n-th commit of reject's two prepared writes: 1 is the
+    predecessor's revert, 2 this decision's own status."""
+    from adrpy.core import lifecycle
+
+    real_commit = lifecycle.commit_write
+    calls = {"n": 0}
+
+    def failing_commit(prepared, exclusive=False):
+        calls["n"] += 1
+        if calls["n"] == n:
+            raise OSError("simulated disk failure")
+        return real_commit(prepared, exclusive=exclusive)
+
+    monkeypatch.setattr(lifecycle, "commit_write", failing_commit)
+
 def _setup_repo(tmp_path):
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision", "--refdate", "2026-01-01"])
@@ -310,22 +327,13 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
 
     from adrpy.cli import reject as reject_module
 
-    real_rewrite = reject_module.rewrite_status_field
-    calls = {"n": 0}
-
-    def flaky_rewrite(*args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 2:
-            raise OSError("simulated disk failure")
-        return real_rewrite(*args, **kwargs)
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+    _fail_nth_reject_commit(monkeypatch, 2)
 
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
-    assert "run reject on this decision again" in excinfo.value.detail
+    assert excinfo.value.code == "multi-file-write-partially-applied"
+    assert "Run reject on this decision again" in excinfo.value.detail
     assert len(excinfo.value.warnings) == 2
     assert "orphaned" in excinfo.value.warnings[0].lower()
     assert "rewritten" in excinfo.value.warnings[1].lower()
@@ -345,22 +353,13 @@ def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tm
 
     from adrpy.cli import reject as reject_module
 
-    real_rewrite = reject_module.rewrite_status_field
-    calls = {"n": 0}
-
-    def flaky_rewrite(*args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 2:
-            raise OSError("simulated disk failure")
-        return real_rewrite(*args, **kwargs)
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+    _fail_nth_reject_commit(monkeypatch, 2)
 
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
-    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
+    assert excinfo.value.code == "multi-file-write-partially-applied"
+    assert excinfo.value.data == {"applied": [str(adr_path)], "pending": [str(successor_path)]}
     assert "|Superseded||" in adr_path.read_text(encoding="utf-8")  # predecessor genuinely reverted
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 
@@ -381,16 +380,7 @@ def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monk
 
     from adrpy.cli import reject as reject_module
 
-    real_rewrite = reject_module.rewrite_status_field
-    calls = {"n": 0}
-
-    def flaky_rewrite(*args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise OSError("simulated disk failure")
-        return real_rewrite(*args, **kwargs)
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
+    _fail_nth_reject_commit(monkeypatch, 1)
 
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
@@ -417,21 +407,12 @@ def test_reject_retries_safely_after_predecessor_already_reverted_single_member_
 
     from adrpy.cli import reject as reject_module
 
-    real_rewrite = reject_module.rewrite_status_field
-    calls = {"n": 0}
-
-    def fail_second_call_once(*args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 2:
-            raise OSError("simulated disk failure")
-        return real_rewrite(*args, **kwargs)
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", fail_second_call_once)
+    _fail_nth_reject_commit(monkeypatch, 2)
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert excinfo.value.code == "multi-file-write-partially-applied"
 
-    monkeypatch.setattr(reject_module, "rewrite_status_field", real_rewrite)
+    monkeypatch.undo()
     result = reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
 
     assert result["status"] == "Rejected"
@@ -809,7 +790,7 @@ def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp
         date_update=date(2026, 1, 1),
         status_change="Superseded",
         date_change=date(2026, 1, 3),
-        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see mark_superseded's docstring
+        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see prepare_mark_superseded's docstring
     )
     with open(predecessor_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
@@ -848,7 +829,7 @@ def test_reject_undoes_predecessor_supersede_status(tmp_path):
         date_update=date(2026, 1, 1),
         status_change="Superseded",
         date_change=date(2026, 1, 3),
-        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see mark_superseded's docstring
+        superseded_by_file="002",  # bare zero-padded number (lenseq=3), not a filename -- see prepare_mark_superseded's docstring
     )
     successor_path = adr_dir / "ADR002V01-successor--001.md"
     _write_raw(
@@ -1338,17 +1319,10 @@ def test_a_partial_reject_in_a_multi_member_family_completes_on_a_plain_retry(tm
     approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
     successor_path = Path(supersede.run(["--file", str(v02), "--refdate", "2026-01-05"])["created"])
 
-    real_rewrite = reject_module.rewrite_status_field
-
-    def fail_own_write(*args, **kwargs):
-        if kwargs.get("field") == "update":
-            raise OSError("simulated failure on this decision's own write")
-        return real_rewrite(*args, **kwargs)
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", fail_own_write)
+    _fail_nth_reject_commit(monkeypatch, 2)
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert excinfo.value.code == "multi-file-write-partially-applied"
     monkeypatch.undo()
 
     # The first attempt already reverted V02; no family member is

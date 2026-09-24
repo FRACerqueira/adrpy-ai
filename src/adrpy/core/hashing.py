@@ -9,6 +9,8 @@ it again -- see ADR009V01.
 import hashlib
 import re
 
+from adrpy.core.text import strip_leading_boms
+
 # Anchored to where `_insert_marker` (installer.py) places the real marker:
 # position 0, or immediately after a leading `---\n...\n---\n` frontmatter
 # block, never anywhere else -- an unanchored search would read a foreign
@@ -94,7 +96,7 @@ def check_drift(existing_text):
     # The tool never writes a BOM, so a leading one was added by an editor
     # and isn't content -- without this, it hides the marker's position
     # and a tool-written file reads as "foreign".
-    existing_text = existing_text.lstrip("\ufeff")
+    existing_text = strip_leading_boms(existing_text)
     marker = parse_marker(existing_text)
     if marker is None:
         return "foreign"

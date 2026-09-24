@@ -4,17 +4,17 @@ and checks/writes it through the content-hash drift marker -- see
 ADR009V01."""
 
 import re
-import time
 from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
-from adrpy.core.atomic_write import RETRY_ATTEMPTS, RETRY_DELAY_SECONDS, atomic_write_text, cleanup_orphaned_temp_files_for
+from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
 from adrpy.core.hashing import build_marker, check_drift
-from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.fs import cleanup_orphaned_temp_files_for, read_bounded, read_with_permission_retry, unlink_with_retry
 from adrpy.core.output import explain
 from adrpy.core.security import is_within
+from adrpy.core.text import strip_leading_boms
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 from adrpy.skills import resources
 from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
@@ -43,7 +43,7 @@ def _package_version():
 def _read_text(path):
     """Reads `path` as UTF-8, retrying a transient PermissionError the
     same way every other reader in this project already does (core/
-    config.py, core/lifecycle.py, all via core/io_retry.py)
+    config.py, core/lifecycle.py, all via core/fs.py)
     -- installer.py used to be the only reader that didn't, so a single
     transient contention blip (a Windows "pending delete" window under a
     concurrent reader) failed the whole install/remove/list call outright
@@ -83,20 +83,8 @@ def _read_text(path):
     keeps hash-time and read-time content in agreement regardless of
     host OS: both sides always compare LF-canonical text."""
 
-    def _read_bounded():
-        chunks = []
-        total = 0
-        with path.open("rb") as handle:
-            while total <= _READ_TEXT_MAX_BYTES:
-                more = handle.read(_READ_TEXT_CHUNK_SIZE)
-                if not more:
-                    break
-                chunks.append(more)
-                total += len(more)
-        return b"".join(chunks)
-
     try:
-        raw_bytes = read_with_permission_retry(_read_bounded)
+        raw_bytes = read_with_permission_retry(lambda: read_bounded(path, _READ_TEXT_MAX_BYTES, _READ_TEXT_CHUNK_SIZE))
     except FileNotFoundError:
         return None
     if len(raw_bytes) > _READ_TEXT_MAX_BYTES:
@@ -124,26 +112,6 @@ def _resolve_path(provider_name, skill_name, target_dir, scope):
             raise UsageError(f"--target global is not supported for provider '{provider_name}'.")
         return Path.home() / template[len("~/") :].format(name=skill_name)
     return Path(target_dir) / spec["project_path"].format(name=skill_name)
-
-
-def _unlink_with_retry(path):
-    """Deletes `path` (already absent is fine), retrying a transient
-    PermissionError with atomic_write_bytes' own budget and exponential
-    backoff -- an editor, an agent or an antivirus scanner briefly
-    holding the file (WinError 32) failed a remove call outright
-    (measured: 40 of 60 removes failed under 3 concurrent `list` readers
-    pausing 1ms, 0 of 60 with this retry; the read side's flat 3x50ms
-    budget was too short here). This
-    re-raises once retries are exhausted: remove must report a delete it
-    could not make."""
-    for attempt in range(RETRY_ATTEMPTS):
-        try:
-            path.unlink(missing_ok=True)
-            return
-        except PermissionError:
-            if attempt >= RETRY_ATTEMPTS - 1:
-                raise
-            time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
 
 
 def _validate_scope(provider_names, scope):
@@ -235,7 +203,7 @@ def _agentsmd_tag_lines(file_text):
     """Every tag line at any indentation, in document order, as (name,
     kind, match_start, match_end, indent) tuples -- a single linear pass."""
     text = file_text or ""
-    offset = len(text) - len(text.lstrip("\ufeff"))
+    offset = len(text) - len(strip_leading_boms(text))
     return [
         (m.group(2), m.group(3), m.start() + offset, m.end() + offset, m.group(1))
         for m in _AGENTSMD_TAG_RE.finditer(text[offset:])
@@ -804,7 +772,7 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
                 if _blocks_write(status, force):
                     skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
                     continue
-                _unlink_with_retry(path)
+                unlink_with_retry(path)
                 removed.append({"provider": provider_name, "skill": skill_name, "file": str(path)})
                 if spec["mode"] in ("stub", "stub_block"):
                     any_stub_removed = True
@@ -841,7 +809,7 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
                                 {"provider": "shared-doc", "skill": skill_name, "file": str(shared_path), "reason": shared_status}
                             )
                         else:
-                            _unlink_with_retry(shared_path)
+                            unlink_with_retry(shared_path)
                             removed.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path)})
 
     return {"removed": removed, "skipped": skipped, "warnings": warnings}

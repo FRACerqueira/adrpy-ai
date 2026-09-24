@@ -1,19 +1,7 @@
 """Shared `--flag value` argument parsing: every command's CLI args follow
 the same shape, so this is one function, not N near-copies."""
 
-import re
-
 from adrpy.core.errors import UsageError
-
-
-def plain_int(text):
-    """int() for a flag value, taking only ASCII digits with an optional
-    leading '-' (surrounding spaces allowed). Plain int() also accepts other
-    scripts' digits, '+4' and '4_0'; raises ValueError for those too."""
-    stripped = text.strip()
-    if not re.fullmatch(r"-?[0-9]+", stripped):
-        raise ValueError(f"not a plain integer: {text!r}")
-    return int(stripped)
 
 
 def _names_a_flag(token, known, aliases):

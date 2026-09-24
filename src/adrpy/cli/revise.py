@@ -107,13 +107,6 @@ def run(args):
 
         filename = build_filename(config, record)
         new_path = resolve_within(folder, filename)
-        if new_path.exists():
-            raise CommandError(
-                FailureCodes.FILE_ALREADY_EXISTS,
-                f"File already exists: {filename}",
-                data={"file": filename},
-                warnings=warnings,
-            )
 
         # ADR006V01: streams the source's own body straight from
         # `path` into the new file, without ever holding it in memory.
@@ -124,7 +117,15 @@ def run(args):
             yield header_text.encode("utf-8")
             yield from stream_normalized_body_chunks(path, body_report)
 
-        attempts = atomic_write_chunks(new_path, _chunks)
+        try:
+            attempts = atomic_write_chunks(new_path, _chunks, exclusive=True)
+        except FileExistsError as error:
+            raise CommandError(
+                FailureCodes.FILE_ALREADY_EXISTS,
+                f"File already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
+            ) from error
         if ctx.encoding_repaired or body_report["encoding_repaired"]:
             warnings.append(encoding_repaired_source_warning(path))
         warning = retry_warning(attempts)

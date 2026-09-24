@@ -892,7 +892,7 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
 
 class TestReadRetriesTransientPermissionError:
     """Round 35 resilience front: installer.py's own reads never used the
-    project's shared read_with_permission_retry (core/io_retry.py), unlike
+    project's shared read_with_permission_retry (core/fs.py), unlike
     every other reader (core/config.py, core/lifecycle.py) --
     a single transient PermissionError (a Windows "pending delete" window
     under a concurrent reader) failed the whole install/remove/list call
@@ -1379,7 +1379,7 @@ class TestCoverageOfRecentGuarantees:
             return real_open(self, *args, **kwargs)
 
         monkeypatch.setattr(Path, "open", denied_open)
-        monkeypatch.setattr("adrpy.core.io_retry.time.sleep", lambda _seconds: None)
+        monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
         with pytest.raises(CommandError) as excinfo:
             installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
@@ -1515,7 +1515,7 @@ class TestRemoveRetriesATransientDeleteFailure:
             return real_unlink(self, *args, **kwargs)
 
         monkeypatch.setattr(Path, "unlink", flaky_unlink)
-        monkeypatch.setattr("adrpy.core.io_retry.time.sleep", lambda _seconds: None)
+        monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     def test_a_provider_file_held_open_for_a_moment_is_still_removed(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)

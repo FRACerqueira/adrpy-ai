@@ -664,14 +664,19 @@ def test_revise_numbers_a_migrated_placeholder_by_its_filename_version(tmp_path)
 
 def test_revise_refuses_the_successor_of_an_unfinished_supersede(tmp_path, monkeypatch):
     from adrpy.cli import supersede as supersede_module
+    from adrpy.core import lifecycle
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    real_commit = lifecycle.commit_write
 
-    def failing_mark(*_args, **_kwargs):
-        raise OSError("simulated disk failure")
+    def failing_predecessor_commit(prepared, exclusive=False):
+        # The successor is created exclusively; the predecessor replaced.
+        if not exclusive:
+            raise OSError("simulated disk failure")
+        return real_commit(prepared, exclusive=exclusive)
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(supersede_module, "mark_superseded", failing_mark)
+        scoped.setattr(lifecycle, "commit_write", failing_predecessor_commit)
         with pytest.raises(CommandError):
             supersede_module.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
     orphan = next(p for p in adr_path.parent.glob("ADR002*--001.md"))

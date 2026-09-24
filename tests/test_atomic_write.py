@@ -9,9 +9,9 @@ from adrpy.core.atomic_write import (
     atomic_write_bytes,
     atomic_write_chunks,
     atomic_write_text,
-    cleanup_orphaned_temp_files,
     normalize_newlines,
 )
+from adrpy.core.fs import cleanup_orphaned_temp_files
 
 # The uuid4-hex shape atomic_write's own temp files carry.
 OWN_TEMP_HEX = "0123456789abcdef0123456789abcdef"
@@ -55,8 +55,8 @@ def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_pa
             raise PermissionError("simulated transient contention")
         return real_replace(*args, **kwargs)
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", flaky_replace)
-    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", flaky_replace)
+    monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     attempts = atomic_write_bytes(target, b"content")
 
@@ -70,7 +70,7 @@ def test_atomic_write_raises_the_last_error_after_exhausting_all_retries(tmp_pat
     persistent PermissionError (outlasting the whole retry budget) must
     propagate as the real error, not hang or swallow it, and the orphaned
     temp file must still be cleaned up on every attempt along the way."""
-    from adrpy.core.atomic_write import RETRY_ATTEMPTS
+    from adrpy.core.fs import RETRY_ATTEMPTS
 
     target = tmp_path / "decision.md"
     calls = {"n": 0}
@@ -79,8 +79,8 @@ def test_atomic_write_raises_the_last_error_after_exhausting_all_retries(tmp_pat
         calls["n"] += 1
         raise PermissionError("persistent contention")
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", always_fails)
-    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", always_fails)
+    monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     with pytest.raises(PermissionError):
         atomic_write_bytes(target, b"content")
@@ -109,7 +109,7 @@ def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monke
     def boom(*_args, **_kwargs):
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", boom)
 
     with pytest.raises(OSError):
         atomic_write_text(target, "content")
@@ -132,7 +132,7 @@ def test_atomic_write_bytes_cleans_up_orphan_on_a_non_oserror_mid_write(tmp_path
     def boom(*_args, **_kwargs):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", boom)
 
     with pytest.raises(KeyboardInterrupt):
         atomic_write_text(target, "content")
@@ -169,7 +169,7 @@ def test_atomic_write_failure_before_replace_leaves_target_untouched(tmp_path, m
     def boom(*_args, **_kwargs):
         raise OSError("simulated crash before replace")
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", boom)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", boom)
 
     with pytest.raises(OSError):
         atomic_write_text(target, "new content")
@@ -409,8 +409,8 @@ def test_a_temp_file_that_vanishes_before_replace_fails_instead_of_being_rewritt
         os.unlink(src)
         raise FileNotFoundError(2, "No such file or directory", str(src))
 
-    monkeypatch.setattr("adrpy.core.atomic_write.os.replace", replace_after_temp_vanished)
-    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("adrpy.core.fs.os.replace", replace_after_temp_vanished)
+    monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     with pytest.raises(FileNotFoundError):
         atomic_write_text(target, "content")
@@ -428,7 +428,7 @@ def test_a_chunk_source_that_disappears_fails_at_once(tmp_path, monkeypatch):
         raise FileNotFoundError(2, "No such file or directory", str(tmp_path / "source.md"))
         yield b""  # pragma: no cover
 
-    monkeypatch.setattr("adrpy.core.atomic_write.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     with pytest.raises(FileNotFoundError):
         atomic_write_chunks(target, chunks)
@@ -443,10 +443,37 @@ def test_a_missing_destination_folder_still_fails_at_once(tmp_path):
 
 
 def test_a_temp_file_that_vanished_before_the_sweep_reached_it_is_not_reported_as_stuck(tmp_path):
-    from adrpy.core.atomic_write import _remove_orphans
+    from adrpy.core.fs import _remove_orphans
 
     warnings = []
     removed = _remove_orphans([tmp_path / f"gone.md.{OWN_TEMP_HEX}.tmp"], 30, warnings)
 
     assert removed == []
     assert warnings == []
+
+
+def test_a_commit_retry_does_not_run_the_chunk_factory_again(tmp_path, monkeypatch):
+    # The temp file is complete before the commit starts; retrying the
+    # commit must reuse it, not stream the source a second time.
+    target = tmp_path / "decision.md"
+    calls = {"factory": 0, "replace": 0}
+    real_replace = os.replace
+
+    def chunks():
+        calls["factory"] += 1
+        yield b"content"
+
+    def replace_fails_once(src, dst):
+        calls["replace"] += 1
+        if calls["replace"] == 1:
+            raise PermissionError(13, "Access is denied", str(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace_fails_once)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    attempts = atomic_write_chunks(target, chunks)
+
+    assert calls == {"factory": 1, "replace": 2}
+    assert attempts == 2
+    assert target.read_bytes() == b"content"

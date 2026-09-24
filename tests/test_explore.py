@@ -289,7 +289,7 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
     """`_build_entry`'s own bounded header read
     has no tolerance at all, transient or persistent -- unlike every other
     decision-file read in this codebase, which retries a transient
-    PermissionError via the shared io_retry helper. One genuinely
+    PermissionError via the shared read-retry helper (core/fs.py). One genuinely
     unreadable file (locked by an editor, backup tool, or antivirus --
     an ordinary occurrence in a folder of Markdown files people also
     open by hand) must not kill the ENTIRE inventory with a bare

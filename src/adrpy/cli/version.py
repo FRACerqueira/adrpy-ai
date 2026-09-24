@@ -165,13 +165,6 @@ def run(args):
                 warnings=warnings,
             )
         new_path = resolve_within(folder, filename)
-        if new_path.exists():
-            raise CommandError(
-                FailureCodes.FILE_ALREADY_EXISTS,
-                f"File already exists: {filename}",
-                data={"file": filename},
-                warnings=warnings,
-            )
 
         # ADR006V01: --empty uses config.template (schema-bounded, safe
         # in memory, unchanged); otherwise the SOURCE's own body is
@@ -180,18 +173,26 @@ def run(args):
         # False (the default a fresh report dict would carry) when
         # --empty means the body is never read at all.
         header_text = build_header(config, record)
-        if flags.get("empty"):
-            attempts = atomic_write_text(new_path, header_text + config.template)
-            body_encoding_repaired = False
-        else:
-            body_report = {}
+        try:
+            if flags.get("empty"):
+                attempts = atomic_write_text(new_path, header_text + config.template, exclusive=True)
+                body_encoding_repaired = False
+            else:
+                body_report = {}
 
-            def _chunks(path=path, header_text=header_text, body_report=body_report):
-                yield header_text.encode("utf-8")
-                yield from stream_normalized_body_chunks(path, body_report)
+                def _chunks(path=path, header_text=header_text, body_report=body_report):
+                    yield header_text.encode("utf-8")
+                    yield from stream_normalized_body_chunks(path, body_report)
 
-            attempts = atomic_write_chunks(new_path, _chunks)
-            body_encoding_repaired = body_report["encoding_repaired"]
+                attempts = atomic_write_chunks(new_path, _chunks, exclusive=True)
+                body_encoding_repaired = body_report["encoding_repaired"]
+        except FileExistsError as error:
+            raise CommandError(
+                FailureCodes.FILE_ALREADY_EXISTS,
+                f"File already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
+            ) from error
         if ctx.encoding_repaired or body_encoding_repaired:
             warnings.append(encoding_repaired_source_warning(path))
         warning = retry_warning(attempts)

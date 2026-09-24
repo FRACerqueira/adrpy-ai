@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from adrpy.core.casing import CASE_TRANSFORMS
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.fs import read_bounded, read_with_permission_retry
 from adrpy.core.naming import parse_migration_pattern
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -359,22 +359,6 @@ CONFIG_READ_MAX_BYTES = 65536
 _CONFIG_READ_CHUNK_SIZE = 4096
 
 
-def _read_config_bytes(path):
-    """Reads at most `CONFIG_READ_MAX_BYTES` (plus at most one chunk's
-    worth of overrun, used only to detect that the real file is larger,
-    never returned) -- never the whole file regardless of its true size."""
-    chunks = []
-    total = 0
-    with Path(path).open("rb") as handle:
-        while total <= CONFIG_READ_MAX_BYTES:
-            more = handle.read(_CONFIG_READ_CHUNK_SIZE)
-            if not more:
-                break
-            chunks.append(more)
-            total += len(more)
-    return b"".join(chunks)
-
-
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
     adr-config.adrplus, and init's --seed) -- invalid bytes must
@@ -392,7 +376,9 @@ def read_config_text(path):
     (load_target's own initial config load), most of it
     BEFORE any attach_warnings safety net is entered."""
     try:
-        raw_bytes = read_with_permission_retry(lambda: _read_config_bytes(Path(path)))
+        raw_bytes = read_with_permission_retry(
+            lambda: read_bounded(path, CONFIG_READ_MAX_BYTES, _CONFIG_READ_CHUNK_SIZE)
+        )
         if len(raw_bytes) > CONFIG_READ_MAX_BYTES:
             raise CommandError(
                 FailureCodes.CONFIG_FILE_TOO_LARGE,

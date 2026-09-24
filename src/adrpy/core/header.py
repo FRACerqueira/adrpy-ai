@@ -10,6 +10,7 @@ from datetime import date as date_cls
 
 from adrpy.core.atomic_write import join_lines_with_trailing_terminator
 from adrpy.core.errors import FailureCodes
+from adrpy.core.text import is_ascii_digits
 
 HEADER_LINE_COUNT = 12
 
@@ -220,7 +221,7 @@ def parse_header(lines, config):
         result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
         return result
     if version_text:
-        if not (version_text.isascii() and version_text.isdigit()):
+        if not is_ascii_digits(version_text):
             result.error = FailureCodes.ADR_HEADER_VERSION_NOT_FOUND
             return result
         result.version = int(version_text)
@@ -230,7 +231,7 @@ def parse_header(lines, config):
         result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
         return result
     if revision_text:
-        if not (revision_text.isascii() and revision_text.isdigit()):
+        if not is_ascii_digits(revision_text):
             result.error = FailureCodes.ADR_HEADER_REVISION_NOT_FOUND
             return result
         result.revision = int(revision_text)

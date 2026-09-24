@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from adrpy.core.io_retry import IO_RETRY_ATTEMPTS, read_with_permission_retry
+from adrpy.core.fs import READ_RETRY_ATTEMPTS as IO_RETRY_ATTEMPTS, read_with_permission_retry
 
 
 def test_succeeds_immediately_when_the_read_never_fails():

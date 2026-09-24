@@ -18,13 +18,17 @@ safely retryable from scratch.
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
+    commit_in_order,
+    discard_prepared,
     failure_codes,
     family_members,
     is_successor,
     prepare,
+    prepare_status_field_rewrite,
     rewrite_status_field,
 )
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
+from adrpy.core.text import is_ascii_digits
 
 
 def describe():
@@ -39,15 +43,16 @@ def describe():
             "If this decision is itself a successor "
             "(created by `supersede`), the predecessor's Superseded status is reverted FIRST, before "
             "this decision's own status is written -- the result's `undone_predecessor` names that file "
-            "when this happens, or is null otherwise. This is two writes in sequence, not one, but in "
-            "this order every failure up to and including the predecessor's own write leaves NOTHING "
-            "committed at all: superseded-predecessor-not-found or reject-predecessor-write-failed (a "
-            "real OSError on that write), or -- if the scan for the predecessor's own family hits an "
+            "when this happens, or is null otherwise. This is two writes, not one: both files are prepared "
+            "first, then committed predecessor first, and every failure up to and including the "
+            "predecessor's own commit leaves NOTHING committed at all: superseded-predecessor-not-found "
+            "or reject-predecessor-write-failed (a real OSError preparing either file or committing the "
+            "predecessor), or -- if the scan for the predecessor's own family hits an "
             "unreadable subdirectory -- family-scan-incomplete, all mean no write was made and the "
-            "call is safely retryable from scratch. Only reject-own-write-failed-after-predecessor-"
-            "reverted is a genuine partial success: the predecessor was already reverted for real when "
-            "writing THIS decision's own Rejected status then failed -- `data.predecessor_file` names "
-            "the file already reverted. Retrying `reject` on the same file after that specific failure "
+            "call is safely retryable from scratch. Only multi-file-write-partially-applied is a genuine "
+            "partial success: the predecessor was already reverted for real when committing THIS "
+            "decision's own Rejected status then failed -- `data.applied` names the file already "
+            "reverted, `data.pending` this decision. Retrying `reject` on the same file after that specific failure "
             "is safe and completes the operation: when no member of the predecessor's family is "
             "Superseded any more (the revert already happened, or the predecessor was never marked at "
             "all -- an interrupted supersede), there is nothing to revert and "
@@ -99,8 +104,8 @@ def describe():
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
                 FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, a member of its family is Superseded but not pointing at this decision, or -- when no valid member names this decision -- a file of that family does not parse (data.unparseable_files); no write was made.",
-                FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Reverting the predecessor's Superseded status failed with a real OSError -- no write was made.",
-                FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED: "The predecessor's Superseded status was already reverted for real, but writing this decision's own Rejected status then failed -- data.predecessor_file names the file already reverted; retry is safe.",
+                FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made.",
+                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; retry is safe.",
             },
         ),
     }
@@ -121,6 +126,7 @@ def run(args):
         # (status_change is a terminal state everywhere else in this
         # codebase; there is no "unsupersede" verb).
         undone_predecessor = None
+        predecessor = None
         if is_successor(filename_info):
             # No write has happened yet at this point, so a scan
             # failure here needs no special partial-success re-raise --
@@ -137,14 +143,14 @@ def run(args):
             # predecessor's family has more than one member (e.g. an
             # earlier `version` bump) and the superseded member isn't
             # the latest. Match the specific member this successor's
-            # own number was stamped onto instead (mark_superseded's own
+            # own number was stamped onto instead (prepare_mark_superseded's own
             # superseded_by_file, a bare zero-padded sequence number,
             # never a filename). Compared as a number: the padding is the
             # lenseq in force when it was written, which a later config
             # change may have altered.
             def names_this_successor(ref):
                 ref = (ref or "").strip()
-                return ref.isascii() and ref.isdigit() and int(ref) == filename_info.number
+                return is_ascii_digits(ref) and int(ref) == filename_info.number
 
             predecessor = next(
                 (
@@ -202,74 +208,82 @@ def run(args):
                         f"{filename_info.superseded_from}). No write was made.",
                         warnings=warnings,
                     )
-            else:
-                pred_parsed, pred_header, pred_path = predecessor
-                # pred_header already comes from pred_members' own scan
-                # (family_members, via read_header_lines_with_report) --
-                # no separate read needed for the header portion. It
-                # parsed, so whatever that read replaced did not affect
-                # the status read from it -- only the BODY's own encoding
-                # status (ADR006V01, known only once the streamed write
-                # below has read it) can still need the warning.
-                try:
-                    _record, pred_body_encoding_repaired, attempts = rewrite_status_field(
-                        pred_path,
-                        config,
-                        pred_header,
-                        pred_parsed,
-                        field="change",
-                        status=None,
-                        refdate=None,
-                    )
-                except OSError as error:
-                    # Nothing committed -- atomic_write_chunks leaves
-                    # the predecessor file untouched on failure, the
-                    # same guarantee every other writer in this project
-                    # has.
-                    raise CommandError(
-                        FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
-                        f"{pred_path}: {error}. No write was made.",
-                        warnings=warnings,
-                    ) from error
-                if pred_body_encoding_repaired:
-                    warnings.append(encoding_repaired_warning(pred_path))
-                warning = retry_warning(attempts)
-                if warning:
-                    warnings.append(warning)
-                undone_predecessor = str(pred_path)
 
-        # This decision's own write, last. If the predecessor above was
-        # already reverted for real and THIS write now fails, that
-        # partial success is real and reported explicitly -- a caller
-        # doesn't have to infer it from `warnings` alone or discover it
-        # only by re-reading the predecessor file itself. Retrying
-        # `reject` on this same file is then safe: the predecessor
-        # lookup above finds no member Superseded any more and skips
-        # straight to this write again.
-        try:
+        if predecessor is not None:
+            _revert_then_reject(ctx, predecessor)
+            undone_predecessor = str(predecessor[2])
+        else:
             _record, body_encoding_repaired, attempts = rewrite_status_field(
                 path, config, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
-        except OSError as error:
-            if undone_predecessor is not None:
-                raise CommandError(
-                    FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED,
-                    f"{path}: {error}. The predecessor ({undone_predecessor}) was already reverted for real; run reject on "
-                    "this decision again to finish.",
-                    data={"predecessor_file": undone_predecessor},
-                    warnings=warnings,
-                ) from error
-            raise
-        # Accurate only because the write above already succeeded --
-        # the warning claims the file was rewritten. ADR006V01:
-        # combines the header's own flag (known since load_target)
-        # with the body's own (only known now, from the streamed
-        # write).
-        if ctx.encoding_repaired or body_encoding_repaired:
-            warnings.append(encoding_repaired_warning(path))
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            # Accurate only because the write above already succeeded --
+            # the warning claims the file was rewritten. ADR006V01:
+            # combines the header's own flag (known since load_target)
+            # with the body's own (only known now, from the streamed
+            # write).
+            if ctx.encoding_repaired or body_encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
     return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}
+
+
+def _revert_then_reject(ctx, predecessor):
+    """The two writes of rejecting a successor: the predecessor's
+    Superseded status reverted, then this decision's own Rejected status.
+    Both files are prepared before either is committed, so a failure up
+    to there leaves nothing written. They are committed predecessor
+    FIRST: a failure of that commit also leaves nothing written, and one
+    of this decision's commit after it is reported as
+    multi-file-write-partially-applied; a retry of reject then finds no
+    member Superseded and makes only this decision's write."""
+    config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
+    warnings = ctx.warnings
+    pred_parsed, pred_header, pred_path = predecessor
+    prepared = []
+    try:
+        # pred_header already comes from pred_members' own scan
+        # (family_members, via read_header_lines_with_report) -- no
+        # separate read needed for the header portion. It parsed, so
+        # whatever that read replaced did not affect the status read
+        # from it -- only the BODY's own encoding status (ADR006V01,
+        # known only once the streamed read has run) can still need the
+        # warning.
+        _record, pred_body_encoding_repaired, pred_prepared = prepare_status_field_rewrite(
+            pred_path, config, pred_header, pred_parsed, field="change", status=None, refdate=None
+        )
+        prepared.append(pred_prepared)
+        _record, body_encoding_repaired, own_prepared = prepare_status_field_rewrite(
+            path, config, header, filename_info, field="update", status="Rejected", refdate=ctx.refdate
+        )
+        prepared.append(own_prepared)
+    except BaseException as error:
+        discard_prepared(prepared)
+        if not isinstance(error, OSError):
+            raise
+        raise CommandError(
+            FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
+            f"{error}. No write was made.",
+            warnings=warnings,
+        ) from error
+
+    pred_warnings = [encoding_repaired_warning(pred_path)] if pred_body_encoding_repaired else []
+    own_warnings = []
+    if ctx.encoding_repaired or body_encoding_repaired:
+        own_warnings.append(encoding_repaired_warning(path))
+    try:
+        commit_in_order(
+            [(pred_prepared, False, pred_warnings), (own_prepared, False, own_warnings)],
+            warnings,
+            hint="Run reject on this decision again to finish.",
+        )
+    except OSError as error:
+        # The predecessor's commit, the first: nothing has been written.
+        raise CommandError(
+            FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
+            f"{pred_path}: {error}. No write was made.",
+            warnings=warnings,
+        ) from error

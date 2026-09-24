@@ -59,12 +59,11 @@ def test_init_does_not_recommend_installconfig_when_install_level_config_exists(
 def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
     """Verified live: this escapes as a clean `io-error`, not a generic
     `internal-error`, since FileExistsError is an OSError subclass
-    __main__.py already catches. Distinct from the
-    already-accepted config-already-exists race (doc/adr/ADR001V01-...'s
-    own addendum): that race has genuinely conflicting content between
-    two calls; this one doesn't -- both processes want the exact same
-    end state (the folder exists), so there's nothing to lose by closing
-    it outright, unlike init's other race."""
+    __main__.py already catches. Distinct from the config's own race
+    (closed by creating it exclusively -- tests/test_exclusive_create.py):
+    that one has genuinely conflicting content between two calls; this
+    one doesn't -- both processes want the exact same end state (the
+    folder exists), so there's nothing to lose by closing it outright."""
     real_mkdir = init.Path.mkdir
     triggered = {"done": False}
 

@@ -21,11 +21,11 @@ config predates this field (see core/config.py's own parse_repo_config).
 import re
 from pathlib import Path
 
-from adrpy.core.args import plain_int
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import read_header_lines
 from adrpy.core.security import find_unreadable_subdirectories, resolve_within
+from adrpy.core.text import parse_ascii_int
 
 CLASSIFICATIONS = (
     "audit-finding",
@@ -130,7 +130,7 @@ def parse_round(value):
     integer is actually large enough (log-round-too-low, a domain
     decision checked separately once the current max is known)."""
     try:
-        parsed = plain_int(value)
+        parsed = parse_ascii_int(value)
     except (AttributeError, TypeError, ValueError):
         parsed = None
     if parsed is None or parsed < 1:
@@ -346,7 +346,7 @@ def max_existing_round(decision_log_dir, *, warnings=None):
         if entry["classification"] not in STRUCTURED_CLASSIFICATIONS:
             continue
         try:
-            rounds.append(plain_int(entry["round"]))
+            rounds.append(parse_ascii_int(entry["round"]))
         except (AttributeError, TypeError, ValueError) as error:
             raise CommandError(
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,

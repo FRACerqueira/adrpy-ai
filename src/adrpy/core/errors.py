@@ -174,15 +174,13 @@ class FailureCodes:
     # src/adrpy/cli/reject.py
     SUPERSEDED_PREDECESSOR_NOT_FOUND = "superseded-predecessor-not-found"
     REJECT_PREDECESSOR_WRITE_FAILED = "reject-predecessor-write-failed"
-    # The predecessor revert now runs BEFORE this decision's own write (see
-    # the round-36 retraction of the original write order) -- this is the
-    # one remaining case that can still leave a real partial success: the
-    # predecessor was already reverted for real when this decision's OWN
-    # write then fails.
-    REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED = "reject-own-write-failed-after-predecessor-reverted"
+
+    # src/adrpy/cli/supersede.py and src/adrpy/cli/reject.py: a write of
+    # several files failed after at least one was committed
+    # (data.applied/data.pending).
+    MULTI_FILE_WRITE_PARTIALLY_APPLIED = "multi-file-write-partially-applied"
 
     # src/adrpy/cli/supersede.py
-    SUPERSEDE_WRITE_FAILED = "supersede-write-failed"
     SUPERSEDE_SUCCESSOR_WRITE_FAILED = "supersede-successor-write-failed"
     SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE = "supersede-orphaned-successor-not-resumable"
     SUPERSEDE_SUCCESSOR_ALREADY_EXISTS = "supersede-successor-already-exists"

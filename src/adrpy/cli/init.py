@@ -47,8 +47,8 @@ def describe():
             "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
             "May fail with target-directory-not-found if --path does not point to an existing directory "
             "-- no write is attempted. Fails with config-already-exists if adr-config.adrplus is already "
-            "there and no --seed was given -- use `config` to edit an existing repository's settings "
-            "instead, or pass --seed to overwrite it outright. "
+            "there and no --seed was given, or if one appears while init runs -- use `config` to edit an "
+            "existing repository's settings instead, or pass --seed to overwrite it outright. "
             "With no --seed and no --language, seeds from the install-level config (see the "
             "installconfig command; ADR002V01) if one has been set up on this machine, or from the "
             "built-in default otherwise -- the install-level config not existing is the normal state "
@@ -94,7 +94,8 @@ def describe():
                     "config (see the installconfig command) or the built-in default. Fails with "
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
-                    "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. The "
+                    "adr-config.adrplus outright -- config-already-exists is not raised for a config that was "
+                    "already there when --seed is given. The "
                     "existing file must still parse (its folderadr scopes the change "
                     "guards): a corrupted one fails with its own config-* code -- repair or remove it first. "
                     "If the seed's own folderadr differs from the current one AND the OLD folder already has "
@@ -162,7 +163,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_ALREADY_EXISTS: "adr-config.adrplus already exists and no --seed was given.",
+                FailureCodes.CONFIG_ALREADY_EXISTS: "adr-config.adrplus already exists and no --seed was given, or it appeared while init was running.",
                 FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
                 FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own folderadr differs from the current one, and the OLD folder already has recognized decisions.",
@@ -337,10 +338,10 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     folder_adr = resolve_within(target, config.folderadr)
     # check-then-create is a real TOCTOU -- a concurrent process creating
     # this same directory between the check and the mkdir() call would
-    # otherwise raise a raw FileExistsError. Unlike the config-already-
-    # exists race this project already accepts as risk, both processes
-    # here want the exact same end state, so there's no conflicting
-    # content to lose -- exist_ok=True closes it outright.
+    # otherwise raise a raw FileExistsError. Unlike the config itself
+    # (created exclusively below, refused if it appeared meanwhile), both
+    # processes here want the exact same end state, so there's no
+    # conflicting content to lose -- exist_ok=True closes it outright.
     #
     # Creating the folder here, ahead of the config commit below, means a
     # failure creating it aborts cleanly with nothing yet written, instead
@@ -367,7 +368,17 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     # atomic_write_text normalizes to this host's line separator (the real
     # terminator is host-OS-dependent, not fixed) -- config_text is
     # otherwise written verbatim, never re-serialized from `config`.
-    attempts = atomic_write_text(config_path, config_text)
+    # A fresh bootstrap creates the config exclusively: one that appeared
+    # since the check above is refused, not overwritten. --seed over an
+    # existing config is an intended overwrite.
+    try:
+        attempts = atomic_write_text(config_path, config_text, exclusive=old_config is None)
+    except FileExistsError as error:
+        raise CommandError(
+            FailureCodes.CONFIG_ALREADY_EXISTS,
+            f"Configuration file already exists at: {config_path}",
+            warnings=warnings,
+        ) from error
     warning = retry_warning(attempts)
     if warning:
         warnings.append(warning)

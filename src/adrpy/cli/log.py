@@ -328,25 +328,6 @@ def run(args):
         # guard new.py's own file_path already goes through, not just
         # a stricter regex.
         file_path = resolve_within(log_dir, filename)
-        if file_path.exists():
-            # An identical retry after log-index-regeneration-failed
-            # lands here forever; rebuilding INDEX.md (a full,
-            # idempotent regeneration from the entries on disk) lets
-            # that retry still converge. Best-effort: the refusal below
-            # is the answer either way.
-            try:
-                regenerate_index(log_dir, warnings=warnings)
-            except (OSError, CommandError) as error:
-                warnings.append(
-                    f"INDEX.md could not be regenerated ({explain(error)}); it may not list every entry, and "
-                    "will catch up on the next log call that succeeds."
-                )
-            raise CommandError(
-                FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
-                f"Decision-log entry already exists: {filename}",
-                data={"file": filename},
-                warnings=warnings,
-            )
 
         content = build_entry_content(
             summary,
@@ -363,7 +344,27 @@ def run(args):
         # exist, with no conflicting content to lose -- exist_ok=True
         # closes the race outright.
         log_dir.mkdir(parents=True, exist_ok=True)
-        attempts = atomic_write_text(file_path, content)
+        try:
+            attempts = atomic_write_text(file_path, content, exclusive=True)
+        except FileExistsError as error:
+            # An identical retry after log-index-regeneration-failed
+            # lands here forever; rebuilding INDEX.md (a full,
+            # idempotent regeneration from the entries on disk) lets
+            # that retry still converge. Best-effort: the refusal below
+            # is the answer either way.
+            try:
+                regenerate_index(log_dir, warnings=warnings)
+            except (OSError, CommandError) as index_error:
+                warnings.append(
+                    f"INDEX.md could not be regenerated ({explain(index_error)}); it may not list every "
+                    "entry, and will catch up on the next log call that succeeds."
+                )
+            raise CommandError(
+                FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
+                f"Decision-log entry already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
+            ) from error
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)

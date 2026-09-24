@@ -15,7 +15,6 @@ from adrpy.core.atomic_write import (
     STREAM_CHUNK_SIZE,
     atomic_write_chunks,
     atomic_write_text,
-    cleanup_orphaned_temp_files,
     join_lines_with_trailing_terminator,
     split_real_lines,
 )
@@ -29,8 +28,16 @@ from adrpy.core.header import (
     build_header,
     parse_header,
 )
-from adrpy.core.io_retry import read_with_permission_retry
+from adrpy.core.fs import (
+    cleanup_orphaned_temp_files,
+    commit_write,
+    discard_write,
+    prepare_write,
+    read_bytes,
+    read_with_permission_retry,
+)
 from adrpy.core.naming import parse_any_filename
+from adrpy.core.text import is_ascii_digits, strip_leading_boms
 from adrpy.core.security import (
     find_unreadable_subdirectories,
     is_within,
@@ -45,6 +52,7 @@ from adrpy.core.warnings import (
     ignored_file_warning,
     marker_label_mismatch_warning,
     orphan_cleanup_warning,
+    retry_warning,
 )
 
 
@@ -459,8 +467,8 @@ def _read_header_bytes(path, count):
     quadratic blowup.
 
     This read tolerates a transient PermissionError, the same contention
-    window the write side (atomic_write.py) already retries. Shares
-    core/io_retry.py's loop rather than being an independent copy."""
+    window the write side (core/fs.py) already retries. Shares
+    core/fs.py's loop rather than being an independent copy."""
 
     def _open_and_read():
         with open(path, "rb") as handle:
@@ -479,13 +487,6 @@ def _read_header_bytes(path, count):
     return read_with_permission_retry(_open_and_read)
 
 
-def _without_leading_boms(text):
-    """The tool never writes a BOM, so any run of them at the very start
-    was added by an editor (or PowerShell 5.1's -Encoding UTF8) and is not
-    content -- left in, it hides the header's first line."""
-    return text.lstrip("\ufeff")
-
-
 def read_header_lines(path, count=HEADER_LINE_COUNT):
     """Reads only enough of `path` to recover the first `count` real
     lines -- never the whole file. Used wherever only the header is
@@ -493,7 +494,7 @@ def read_header_lines(path, count=HEADER_LINE_COUNT):
     body, however large, just to look at its first 12 lines would be
     wasteful. Tolerates invalid bytes the same way read_lines does."""
     text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
-    return split_real_lines(_without_leading_boms(text))[:count]
+    return split_real_lines(strip_leading_boms(text))[:count]
 
 
 def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
@@ -516,7 +517,7 @@ def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
     except UnicodeDecodeError:
         text = buffer.decode("utf-8", errors="replace")
         encoding_repaired = True
-    return split_real_lines(_without_leading_boms(text))[:count], encoding_repaired
+    return split_real_lines(strip_leading_boms(text))[:count], encoding_repaired
 
 
 def read_lines_with_report(path):
@@ -528,14 +529,14 @@ def read_lines_with_report(path):
     Same transient-PermissionError tolerance as _read_header_bytes' own
     note -- this is read_target's own primary read on every per-file
     command."""
-    raw_bytes = read_with_permission_retry(path.read_bytes)
+    raw_bytes = read_bytes(path)
     try:
         text = raw_bytes.decode("utf-8")
         encoding_repaired = False
     except UnicodeDecodeError:
         text = raw_bytes.decode("utf-8", errors="replace")
         encoding_repaired = True
-    return split_real_lines(_without_leading_boms(text)), encoding_repaired
+    return split_real_lines(strip_leading_boms(text)), encoding_repaired
 
 
 def read_body(lines):
@@ -909,7 +910,7 @@ def _as_number(ref):
     """A Superseded cell's successor reference as an int, or None when it
     is not plain ASCII digits (hand-edited)."""
     ref = (ref or "").strip()
-    return int(ref) if ref.isascii() and ref.isdigit() else None
+    return int(ref) if is_ascii_digits(ref) else None
 
 
 def raise_if_superseded_sibling(members, warnings):
@@ -1434,28 +1435,27 @@ def _record_from_header(config, filename_info, header):
     )
 
 
-def _rewrite_with_streamed_body(path, config, record, migrated):
-    """Shared by rewrite_status_field/mark_superseded (ADR006V01): builds
-    the new header (schema-bounded, safe in memory) and streams the
-    ORIGINAL body straight from `path` into the atomic write -- the file
-    being rewritten is also the source of its own preserved body, safe
-    because atomic_write_chunks writes to a temp file and only replaces
-    the destination once the stream is fully consumed.
-
-    Returns (attempts, body_encoding_repaired) -- `content` is no longer
-    returned at all: streaming this write means the full content is
-    never assembled as one in-memory value. Every real caller already
-    discarded the old `content` return (confirmed by reading every call
-    site before this change)."""
+def _streamed_rewrite_chunks(path, config, record, migrated, report):
+    """The chunk factory of a rewrite of `path` (ADR006V01): the new
+    header (schema-bounded, safe in memory), then the ORIGINAL body
+    streamed straight from `path` -- the file being rewritten is also the
+    source of its own preserved body, safe because the write goes to a
+    temp file and only replaces the destination once the stream is fully
+    consumed. Sets report["encoding_repaired"] once the body is read."""
     header_text = build_header(config, record, migrated=migrated)
-    report = {}
 
     def _chunks(path=path, header_text=header_text, report=report):
         yield header_text.encode("utf-8")
         yield from stream_normalized_body_chunks(path, report)
 
-    attempts = atomic_write_chunks(path, _chunks)
-    return attempts, report["encoding_repaired"]
+    return _chunks
+
+
+def _status_field_record(config, header, filename_info, field, status, refdate):
+    record = _record_from_header(config, filename_info, header)
+    setattr(record, f"status_{field}", status)
+    setattr(record, f"date_{field}", refdate if status is not None else None)
+    return record
 
 
 def rewrite_status_field(path, config, header, filename_info, *, field, status, refdate):
@@ -1466,24 +1466,77 @@ def rewrite_status_field(path, config, header, filename_info, *, field, status, 
     write's own attempt count too -- callers can surface it as a warning
     when it's more than 1 -- and the BODY's own encoding_repaired signal
     (combine with the header's own, from read_target, via `or`)."""
-    record = _record_from_header(config, filename_info, header)
-    setattr(record, f"status_{field}", status)
-    setattr(record, f"date_{field}", refdate if status is not None else None)
-
-    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated)
-    return record, body_encoding_repaired, attempts
+    record = _status_field_record(config, header, filename_info, field, status, refdate)
+    report = {}
+    attempts = atomic_write_chunks(path, _streamed_rewrite_chunks(path, config, record, header.is_migrated, report))
+    return record, report["encoding_repaired"], attempts
 
 
-def mark_superseded(path, config, header, filename_info, successor_number, refdate):
-    """Like rewrite_status_field's "change" field, but also stamps the
-    successor's own zero-padded sequence number into the Superseded row.
-    NOT a filename, despite DecisionRecord's `superseded_by_file` name
-    (kept as-is to match the reference tool's own header row) -- confirmed the
-    real value is a bare padded number, not a filename."""
+def prepare_status_field_rewrite(path, config, header, filename_info, *, field, status, refdate):
+    """rewrite_status_field's content, prepared but not committed (see
+    core/fs.prepare_write): returns (record, body_encoding_repaired,
+    prepared) -- for a command that writes several files and commits
+    them only once all are prepared (commit_in_order)."""
+    record = _status_field_record(config, header, filename_info, field, status, refdate)
+    report = {}
+    prepared = prepare_write(path, _streamed_rewrite_chunks(path, config, record, header.is_migrated, report))
+    return record, report["encoding_repaired"], prepared
+
+
+def prepare_mark_superseded(path, config, header, filename_info, successor_number, refdate):
+    """Like prepare_status_field_rewrite's "change" field, but also stamps
+    the successor's own zero-padded sequence number into the Superseded
+    row. NOT a filename, despite DecisionRecord's `superseded_by_file`
+    name (kept as-is to match the reference tool's own header row) --
+    confirmed the real value is a bare padded number, not a filename."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate
     record.superseded_by_file = f"{successor_number:0{config.lenseq}d}"
+    report = {}
+    prepared = prepare_write(path, _streamed_rewrite_chunks(path, config, record, header.is_migrated, report))
+    return record, report["encoding_repaired"], prepared
 
-    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated)
-    return record, body_encoding_repaired, attempts
+
+def commit_in_order(steps, warnings, *, already_applied=(), hint):
+    """Commits several prepared writes in the given order. `steps` is a
+    list of (prepared, exclusive, warnings_once_applied); each file's own
+    warnings join `warnings` only once that file is committed. On a
+    failure, every temp not yet committed is discarded.
+
+    A failure before any file of the operation is on disk (none committed
+    here, and `already_applied` empty) propagates unchanged, for the
+    caller to map to its own nothing-written code. A failure after that
+    raises multi-file-write-partially-applied, with data.applied and
+    data.pending naming the files, and `hint` telling how to finish."""
+    applied = [str(path) for path in already_applied]
+    for index, (prepared, exclusive, applied_warnings) in enumerate(steps):
+        try:
+            attempts = prepared.attempts + commit_write(prepared, exclusive=exclusive) - 1
+        except BaseException as error:
+            # This one's own temp too: already gone when commit_write
+            # itself failed, and discarding is idempotent.
+            for unwritten, _exclusive, _warnings in steps[index:]:
+                discard_write(unwritten)
+            if not applied or not isinstance(error, OSError):
+                raise
+            pending = [str(step[0].path) for step in steps[index:]]
+            raise CommandError(
+                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED,
+                f"{prepared.path}: {error}. Already written: {', '.join(applied)}; not written: "
+                f"{', '.join(pending)}. {hint}",
+                data={"applied": applied, "pending": pending},
+                warnings=warnings,
+            ) from error
+        applied.append(str(prepared.path))
+        warnings.extend(applied_warnings)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
+
+
+def discard_prepared(prepared):
+    """Drops every prepared write in `prepared` (None entries skipped)."""
+    for item in prepared:
+        if item is not None:
+            discard_write(item)

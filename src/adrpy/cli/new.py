@@ -8,7 +8,8 @@ accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.fs import cleanup_orphaned_temp_files
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header
@@ -176,16 +177,17 @@ def run(args):
 
         filename = build_filename(config, record)
         file_path = resolve_within(folder, filename)
-        if file_path.exists():
+
+        content = build_header(config, record) + config.template
+        try:
+            attempts = atomic_write_text(file_path, content, exclusive=True)
+        except FileExistsError as error:
             raise CommandError(
                 FailureCodes.FILE_ALREADY_EXISTS,
                 f"File already exists: {filename}",
                 data={"file": filename},
                 warnings=warnings,
-            )
-
-        content = build_header(config, record) + config.template
-        attempts = atomic_write_text(file_path, content)
+            ) from error
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)
