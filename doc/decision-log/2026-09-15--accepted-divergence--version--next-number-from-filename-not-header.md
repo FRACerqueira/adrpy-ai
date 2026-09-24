@@ -1,4 +1,4 @@
-# version's next-version-number derives from the filename, not the header cell as the real tool does
+# version's next version number derives from the filename; AdrPlus 1.0.0 reads the header cell
 
 `cli/version.py` derives the number for a new version from
 `latest_parsed.version + 1`, where `latest_parsed` comes from parsing the
@@ -19,3 +19,5 @@ next one (`V25`). Deriving from the filename never produces a number
 that collides with an existing file, at the cost of this one drifted-
 state divergence from the original. Escalated and confirmed with the
 user.
+
+Architectural review (Round 43): adrpy is now the reference and AdrPlus will mirror it; deriving from the filename is adrpy's rule. The reason stands.

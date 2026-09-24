@@ -1,4 +1,4 @@
-# --refdate parsing stays strict ISO-8601, diverging from the real tool's culture-aware parsing
+# --refdate parsing stays strict ISO-8601; AdrPlus 1.0.0 parses it culture-aware
 
 `core/lifecycle.parse_refdate` accepts only `YYYY-MM-DD` (`date.fromisoformat`).
 The real adrplus parses `--refdate` with .NET's culture-aware
@@ -15,3 +15,5 @@ caller is an AI agent constructing date strings programmatically — the
 exact kind of ambiguity the project's own JSON/args-in contract exists to
 avoid elsewhere. Escalated and confirmed with the user (Milestone 8 audit,
 fidelity finding F3): keep the current strict, unambiguous ISO format.
+
+Architectural review (Round 43): adrpy is now the reference and AdrPlus will mirror it; strict ISO-8601 is adrpy's rule, and AdrPlus 1.0.0's culture-aware parsing is the difference. The reason stands.

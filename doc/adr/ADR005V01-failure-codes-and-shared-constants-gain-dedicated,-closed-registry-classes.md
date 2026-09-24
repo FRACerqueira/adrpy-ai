@@ -78,3 +78,4 @@ Chosen option: **a single, central `FailureCodes` class in `core/errors.py`**, p
 
 * Closes: decision-log `2026-09-21--deferred--cli--index-md-every-failure-code-documented-claim-is-false.md`
 * Related: the same session's own broader security-audit rounds (`2026-09-21` decision-log entries, scope `security`), during which the second, larger wave of undocumented codes was found.
+* Architectural review (Round 43): the open question in Negative Consequences is settled -- the per-command `_INELIGIBILITY_DETAILS` texts became one shared text per code in `core/lifecycle.SHARED_FAILURE_CODES`. The registry also lost codes that no longer exist: the four lock codes (no concurrency control, ADR001), `supersede --resume`'s codes, and three lifecycle scan-incomplete codes (`family-`, `new-` and `supersede-successor-scan-incomplete`, now one `scan-incomplete` validator error). `core/io_retry.py`, cited above as a precedent, is now part of `core/fs.py`.

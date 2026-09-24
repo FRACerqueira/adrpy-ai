@@ -1,9 +1,0 @@
-# folderadr is now revalidated immediately after every lock acquire, in all 9 write commands
-
-**Front:** Stability (round 6 re-run), root cause | **Severity:** High | **Round:** 6
-
-Round 6 stability re-run, root cause shared by all 9 write commands (reopened tracker item #3, which round 5's `folderadr-change-blocked-by-existing-decisions` policy only partly closed): every command's lock location is derived from a config read taken BEFORE the lock -- necessary, since you can't find the lock without already knowing `folderadr`, the same chicken-and-egg `init`'s own exemption already documents. Nothing re-checked that `folderadr` hadn't drifted by the time the lock was actually acquired.
-
-Reproduced live, twice: `init --seed`'s own folderadr-change guard could scan the wrong directory, or skip scanning entirely (when the seed's own folderadr happened to match the stale bootstrap value), silently reverting a real concurrent change and orphaning a live decision with zero warning; `new` could write into a directory that stopped being the repository's real folderadr, locking against nobody -- two processes, two directories, zero mutual exclusion between them.
-
-**Fix**: one shared function for the whole class, not nine ad hoc patches -- `core.lifecycle.verify_folderadr_unchanged_since_lock` re-reads config immediately after `acquire_repo_lock` returns and aborts with a structured, mappable `folderadr-changed-after-lock-acquired` (naming both the locked and the current value) if it drifted -- used identically by all 9 call sites (`new`/`approve`/`reject`/`undo`/`supersede`/`version`/`revise`/`migrate`/`config`, plus `init`'s `--seed`-on-existing-repo path). Callers now use the config this returns, not the pre-lock one, closing the more general ADR001-part-2 staleness for every other field too, not just `folderadr`.

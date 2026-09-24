@@ -1,4 +1,4 @@
-# migrate with no eligible files stays a reported error, unlike the real tool's silent success
+# migrate with no eligible files stays a reported error; AdrPlus 1.0.0 reports success
 
 `cli/migrate.py` raises `CommandError("no-eligible-files-to-migrate", ...)`
 (exit 1) when no candidate files need migration. The real adrplus returns
@@ -14,3 +14,5 @@ own empty-result codes) — matching the real tool's inconsistency here
 (silent success for one kind of "nothing found", an error for another)
 would trade internal consistency for fidelity with no clear benefit to
 an agent caller. Escalated and confirmed with the user.
+
+Architectural review (Round 43): adrpy is now the reference and AdrPlus will mirror it; the reported error is adrpy's rule. The reason stands.

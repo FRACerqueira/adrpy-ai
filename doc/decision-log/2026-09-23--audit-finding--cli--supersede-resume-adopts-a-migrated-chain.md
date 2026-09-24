@@ -1,5 +1,0 @@
-# supersede --resume adopts a supersede chain that migrate brought in
-
-**Front:** Round 38: re-verification of the supersede --resume change (B1-1) | **Severity:** Medium | **Resolution:** Escalated | **Round:** 38
-
-The re-verification front found that a supersede chain recorded by hand in the filenames before adrpy could never be recorded. In that chain, ADR001 and ADR002--001 are both migrated placeholders with no Created status. supersede refused it as an existing successor, and --resume refused it for lacking a Created status. The only way out was rejecting the real successor and creating a spurious one. This conflicted with the earlier recoverability front's critique of resuming onto a migrated placeholder; the project owner chose option (a). db65d91: --resume also adopts the successor when both it and the predecessor are migrated placeholders, leaving the successor untouched and reporting status null. A placeholder pointing at a decision this tool created stays refused, pinned by an adversarial test; the mutant that drops the predecessor-is-migrated check is killed.

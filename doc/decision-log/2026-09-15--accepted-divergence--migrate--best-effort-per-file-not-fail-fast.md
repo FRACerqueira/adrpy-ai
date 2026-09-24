@@ -1,4 +1,4 @@
-# migrate is best-effort per file, unlike the real tool's implicit fail-fast
+# migrate is best-effort per file; AdrPlus 1.0.0 stops at the first failure
 
 `cli/migrate.py`'s per-file loop now attempts every eligible candidate
 regardless of an earlier failure, returning one `{"file", "status":
@@ -29,3 +29,5 @@ every other command's own contract (the operation either fully succeeds
 or reports a structured failure) rather than becoming the one command
 that reports `success:true` with failures buried in a nested array.
 Escalated and confirmed with the user (commit `550186f`).
+
+Architectural review (Round 43): the behavior stays, with the reason restated now that adrpy is the reference and AdrPlus will mirror it, so it no longer rests on AdrPlus 1.0.0 lacking any handling. migrate runs once, before any decision is created, and is exempt from validate-before-acting. It prepares and commits each candidate on its own, an atomic write per file: a failure leaves the other candidates migrated and the failed one untouched, data.results names every outcome, and a re-run migrates only the files still without a header. A fallback migrationpattern is still persisted into adr-config.adrplus first, before any candidate, so a re-run finds it; that timing no longer has anything to do with the lock (ADR001).

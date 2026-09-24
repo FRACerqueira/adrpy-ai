@@ -8,3 +8,5 @@ Low findings fixed red/green in c4fdb92:
 - The orphan sweep no longer reports 'could not be removed' for a temp that vanished between scan and stat.
 - log: an identical retry after log-index-regeneration-failed hit log-entry-already-exists forever. The already-exists path now regenerates INDEX.md first, so the index converges.
 - doc/skills/README.md: the documented no-lock limitation now names its cross-file consequence, a stub left pointing at a removed shared doc.
+
+Architectural review (Round 43): the atomic_write item was already retracted (`2026-09-23--retraction--core--swept-temp-retry-reverted.md`). The doc/skills/README.md item is now the general rule: adrpy-skills, like adrpy, runs one command at a time on a working copy (ADR001). The parse_flags, orphan-sweep and log items stand.

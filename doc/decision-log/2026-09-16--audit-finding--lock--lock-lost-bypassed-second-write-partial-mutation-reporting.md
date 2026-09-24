@@ -1,7 +1,0 @@
-# LockLostError bypassed each command's own second-write partial-mutation reporting
-
-**Front:** Stability (round 5 re-run), Finding 3 | **Severity:** Medium | **Round:** 5
-
-Round 5 stability re-run, Finding 3: `LockLostError` on a command's SECOND write (`supersede`'s successor creation, `reject`'s predecessor update) or per-candidate write (`migrate`'s loop) bypassed each command's own partial-mutation handler entirely -- only `OSError` was caught there. A caller saw the generic, dataless "no write was made" `lock-lost` message even though the FIRST write (or an earlier candidate) had already, for real, committed -- exactly the orphaned-family/partial-result risk the OSError sibling handler already guards against.
-
-Fixed by reusing each command's own existing code and `data` shape rather than inventing a parallel one: `supersede.py`/`reject.py` now catch `(OSError, LockLostError)` in the same except clause guarding their second write. `migrate.py` is a different shape (its loop continues past a per-file `OSError`/`UnicodeError`, by design) -- losing the lock is a whole-operation event, not one file's own problem, so it now stops the loop outright with a new `migration-lock-lost` code carrying `data.results` for exactly what was attempted before the loss, rather than folding into the per-file continue-on-error path.

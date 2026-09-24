@@ -13,3 +13,5 @@ equivalent) exists to hold a `comandopenadr`-style setting in the first
 place. Declining permanently, not deferring: the target caller this
 project is built for has no use for this feature by construction, not by
 omission.
+
+Architectural review (Round 43): adrpy is now the reference and AdrPlus will mirror it (README, "Relationship to AdrPlus"); read "divergence" here as adrpy's own behavior, which AdrPlus 1.0.0 does not share. The decision stands.

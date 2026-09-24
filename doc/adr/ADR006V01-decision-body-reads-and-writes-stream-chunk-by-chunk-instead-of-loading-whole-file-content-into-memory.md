@@ -1,7 +1,7 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
 |Adr-Plus Fields|Values|
 |--|--|
-|File title md|Decision-body reads and writes stream through the repository lock's critical section instead of loading whole-file content into memory|
+|File title md|Decision-body reads and writes stream chunk by chunk instead of loading whole-file content into memory|
 |Version|01|
 |Revision||
 |Scope|core/lifecycle.py, core/atomic_write.py, cli/migrate.py|
@@ -11,7 +11,7 @@
 |Superseded||
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---
-# Decision-body reads and writes stream through the repository lock's critical section instead of loading whole-file content into memory
+# Decision-body reads and writes stream chunk by chunk instead of loading whole-file content into memory
 
 ## Deciders
 
@@ -30,7 +30,7 @@ Is there a way to close the unbounded-read/write class for the body the same way
 * A fixed byte cap on the body is a worse fit here than it was for the header: the header's own schema already bounds it, so a cap can never reject anything legitimate; the body has no such schema bound, so any fixed cap is an arbitrary, eventually-wrong number.
 * `migrate.py`'s own write is already defined as a byte-for-byte pass-through with no transformation -- streaming it (read a chunk from the source, write the same chunk to the destination, repeat) is a pure mechanical change with zero behavior difference from today's whole-buffer copy.
 * `approve`/`reject`/`undo`/`supersede`/`version`/`revise` all rewrite a file's body through `read_body`, which normalizes the body's line endings to this host's `os.linesep` (matching the reference tool's own behavior) -- a real transformation, not a pass-through, so streaming this path is a materially larger change than migrate's.
-* Every one of these commands already writes through `core/atomic_write.py`'s temp-file-then-`os.replace` mechanism (ADR001) for crash/concurrency safety -- any streaming design has to preserve that guarantee, not trade it away for a smaller memory footprint.
+* Every one of these commands already writes through `core/atomic_write.py`'s temp-file-then-`os.replace` mechanism (the atomic write per file, ADR001) for crash safety -- any streaming design has to preserve that guarantee, not trade it away for a smaller memory footprint.
 * This project's own established discipline (this session, rounds 22-28) is to close a bug class structurally once a bounded fix for one instance of it is found to have a sibling with a materially different shape, rather than pattern-matching the same narrow fix onto a case it doesn't actually fit.
 
 ## Considered Options
@@ -56,9 +56,9 @@ This also fixes a related, smaller bug found while designing the fix: `_read_hea
 
 ### Negative Consequences
 
-* A real, non-trivial implementation cost: `read_target`'s own contract changes (it no longer returns the full body as pre-split lines; body handling moves to write time, streamed directly from the original path under the still-held repository lock), and `rewrite_status_field`/`mark_superseded`'s `content` return value is no longer a fully materialized string (existing callers already discard it, confirmed by reading every call site, so this is a safe but real signature/contract narrowing).
+* A real, non-trivial implementation cost: `read_target`'s own contract changes (it no longer returns the full body as pre-split lines; body handling moves to write time, streamed directly from the original path), and `rewrite_status_field`/`mark_superseded`'s `content` return value is no longer a fully materialized string (existing callers already discard it, confirmed by reading every call site, so this is a safe but real signature/contract narrowing).
 * The byte-level line-ending-normalization-plus-invalid-UTF-8-replacement transform, implemented as a streaming pass with cross-chunk state (a pending lone `\r` carried to the next chunk; an incremental UTF-8 decoder for the encoding-repair detection), is meaningfully harder to reason about and to get byte-identical to the current whole-buffer implementation than either the header's own bounded read or migrate's pure pass-through copy -- verified via a dedicated adversarial test suite (CRLF straddling a chunk boundary, a lone CR at true end-of-file, no trailing newline at all, multiple trailing blank lines, invalid UTF-8 straddling a chunk boundary, an entirely empty body) asserting byte-identical output against the pre-refactor implementation, not just a green existing suite.
-* `migrate.py`'s per-candidate write and its own source read now share one combined retry budget (`atomic_write_chunks`'s single loop covers both the source read, since it runs inside the chunk-producer callable, and the destination write) instead of two independently-budgeted retries (the source read via `read_with_permission_retry`, the destination write via `atomic_write_bytes`'s own retry) -- a deliberate simplification, not an oversight, but a real behavior change under sustained contention (a smaller total number of retry attempts available across both operations combined than before).
+* `migrate.py`'s per-candidate source read and its temp-file write share one retry budget (the source read runs inside the chunk-producer callable, so preparing the temp file retries both together, up to 5 attempts), and committing the temp file into place has its own budget of 5 (`core/fs.py`'s `prepare_write`/`commit_write`) -- instead of the source read and the destination write each having an independent retry, as before streaming. A deliberate simplification, not an oversight, but a real behavior change under sustained contention on the source file (fewer attempts for the read than two independent budgets would give).
 
 ## Pros and Cons of the Options
 
@@ -82,4 +82,4 @@ This also fixes a related, smaller bug found while designing the fix: `_read_hea
 ## Links
 
 * Closes: the two round-28 (2026-09-21) `audit-finding` decision-log entries covering `read_target`/`read_lines_with_report` and `cli/migrate.py`'s own candidate read.
-* Related: `doc/adr/ADR001V01-...md` (the atomic-write/repository-lock model this refactor must preserve), `doc/adr/ADR005V01-...md` (the same session's other "found the same class was broader than the first fix" decision).
+* Related: `doc/adr/ADR001V01-...md` (the atomic write per file this refactor must preserve), `doc/adr/ADR005V01-...md` (the same session's other "found the same class was broader than the first fix" decision).

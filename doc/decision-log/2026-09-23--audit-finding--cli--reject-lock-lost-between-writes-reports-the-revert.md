@@ -1,5 +1,0 @@
-# reject reports the predecessor revert when the lock is lost between its two writes
-
-**Front:** Round 38: multi-write recoverability front | **Severity:** High | **Resolution:** Direct | **Round:** 38
-
-reject.py's verify_still_held() between its two writes sat outside the try. A lock lost after the predecessor revert committed therefore surfaced as a bare lock-lost ('no write was made') with data=None. In a multi-member family, every retry then failed with superseded-predecessor-not-found and nothing named the reverted file. The suite was green because no test stole the lock at exactly that point. Fixed in 78938e4: the check is inside the try, and reports reject-own-write-failed-after-predecessor-reverted with data.predecessor_file (red: lock-lost). The class was closed by reading every verify_still_held() in src/adrpy/cli/: log, migrate, version, revise and supersede are already inside their partial-success handler or before any write. reject's describe() now names a tool-only recovery for the multi-member case (supersede --resume, then reject), which a new test proves end to end.

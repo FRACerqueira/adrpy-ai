@@ -7,3 +7,5 @@ Round 10 stability audit, Finding 1: round 9's fix (`2026-09-18--audit-finding--
 Confirmation-pass context: this round was deliberately scoped to scrutinize round 9's own new `try/except CommandError` block specifically (does it change what the lock's `verify_still_held()` protects, could it mask a different error code, does it interact badly with `attach_warnings`) -- all four came back clean; this was the one real finding.
 
 **Fix**: `data={**(error.data or {}), "file": str(path), "status": "Rejected"}` -- merges instead of replaces.
+
+Architectural review (Round 43): the re-raise this entry fixed no longer exists: reject reads the predecessor's family from the snapshot validated before any write, and `family-scan-incomplete` gave way to the validator's `scan-incomplete`. The `verify_still_held()` check mentioned went with the lock (ADR001).
