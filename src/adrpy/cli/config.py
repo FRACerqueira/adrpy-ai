@@ -28,9 +28,7 @@ from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
     reject_status_or_separator_change_if_decisions_exist,
     resolve_target_and_config,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
 
@@ -219,13 +217,7 @@ def describe():
             "treated as an unintended side effect and blocked. This check only ever runs once the "
             "blocked-by-existing-decisions check above has already passed, so it only ever fires when zero "
             "existing decisions are at risk from this call -- not an edge case alongside a more common one "
-            "where both could coexist, since those two outcomes are mutually exclusive by construction. "
-            "A write call may also fail with repository-locked if the repository lock could not be "
-            "acquired in time, or lock-lost if it was acquired but reclaimed before the write could "
-            "commit -- in both cases the config was not written (the decisions folder itself may already have "
-            "been created); a pure read (no field flags) never takes the lock. "
-            "May also fail with folderadr-changed-after-lock-acquired if a concurrent config change moved "
-            "folderadr while this call was acquiring the lock -- no write was made either way; retry."
+            "where both could coexist, since those two outcomes are mutually exclusive by construction."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -243,7 +235,6 @@ def describe():
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
-                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
                 FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--folderadr can only be changed while the OLD folder has no recognized decisions yet.",
@@ -262,7 +253,6 @@ def describe():
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             config_schema.SHARED_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
@@ -272,9 +262,8 @@ def run(args):
     target, config_path, config = resolve_target_and_config(flags["path"])
 
     # Which fields (if any) this call would touch is knowable from the
-    # flags alone, before reading the file at all -- a pure read (no
-    # field flags) never needs the repository lock below, matching
-    # explore's own precedent.
+    # flags alone -- a pure read (no field flags) writes nothing,
+    # matching explore's own precedent.
     if not any(field in flags for field in _EDITABLE_FIELDS):
         # There was no way to read the current config through the JSON
         # contract at all, and calling this with no field flags -- the
@@ -284,149 +273,116 @@ def run(args):
         current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
-    # A read-merge-write with no lock would let two concurrent calls
-    # editing DIFFERENT fields silently lose one of the two edits,
-    # contradicting this command's own documented contract above ("an
-    # omitted flag preserves the repo's current value, never resets it").
-    # Uses the same repository lock the other 8 write commands already
-    # use, scoped to folderadr -- resolved here from the pre-edit config
-    # just to know where the lock lives; the actual merge below re-reads
-    # fresh, inside the lock (ADR001's own freshness principle), so even
-    # a concurrent edit to folderadr itself is safe: whichever call
-    # writes second still merges its own field onto the other's
-    # already-committed change.
-    bootstrap_config = config
-    folder = resolve_within(target, bootstrap_config.folderadr)
-    # Unlike the other 8 commands (which only ever run after `init`
-    # already created this directory), nothing requires it to exist
-    # before `config` runs -- ensure it does, matching init's own
-    # precedent, or acquiring the lock inside it would raise a raw
-    # FileNotFoundError (core.lock._try_create only handles
-    # FileExistsError, not a missing parent directory).
+    current = config
+    folder = resolve_within(target, current.folderadr)
+    # Nothing requires this directory to exist before `config` runs --
+    # ensure it does, matching init's own precedent: the folderadr/
+    # status/separator guards below scan it, and
+    # find_unreadable_subdirectories treats a missing folder as
+    # unreadable.
     folder.mkdir(parents=True, exist_ok=True)
 
     warnings = []
     with attach_warnings(warnings):
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # `folder` above (this lock's own location) was resolved from
-            # `bootstrap_config`, read BEFORE the lock. Re-reads fresh and
-            # aborts if folderadr already drifted in that window, instead
-            # of trusting the pre-lock read.
-            current = verify_folderadr_unchanged_since_lock(
-                config_path, bootstrap_config.folderadr, warnings=warnings
-            )
-            merged = asdict(current)
-            updated_fields = []
+        merged = asdict(current)
+        updated_fields = []
 
-            for field in _STRING_FIELDS:
-                if field in flags:
-                    merged[field] = flags[field]
-                    updated_fields.append(field)
+        for field in _STRING_FIELDS:
+            if field in flags:
+                merged[field] = flags[field]
+                updated_fields.append(field)
 
-            for field in _INT_FIELDS:
-                if field in flags:
-                    try:
-                        merged[field] = plain_int(flags[field])
-                    except ValueError as error:
-                        raise CommandError(
-                            FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
-                        ) from error
-                    updated_fields.append(field)
-
-            if "disableplugins" in flags:
-                text = flags["disableplugins"].strip().lower()
-                if text not in ("true", "false"):
+        for field in _INT_FIELDS:
+            if field in flags:
+                try:
+                    merged[field] = plain_int(flags[field])
+                except ValueError as error:
                     raise CommandError(
-                        FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'."
-                    )
-                merged["disableplugins"] = text == "true"
-                updated_fields.append("disableplugins")
+                        FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
+                    ) from error
+                updated_fields.append(field)
 
-            merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
-            new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+        if "disableplugins" in flags:
+            text = flags["disableplugins"].strip().lower()
+            if text not in ("true", "false"):
+                raise CommandError(
+                    FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'."
+                )
+            merged["disableplugins"] = text == "true"
+            updated_fields.append("disableplugins")
 
-            # _is_relative_path only rejects an anchored escape ("C:\..",
-            # "\\server\.."); "../../evil" is still relative and passes that check,
-            # but resolves outside the repository -- validate before writing, the
-            # same order `init` already uses, so a hostile --folderadr can never
-            # get persisted and brick the repository (every subsequent command
-            # would refuse with path-outside-repository until hand-fixed).
-            resolve_within(target, new_config.folderadr)
+        merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
+        new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
 
-            # A folderadr change is only valid when the OLD folder has no
-            # recognized decisions yet -- otherwise every existing
-            # decision becomes invisible at its old, still-real path, and
-            # a command running before vs. after this write would lock
-            # two different directories that never exclude each other.
-            # Checked against `current` (fresh, inside the lock) and
-            # `folder` (this same lock's own location) -- both are the
-            # pre-edit state.
-            reject_folderadr_change_if_decisions_exist(
-                folder,
-                current.folderadr,
-                new_config.folderadr,
-                current,
-                target=target,
-                new_config=new_config,
-                warnings=warnings,
-            )
+        # _is_relative_path only rejects an anchored escape ("C:\..",
+        # "\\server\.."); "../../evil" is still relative and passes that check,
+        # but resolves outside the repository -- validate before writing, the
+        # same order `init` already uses, so a hostile --folderadr can never
+        # get persisted and brick the repository (every subsequent command
+        # would refuse with path-outside-repository until hand-fixed).
+        resolve_within(target, new_config.folderadr)
 
-            # ADR007V01: the folderlog counterpart to the folderadr guard
-            # just above -- same reasoning (an existing decision-log
-            # entry becoming invisible at its old, still-real path), same
-            # pre-edit `current`/fresh-inside-the-lock state. Also
-            # validates the new folderlog value can't escape the
-            # repository, the same order as folderadr's own check above.
-            resolve_within(target, new_config.folderlog)
-            # The schema-time guard in core/config.py's own
-            # parse_repo_config can never see a junction/symlink planted
-            # inside the repo tree -- re-checked here, against the real,
-            # resolved directories, before either the folderlog-change
-            # guard below or the folderadr directory gets created.
-            reject_aliased_repo_folders(target, new_config)
-            reject_folderlog_change_if_entries_exist(
-                decision_log_dir_for(target, current),
-                current.folderlog,
-                new_config.folderlog,
-                target=target,
-                warnings=warnings,
-            )
+        # A folderadr change is only valid when the OLD folder has no
+        # recognized decisions yet -- otherwise every existing
+        # decision becomes invisible at its old, still-real path.
+        # Checked against `current` and `folder` -- both are the
+        # pre-edit state.
+        reject_folderadr_change_if_decisions_exist(
+            folder,
+            current.folderadr,
+            new_config.folderadr,
+            current,
+            target=target,
+            new_config=new_config,
+            warnings=warnings,
+        )
 
-            # ADR004V01: a statusnew/statusacc/statusrej/statussup or
-            # separator change is only valid when the OLD folder has no
-            # recognized decisions yet -- otherwise some or all of them
-            # stop being recognized (a label change breaks a marker-less
-            # status cell's text match; a separator change breaks
-            # filename recognition entirely). Same `folder`/`current`
-            # pre-edit state as the folderadr guard above.
-            reject_status_or_separator_change_if_decisions_exist(folder, current, new_config, warnings=warnings)
+        # ADR007V01: the folderlog counterpart to the folderadr guard
+        # just above -- same reasoning (an existing decision-log
+        # entry becoming invisible at its old, still-real path), same
+        # pre-edit `current` state. Also
+        # validates the new folderlog value can't escape the
+        # repository, the same order as folderadr's own check above.
+        resolve_within(target, new_config.folderlog)
+        # The schema-time guard in core/config.py's own
+        # parse_repo_config can never see a junction/symlink planted
+        # inside the repo tree -- re-checked here, against the real,
+        # resolved directories, before either the folderlog-change
+        # guard below or the folderadr directory gets created.
+        reject_aliased_repo_folders(target, new_config)
+        reject_folderlog_change_if_entries_exist(
+            decision_log_dir_for(target, current),
+            current.folderlog,
+            new_config.folderlog,
+            target=target,
+            warnings=warnings,
+        )
 
-            # Creating the new folder here, BEFORE the config commits,
-            # means a failure creating it aborts cleanly with nothing yet
-            # written -- committing folderadr to disk first instead would
-            # leave the repository pointing at a directory that didn't
-            # exist, with no `data` naming that already-committed change,
-            # and every subsequent command failing with a generic io-error
-            # until someone noticed and retried. mkdir is otherwise
-            # harmless if the write below
-            # still somehow fails afterward -- an unused empty folder, not
-            # a real cost.
-            new_folder = resolve_within(target, new_config.folderadr)
-            new_folder.mkdir(parents=True, exist_ok=True)
+        # ADR004V01: a statusnew/statusacc/statusrej/statussup or
+        # separator change is only valid when the OLD folder has no
+        # recognized decisions yet -- otherwise some or all of them
+        # stop being recognized (a label change breaks a marker-less
+        # status cell's text match; a separator change breaks
+        # filename recognition entirely). Same `folder`/`current`
+        # pre-edit state as the folderadr guard above.
+        reject_status_or_separator_change_if_decisions_exist(folder, current, new_config, warnings=warnings)
 
-            # ADR001, part 3: guarantees this write never commits blindly
-            # if the lease was reclaimed.
-            lock.verify_still_held()
-            # Re-verified here too, immediately before the real commit --
-            # the check above (before new_folder's own mkdir) leaves a
-            # window a filesystem-level racer could exploit between then
-            # and this write. Same narrowing rationale as log.py's own
-            # pre-commit re-check.
-            reject_aliased_repo_folders(target, new_config)
-            attempts = atomic_write_text(config_path, merged_text)
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        # Creating the new folder here, BEFORE the config commits,
+        # means a failure creating it aborts cleanly with nothing yet
+        # written -- committing folderadr to disk first instead would
+        # leave the repository pointing at a directory that didn't
+        # exist, with no `data` naming that already-committed change,
+        # and every subsequent command failing with a generic io-error
+        # until someone noticed and retried. mkdir is otherwise
+        # harmless if the write below
+        # still somehow fails afterward -- an unused empty folder, not
+        # a real cost.
+        new_folder = resolve_within(target, new_config.folderadr)
+        new_folder.mkdir(parents=True, exist_ok=True)
+
+        attempts = atomic_write_text(config_path, merged_text)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     return {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}

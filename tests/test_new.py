@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from adrpy.cli import init, new
-from adrpy.core.config import load_repo_config, parse_repo_config
+from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 
 import pytest
@@ -35,36 +35,6 @@ def test_new_creates_first_decision(tmp_path):
     assert "|File title md|Use PostgreSQL|" in text
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text
     assert "|Revision||" in text  # fixture's lenrevision == 0
-
-
-def test_new_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """The
-    lock's own location is derived from a config read taken before the
-    lock -- if a concurrent `config --folderadr` completes in the window
-    before this call's own lock is actually acquired, it locks (and
-    would write into) a directory the repository no longer uses.
-    Reproduced live: an orphaned decision, two processes locking two
-    different directories with zero exclusion between them. Simulates
-    the race by returning a stale config from the bootstrap read while
-    the file on disk already has the new value."""
-    init.run(["--path", str(tmp_path)])
-    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    from adrpy.cli import config as config_module
-
-    config_module.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
-
-    monkeypatch.setattr(
-        new, "resolve_target_and_config", lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_config)
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        new.run(["--path", str(tmp_path), "--title", "Orphan me"])
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-    assert not (tmp_path / "doc" / "adr" / "ADR001V01-orphan-me.md").exists()
-    assert list((tmp_path / "doc" / "adrB").glob("*.md")) == []
 
 
 def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
@@ -243,22 +213,6 @@ def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path
 
     assert not orphan.exists()
     assert any("leftover.md.0123456789abcdef0123456789abcdef.tmp" in warning for warning in result["warnings"])
-
-
-def test_new_reports_a_reclaimed_stale_lock_as_a_warning(tmp_path):
-    """acquire_repo_lock's own reclaim
-    report (test_lock.py) must actually reach a real command's result,
-    not just the lock module in isolation."""
-    from adrpy.core.lock import LOCK_FILE_NAME
-
-    _init_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    lock_path = adr_dir / LOCK_FILE_NAME
-    lock_path.write_text(f"stale-token\n{time.time() - 999}")
-
-    result = new.run(["--path", str(tmp_path), "--title", "Triggers reclaim"])
-
-    assert any("stale" in warning.lower() for warning in result["warnings"])
 
 
 def test_new_reports_no_warnings_on_a_clean_run(tmp_path):

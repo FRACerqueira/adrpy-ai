@@ -893,7 +893,7 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
 class TestReadRetriesTransientPermissionError:
     """Round 35 resilience front: installer.py's own reads never used the
     project's shared read_with_permission_retry (core/io_retry.py), unlike
-    every other reader (core/config.py, core/lock.py, core/lifecycle.py) --
+    every other reader (core/config.py, core/lifecycle.py) --
     a single transient PermissionError (a Windows "pending delete" window
     under a concurrent reader) failed the whole install/remove/list call
     outright instead of being absorbed."""
@@ -1179,8 +1179,8 @@ class TestReadTextSizeCap:
     """Round 37, Class P5: _read_text had no size cap -- a front measured
     an unbounded read of a planted 100MB file peaking process memory near
     200MB. Every other full-content reader in the project already caps
-    (core/config.py's CONFIG_READ_MAX_BYTES, core/lock.py's own
-    LOCK_READ_MAX_BYTES); this was the one that didn't."""
+    (core/config.py's CONFIG_READ_MAX_BYTES); this was the one that
+    didn't."""
 
     def test_a_file_over_the_cap_raises_oserror_instead_of_loading_it_whole(self, tmp_path, monkeypatch):
         monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)

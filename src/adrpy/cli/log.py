@@ -37,9 +37,7 @@ from adrpy.core.lifecycle import (
     parse_refdate,
     resolve_target_and_config,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.security import reject_aliased_repo_folders, reject_embedded_delimiter, resolve_within
 from adrpy.core.warnings import attach_warnings, retry_warning
 
@@ -63,11 +61,7 @@ def describe():
             "fail with log-classification-invalid if --classification is not one of the closed set named on "
             "that argument below, log-slug-invalid if --slug is not valid kebab-case, or log-scope-invalid if "
             "--scope is not valid kebab-case (scope becomes a literal segment of the entry's own filename, so "
-            "'/', '\\', and an embedded '--' are rejected, not just cosmetically discouraged). May fail with "
-            "repository-locked if the repository lock could not be acquired in time, or lock-lost if it was "
-            "acquired but reclaimed before the write could commit -- in both cases no write was made. May also "
-            "fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr "
-            "while this call was acquiring the lock -- no write was made either way; retry. May also fail with "
+            "'/', '\\', and an embedded '--' are rejected, not just cosmetically discouraged). May also fail with "
             "log-entry-already-exists (data.file: the bare filename) if an entry with the same "
             "date/classification/scope/slug already exists -- no entry was written (INDEX.md is still "
             "regenerated, so an identical retry after log-index-regeneration-failed brings the index up to "
@@ -206,7 +200,6 @@ def describe():
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
-                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
                 FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY: "folderadr and folderlog resolve to the same real directory (or one nested inside the other), typically via a symlink or junction.",
                 FailureCodes.LOG_CLASSIFICATION_INVALID: "--classification is not one of the recognized classifications.",
                 FailureCodes.LOG_SLUG_INVALID: "--slug is not valid kebab-case.",
@@ -228,7 +221,6 @@ def describe():
                 FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
@@ -294,133 +286,106 @@ def run(args):
             )
         explicit_round = None
 
-    target, config_path, config = resolve_target_and_config(flags["path"])
+    target, _config_path, config = resolve_target_and_config(flags["path"])
 
     refdate = parse_refdate(flags.get("refdate"))
     validate_refdate_not_in_future(refdate)
 
-    folder = resolve_within(target, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        # ADR001's coverage requirement (doc/adr/ADR001V01-...): reuses the
-        # exact same lock every other mutating command uses (scoped to the
-        # ADR decisions folder, not the decision-log folder) -- one uniform
-        # mechanism, not a bespoke one for this command's own writes.
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
-            folder = resolve_within(target, config.folderadr)
-            # The schema-time containment guard (core/config.py's
-            # own parse_repo_config) can never see a junction/symlink
-            # planted inside the repo tree -- this re-checks against the
-            # REAL, resolved directories, right before folderlog is
-            # actually used, inside the same lock/freshness window as the
-            # folderadr re-check just above.
-            reject_aliased_repo_folders(target, config)
-            log_dir = decision_log_dir_for(target, config)
+        # The schema-time containment guard (core/config.py's
+        # own parse_repo_config) can never see a junction/symlink
+        # planted inside the repo tree -- this re-checks against the
+        # REAL, resolved directories, right before folderlog is
+        # actually used.
+        reject_aliased_repo_folders(target, config)
+        log_dir = decision_log_dir_for(target, config)
 
-            round_ = None
-            if classification in STRUCTURED_CLASSIFICATIONS:
-                current_max = max_existing_round(log_dir, warnings=warnings)
-                if explicit_round is not None:
-                    validate_round_not_regressing(explicit_round, current_max)
-                    round_ = explicit_round
-                else:
-                    round_ = current_max + 1
-                    if current_max:
-                        warnings.append(
-                            f"Round {round_} was auto-assigned (no --round given). If this entry should "
-                            f"share the round already in progress, retry with --round {current_max} explicitly."
-                        )
-                    else:
-                        warnings.append(
-                            f"Round {round_} was auto-assigned (no --round given, and no prior round exists "
-                            "yet)."
-                        )
-
-            filename = build_filename(refdate, classification, scope, slug)
-            # Second, independent layer of defense beyond validate_scope's
-            # own kebab-case check: a future weakening of that regex, e.g.
-            # reusing reject_embedded_delimiter instead, must not silently
-            # let scope escape log_dir -- the same real-path-resolution
-            # guard new.py's own file_path already goes through, not just
-            # a stricter regex.
-            file_path = resolve_within(log_dir, filename)
-            if file_path.exists():
-                # An identical retry after log-index-regeneration-failed
-                # lands here forever; rebuilding INDEX.md (a full,
-                # idempotent regeneration from the entries on disk) lets
-                # that retry still converge. Best-effort: the refusal below
-                # is the answer either way.
-                try:
-                    lock.verify_still_held()
-                    regenerate_index(log_dir, warnings=warnings)
-                except (OSError, LockLostError, CommandError) as error:
+        round_ = None
+        if classification in STRUCTURED_CLASSIFICATIONS:
+            current_max = max_existing_round(log_dir, warnings=warnings)
+            if explicit_round is not None:
+                validate_round_not_regressing(explicit_round, current_max)
+                round_ = explicit_round
+            else:
+                round_ = current_max + 1
+                if current_max:
                     warnings.append(
-                        f"INDEX.md could not be regenerated ({explain(error)}); it may not list every entry, and "
-                        "will catch up on the next log call that succeeds."
+                        f"Round {round_} was auto-assigned (no --round given). If this entry should "
+                        f"share the round already in progress, retry with --round {current_max} explicitly."
                     )
-                raise CommandError(
-                    FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
-                    f"Decision-log entry already exists: {filename}",
-                    data={"file": filename},
-                    warnings=warnings,
-                )
+                else:
+                    warnings.append(
+                        f"Round {round_} was auto-assigned (no --round given, and no prior round exists "
+                        "yet)."
+                    )
 
-            content = build_entry_content(
-                summary,
-                body,
-                front=flags.get("front"),
-                severity=flags.get("severity"),
-                resolution=flags.get("resolution"),
-                round_=round_,
-                reopen_when=flags.get("reopenwhen"),
+        filename = build_filename(refdate, classification, scope, slug)
+        # Second, independent layer of defense beyond validate_scope's
+        # own kebab-case check: a future weakening of that regex, e.g.
+        # reusing reject_embedded_delimiter instead, must not silently
+        # let scope escape log_dir -- the same real-path-resolution
+        # guard new.py's own file_path already goes through, not just
+        # a stricter regex.
+        file_path = resolve_within(log_dir, filename)
+        if file_path.exists():
+            # An identical retry after log-index-regeneration-failed
+            # lands here forever; rebuilding INDEX.md (a full,
+            # idempotent regeneration from the entries on disk) lets
+            # that retry still converge. Best-effort: the refusal below
+            # is the answer either way.
+            try:
+                regenerate_index(log_dir, warnings=warnings)
+            except (OSError, CommandError) as error:
+                warnings.append(
+                    f"INDEX.md could not be regenerated ({explain(error)}); it may not list every entry, and "
+                    "will catch up on the next log call that succeeds."
+                )
+            raise CommandError(
+                FailureCodes.LOG_ENTRY_ALREADY_EXISTS,
+                f"Decision-log entry already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
             )
 
-            lock.verify_still_held()
-            # Re-verified here too, immediately before the real write --
-            # the first check above (right after the lock/freshness
-            # re-check) leaves a window between then and this commit
-            # (round/filename/content assembly) that a filesystem-level
-            # racer could exploit by swapping folderlog for a junction
-            # onto folderadr in between. Narrows the window to the same
-            # order of magnitude as lock.verify_still_held's own re-check
-            # just above -- not a formal atomicity guarantee (no portable
-            # primitive here ties the check to the write in one syscall),
-            # but consistent with this project's existing narrowing
-            # pattern for this class of gap.
-            reject_aliased_repo_folders(target, config)
-            # Same TOCTOU reasoning as init's own folder creation: two
-            # concurrent first-ever `log` calls both want this directory to
-            # exist, with no conflicting content to lose -- exist_ok=True
-            # closes the race outright.
-            log_dir.mkdir(parents=True, exist_ok=True)
-            attempts = atomic_write_text(file_path, content)
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        content = build_entry_content(
+            summary,
+            body,
+            front=flags.get("front"),
+            severity=flags.get("severity"),
+            resolution=flags.get("resolution"),
+            round_=round_,
+            reopen_when=flags.get("reopenwhen"),
+        )
 
-            try:
-                # Second write in the same critical section -- re-verified
-                # for the same reason as the entry write above.
-                lock.verify_still_held()
-                regenerate_index(log_dir, warnings=warnings)
-            except (OSError, LockLostError, CommandError) as error:
-                # The entry above is already committed to disk for real --
-                # `data.file` names that partial success explicitly, the
-                # same shape reject/supersede already use for their own
-                # second-write failures. CommandError here is either
-                # log-directory-contains-unrecognized-file or (ADR007V01,
-                # folderlog now recursively scanned) log-scan-incomplete
-                # -- both are the only ones regenerate_index itself can
-                # raise, and each one's own detail text already names the
-                # offending file/subdirectory, so it isn't duplicated into
-                # `data` alongside the entry's own path.
-                raise CommandError(
-                    FailureCodes.LOG_INDEX_REGENERATION_FAILED,
-                    f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",
-                    data={"file": str(file_path)},
-                    warnings=warnings,
-                ) from error
+        # Same TOCTOU reasoning as init's own folder creation: two
+        # concurrent first-ever `log` calls both want this directory to
+        # exist, with no conflicting content to lose -- exist_ok=True
+        # closes the race outright.
+        log_dir.mkdir(parents=True, exist_ok=True)
+        attempts = atomic_write_text(file_path, content)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
+
+        try:
+            regenerate_index(log_dir, warnings=warnings)
+        except (OSError, CommandError) as error:
+            # The entry above is already committed to disk for real --
+            # `data.file` names that partial success explicitly, the
+            # same shape reject/supersede already use for their own
+            # second-write failures. CommandError here is either
+            # log-directory-contains-unrecognized-file or (ADR007V01,
+            # folderlog now recursively scanned) log-scan-incomplete
+            # -- both are the only ones regenerate_index itself can
+            # raise, and each one's own detail text already names the
+            # offending file/subdirectory, so it isn't duplicated into
+            # `data` alongside the entry's own path.
+            raise CommandError(
+                FailureCodes.LOG_INDEX_REGENERATION_FAILED,
+                f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",
+                data={"file": str(file_path)},
+                warnings=warnings,
+            ) from error
 
     return {"created": str(file_path), "round": round_, "warnings": warnings}

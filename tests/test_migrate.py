@@ -2,15 +2,12 @@ import json
 import os
 import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
 
-from adrpy.cli import config, init, migrate, new
+from adrpy.cli import init, migrate, new
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
-from adrpy.core.lock import LockTimeoutError, acquire_repo_lock
 
 import pytest
 
@@ -68,65 +65,6 @@ def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
         migrate.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "migration-scan-incomplete"
-
-
-def test_migrate_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Migrate's own bootstrap config read can go stale if a concurrent
-    config edit changes folderadr before this call's own lock is
-    actually acquired -- it would then lock, scan, and write against a
-    directory the repository no longer uses."""
-    _init_repo_with_pattern(tmp_path)
-    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
-
-    monkeypatch.setattr(
-        migrate, "resolve_target_and_config", lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_config)
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        migrate.run(["--path", str(tmp_path)])
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-
-
-def test_migrate_reports_lock_lost_not_a_per_candidate_failure_when_the_lock_read_itself_fails(tmp_path, monkeypatch):
-    """A persistent I/O failure reading
-    the lock file during verify_still_held() must not escape as a bare
-    PermissionError -- being an OSError but not a LockLostError, it
-    would otherwise fall through migrate's own `except LockLostError`
-    clause into the per-candidate `except (OSError, UnicodeError)`,
-    misreporting a candidate that was never touched as individually
-    "failed", then repeating the same misclassification for every
-    remaining candidate. Handled at the source (RepoLock.verify_still_held
-    itself): this is a clean migration-lock-lost, matching the command's
-    own documented contract, and the loop stops immediately instead of
-    repeating the misclassification."""
-    _init_repo_with_pattern(tmp_path)
-    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
-    _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
-
-    from adrpy.core import lock as lock_module
-
-    real_read_lock = lock_module._read_lock
-    calls = {"n": 0}
-
-    def flaky_read_lock(path):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise PermissionError("Access is denied")
-        return real_read_lock(path)
-
-    monkeypatch.setattr(lock_module, "_read_lock", flaky_read_lock)
-
-    with pytest.raises(CommandError) as excinfo:
-        migrate.run(["--path", str(tmp_path)])
-
-    assert excinfo.value.code == "migration-lock-lost"
-    # Aborted on the very first candidate's own recheck -- no candidate was
-    # ever attempted (results is empty), not one falsely marked "failed".
-    assert excinfo.value.data["results"] == []
 
 
 def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):
@@ -666,81 +604,6 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
     assert legacy_path in calls
 
 
-def test_migrate_aborts_and_reports_partial_results_when_the_lock_is_lost_mid_loop(tmp_path, monkeypatch):
-    """Losing the lock between two
-    candidates must raise with the `results` list attached, not bare --
-    describe() promises it names every candidate's own outcome, even on
-    failure. Distinct from a per-file OSError/UnicodeError (which
-    correctly keeps the loop going, one candidate at a time): losing the
-    lock is a whole-operation event, not a single file's own problem, so
-    it must stop the loop outright instead of misreporting every
-    untouched remaining candidate as individually 'failed'."""
-    _init_repo_with_pattern(tmp_path)
-    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision One\n")
-    _write_legacy_file(tmp_path, "0002Decision.md", "# Decision Two\n")
-
-    real_write = migrate.atomic_write_chunks
-    calls = {"n": 0}
-
-    def write_then_steal_lock(path, chunks_factory):
-        attempts = real_write(path, chunks_factory)
-        calls["n"] += 1
-        if calls["n"] == 1:
-            lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
-            lock_path.write_text(f"someone-else-entirely\n{time.time()}")
-        return attempts
-
-    monkeypatch.setattr(migrate, "atomic_write_chunks", write_then_steal_lock)
-
-    with pytest.raises(CommandError) as excinfo:
-        migrate.run(["--path", str(tmp_path)])
-
-    assert excinfo.value.code == "migration-lock-lost"
-    assert len(excinfo.value.data["results"]) == 1
-    assert excinfo.value.data["results"][0]["status"] == "migrated"
-    assert calls["n"] == 1  # the second candidate's write was never attempted
-
-
-def test_migrate_holds_the_repository_lock_for_its_whole_duration(tmp_path, monkeypatch):
-    """Migrate must hold the SAME repository lock for its whole operation
-    (scan through every write), not just around a single write --
-    confirmed empirically (real thread interleaving) that holding no
-    lock at all lets it silently erase a concurrent approve's
-    already-committed write, even though approve correctly held the lock
-    and its own verify_still_held() passed honestly: a missing lock on
-    migrate's side would defeat ADR001's guarantee for a command that did
-    everything right. Proves the guarantee holds: while migrate is
-    paused mid-run (in its write loop), a separate attempt to acquire the
-    same lock with a short wait_ceiling must time out."""
-    _init_repo_with_pattern(tmp_path)
-    _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
-
-    entered = threading.Event()
-    release = threading.Event()
-    real_build_header = migrate.build_header
-
-    def pausing_build_header(*args, **kwargs):
-        entered.set()
-        release.wait(timeout=5)
-        return real_build_header(*args, **kwargs)
-
-    monkeypatch.setattr(migrate, "build_header", pausing_build_header)
-
-    migrate_thread = threading.Thread(target=lambda: migrate.run(["--path", str(tmp_path)]))
-    migrate_thread.start()
-    try:
-        assert entered.wait(timeout=5), "migrate never reached its write loop"
-
-        adr_dir = tmp_path / "doc" / "adr"
-        with pytest.raises(LockTimeoutError):
-            with acquire_repo_lock(adr_dir, wait_ceiling=0.3, poll_interval=0.05):
-                pass
-    finally:
-        release.set()
-        migrate_thread.join(timeout=5)
-    assert not migrate_thread.is_alive()
-
-
 def test_migrate_describe_documents_the_migrationpattern_precondition():
     """Migrate fails with migration-pattern-not-
     configured on any freshly-init'd repository (100% of the time, not an
@@ -758,34 +621,6 @@ def test_migrate_describe_documents_the_persist_back_write_survives_a_later_fail
     description = migrate.describe()["description"]
     assert "survives" in description
     assert "no decision file is touched" in description
-
-
-def test_a_lock_lost_after_the_pattern_persist_back_says_the_config_was_written(tmp_path, monkeypatch):
-    # The fallback pattern is written into adr-config.adrplus before any
-    # candidate; a lock lost right after must not report only `results: []`
-    # as if nothing had been written.
-    import time as _time
-
-    tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
-    _write_legacy_file(tmp_path, "0001First.md", "# First\n")
-    fallback_text = json.dumps(_seed_config_with_pattern("N00:04T04"))
-    monkeypatch.setattr(migrate, "read_install_config_text", lambda: fallback_text)
-    real_write = migrate.atomic_write_text
-
-    def write_then_steal_lock(path, content):
-        attempts = real_write(path, content)
-        (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{_time.time()}")
-        return attempts
-
-    monkeypatch.setattr(migrate, "atomic_write_text", write_then_steal_lock)
-
-    with pytest.raises(CommandError) as excinfo:
-        migrate.run(["--path", str(tmp_path)])
-
-    assert excinfo.value.code == "migration-lock-lost"
-    assert excinfo.value.data["results"] == []
-    assert excinfo.value.data["migrationpattern_persisted"] == "N00:04T04"
-
 
 
 def test_a_successful_migrate_says_it_persisted_the_fallback_pattern(tmp_path, monkeypatch):

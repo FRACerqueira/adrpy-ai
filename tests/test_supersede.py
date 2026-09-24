@@ -1,5 +1,4 @@
 import os
-import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -33,10 +32,6 @@ def _setup_accepted_repo(tmp_path):
 SUCCESSOR_NAME = "ADR002V01-use-postgre-sql--001.md"
 
 
-def _steal_lock(tmp_path):
-    (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
-
-
 def _fail_predecessor_write(monkeypatch):
     from adrpy.cli import supersede as supersede_module
 
@@ -67,28 +62,6 @@ def test_supersede_writes_nothing_when_the_successor_write_fails(tmp_path, monke
     assert not (tmp_path / "doc" / "adr" / SUCCESSOR_NAME).exists()
 
 
-def test_supersede_reports_lock_lost_with_no_write_when_lost_before_the_successor_write(tmp_path, monkeypatch):
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    before = adr_path.read_text(encoding="utf-8")
-
-    from adrpy.cli import supersede as supersede_module
-
-    real_build_header = supersede_module.build_header
-
-    def steal_lock_then_build(*args, **kwargs):
-        _steal_lock(tmp_path)
-        return real_build_header(*args, **kwargs)
-
-    monkeypatch.setattr(supersede_module, "build_header", steal_lock_then_build)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "lock-lost"
-    assert adr_path.read_text(encoding="utf-8") == before
-    assert not (tmp_path / "doc" / "adr" / SUCCESSOR_NAME).exists()
-
-
 def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_path, monkeypatch):
     """The predecessor is the SECOND write. When it fails, the successor
     already exists on disk -- so the number the predecessor would point at
@@ -111,28 +84,6 @@ def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_
     monkeypatch.undo()
     result = new.run(["--path", str(tmp_path), "--title", "Unrelated caching decision", "--refdate", "2026-01-06"])
     assert result["created"].endswith("ADR003V01-unrelated-caching-decision.md")
-
-
-def test_supersede_reports_the_successor_when_the_lock_is_lost_before_the_predecessor_write(tmp_path, monkeypatch):
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-
-    from adrpy.cli import supersede as supersede_module
-
-    real_write = supersede_module.atomic_write_text
-
-    def write_then_steal_lock(path, content):
-        attempts = real_write(path, content)
-        _steal_lock(tmp_path)
-        return attempts
-
-    monkeypatch.setattr(supersede_module, "atomic_write_text", write_then_steal_lock)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "supersede-write-failed"
-    assert excinfo.value.data["successor"] == str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME)
-    assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
 
 
 def test_retrying_after_a_failed_predecessor_write_resumes_instead_of_creating_a_second_successor(
@@ -298,22 +249,22 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
     collapses into an NTFS Alternate-Data-Stream instead of a literal
     filename -- confirmed live), so this drives the exact scenario a
     corrupted predecessor filename (from a different OS, or a future code
-    path) would, via a monkeypatched read_target, the same technique
+    path) would, via a monkeypatched load_target, the same technique
     already used for migrate's own equivalent gap. Must be a per-call
     failure, not a silent forgery."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     from adrpy.cli import supersede as supersede_module
 
-    real_read_target = supersede_module.read_target
+    real_load_target = supersede_module.load_target
 
-    def flaky_read_target(path, config, warnings=None):
-        filename_info, header, encoding_repaired = real_read_target(path, config, warnings=warnings)
+    def flaky_load_target(fileadr, warnings=None):
+        config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
         from dataclasses import replace as replace_fields
 
-        return replace_fields(filename_info, title="evil:hidden"), header, encoding_repaired
+        return config, root, path, replace_fields(filename_info, title="evil:hidden"), header, encoding_repaired
 
-    monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
+    monkeypatch.setattr(supersede_module, "load_target", flaky_load_target)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
@@ -332,15 +283,15 @@ def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters
 
     from adrpy.cli import supersede as supersede_module
 
-    real_read_target = supersede_module.read_target
+    real_load_target = supersede_module.load_target
 
-    def flaky_read_target(path, config, warnings=None):
-        filename_info, header, encoding_repaired = real_read_target(path, config, warnings=warnings)
+    def flaky_load_target(fileadr, warnings=None):
+        config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
         from dataclasses import replace as replace_fields
 
-        return replace_fields(filename_info, title="---"), header, encoding_repaired
+        return config, root, path, replace_fields(filename_info, title="---"), header, encoding_repaired
 
-    monkeypatch.setattr(supersede_module, "read_target", flaky_read_target)
+    monkeypatch.setattr(supersede_module, "load_target", flaky_load_target)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])

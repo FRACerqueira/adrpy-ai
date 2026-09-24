@@ -2,10 +2,8 @@
 delete"/sharing-violation contention window this project already retries
 on the write side
 (atomic_write.py, its own exponential backoff empirically tuned for a
-busier concurrent-writer case) and on the lock-file read side
-(core/lock.py's own _read_lock) also applies to reading any OTHER file
-mid-scan -- extracted here instead of adding a third independent copy of
-the same read-retry loop.
+busier concurrent-writer case) also applies to reading any file
+mid-scan -- extracted here instead of repeating the same read-retry loop.
 """
 
 import time
@@ -17,8 +15,7 @@ IO_RETRY_DELAY_SECONDS = 0.05
 def read_with_permission_retry(read, attempts=IO_RETRY_ATTEMPTS, delay=IO_RETRY_DELAY_SECONDS):
     """Calls the zero-arg `read` callable, retrying up to `attempts` times
     on a transient PermissionError (flat delay -- unlike atomic_write's
-    own exponential backoff; this is the lighter read-side case, already
-    proven sufficient by core/lock.py's own _read_lock). Any other
+    own exponential backoff; this is the lighter read-side case). Any other
     exception, including FileNotFoundError, is never retried and
     propagates on the first occurrence. Re-raises the PermissionError
     itself once `attempts` is exhausted."""

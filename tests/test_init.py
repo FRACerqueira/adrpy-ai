@@ -2,10 +2,9 @@ import json
 import os
 import subprocess
 import sys
-import threading
 from pathlib import Path
 
-from adrpy.cli import config, init, new
+from adrpy.cli import init, new
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
 
@@ -106,93 +105,6 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
     result = init.run(["--path", str(tmp_path)])
 
     assert any("3 attempts" in w for w in result["warnings"])
-
-
-def test_init_seed_on_an_existing_repository_is_mutually_exclusive_with_config(tmp_path, monkeypatch):
-    """`init --seed` on a
-    repository that already has a config -- a documented overwrite, not a
-    fresh bootstrap -- must not write unlocked: an unprotected write
-    could silently clobber a concurrent `config` edit already committed
-    under lock protection (verify_still_held() passed, reported
-    success), with neither caller having any way to detect it. Distinct
-    from the already-accepted config-already-exists race (ADR001's own
-    addendum): that race is on a genuinely fresh path with no lock
-    location to even acquire yet -- here the decisions folder already
-    exists (every prior init created it), so there's no such excuse;
-    init locks this path exactly like config.py's own bootstrap-then-lock
-    pattern."""
-    from adrpy.cli import config
-
-    init.run(["--path", str(tmp_path)])  # fresh bootstrap: unlocked by design, a separate case
-
-    resource_text = init.default_repo_config_text()
-    seed = json.loads(resource_text)
-    seed["prefix"] = "SEED"
-    seed_path = tmp_path / "seed.json"
-    seed_path.write_text(json.dumps(seed), encoding="utf-8")
-
-    from adrpy.cli import config as config_module
-
-    entered_critical_section = threading.Event()
-    release_config = threading.Event()
-    real_write = config_module.atomic_write_text
-
-    def paused_write(*args, **kwargs):
-        entered_critical_section.set()
-        released = release_config.wait(timeout=5)
-        errors_common.append(None if released else AssertionError("release_config was never signalled"))
-        return real_write(*args, **kwargs)
-
-    errors_common = []
-    monkeypatch.setattr(config_module, "atomic_write_text", paused_write)
-
-    config_result = {}
-    config_errors = []
-
-    def run_config():
-        try:
-            config_result["value"] = config.run(["--path", str(tmp_path), "--prefix", "DOC"])
-        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
-            config_errors.append(error)
-
-    config_thread = threading.Thread(target=run_config)
-    config_thread.start()
-    assert entered_critical_section.wait(timeout=5), "config never reached its critical section"
-
-    # config now holds the repository lock and is paused right before its
-    # own write. init's --seed write on this already-existing repo must
-    # now block on that same lock instead of proceeding unprotected.
-    init_result = {}
-    init_errors = []
-
-    def run_init():
-        try:
-            init_result["value"] = init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
-        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
-            init_errors.append(error)
-
-    init_thread = threading.Thread(target=run_init)
-    init_thread.start()
-
-    # Bounded real-world window for init to race ahead if it were still
-    # unlocked -- it must not have written yet while config holds the lock.
-    init_thread.join(timeout=0.3)
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
-    assert on_disk["prefix"] != "SEED", "init wrote before config released the lock -- init is not actually locked"
-
-    release_config.set()
-    config_thread.join(timeout=5)
-    init_thread.join(timeout=5)
-
-    assert errors_common == [None]
-    assert config_errors == [], f"config raised unexpectedly: {config_errors}"
-    assert init_errors == [], f"init raised unexpectedly: {init_errors}"
-    assert config_result["value"]["updated_fields"] == ["prefix"]
-
-    final = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
-    # init ran (definitively) second, and --seed's own contract is a full
-    # overwrite -- its raw content is what should survive, not a torn mix.
-    assert final["prefix"] == "SEED"
 
 
 def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
@@ -404,77 +316,30 @@ def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(t
     assert excinfo.value.code == "status-or-separator-change-scan-incomplete"
 
 
-def test_init_seed_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Init's own bootstrap read
-    (used both to find the lock and, unrefreshed, handed straight to
-    the folderadr-change guard) was never refreshed inside the lock --
-    reproduced live in two variants, the worse one being that the guard
-    never scanned at all when the seed happened to carry the repo's
-    ORIGINAL folderadr, silently reverting a real concurrent change and
-    orphaning a live decision with zero warning. Both variants are
-    closed by the same fix: use this exact scenario (seed's folderadr ==
-    the stale bootstrap value, not the real current one)."""
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_init_seed_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
+    """--seed over an existing repository: a junction aliasing folderlog
+    onto folderadr, planted inside the repo tree, must be refused by
+    init's own reject_aliased_repo_folders check before the config is
+    rewritten."""
     init.run(["--path", str(tmp_path)])
-    stale_bootstrap = load_repo_config(tmp_path / "adr-config.adrplus")
+    folderadr_dir = tmp_path / "doc" / "adr"
+    folderlog_dir = tmp_path / "doc" / "decision-log"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
-    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
-    new.run(["--path", str(tmp_path), "--title", "Live decision"])
-    live_path = tmp_path / "doc" / "adrB" / "ADR001V01-live-decision.md"
-    original_content = live_path.read_text(encoding="utf-8")
-
-    monkeypatch.setattr(init, "load_repo_config", lambda path: stale_bootstrap)
-
-    seed = json.loads(init.default_repo_config_text())  # seed's own folderadr == "doc/adr" (default, == stale value)
+    seed = json.loads(_default_config_text())
+    seed["prefix"] = "SEED"
     seed_path = tmp_path / "seed.json"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-    on_disk_config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
-    assert on_disk_config["folderadr"] == "doc/adrB"  # never reverted
-    assert live_path.read_text(encoding="utf-8") == original_content  # never orphaned
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_init_seed_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
-    """reject_aliased_repo_folders's own first check (right after
-    folderlog's own escape-path validation) leaves a window before the
-    real commit -- on the --seed-over-an-existing-repository path, only
-    the lock re-verification runs in between. A filesystem-level racer
-    with write access could swap folderlog for a junction onto folderadr
-    in that window. Simulates the race deterministically (a real
-    junction, planted mid-call, no actual threading) instead of relying
-    on timing."""
-    init.run(["--path", str(tmp_path)])
-    folderadr_dir = tmp_path / "doc" / "adr"
-    folderlog_dir = tmp_path / "doc" / "decision-log"
-
-    from adrpy.core.lock import RepoLock
-
-    real_verify = RepoLock.verify_still_held
-
-    def racing_verify(self):
-        assert not folderlog_dir.exists()
-        result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-        return real_verify(self)
-
-    monkeypatch.setattr(RepoLock, "verify_still_held", racing_verify)
-
-    seed_path = tmp_path / "seed.json"
-    seed_path.write_text(_default_config_text(), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
-
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
+    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix != "SEED"  # never committed
 
 
 def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -578,15 +443,6 @@ def test_init_describe_declares_seed_not_file():
 
     assert "seed" in arguments
     assert "file" not in arguments
-
-
-def test_init_describe_documents_the_concurrency_risk():
-    """ADR001V01's addendum (2026-09-16): init is deliberately exempted
-    from the repository-lock principle the other 8 write commands
-    follow (accepted risk, not fixed) -- the ADR's own visibility-plan
-    requirement means this has to be stated in the JSON contract surface
-    a caller actually reads, not only in the ADR."""
-    assert "concurrently" in init.describe()["description"].lower()
 
 
 def test_init_describe_documents_the_installconfig_recommendation_warning():

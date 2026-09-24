@@ -104,8 +104,7 @@ def find_unreadable_subdirectories(folder):
     """`Path.rglob` (CPython's own pathlib implementation) silently swallows any
     `OSError` raised while walking a subtree -- a subfolder that becomes
     unreadable mid-scan (an ordinary ACL choice for a team-restricted
-    area, something `core/lock.py`'s own module docstring already
-    anticipates for a repo organized into per-team/per-domain
+    area in a repo organized into per-team/per-domain
     subfolders) makes every `rglob("*.md")` call in this project
     (`scan_decisions`, `explore`, `migrate`'s own scan, `init`'s
     `_max_existing_numbers`) silently return fewer results, or none,

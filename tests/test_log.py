@@ -1,10 +1,9 @@
+
 import subprocess
 import sys
 
 from adrpy.cli import init, log
-from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
-from adrpy.core.lock import LockLostError
 
 import pytest
 
@@ -265,58 +264,18 @@ def test_log_rejects_forbidden_character_in_summary(tmp_path):
     assert excinfo.value.code == "field-contains-forbidden-character"
 
 
-def test_log_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Same freshness requirement as every other write command (ADR001
-    part 2, applied to this command's own lock use)."""
-    _init_repo(tmp_path)
-    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    from adrpy.cli import config as config_module
-
-    config_module.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
-
-    monkeypatch.setattr(
-        log, "resolve_target_and_config", lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_config)
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        log.run(
-            [
-                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
-                "--summary", "x", "--body", "x",
-            ]
-        )
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert not (tmp_path / "doc" / "decision-log").exists()
-
-
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_log_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
-    """reject_aliased_repo_folders's own first check (right after the
-    lock/freshness re-check) leaves a window before the real write --
-    everything from round/filename/content assembly through log_dir's
-    own mkdir. A filesystem-level racer with write access could swap
-    folderlog for a junction onto folderadr in that window. Simulates
-    the race deterministically (a real junction, planted mid-call, no
-    actual threading) instead of relying on timing."""
+def test_log_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
+    """A junction aliasing folderlog onto folderadr, planted inside the
+    repo tree, must be refused by log's own reject_aliased_repo_folders
+    check -- no entry may land inside the decisions folder."""
     _init_repo(tmp_path)
     folderadr_dir = tmp_path / "doc" / "adr"
     folderlog_dir = tmp_path / "doc" / "decision-log"
-
-    real_build_filename = log.build_filename
-
-    def racing_build_filename(*args, **kwargs):
-        assert not folderlog_dir.exists()
-        result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-        return real_build_filename(*args, **kwargs)
-
-    monkeypatch.setattr(log, "build_filename", racing_build_filename)
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
     with pytest.raises(CommandError) as excinfo:
         log.run(
@@ -346,7 +305,7 @@ def test_log_refdate_defaults_to_today(tmp_path):
 
 
 def test_log_reports_the_entry_already_written_when_index_regeneration_fails(tmp_path, monkeypatch):
-    """Second write in the same critical section (ADR001, part 3): if it
+    """The second write (INDEX.md regeneration): if it
     fails, the entry from the FIRST write is already committed to disk
     for real -- `data.file` must name it explicitly, the same
     partial-success shape reject/supersede already use for their own
@@ -384,35 +343,6 @@ def test_log_rejects_a_future_refdate(tmp_path):
         )
 
     assert excinfo.value.code == "refdate-in-future"
-
-
-def test_log_reports_lock_lost_the_same_way_as_an_oserror_during_index_regeneration(tmp_path, monkeypatch):
-    """The exact regression class this codebase already hit once, in
-    supersede.py (tests/test_supersede.py's own
-    test_supersede_reveals_predecessor_already_superseded_when_the_lock_is_lost_before_the_successor_write):
-    an `except OSError` alone silently bypasses the partial-success
-    handler for a LockLostError on this same second write. Confirms the
-    handler's `except (OSError, LockLostError)` tuple actually covers
-    both, not just the one exercised by the sibling OSError test above."""
-    _init_repo(tmp_path)
-
-    def flaky_regenerate_index(_log_dir, **_kwargs):
-        raise LockLostError("simulated lock loss")
-
-    monkeypatch.setattr(log, "regenerate_index", flaky_regenerate_index)
-
-    with pytest.raises(CommandError) as excinfo:
-        log.run(
-            [
-                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
-                "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
-            ]
-        )
-
-    assert excinfo.value.code == "log-index-regeneration-failed"
-    created = tmp_path / "doc" / "decision-log" / "2026-09-18--scope-note--lock--x.md"
-    assert excinfo.value.data == {"file": str(created)}
-    assert created.exists()
 
 
 def test_log_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
@@ -826,7 +756,7 @@ def test_log_reports_the_entry_already_written_when_an_unrecognized_file_blocks_
     scanned during index regeneration -- AFTER the entry write already
     committed. An unrecognized file there is still caught, but as a
     log-index-regeneration-failed partial success (same shape as the
-    OSError/LockLostError cases), not a clean pre-write refusal -- this
+    OSError case), not a clean pre-write refusal -- this
     is genuinely different from the structured-classification case
     above, not an inconsistency to paper over."""
     _init_repo(tmp_path)

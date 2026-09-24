@@ -1,8 +1,6 @@
-import json
 import os
 import subprocess
 import sys
-import threading
 
 from adrpy.cli import config, init, new
 from adrpy.core.config import load_repo_config
@@ -25,69 +23,41 @@ def _write_legacy_file(tmp_path, filename, content="Legacy content\n"):
     return adr_dir / filename
 
 
-def test_config_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Config's own comment claimed `current`
-    (fresh, inside the lock) and `folder` (this same lock's own
-    location) "both are the pre-edit state" -- that invariant didn't
-    actually hold. If a concurrent process changes folderadr between
-    this call's own bootstrap read (which decides the lock's location)
-    and the moment it acquires the lock, this call would lock, scan, and
-    validate against a directory the repository no longer uses.
-    Simulates the race by returning a stale config from the bootstrap
-    read while the file on disk already has the new value."""
-    tmp_path = _init_repo(tmp_path)
-    stale_bootstrap = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    monkeypatch.setattr(
-        config,
-        "resolve_target_and_config",
-        lambda path: (tmp_path, tmp_path / "adr-config.adrplus", stale_bootstrap),
-    )
-
-    data = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
-    data["folderadr"] = "doc/adrB"
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(data), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        config.run(["--path", str(tmp_path), "--prefix", "XYZ"])
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-
-
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_config_aborts_if_a_junction_swap_happens_between_the_alias_check_and_the_write(tmp_path, monkeypatch):
-    """reject_aliased_repo_folders's own first check (right after the
-    folderadr freshness re-check) leaves a window before the real write
-    -- the status/separator guard, new_folder's own mkdir, and the lock
-    re-verification below. A filesystem-level racer with write access
-    could swap folderlog for a junction onto folderadr in that window.
-    Simulates the race deterministically (a real junction, planted
-    mid-call, no actual threading) instead of relying on timing."""
+def test_config_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
+    """A junction planted inside the repo tree, aliasing folderlog onto
+    folderadr, is invisible to the schema-time guard -- config's own
+    reject_aliased_repo_folders check must refuse before anything is
+    written."""
     tmp_path = _init_repo(tmp_path)
     folderadr_dir = tmp_path / "doc" / "adr"
     folderlog_dir = tmp_path / "doc" / "decision-log"
-
-    real_check = config.reject_status_or_separator_change_if_decisions_exist
-
-    def racing_check(*args, **kwargs):
-        assert not folderlog_dir.exists()
-        result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-        return real_check(*args, **kwargs)
-
-    monkeypatch.setattr(config, "reject_status_or_separator_change_if_decisions_exist", racing_check)
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(folderlog_dir), str(folderadr_dir)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--lenseq", "5"])
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
-    assert on_disk["lenseq"] == 3  # never committed
+    assert load_repo_config(tmp_path / "adr-config.adrplus").lenseq == 3  # never committed
+
+
+def test_config_changes_folderadr_when_the_old_folder_is_missing(tmp_path):
+    """The folderadr/status/separator guards scan the OLD folder, and
+    find_unreadable_subdirectories treats a missing folder as
+    unreadable -- config creates the old folder first, so a deleted one
+    doesn't turn a legitimate change into folderadr-change-scan-incomplete."""
+    tmp_path = _init_repo(tmp_path)
+    import shutil
+
+    shutil.rmtree(tmp_path / "doc" / "adr")
+
+    result = config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
+
+    assert result["updated_fields"] == ["folderadr"]
+    assert load_repo_config(tmp_path / "adr-config.adrplus").folderadr == "decisions"
 
 
 def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
@@ -121,72 +91,10 @@ def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(t
     assert any("3 attempts" in w for w in result["warnings"])
 
 
-def test_concurrent_config_calls_on_different_fields_do_not_lose_an_update(tmp_path, monkeypatch):
-    """Two concurrent calls editing DIFFERENT fields with no lock at all
-    would silently lose one of the two edits, contradicting this
-    command's own documented contract ("an omitted flag preserves the
-    repo's current value, never resets it"). The same repository lock
-    the other 8 write commands already use (scoped to folderadr) closes
-    this: the second caller simply waits, then reads fresh once it
-    acquires the lock, so BOTH edits survive instead of either being
-    lost or the second one failing outright."""
-    tmp_path = _init_repo(tmp_path)
-
-    from adrpy.cli import config as config_module
-
-    # Widens the read-merge-validate window so both calls are genuinely
-    # in flight at once -- with a real lock in place, correctness no
-    # longer depends on the exact interleaving (unlike the lock-less
-    # code this replaces), so a plain delay (not event-based
-    # choreography) is enough here.
-    real_parse_repo_config = config_module.parse_repo_config
-
-    def delayed_parse_repo_config(*args, **kwargs):
-        import time
-
-        time.sleep(0.05)
-        return real_parse_repo_config(*args, **kwargs)
-
-    monkeypatch.setattr(config_module, "parse_repo_config", delayed_parse_repo_config)
-
-    results = [None, None]
-    errors = [None, None]
-    barrier = threading.Barrier(2)
-
-    def call(index, args):
-        barrier.wait()
-        try:
-            results[index] = config.run(args)
-        except Exception as error:  # noqa: BLE001 -- captured for the assertion, not swallowed
-            errors[index] = error
-
-    threads = [
-        threading.Thread(target=call, args=(0, ["--path", str(tmp_path), "--prefix", "XYZ"])),
-        threading.Thread(target=call, args=(1, ["--path", str(tmp_path), "--lenseq", "5"])),
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=5)
-
-    assert errors == [None, None], f"expected both calls to succeed, got errors: {errors}"
-    assert results[0]["updated_fields"] == ["prefix"]
-    assert results[1]["updated_fields"] == ["lenseq"]
-
-    final = load_repo_config(tmp_path / "adr-config.adrplus")
-    assert final.prefix == "XYZ"
-    assert final.lenseq == 5
-
-
-def test_config_creates_the_decisions_folder_if_missing_before_locking(tmp_path):
-    """The repository lock this command now acquires lives inside
-    folderadr -- unlike the other 8 write commands, which only ever run
-    after `init` already created that directory, nothing requires it to
-    exist before `config` runs (e.g. it was deleted, or folderadr was
-    just repointed at a fresh path). core.lock._try_create only handles
-    FileExistsError, not a FileNotFoundError from a missing parent --
-    ensures the directory exists first, matching init's own precedent
-    for this identical situation."""
+def test_config_creates_the_decisions_folder_if_missing(tmp_path):
+    """Nothing requires folderadr to exist before `config` runs (e.g. it
+    was deleted, or folderadr was just repointed at a fresh path) --
+    ensures the directory exists first, matching init's own precedent."""
     tmp_path = _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     import shutil
@@ -263,10 +171,8 @@ def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(
 
 def test_config_allows_a_folderadr_change_when_no_decisions_exist_yet(tmp_path):
     """Companion to the rejection test above: an empty (or missing)
-    decisions folder is exactly the case ADR001's own exemption for init
-    already covers -- nothing to orphan, so the change must still go
-    through, and the new folder must exist afterward for the next
-    command to lock."""
+    decisions folder has nothing to orphan, so the change must still go
+    through, and the new folder must exist afterward."""
     tmp_path = _init_repo(tmp_path)
 
     result = config.run(["--path", str(tmp_path), "--folderadr", "decisions"])

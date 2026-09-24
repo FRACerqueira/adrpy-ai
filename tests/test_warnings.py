@@ -37,9 +37,7 @@ def test_attach_warnings_is_a_noop_when_the_error_already_carries_the_same_list(
 
 
 def test_attach_warnings_merges_a_distinct_warnings_list_in_order():
-    """The only production path that reaches here is a LockTimeoutError
-    carrying its own reclaim warning, but the merge logic itself is
-    independent of that -- any CommandError arriving with its OWN,
+    """Any CommandError arriving with its OWN,
     distinct warnings list must have the command's own accumulated
     warnings prepended, not replaced, and in the right order."""
     warnings = ["accumulated-first", "accumulated-second"]

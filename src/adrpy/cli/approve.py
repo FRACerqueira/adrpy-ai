@@ -13,14 +13,11 @@ from adrpy.core.lifecycle import (
     family_members,
     ineligibility_reason_for_approve_or_reject,
     parse_refdate,
-    read_target,
-    resolve_repo_and_target,
+    load_target,
     rewrite_status_field,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -47,11 +44,7 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "May fail with repository-locked if the repository lock could not be acquired in time, or "
-            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
-            "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
-            "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
+            "May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
             "The target's own title/scope/"
@@ -98,94 +91,70 @@ def describe():
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path = resolve_repo_and_target(flags["file"])
-    folder = resolve_within(root, config.folderadr)
     warnings = []
+    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
+    folder = resolve_within(root, config.folderadr)
     with attach_warnings(warnings):
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
 
-        # ADR001's coverage requirement (doc/adr/ADR001V01-...): without this
-        # lock, concurrent approve/reject calls on the same file each
-        # read-decide-write independently, both reporting success with
-        # mutually exclusive final statuses. The read below happens fresh,
-        # inside the lock, instead of before it.
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # `folder` above was resolved from a config read BEFORE this
-            # lock -- a concurrent config change could have moved folderadr
-            # in the window before the lock was actually acquired, in which
-            # case this lock no longer names the repository's real decisions
-            # folder. Re-reads fresh and aborts rather than operating
-            # against a directory nobody uses anymore.
-            config = verify_folderadr_unchanged_since_lock(
-                root / "adr-config.adrplus", config.folderadr, warnings=warnings
-            )
-            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
+        # A specific reason code, not one collapsed not-eligible-for-
+        # approval -- already-accepted/already-rejected/already-
+        # superseded each call for a different recovery action.
+        reason = ineligibility_reason_for_approve_or_reject(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # A specific reason code, not one collapsed not-eligible-for-
-            # approval -- already-accepted/already-rejected/already-
-            # superseded each call for a different recovery action.
-            reason = ineligibility_reason_for_approve_or_reject(header)
-            if reason is not None:
-                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+        # Pre-fetching members here is also how the scan's own warnings
+        # (an excluded is_within candidate) reach this command.
+        members = family_members(
+            folder, config, filename_info.number, warnings=warnings
+        )
+        raise_if_superseded_sibling(members, warnings)
+        raise_if_not_latest(filename_info, members, warnings)
+        raise_if_supersede_not_finished(folder, config, members, warnings)
 
-            # Pre-fetching members here is also how the scan's own warnings
-            # (an excluded is_within candidate) reach this command.
-            members = family_members(
-                folder, config, filename_info.number, warnings=warnings
-            )
-            raise_if_superseded_sibling(members, warnings)
-            raise_if_not_latest(filename_info, members, warnings)
-            raise_if_supersede_not_finished(folder, config, members, warnings)
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        if header.date_create is not None:
+            validate_refdate_not_before(refdate, header.date_create)
 
-            refdate = parse_refdate(flags.get("refdate"))
-            validate_refdate_not_in_future(refdate)
-            if header.date_create is not None:
-                validate_refdate_not_before(refdate, header.date_create)
+        # title/scope/domain are re-read from the SOURCE
+        # file's own header cells, not flags -- a hand-edited or
+        # migrated file could carry a filesystem-unsafe character
+        # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
+        # validated until this rewrite. Same defensive re-validation
+        # version/revise/supersede/migrate already apply.
+        reject_embedded_delimiter(header.title, "title")
+        reject_filesystem_unsafe_title(header.title, "title")
+        reject_title_with_no_case_transform_content(header.title, "title")
+        reject_embedded_delimiter(header.scope, "scope")
+        reject_embedded_delimiter(header.domain, "domain")
 
-            # title/scope/domain are re-read from the SOURCE
-            # file's own header cells, not flags -- a hand-edited or
-            # migrated file could carry a filesystem-unsafe character
-            # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
-            # validated until this rewrite. Same defensive re-validation
-            # version/revise/supersede/migrate already apply.
-            reject_embedded_delimiter(header.title, "title")
-            reject_filesystem_unsafe_title(header.title, "title")
-            reject_title_with_no_case_transform_content(header.title, "title")
-            reject_embedded_delimiter(header.scope, "scope")
-            reject_embedded_delimiter(header.domain, "domain")
-
-            # ADR001, part 3: the lease can still be reclaimed out from
-            # under a legitimately slow holder -- this can't prevent that,
-            # but guarantees the write below never commits blindly if it
-            # already happened.
-            lock.verify_still_held()
-            _record, body_encoding_repaired, attempts = rewrite_status_field(
-                path, config, header, filename_info, field="update", status="Accepted", refdate=refdate, lock=lock
-            )
-            # encoding_repaired_warning claims "the file has been rewritten
-            # ... bytes are now lost" -- only true once the write above has
-            # actually happened, not at read time (an eligibility check
-            # could still have failed first). ADR006V01: combines the
-            # header's own flag (known since read_target, above) with the
-            # body's own (only known now, once the streamed write has
-            # actually read it) -- either half being lossy loses bytes on
-            # this rewrite.
-            if encoding_repaired or body_encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        _record, body_encoding_repaired, attempts = rewrite_status_field(
+            path, config, header, filename_info, field="update", status="Accepted", refdate=refdate
+        )
+        # encoding_repaired_warning claims "the file has been rewritten
+        # ... bytes are now lost" -- only true once the write above has
+        # actually happened, not at read time (an eligibility check
+        # could still have failed first). ADR006V01: combines the
+        # header's own flag (known since load_target, above) with the
+        # body's own (only known now, once the streamed write has
+        # actually read it) -- either half being lossy loses bytes on
+        # this rewrite.
+        if encoding_repaired or body_encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Canonical keyword, matching explore's own status_create/status_update
     # -- not the repo's configured status label.

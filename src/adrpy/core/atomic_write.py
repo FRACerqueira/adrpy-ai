@@ -196,13 +196,9 @@ def atomic_write_chunks(path, chunks_factory):
                 raise
             time.sleep(RETRY_DELAY_SECONDS * (2**attempt))
         except BaseException:
-            # A chunk producer can raise something other than OSError --
-            # LockLostError (core/lock.py), from ADR006V01's mid-stream
-            # lock re-verification -- which the OSError branch above
-            # never catches, leaking this temp file (found live: a
-            # LockLostError raised from inside rewrite_status_field's own
-            # generator left an orphaned .tmp file the OSError-only
-            # cleanup never touched).
+            # A chunk producer can raise something other than OSError,
+            # which the OSError branch above never catches -- without
+            # this, that temp file would be left behind.
             temp_path.unlink(missing_ok=True)
             raise
     raise last_error
@@ -214,12 +210,9 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     process, a full disk) once older than `max_age_seconds`. Returns the
     paths removed, so the caller can warn about it.
 
-    This runs BEFORE the repository lock in every command that calls it --
-    a concurrent process's own in-flight write could plausibly hold a temp
-    file open (or have already removed it) at the exact moment this scan
-    reaches it. Best-effort per candidate, matching
-    `_unlink_with_retry`'s own established philosophy for this exact
-    class of problem (core/lock.py): a transient OSError here does not
+    Another process could hold a temp file open (or have already removed
+    it) at the exact moment this scan reaches it. Best-effort per
+    candidate: a transient OSError here does not
     fail the caller's entire command over best-effort housekeeping
     unrelated to what it was actually asked to do -- left in place for a
     later cleanup pass instead, and reported via `warnings` when given.
@@ -228,8 +221,7 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     the temp file's own mtime. On a network share whose server clock runs
     well behind this machine's, a concurrent call can sweep another call's
     still-in-flight temp file; that write then fails instead of being
-    retried, since a retry here cannot tell that case from one whose lock
-    was already reclaimed. The failure surfaces as the calling command's
+    retried, since the write cannot tell its temp file was swept. The failure surfaces as the calling command's
     own code for that write: an io-error for a single-write command, with
     nothing committed and re-running succeeds; supersede's and reject's
     first write (supersede-successor-write-failed, reject-predecessor-

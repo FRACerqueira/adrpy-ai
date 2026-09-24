@@ -346,7 +346,7 @@ def default_repo_config_text_for_language(language):
 
 
 # This file is read on EVERY single command invocation
-# (resolve_repo_and_target's own initial config load), plus init/
+# (load_target's own initial config load), plus init/
 # installconfig --seed -- with no size cap, a 150MB config file measures
 # a ~300MB peak-memory read. 64KB is
 # generous relative to the schema's own worst case: every length-bounded
@@ -385,12 +385,12 @@ def read_config_text(path):
 
     Retries a transient PermissionError the same way every other read in
     this codebase
-    already does (core/lock.py's _read_lock, core/lifecycle.py's
+    already does (core/lifecycle.py's
     read_lines_with_report, cli/explore.py's _build_entry) -- this read
     goes through the identical atomic_write_text -> os.replace mechanism
     those retries exist to absorb, and it runs for every single command
-    (resolve_repo_and_target's own initial config load), most of it
-    BEFORE any lock or attach_warnings safety net is entered."""
+    (load_target's own initial config load), most of it
+    BEFORE any attach_warnings safety net is entered."""
     try:
         raw_bytes = read_with_permission_retry(lambda: _read_config_bytes(Path(path)))
         if len(raw_bytes) > CONFIG_READ_MAX_BYTES:

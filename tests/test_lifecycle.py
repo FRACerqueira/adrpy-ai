@@ -23,14 +23,12 @@ from adrpy.core.lifecycle import (
     read_header_lines,
     read_header_lines_with_report,
     reject_folderadr_change_if_decisions_exist,
-    resolve_repo_and_target,
     resolve_target_and_config,
     rewrite_status_field,
     scan_decisions,
     stream_normalized_body_chunks,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
 
 import json
@@ -83,18 +81,18 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Totally different", config, decisions) is None
 
 
-def test_resolve_repo_and_target_reports_when_no_adr_config_is_found_above(tmp_path):
+def test_load_target_reports_when_no_adr_config_is_found_above(tmp_path):
     """Cannot-determine-root-path
     (raised when find_repo_root walks all the way up without finding
     adr-config.adrplus) had zero coverage -- reachable from every one of
-    the 6 status-transition commands via resolve_repo_and_target."""
+    the 6 status-transition commands via load_target."""
     orphan_dir = tmp_path / "no-repo-here"
     orphan_dir.mkdir()
     target = orphan_dir / "ADR001V01-orphan.md"
     target.write_text("not a real decision", encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
-        resolve_repo_and_target(target)
+        load_target(target)
 
     assert excinfo.value.code == "cannot-determine-root-path"
 
@@ -343,13 +341,9 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     header = parse_header(header_lines, config)
     _, filename_info = parse_any_filename(target.name, config)
 
-    from adrpy.core.lock import acquire_repo_lock
-
-    with acquire_repo_lock(adr_dir) as lock:
-        _record, _body_encoding_repaired, attempts = rewrite_status_field(
-            target, config, header, filename_info, field="update", status="Accepted", refdate=date(2026, 1, 2),
-            lock=lock,
-        )
+    _record, _body_encoding_repaired, attempts = rewrite_status_field(
+        target, config, header, filename_info, field="update", status="Accepted", refdate=date(2026, 1, 2)
+    )
 
     assert attempts == 1
 
@@ -627,12 +621,10 @@ def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tm
 
 def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """This read must tolerate a transient PermissionError, matching the
-    write side (atomic_write.py) and the lock-file read side
-    (core/lock.py's own _read_lock), which both already retry this
-    project's own documented Windows "pending delete"/sharing-violation
-    contention window -- measured live at ~0.2% of reads under real
-    concurrent writers. Same shared helper (core/io_retry.py) `_read_lock`
-    already uses, not a fourth independent copy of the loop."""
+    write side (atomic_write.py), which already retries this project's
+    own documented Windows "pending delete"/sharing-violation contention
+    window. Uses the shared helper (core/io_retry.py), not an independent
+    copy of the loop."""
     target = tmp_path / "flaky.md"
     header_lines = [f"line{i}" for i in range(12)]
     target.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
@@ -790,22 +782,6 @@ def test_a_sibling_whose_lossy_decode_still_parses_stays_a_member(tmp_path):
 
     assert [entry[2] for entry in members] == [path]
     assert warnings == []
-
-
-def test_scan_decisions_never_sees_the_lock_marker_file(tmp_path):
-    """LOCK_FILE_NAME must never appear as an "unrecognized file" nor be
-    mistaken for a naming-scheme candidate.
-    Confirmed here as an explicit guarantee, not an accident of every
-    rglob call happening to filter on "*.md" -- if that filter ever
-    changed, this is the test that would catch a regression."""
-    from adrpy.core.lock import LOCK_FILE_NAME
-
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    (adr_dir / LOCK_FILE_NAME).write_text("holder-token\n123.0")
-
-    assert scan_decisions(adr_dir, config) == []
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
@@ -1089,42 +1065,6 @@ def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
 
     assert len(warnings) == 1
     assert "escapes the repository boundary" in warnings[0]
-
-
-def test_verify_folderadr_unchanged_since_lock_returns_fresh_config_when_matching(tmp_path):
-    """The
-    lock's own location is derived from a config read taken before the
-    lock -- this helper re-reads fresh right after acquiring it and
-    confirms folderadr (what the lock's location was derived from)
-    didn't drift underneath. The happy path: nothing changed, the fresh
-    config is returned for the caller to use from then on."""
-    config_path = tmp_path / "adr-config.adrplus"
-    config_path.write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
-    original = load_repo_config(config_path)
-
-    result = verify_folderadr_unchanged_since_lock(config_path, original.folderadr)
-
-    assert result.folderadr == original.folderadr
-
-
-def test_verify_folderadr_unchanged_since_lock_raises_when_folderadr_changed(tmp_path):
-    """Reproduces the class live -- a concurrent
-    `config --folderadr` (or `init --seed`) completing between this call's
-    own pre-lock bootstrap read and the moment it acquires the lock means
-    the lock's own location is no longer the repository's real folderadr.
-    Must abort with a structured, mappable error instead of silently
-    scanning/writing against a directory the repository no longer uses."""
-    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
-    data["folderadr"] = "doc/adrB"
-    config_path = tmp_path / "adr-config.adrplus"
-    config_path.write_text(json.dumps(data), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        verify_folderadr_unchanged_since_lock(config_path, "doc/adr", warnings=["accumulated"])
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-    assert excinfo.value.warnings == ["accumulated"]
 
 
 def test_read_body_returns_empty_string_when_there_is_no_body(tmp_path):

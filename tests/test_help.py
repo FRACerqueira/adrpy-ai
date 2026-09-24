@@ -9,37 +9,7 @@ from adrpy.core.registry import COMMANDS
 import pytest
 
 
-_LOCKED_COMMANDS = ("new", "approve", "reject", "undo", "supersede", "version", "revise", "migrate", "config", "init", "log")
 _PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revise")
-
-
-def test_every_locked_command_documents_repository_locked():
-    """Repository-locked/
-    lock-lost are the ADR001-designed failure boundary for every command
-    that acquires the repository lock, but were undocumented anywhere on
-    the caller-facing describe() surface -- an agent had no way to learn
-    these codes exist short of reading core/lock.py's own source. Checks
-    every description string in describe() (top-level and each
-    argument's own), not just the top-level one, since init's own note
-    lives on its --seed argument, scoped to the already-existing-
-    repository path only."""
-    for name in _LOCKED_COMMANDS:
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "repository-locked" in text, f"{name}'s describe() never mentions repository-locked"
-
-
-def test_every_locked_command_documents_folderadr_changed_after_lock_acquired():
-    """Folderadr-changed-after-
-    lock-acquired (core.lifecycle.verify_folderadr_unchanged_since_lock,
-    used by all 9 write commands plus init's --seed-on-existing-repo
-    path) was a shared fix never documented in any describe() -- found
-    by the calibration process itself (a grep), not by a dedicated
-    audit pass."""
-    for name in _LOCKED_COMMANDS:
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "folderadr-changed-after-lock-acquired" in text, f"{name}'s describe() never mentions it"
 
 
 def test_config_and_init_document_folderadr_change_scan_incomplete():
@@ -164,7 +134,7 @@ def test_every_path_based_command_except_init_documents_config_not_found():
 
 def test_every_per_file_command_documents_file_not_found_and_cannot_determine_root_path():
     """file-not-found/cannot-determine-root-path
-    (core.lifecycle.resolve_repo_and_target, the --file-based sibling of
+    (core.lifecycle.load_target, the --file-based sibling of
     resolve_target_and_config above) were also undocumented on every one
     of the 6 commands that take --file instead of --path."""
     for name in _PER_FILE_COMMANDS:
@@ -315,7 +285,7 @@ def test_migrate_documents_its_scan_failed_error_code():
 def test_every_per_file_command_documents_the_md_auto_suffix():
     """Every
     per-file command's `--file` silently gets '.md' appended when the
-    given path has no extension (resolve_repo_and_target's own doing) --
+    given path has no extension (load_target's own doing) --
     none of their describe()'s ever mentioned it."""
     for name in _PER_FILE_COMMANDS:
         info = COMMANDS[name].describe()
@@ -499,7 +469,7 @@ def test_command_error_can_carry_structured_data_on_failure(capsys, monkeypatch)
 
 def test_command_error_can_carry_warnings_on_failure(capsys, monkeypatch):
     """A real side effect (an encoding
-    repair, an orphan-temp-file cleanup, a stale-lock reclaim, a retried
+    repair, an orphan-temp-file cleanup, a retried
     write) that already happened before a command goes on to fail for an
     unrelated reason must not be silently dropped -- the failure envelope
     must carry a trace that it already occurred."""

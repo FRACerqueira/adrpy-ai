@@ -2,7 +2,7 @@ import json
 import os
 from datetime import date, timedelta
 
-from adrpy.cli import approve, config, init, new, reject, revise
+from adrpy.cli import approve, init, new, reject, revise
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError
@@ -40,48 +40,6 @@ def _setup_accepted_repo_with_revisions(tmp_path):
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-use-postgre-sql.md"
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
     return tmp_path, adr_path
-
-
-def test_revise_still_fails_safely_when_lenrevision_races_to_zero_after_the_pre_lock_read(tmp_path, monkeypatch):
-    """Investigated and ruled out, not a live bug
-    -- kept as a permanent regression test per this project's own rule
-    that a checked hypothesis becomes a test. revise's early eligibility
-    gate (`if config.lenrevision == 0`) reads config BEFORE the lock,
-    same chicken-and-egg as folderadr; nothing re-verifies it against the
-    fresh post-lock config the way the folderadr fix does. A concurrent
-    `config --lenrevision 0` mid-flight was suspected to let revise write
-    a revision the repository no longer supports. It does not: the fresh
-    config IS used for the lenrevision-fits-the-digit-count check further
-    down (line ~118), and any new revision number has at least 1 digit,
-    so `len(str(new_revision)) > lenrevision` is always true once
-    lenrevision has raced down to 0 -- an accidental but real backstop,
-    not a designed one. The error code this produces
-    (lenrevision-too-small-for-new-revision) is misleading given the real
-    cause, but no data corruption occurs and no write is made."""
-    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
-    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
-    assert stale_config.lenrevision == 2
-
-    real_resolve = revise.resolve_repo_and_target
-
-    def stale_resolve(fileadr):
-        _config, root, path = real_resolve(fileadr)
-        return stale_config, root, path
-
-    monkeypatch.setattr(revise, "resolve_repo_and_target", stale_resolve)
-
-    # Concurrently (from this test's perspective) disable revisions
-    # entirely -- the on-disk config is what the fresh post-lock read
-    # will see; the patched resolve_repo_and_target above still hands
-    # revise the stale lenrevision=2 value for its early pre-lock check.
-    config.run(["--path", str(tmp_path), "--lenrevision", "0"])
-
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "lenrevision-too-small-for-new-revision"
-    # No new revision file was created.
-    assert not (tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md").exists()
 
 
 def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):

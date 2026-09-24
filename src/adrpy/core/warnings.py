@@ -1,7 +1,7 @@
 """Builds the small set of human-readable warning strings for automatic,
 non-fatal actions a command's own dependencies may take silently
-otherwise: a retried write, a reclaimed stale
-lock, orphaned temp-file cleanup, and invalid-byte encoding repair. Every
+otherwise: a retried write, orphaned temp-file cleanup, and invalid-byte
+encoding repair. Every
 mutating command's result carries these under "warnings" (an empty list
 when nothing happened) so an agent calling the CLI can see them without
 needing any external logging -- this is domain information that would
@@ -23,13 +23,12 @@ def attach_warnings(warnings):
     raise sites living directly in a command's own cli/ module (already
     threaded explicitly at each site), but also one raised from a shared
     core/ helper the command calls (parse_refdate, validate_refdate_*,
-    reject_embedded_delimiter, resolve_within, or a LockTimeoutError
-    surfacing its own reclaim warning from acquire_repo_lock). Wrap the
+    reject_embedded_delimiter, resolve_within). Wrap the
     whole region of a command's `run()` from where `warnings` starts
     accumulating onward.
 
     Merges rather than overwrites: an error that already carries its own
-    warnings (e.g. a LockTimeoutError's stale-lock-reclaim warning) keeps
+    warnings keeps
     them, with this command's own accumulated warnings prepended -- unless
     `error.warnings` is literally this same list (an explicit `warnings=
     warnings` already passed at the raise site), in which case there is

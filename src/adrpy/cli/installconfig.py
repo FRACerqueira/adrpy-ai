@@ -29,12 +29,10 @@ is this command's own purpose.
 own note); it is still carried through from whatever base this command
 merges onto (the existing file, or the bundled default), never dropped.
 
-Deliberately unlocked: this file is per-user, per-machine state, never
-the shared repository state ADR001's lock rule is scoped to (ADR002V01).
-A lost update between two concurrent `installconfig` calls is an
+No concurrency control: this file is per-user, per-machine state
+(ADR002V01). A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
-a single human/agent doing one-time setup, not the routine concurrent
-workload the repository lock exists to protect. Confirmed the worst
+a single human/agent doing one-time setup. Confirmed the worst
 case really is a lost update, never corruption (a merge-write always
 merges onto a fully-committed prior
 state, and atomic_write_text's own os.replace-based commit means a

@@ -28,9 +28,7 @@ from adrpy.core.lifecycle import (
     reject_folderadr_change_if_decisions_exist,
     reject_status_or_separator_change_if_decisions_exist,
     resolve_target_and_config,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import (
     find_unreadable_subdirectories,
@@ -57,12 +55,7 @@ def describe():
             "for any installation that has never run installconfig, not an error; the result's own "
             "`warnings` names this and points at `installconfig` when it happens, since it is the one "
             "case where nothing informed this repository's own settings at all. "
-            "Not safe to call concurrently on a FRESH --path with no config yet (deliberately, see "
-            "doc/adr/ADR001V01-...): two simultaneous first-time calls can silently overwrite one "
-            "another's config, both reporting success -- callers must ensure at most one first-time "
-            "init runs per fresh repository path at a time. --seed overwriting an ALREADY-existing "
-            "repository's config is, by contrast, protected by the same repository lock every other "
-            "write command uses. May fail with "
+            "May fail with "
             "init-existing-numbers-scan-incomplete if a subdirectory under the decisions folder could not "
             "be scanned (permission denied or similar) -- the existing max number/version/revision, which "
             "lenseq/lenversion/lenrevision must fit, can't be trusted from an incomplete scan. Unlike "
@@ -102,7 +95,7 @@ def describe():
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
                     "adr-config.adrplus outright -- config-already-exists is not raised when --seed is given. The "
-                    "existing file must still parse (its folderadr locates the lock and scopes the change "
+                    "existing file must still parse (its folderadr scopes the change "
                     "guards): a corrupted one fails with its own config-* code -- repair or remove it first. "
                     "If the seed's own folderadr differs from the current one AND the OLD folder already has "
                     "recognized decisions, fails with folderadr-change-blocked-by-existing-decisions instead "
@@ -148,12 +141,7 @@ def describe():
                     "init-existing-numbers-scan-incomplete check below, so when both an unreadable "
                     "subdirectory and a guarded field change occur together, status-or-separator-change-scan-"
                     "incomplete is what's raised (unless the seed also changes folderadr, whose own "
-                    "folderadr-change-scan-incomplete fires first). On this same already-existing-repository path, may also "
-                    "fail with "
-                    "repository-locked, lock-lost, or "
-                    "folderadr-changed-after-lock-acquired (a concurrent config change moved folderadr while "
-                    "this call was acquiring the lock -- retry) -- never on a genuinely fresh path, which "
-                    "takes no lock at all. See this command's own top-level description for "
+                    "folderadr-change-scan-incomplete fires first). See this command's own top-level description for "
                     "init-existing-numbers-scan-incomplete, which is NOT scoped to this --seed path either."
                 ),
             },
@@ -177,7 +165,6 @@ def describe():
                 FailureCodes.CONFIG_ALREADY_EXISTS: "adr-config.adrplus already exists and no --seed was given.",
                 FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
                 FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
-                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while --seed was acquiring the repository lock -- no write was made; retry.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own folderadr differs from the current one, and the OLD folder already has recognized decisions.",
                 FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderadr could not be scanned while checking --seed's own folderadr change.",
                 FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderadr already holds a file that would newly parse as a decision.",
@@ -198,7 +185,6 @@ def describe():
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
@@ -219,8 +205,8 @@ def run(args):
 
     target, config_path, _ = resolve_target_and_config(path, require_config=False)
     # Captured before any write below -- this is what decides whether the
-    # write path below is live shared state (needs a lock) or a genuine
-    # fresh bootstrap (nothing to race against yet).
+    # write path below overwrites an existing config (and runs the change
+    # guards against it) or is a genuine fresh bootstrap.
     config_already_existed = config_path.exists()
 
     # Non-interactive by design (no wizard, no prompt to fall back on) --
@@ -268,42 +254,20 @@ def run(args):
         warnings.append(no_install_level_config_warning())
 
     if config_already_existed:
-        # --seed overwriting an ALREADY-existing repository is live shared
-        # state, not bootstrap -- ADR001's exemption for init only covers
-        # the truly-fresh-path
-        # case, where the decisions folder doesn't exist yet to even
-        # locate a lock in. Here it already does (every prior init created
-        # it), so lock it exactly like config.py's own bootstrap-then-lock
-        # pattern: read the PRE-edit config just to find where the lock
-        # lives, then do the whole scan-validate-write under that lock,
-        # freshly -- closing both the lost-update (a concurrent config
-        # write silently clobbered) and the narrower lenseq/lenversion/
-        # lenrevision gating race (scanned without a lock at all before).
-        bootstrap_config = load_repo_config(config_path)
-        lock_folder = resolve_within(target, bootstrap_config.folderadr)
+        # --seed overwriting an ALREADY-existing repository: the PRE-edit
+        # config scopes the change guards in _validate_and_write.
+        old_config = load_repo_config(config_path)
         with attach_warnings(warnings):
-            with acquire_repo_lock(lock_folder) as lock:
-                warnings.extend(lock.warnings)
-                # `bootstrap_config` above is read BEFORE this lock -- if a
-                # concurrent process already changed folderadr by the time
-                # this lock was acquired, handing it straight to the
-                # folderadr-change guard unrefreshed would scan the wrong
-                # (stale) folder, or skip scanning entirely when the seed
-                # happened to carry that same stale value. Reads fresh and
-                # aborts instead of trusting the pre-lock read.
-                bootstrap_config = verify_folderadr_unchanged_since_lock(
-                    config_path, bootstrap_config.folderadr, warnings=warnings
-                )
-                created = _validate_and_write(
-                    target, config_path, config_text, config, warnings, lock, old_config=bootstrap_config
-                )
+            created = _validate_and_write(
+                target, config_path, config_text, config, warnings, old_config=old_config
+            )
         return {"created": created, "warnings": warnings}
 
-    created = _validate_and_write(target, config_path, config_text, config, warnings, lock=None)
+    created = _validate_and_write(target, config_path, config_text, config, warnings)
     return {"created": created, "warnings": warnings}
 
 
-def _validate_and_write(target, config_path, config_text, config, warnings, lock, old_config=None):
+def _validate_and_write(target, config_path, config_text, config, warnings, old_config=None):
     if old_config is not None:
         # Same class as config.py's own --folderadr guard -- --seed
         # changing folderadr on an already-existing repository is exactly
@@ -400,15 +364,6 @@ def _validate_and_write(target, config_path, config_text, config, warnings, lock
     # either folder's real, resolved location is knowable.
     reject_aliased_repo_folders(target, config)
 
-    if lock is not None:
-        # ADR001, part 3: guarantees this write never commits blindly if
-        # the lease was reclaimed.
-        lock.verify_still_held()
-    # Re-verified here too, immediately before the real commit -- the
-    # check above (before folder_adr's own mkdir) leaves a window a
-    # filesystem-level racer could exploit between then and this write.
-    # Same narrowing rationale as log.py's own pre-commit re-check.
-    reject_aliased_repo_folders(target, config)
     # atomic_write_text normalizes to this host's line separator (the real
     # terminator is host-OS-dependent, not fixed) -- config_text is
     # otherwise written verbatim, never re-serialized from `config`.

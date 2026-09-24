@@ -19,9 +19,7 @@ from adrpy.core.lifecycle import (
     resolve_target_and_config,
     scan_decisions,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -41,11 +39,7 @@ def describe():
             "May fail with target-directory-not-found if --path does not point to an existing directory, "
             "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
             "either way. "
-            "May fail with repository-locked if the repository lock could not be acquired in time, or "
-            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
-            "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
-            "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry. May also fail with new-scan-incomplete if a subdirectory under the "
+            "May also fail with new-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and "
             "next-number allocation can't be trusted from an incomplete scan; no write was made. Once the "
             "scan itself succeeds, fails with title-already-exists (data.existing_file names it) if "
@@ -105,7 +99,6 @@ def describe():
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
-                FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
                 FailureCodes.NEW_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan.",
@@ -117,7 +110,6 @@ def describe():
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
@@ -133,7 +125,7 @@ def run(args):
     domain = flags.get("domain", "")
     scope = flags.get("scope", "")
 
-    target, config_path, config = resolve_target_and_config(flags["path"])
+    target, _config_path, config = resolve_target_and_config(flags["path"])
 
     reject_embedded_delimiter(title, "title")
     reject_filesystem_unsafe_title(title, "title")
@@ -152,68 +144,51 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        # The whole scan -> decide-next-number -> write sequence is the
-        # critical section -- two calls that both scan before either writes
-        # will otherwise compute the identical "next" number (reproduced
-        # live, 10/10 times, with two concurrent `new` calls).
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # `folder` above was resolved from a config read BEFORE this
-            # lock -- a concurrent config change could have moved
-            # folderadr in the window before the lock was actually
-            # acquired, in which case `folder` (and so this lock) no
-            # longer names the repository's real decisions folder.
-            # Re-reads fresh and aborts rather than scanning/writing
-            # against a directory nobody uses anymore.
-            config = verify_folderadr_unchanged_since_lock(config_path, config.folderadr, warnings=warnings)
-            # strict=True: this scan feeds both title-uniqueness
-            # (find_by_unique_title, below) and next-number allocation,
-            # both real safety decisions. An unreadable subdirectory hiding
-            # an existing title or a higher number must never be silently
-            # treated as "not found" the way explore's own best-effort
-            # listing can.
-            decisions = scan_decisions(
-                folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.NEW_SCAN_INCOMPLETE
+        # strict=True: this scan feeds both title-uniqueness
+        # (find_by_unique_title, below) and next-number allocation,
+        # both real safety decisions. An unreadable subdirectory hiding
+        # an existing title or a higher number must never be silently
+        # treated as "not found" the way explore's own best-effort
+        # listing can.
+        decisions = scan_decisions(
+            folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.NEW_SCAN_INCOMPLETE
+        )
+
+        existing = find_by_unique_title(title, config, decisions)
+        if existing is not None:
+            raise CommandError(
+                FailureCodes.TITLE_ALREADY_EXISTS,
+                f"A decision with this title already exists: {existing.name}",
+                data={"existing_file": existing.name},
+                warnings=warnings,
             )
 
-            existing = find_by_unique_title(title, config, decisions)
-            if existing is not None:
-                raise CommandError(
-                    FailureCodes.TITLE_ALREADY_EXISTS,
-                    f"A decision with this title already exists: {existing.name}",
-                    data={"existing_file": existing.name},
-                    warnings=warnings,
-                )
+        record = DecisionRecord(
+            number=next_number(decisions),
+            title=title,
+            version=1,
+            revision=1 if config.lenrevision > 0 else None,
+            scope=scope,
+            domain=domain,
+            status_create="Proposed",
+            date_create=refdate,
+        )
 
-            record = DecisionRecord(
-                number=next_number(decisions),
-                title=title,
-                version=1,
-                revision=1 if config.lenrevision > 0 else None,
-                scope=scope,
-                domain=domain,
-                status_create="Proposed",
-                date_create=refdate,
+        filename = build_filename(config, record)
+        file_path = resolve_within(folder, filename)
+        if file_path.exists():
+            raise CommandError(
+                FailureCodes.FILE_ALREADY_EXISTS,
+                f"File already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
             )
 
-            filename = build_filename(config, record)
-            file_path = resolve_within(folder, filename)
-            if file_path.exists():
-                raise CommandError(
-                    FailureCodes.FILE_ALREADY_EXISTS,
-                    f"File already exists: {filename}",
-                    data={"file": filename},
-                    warnings=warnings,
-                )
-
-            content = build_header(config, record) + config.template
-            # ADR001, part 3 (doc/adr/ADR001V01-...): guarantees this write
-            # never commits blindly if the lease was reclaimed.
-            lock.verify_still_held()
-            attempts = atomic_write_text(file_path, content)
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        content = build_header(config, record) + config.template
+        attempts = atomic_write_text(file_path, content)
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # The canonical keyword, not the repo's configured label -- `explore`
     # reports status_create the same way for the same file, and the two

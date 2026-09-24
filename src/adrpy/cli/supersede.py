@@ -20,14 +20,12 @@ from adrpy.core.lifecycle import (
     mark_superseded,
     next_number,
     parse_refdate,
+    load_target,
     read_target,
-    resolve_repo_and_target,
     scan_decisions,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, LockLostError, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -84,8 +82,7 @@ def describe():
             "successor (supersede-successor-write-failed) means nothing was written. A failure "
             "marking the predecessor Superseded afterward (supersede-write-failed) means success=false "
             "even though the successor already exists -- that code's own `data.successor` names it, "
-            "and `data.predecessor_status` is still Accepted (a lock lost before this SECOND write also "
-            "surfaces this same code/data, not lock-lost). The successor keeps its number on disk, so "
+            "and `data.predecessor_status` is still Accepted. The successor keeps its number on disk, so "
             "no later `new` can take it; re-run with --resume to finish: it finds that successor "
             "(the existing file whose supersede suffix points back at this decision), marks only the "
             "predecessor, and says so in `warnings`. Without --resume, any existing non-Rejected "
@@ -104,10 +101,7 @@ def describe():
             "one such successor exists and it is still Proposed with its own Created status and date, and "
             "with refdate-before-history if --refdate is before that successor's creation; no write is "
             "made in any of these cases. Rejecting a still-Proposed successor directly works too: with no "
-            "member of this decision's family marked Superseded, reject has nothing to revert. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
-            "the FIRST write) -- in both of those cases no write was made at all. May also fail with "
-            "folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while "
-            "this call was acquiring the lock -- no write was made either way; retry. May also fail with "
+            "member of this decision's family marked Superseded, reject has nothing to revert. May also fail with "
             "family-scan-incomplete or supersede-successor-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "and successor-number allocation can't be trusted from an incomplete scan; no write was made "
@@ -215,7 +209,6 @@ def describe():
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
@@ -234,246 +227,217 @@ def run(args):
         # would otherwise be accepted and silently ignored.
         raise UsageError("--resume cannot be combined with --title, --scope or --domain: the existing "
                          "successor is kept exactly as it was created.")
-    config, root, path = resolve_repo_and_target(flags["file"])
-    folder = resolve_within(root, config.folderadr)
     warnings = []
+    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
+    folder = resolve_within(root, config.folderadr)
     with attach_warnings(warnings):
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
 
-        # Covers the same next-number race as `new` (two concurrent calls
-        # could otherwise compute the same sequence number), plus
-        # mark_superseded's mutation of the predecessor, so a concurrent
-        # scan by another command never observes it half-transitioned.
-        #
-        # The predecessor's own header/lines are read fresh, inside the
-        # lock, instead of before it -- without this, two concurrent
-        # supersede calls on the SAME predecessor could each write it from
-        # their own stale, pre-lock snapshot, producing two live successors
-        # with only one referenced by the predecessor at all.
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # Re-reads fresh in case folderadr changed between the pre-lock
-            # read and lock acquisition -- operating against a stale folder
-            # would be silently wrong.
-            config = verify_folderadr_unchanged_since_lock(
-                root / "adr-config.adrplus", config.folderadr, warnings=warnings
+        # A specific reason code, not one collapsed not-eligible-for-
+        # supersede, so the caller knows which recovery action applies.
+        reason = ineligibility_reason_for_supersede(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+
+        # Without this, two different members of the same family could
+        # each be independently superseded, producing two live
+        # successors. Same guard version.py/revise.py already use.
+        members = family_members(
+            folder, config, filename_info.number, warnings=warnings
+        )
+        raise_if_superseded_sibling(members, warnings)
+        raise_if_pending_sibling(members, warnings)
+        raise_if_not_latest(filename_info, members, warnings)
+
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        not_before = header.date_update or header.date_create
+        if not_before is not None:
+            validate_refdate_not_before(refdate, not_before)
+
+        # Unlike `new`, an omitted --scope/--domain defaults to the
+        # predecessor's own current value, not empty.
+        scope = flags["scope"] if "scope" in flags else (header.scope or "")
+        domain = flags["domain"] if "domain" in flags else (header.domain or "")
+        reject_embedded_delimiter(scope, "scope")
+        reject_embedded_delimiter(domain, "domain")
+        if "title" in flags:
+            # An explicit --title overrides the predecessor's own
+            # filename-segment title -- validated exactly like `new
+            # --title` (same 3 checks, same order).
+            title = flags["title"]
+            reject_embedded_delimiter(title, "title")
+            reject_filesystem_unsafe_title(title, "title")
+            reject_title_with_no_case_transform_content(title, "title")
+        else:
+            # `title` is re-read from the PREDECESSOR's own filename
+            # segment, not a live flag -- a hand-edited or migrated file
+            # could already carry a filesystem-unsafe character (e.g. ':',
+            # an NTFS Alternate-Data-Stream separator), which build_filename
+            # below would otherwise propagate into a real write attempt.
+            reject_embedded_delimiter(filename_info.title, "title")
+            reject_filesystem_unsafe_title(filename_info.title, "title")
+            reject_title_with_no_case_transform_content(filename_info.title, "title")
+            title = filename_info.title
+
+        # strict=True: an unreadable subdirectory hiding a
+        # higher-numbered decision must never be silently treated as
+        # "not found" here, or the allocated successor number could
+        # collide once that subdirectory becomes readable again -- and,
+        # for the orphan check below, a hidden successor would be
+        # missed and a second one created.
+        decisions = scan_decisions(
+            folder, config, warnings=warnings, strict=True,
+            incomplete_code=FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE,
+        )
+
+        # The successor is written FIRST (below), so an earlier call
+        # whose predecessor write then failed leaves a file already
+        # pointing back at this still-Accepted predecessor. So can a
+        # normal sequence with no failure at all (supersede, reject the
+        # successor, undo that reject), and nothing on disk tells the
+        # two apart -- so this never guesses: an existing non-Rejected
+        # successor is only resumed onto when the caller asks for it
+        # with --resume, and refused otherwise. A Rejected one is the
+        # normal end of an earlier attempt (reject reverts the
+        # predecessor to Accepted) and never counts.
+        orphans = []
+        for scheme_entry in decisions:
+            if getattr(scheme_entry[1], "superseded_from", None) != filename_info.number:
+                continue
+            # A successor always gets a later sequence number than its
+            # predecessor (next_number): a file pointing back from the
+            # same number (itself, or a member of its own family) or a
+            # lower one is not a successor of this decision at all --
+            # adopting one would supersede a decision by itself or by an
+            # older one, with no command able to undo it.
+            if scheme_entry[1].number <= filename_info.number:
+                continue
+            try:
+                candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
+            except CommandError as error:
+                # Otherwise this reads as if --file itself were bad.
+                if error.data is None:
+                    error.data = {"file": str(scheme_entry[2])}
+                raise
+            if candidate_header.status_update != "Rejected":
+                orphans.append((scheme_entry[2], candidate_info, candidate_header))
+        orphan_files = [str(orphan[0]) for orphan in orphans]
+        if orphans and not resume:
+            raise CommandError(
+                FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
+                f"{len(orphans)} existing successor(s) already point at this decision "
+                f"({', '.join(orphan[0].name for orphan in orphans)}). Re-run with --resume to finish "
+                "superseding onto it, or reject it to create a new successor. First, if it was itself "
+                "superseded since, reject its own successor (which reverts it -- undo that successor first "
+                "if it was approved, and repeat down the chain if it was itself superseded); then, if it "
+                "had been approved, undo it.",
+                data={"file": orphan_files[0], "files": orphan_files},
+                warnings=warnings,
             )
-            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
-
-            # A specific reason code, not one collapsed not-eligible-for-
-            # supersede, so the caller knows which recovery action applies.
-            reason = ineligibility_reason_for_supersede(header)
-            if reason is not None:
-                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-
-            # Without this, two different members of the same family could
-            # each be independently superseded, producing two live
-            # successors. Same guard version.py/revise.py already use.
-            members = family_members(
-                folder, config, filename_info.number, warnings=warnings
+        if resume:
+            resumable = (
+                len(orphans) == 1
+                and orphans[0][2].status_update is None
+                and orphans[0][2].status_change is None
+                and orphans[0][2].status_create is not None
+                and orphans[0][2].date_create is not None
             )
-            raise_if_superseded_sibling(members, warnings)
-            raise_if_pending_sibling(members, warnings)
-            raise_if_not_latest(filename_info, members, warnings)
-
-            refdate = parse_refdate(flags.get("refdate"))
-            validate_refdate_not_in_future(refdate)
-            not_before = header.date_update or header.date_create
-            if not_before is not None:
-                validate_refdate_not_before(refdate, not_before)
-
-            # Unlike `new`, an omitted --scope/--domain defaults to the
-            # predecessor's own current value, not empty.
-            scope = flags["scope"] if "scope" in flags else (header.scope or "")
-            domain = flags["domain"] if "domain" in flags else (header.domain or "")
-            reject_embedded_delimiter(scope, "scope")
-            reject_embedded_delimiter(domain, "domain")
-            if "title" in flags:
-                # An explicit --title overrides the predecessor's own
-                # filename-segment title -- validated exactly like `new
-                # --title` (same 3 checks, same order).
-                title = flags["title"]
-                reject_embedded_delimiter(title, "title")
-                reject_filesystem_unsafe_title(title, "title")
-                reject_title_with_no_case_transform_content(title, "title")
-            else:
-                # `title` is re-read from the PREDECESSOR's own filename
-                # segment, not a live flag -- a hand-edited or migrated file
-                # could already carry a filesystem-unsafe character (e.g. ':',
-                # an NTFS Alternate-Data-Stream separator), which build_filename
-                # below would otherwise propagate into a real write attempt.
-                reject_embedded_delimiter(filename_info.title, "title")
-                reject_filesystem_unsafe_title(filename_info.title, "title")
-                reject_title_with_no_case_transform_content(filename_info.title, "title")
-                title = filename_info.title
-
-            # strict=True: an unreadable subdirectory hiding a
-            # higher-numbered decision must never be silently treated as
-            # "not found" here, or the allocated successor number could
-            # collide once that subdirectory becomes readable again -- and,
-            # for the orphan check below, a hidden successor would be
-            # missed and a second one created.
-            decisions = scan_decisions(
-                folder, config, warnings=warnings, strict=True,
-                incomplete_code=FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE,
-            )
-
-            # The successor is written FIRST (below), so an earlier call
-            # whose predecessor write then failed leaves a file already
-            # pointing back at this still-Accepted predecessor. So can a
-            # normal sequence with no failure at all (supersede, reject the
-            # successor, undo that reject), and nothing on disk tells the
-            # two apart -- so this never guesses: an existing non-Rejected
-            # successor is only resumed onto when the caller asks for it
-            # with --resume, and refused otherwise. A Rejected one is the
-            # normal end of an earlier attempt (reject reverts the
-            # predecessor to Accepted) and never counts.
-            orphans = []
-            for scheme_entry in decisions:
-                if getattr(scheme_entry[1], "superseded_from", None) != filename_info.number:
-                    continue
-                # A successor always gets a later sequence number than its
-                # predecessor (next_number): a file pointing back from the
-                # same number (itself, or a member of its own family) or a
-                # lower one is not a successor of this decision at all --
-                # adopting one would supersede a decision by itself or by an
-                # older one, with no command able to undo it.
-                if scheme_entry[1].number <= filename_info.number:
-                    continue
-                try:
-                    candidate_info, candidate_header, _repaired = read_target(scheme_entry[2], config, warnings=warnings)
-                except CommandError as error:
-                    # Otherwise this reads as if --file itself were bad.
-                    if error.data is None:
-                        error.data = {"file": str(scheme_entry[2])}
-                    raise
-                if candidate_header.status_update != "Rejected":
-                    orphans.append((scheme_entry[2], candidate_info, candidate_header))
-            orphan_files = [str(orphan[0]) for orphan in orphans]
-            if orphans and not resume:
+            if not resumable:
+                data = {"files": orphan_files}
+                if orphan_files:
+                    data["file"] = orphan_files[0]
                 raise CommandError(
-                    FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS,
-                    f"{len(orphans)} existing successor(s) already point at this decision "
-                    f"({', '.join(orphan[0].name for orphan in orphans)}). Re-run with --resume to finish "
-                    "superseding onto it, or reject it to create a new successor. First, if it was itself "
-                    "superseded since, reject its own successor (which reverts it -- undo that successor first "
-                    "if it was approved, and repeat down the chain if it was itself superseded); then, if it "
-                    "had been approved, undo it.",
-                    data={"file": orphan_files[0], "files": orphan_files},
+                    FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
+                    _not_resumable_reason(orphans),
+                    data=data,
                     warnings=warnings,
                 )
-            if resume:
-                resumable = (
-                    len(orphans) == 1
-                    and orphans[0][2].status_update is None
-                    and orphans[0][2].status_change is None
-                    and orphans[0][2].status_create is not None
-                    and orphans[0][2].date_create is not None
-                )
-                if not resumable:
-                    data = {"files": orphan_files}
-                    if orphan_files:
-                        data["file"] = orphan_files[0]
-                    raise CommandError(
-                        FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
-                        _not_resumable_reason(orphans),
-                        data=data,
-                        warnings=warnings,
-                    )
-                orphan_path, orphan_info, orphan_header = orphans[0]
-                if orphan_header.date_create is not None:
-                    validate_refdate_not_before(refdate, orphan_header.date_create)
-                resumed_status = orphan_header.status_create
-                successor_path = orphan_path
-                successor_number = orphan_info.number
-                warnings.append(
-                    f"resumed: {successor_path.name} already existed and still points at this decision "
-                    "-- only the predecessor was marked now; the successor itself was left as it was."
-                )
-            else:
-                successor_number = next_number(decisions)
+            orphan_path, orphan_info, orphan_header = orphans[0]
+            if orphan_header.date_create is not None:
+                validate_refdate_not_before(refdate, orphan_header.date_create)
+            resumed_status = orphan_header.status_create
+            successor_path = orphan_path
+            successor_number = orphan_info.number
+            warnings.append(
+                f"resumed: {successor_path.name} already existed and still points at this decision "
+                "-- only the predecessor was marked now; the successor itself was left as it was."
+            )
+        else:
+            successor_number = next_number(decisions)
 
-                successor = DecisionRecord(
-                    number=successor_number,
-                    # Defaults to the predecessor's own FILENAME segment
-                    # (already case-transformed), not its header's prose title --
-                    # confirmed via live comparison against the reference tool.
-                    # Overridden by --title when given (see above).
-                    title=title,
-                    version=1,
-                    revision=1 if config.lenrevision > 0 else None,
-                    scope=scope,
-                    domain=domain,
-                    status_create="Proposed",
-                    date_create=refdate,
-                    superseded=filename_info.number,
-                )
-                filename = build_filename(config, successor)
-                successor_path = resolve_within(folder, filename)
-                if successor_path.exists():
-                    raise CommandError(
-                        FailureCodes.FILE_ALREADY_EXISTS,
-                        f"File already exists: {filename}",
-                        data={"file": filename},
-                        warnings=warnings,
-                    )
-
-                content = build_header(config, successor) + config.template
-                try:
-                    # ADR001, part 3: guarantees the successor write never
-                    # commits blindly if the lease was reclaimed. A lost
-                    # lock here surfaces as lock-lost: nothing written yet.
-                    lock.verify_still_held()
-                    attempts = atomic_write_text(successor_path, content)
-                except OSError as error:
-                    # The FIRST write -- nothing has been written yet.
-                    raise CommandError(
-                        FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
-                        f"{successor_path}: {error}",
-                        data={"intended_successor": str(successor_path)},
-                        warnings=warnings,
-                    ) from error
-                warning = retry_warning(attempts)
-                if warning:
-                    warnings.append(warning)
-
-            try:
-                # ADR001, part 3: this command's SECOND write (or only one,
-                # when resuming) -- never commits blindly either.
-                lock.verify_still_held()
-                _record, body_encoding_repaired, attempts = mark_superseded(
-                    path, config, header, filename_info, successor_number, refdate, lock=lock
-                )
-                # Accurate only because the write above already succeeded.
-                # ADR006V01: combines the header's own flag (known since
-                # read_target) with the body's own (only known now, from
-                # the streamed write).
-                if encoding_repaired or body_encoding_repaired:
-                    warnings.append(encoding_repaired_warning(path))
-            except (OSError, LockLostError) as error:
-                # The successor already exists on disk (written above, or
-                # found and resumed onto) and still holds its number, so no
-                # later `new` can take it; re-running supersede on this same
-                # file resumes onto it. Both OSError and LockLostError are
-                # caught, so a lock lost here still names the successor
-                # instead of a dataless "no write was made".
+            successor = DecisionRecord(
+                number=successor_number,
+                # Defaults to the predecessor's own FILENAME segment
+                # (already case-transformed), not its header's prose title --
+                # confirmed via live comparison against the reference tool.
+                # Overridden by --title when given (see above).
+                title=title,
+                version=1,
+                revision=1 if config.lenrevision > 0 else None,
+                scope=scope,
+                domain=domain,
+                status_create="Proposed",
+                date_create=refdate,
+                superseded=filename_info.number,
+            )
+            filename = build_filename(config, successor)
+            successor_path = resolve_within(folder, filename)
+            if successor_path.exists():
                 raise CommandError(
-                    FailureCodes.SUPERSEDE_WRITE_FAILED,
-                    f"{path}: {error}. The successor ({successor_path}) was created; run supersede --resume on "
-                    "this decision to finish.",
-                    data={
-                        "predecessor": str(path),
-                        "predecessor_status": "Accepted",
-                        "successor": str(successor_path),
-                    },
+                    FailureCodes.FILE_ALREADY_EXISTS,
+                    f"File already exists: {filename}",
+                    data={"file": filename},
+                    warnings=warnings,
+                )
+
+            content = build_header(config, successor) + config.template
+            try:
+                attempts = atomic_write_text(successor_path, content)
+            except OSError as error:
+                # The FIRST write -- nothing has been written yet.
+                raise CommandError(
+                    FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
+                    f"{successor_path}: {error}",
+                    data={"intended_successor": str(successor_path)},
                     warnings=warnings,
                 ) from error
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
+
+        try:
+            _record, body_encoding_repaired, attempts = mark_superseded(
+                path, config, header, filename_info, successor_number, refdate
+            )
+            # Accurate only because the write above already succeeded.
+            # ADR006V01: combines the header's own flag (known since
+            # load_target) with the body's own (only known now, from
+            # the streamed write).
+            if encoding_repaired or body_encoding_repaired:
+                warnings.append(encoding_repaired_warning(path))
+        except OSError as error:
+            # The successor already exists on disk (written above, or
+            # found and resumed onto) and still holds its number, so no
+            # later `new` can take it; re-running supersede on this same
+            # file resumes onto it.
+            raise CommandError(
+                FailureCodes.SUPERSEDE_WRITE_FAILED,
+                f"{path}: {error}. The successor ({successor_path}) was created; run supersede --resume on "
+                "this decision to finish.",
+                data={
+                    "predecessor": str(path),
+                    "predecessor_status": "Accepted",
+                    "successor": str(successor_path),
+                },
+                warnings=warnings,
+            ) from error
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
     return {

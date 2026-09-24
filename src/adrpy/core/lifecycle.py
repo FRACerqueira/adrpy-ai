@@ -121,12 +121,10 @@ def reject_folderadr_change_if_decisions_exist(
     """Changing `folderadr` on a repository that already has recognized
     decisions makes every one of them invisible at its old, still-real
     path -- an orphaned-data risk no amount of "also create the new
-    folder" can fix on its own, and a split-lock-scope race no test could
-    reliably reproduce (two commands straddling the change would lock
-    different directories, never excluding each other). A folderadr
+    folder" can fix on its own. A folderadr
     change is only ever valid when the OLD folder has no recognized
     decisions yet -- otherwise this raises a structured, mappable error
-    instead of silent data loss/a race.
+    instead of silent data loss.
 
     Scans against `old_config` (never the new one): the existing files
     were written under the OLD naming rules, not the new ones.
@@ -371,35 +369,6 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             )
 
 
-def verify_folderadr_unchanged_since_lock(config_path, locked_folderadr, warnings=None):
-    """The repository lock's own location is necessarily derived from a
-    config read taken BEFORE the lock (a chicken-and-egg no different
-    from init's own documented exemption -- you cannot look up where the
-    lock lives without already knowing folderadr). If folderadr changes
-    in the window between that read and the acquire, a command can lock,
-    scan, and write against a directory the repository no longer uses at
-    all -- reproduced live: an orphaned decision left under the stale
-    path, and two processes locking two different directories with zero
-    mutual exclusion between them. The exact class ADR001 part 2
-    (freshness) exists to close, just never applied to folderadr itself.
-
-    Call this immediately after acquire_repo_lock returns, before doing
-    anything else that depends on folderadr -- and use the config this
-    returns from then on, not whatever was read before the lock: every
-    other field could have drifted too, not just folderadr."""
-    fresh_config = load_repo_config(config_path)
-    if fresh_config.folderadr != locked_folderadr:
-        raise CommandError(
-            FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED,
-            f"folderadr changed from '{locked_folderadr}' to '{fresh_config.folderadr}' while this call was "
-            "acquiring the repository lock, so the lock's own location is no longer current -- no write was "
-            "made. Retry.",
-            data={"locked_folderadr": locked_folderadr, "current_folderadr": fresh_config.folderadr},
-            warnings=warnings,
-        )
-    return fresh_config
-
-
 def next_number(decisions):
     """1 if none exist, else max+1."""
     if not decisions:
@@ -470,10 +439,8 @@ def _read_header_bytes(path, count):
     quadratic blowup.
 
     This read tolerates a transient PermissionError, the same contention
-    window the write side (atomic_write.py) and the lock-file read side
-    (core/lock.py's own _read_lock) already retry -- measured live at
-    ~0.2% of reads under real concurrent writers. Shares
-    core/io_retry.py's loop rather than being a third independent copy."""
+    window the write side (atomic_write.py) already retries. Shares
+    core/io_retry.py's loop rather than being an independent copy."""
 
     def _open_and_read():
         with open(path, "rb") as handle:
@@ -659,7 +626,7 @@ def stream_normalized_body_chunks(source_path, report):
 
 # ADR008V01: the codes every one of the 6 per-file lifecycle commands
 # (approve/reject/undo/supersede/version/revise) reaches identically,
-# via resolve_repo_and_target/read_target/family_members -- each
+# via load_target/family_members -- each
 # command's own describe() merges this in on top of its own specific
 # entries (eligibility-specific codes, refdate bounds, its own write
 # failures). Deliberately excludes field-is-blank: unlike
@@ -679,7 +646,6 @@ SHARED_FAILURE_CODES = {
     FailureCodes.FILENAME_NOT_RECOGNIZED: "--file's own name matches neither naming scheme.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
-    FailureCodes.FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED: "A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry.",
     FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A free-text field contains '|', a line-break-like character, or (for title) a filesystem-unsafe character.",
     FailureCodes.NOT_PROPOSED: "The target's own status_create is not Proposed (and it is not a migrated placeholder either).",
     FailureCodes.ALREADY_SUPERSEDED: "The target has already been superseded.",
@@ -689,33 +655,8 @@ SHARED_FAILURE_CODES = {
 }
 
 
-def resolve_repo_and_target(fileadr):
-    """The non-content-dependent half of load_target (ADR001,
-    doc/adr/ADR001V01-...): resolve the extension default, find the
-    file's own repository root by walking up for adr-config.adrplus, and
-    load+validate that config -- everything that doesn't require reading
-    the target file's own content. Split out so a caller that goes on to
-    write can acquire the repository lock (scoped to config.folderadr,
-    only resolvable once `config` is known) BEFORE the content-dependent
-    read (read_target below), keeping that read fresh with respect to the
-    lock instead of captured before it."""
-    fileadr = Path(fileadr)
-    if fileadr.suffix == "":
-        fileadr = fileadr.with_suffix(".md")
-    if not fileadr.is_file():
-        raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
-
-    config_path = find_repo_root(fileadr)
-    if config_path is None:
-        raise CommandError(
-            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
-        )
-    config = load_repo_config(config_path)
-    return config, config_path.parent, fileadr
-
-
 def resolve_target_and_config(path, *, require_config=True):
-    """The path-rooted counterpart to resolve_repo_and_target above:
+    """The path-rooted counterpart to load_target below:
     config/explore/log/migrate/new all take a repository --path directly
     (rather than a decision file to walk up from), and each used to
     hand-roll the identical target-directory-not-found/config-not-found
@@ -736,11 +677,9 @@ def resolve_target_and_config(path, *, require_config=True):
 
 
 def read_target(path, config, warnings=None):
-    """The content-dependent half of load_target (ADR001): reads and
-    parses the target file's own name and header. Call this AFTER
-    acquiring the repository lock for any command that goes on to write,
-    so eligibility/write decisions are made from a fresh read, not one
-    captured before the lock -- the reproduced defect ADR001 closes.
+    """Reads and parses a decision file's own name and header, given
+    its repository's already-loaded `config` -- load_target's second
+    step, and supersede's per-candidate read.
 
     `warnings`, when given, reports a genuine marker/label disagreement
     on this exact file (ADR004V01) -- informational about a pre-existing
@@ -784,23 +723,30 @@ def read_target(path, config, warnings=None):
     return filename_info, header, encoding_repaired
 
 
-def load_target(fileadr):
+def load_target(fileadr, warnings=None):
     """The common preamble approve/reject/undo/supersede/version/revise
     all share: resolve the extension default, find the file's own
     repository root by walking up for adr-config.adrplus, load+validate
-    that config, then parse this file's own name and header. Recognizes
-    BOTH naming schemes.
-
-    Kept as a single call for any caller that doesn't need the lock-then-
-    read split (ADR001) -- see resolve_repo_and_target/read_target above
-    for that split, now used by every command that goes on to write.
+    that config, then parse this file's own name and header (read_target).
+    Recognizes BOTH naming schemes. `warnings` is passed to read_target.
 
     ADR006V01: no longer returns the file's own `lines` -- see
-    read_target's own updated note; `encoding_repaired` here reflects
-    the HEADER portion only."""
-    config, root, path = resolve_repo_and_target(fileadr)
-    filename_info, header, encoding_repaired = read_target(path, config)
-    return config, root, path, filename_info, header, encoding_repaired
+    read_target's own note; `encoding_repaired` here reflects the HEADER
+    portion only."""
+    fileadr = Path(fileadr)
+    if fileadr.suffix == "":
+        fileadr = fileadr.with_suffix(".md")
+    if not fileadr.is_file():
+        raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
+
+    config_path = find_repo_root(fileadr)
+    if config_path is None:
+        raise CommandError(
+            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
+        )
+    config = load_repo_config(config_path)
+    filename_info, header, encoding_repaired = read_target(fileadr, config, warnings=warnings)
+    return config, config_path.parent, fileadr, filename_info, header, encoding_repaired
 
 
 def family_members(folder, config, number, warnings=None, ignored=None):
@@ -1124,29 +1070,13 @@ def _record_from_header(config, filename_info, header):
     )
 
 
-def _rewrite_with_streamed_body(path, config, record, migrated, lock):
+def _rewrite_with_streamed_body(path, config, record, migrated):
     """Shared by rewrite_status_field/mark_superseded (ADR006V01): builds
     the new header (schema-bounded, safe in memory) and streams the
     ORIGINAL body straight from `path` into the atomic write -- the file
     being rewritten is also the source of its own preserved body, safe
-    because both the read and the write happen inside the same
-    critical section as the caller's already-held repository lock, and
-    atomic_write_chunks never opens the destination in a way that could
-    be observed mid-write by the same read.
-
-    `lock.verify_still_held()` runs a SECOND time here, as the last thing
-    the chunk generator does before it exhausts -- i.e. right before
-    atomic_write_chunks proceeds to its committing os.replace. The
-    caller's own pre-call check (ADR001, part 3) only proves the lock was
-    held before this streamed read+write began; unlike the whole-buffer
-    write this replaced, streaming a real body can now take genuinely
-    non-trivial time, reopening the same check-to-commit gap ADR001
-    always required be kept shut (confirmed live: without this second
-    check, a lock stolen mid-stream was silently ignored and the write
-    committed anyway). Raises LockLostError (via `lock.verify_still_held`)
-    if the lock was lost during the stream -- every caller of
-    rewrite_status_field/mark_superseded already treats a LockLostError
-    from this exact write the same as an OSError from it.
+    because atomic_write_chunks writes to a temp file and only replaces
+    the destination once the stream is fully consumed.
 
     Returns (attempts, body_encoding_repaired) -- `content` is no longer
     returned at all: streaming this write means the full content is
@@ -1156,46 +1086,40 @@ def _rewrite_with_streamed_body(path, config, record, migrated, lock):
     header_text = build_header(config, record, migrated=migrated)
     report = {}
 
-    def _chunks(path=path, header_text=header_text, report=report, lock=lock):
+    def _chunks(path=path, header_text=header_text, report=report):
         yield header_text.encode("utf-8")
         yield from stream_normalized_body_chunks(path, report)
-        lock.verify_still_held()
 
     attempts = atomic_write_chunks(path, _chunks)
     return attempts, report["encoding_repaired"]
 
 
-def rewrite_status_field(path, config, header, filename_info, *, field, status, refdate, lock):
+def rewrite_status_field(path, config, header, filename_info, *, field, status, refdate):
     """Mutates exactly one status+date pair (`field="update"` or
     `field="change"`) on the already-parsed header, rebuilds via
     build_header preserving every other field, streams the original body
     verbatim from `path` (ADR006V01), and writes the file. Returns the
     write's own attempt count too -- callers can surface it as a warning
     when it's more than 1 -- and the BODY's own encoding_repaired signal
-    (combine with the header's own, from read_target, via `or`). `lock`
-    is the caller's already-acquired repository lock -- re-verified right
-    before this write commits, not just before it starts (see
-    _rewrite_with_streamed_body)."""
+    (combine with the header's own, from read_target, via `or`)."""
     record = _record_from_header(config, filename_info, header)
     setattr(record, f"status_{field}", status)
     setattr(record, f"date_{field}", refdate if status is not None else None)
 
-    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated, lock)
+    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated)
     return record, body_encoding_repaired, attempts
 
 
-def mark_superseded(path, config, header, filename_info, successor_number, refdate, lock):
+def mark_superseded(path, config, header, filename_info, successor_number, refdate):
     """Like rewrite_status_field's "change" field, but also stamps the
     successor's own zero-padded sequence number into the Superseded row.
     NOT a filename, despite DecisionRecord's `superseded_by_file` name
     (kept as-is to match the reference tool's own header row) -- confirmed the
-    real value is a bare padded number, not a filename. `lock` is the
-    caller's already-acquired repository lock -- see rewrite_status_field's
-    own note on why it's re-verified at commit time, not just call time."""
+    real value is a bare padded number, not a filename."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate
     record.superseded_by_file = f"{successor_number:0{config.lenseq}d}"
 
-    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated, lock)
+    attempts, body_encoding_repaired = _rewrite_with_streamed_body(path, config, record, header.is_migrated)
     return record, body_encoding_repaired, attempts

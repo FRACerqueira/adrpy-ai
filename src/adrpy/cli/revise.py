@@ -22,14 +22,11 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
     parse_refdate,
-    read_target,
-    resolve_repo_and_target,
+    load_target,
     stream_normalized_body_chunks,
     validate_refdate_not_before,
     validate_refdate_not_in_future,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -58,11 +55,7 @@ def describe():
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
             "Requires the repository's lenrevision to be > 0 (see the `config` command); "
             "fails with revision-not-configured otherwise -- true for any freshly-init'd repository. "
-            "May fail with repository-locked if the repository lock could not be acquired in time, or "
-            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
-            "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
-            "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
+            "May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
             "The target's own title/scope/"
@@ -124,14 +117,14 @@ def describe():
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    config, root, path = resolve_repo_and_target(flags["file"])
+    warnings = []
+    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
 
     if config.lenrevision == 0:
         raise CommandError(
@@ -139,143 +132,120 @@ def run(args):
         )
 
     folder = resolve_within(root, config.folderadr)
-    warnings = []
     with attach_warnings(warnings):
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
 
-        # Same reasoning as `version`'s own comment -- the family-state read
-        # and write must be one critical section, and the target's own
-        # header is read fresh, inside the lock, instead of via
-        # load_target before it.
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # Re-reads fresh in case folderadr changed between the pre-lock
-            # read and lock acquisition -- operating against a stale folder
-            # would be silently wrong.
-            config = verify_folderadr_unchanged_since_lock(
-                root / "adr-config.adrplus", config.folderadr, warnings=warnings
-            )
-            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
-            # revise never rewrites its own source either -- see version.py's
-            # own comment: ADR006V01 defers this warning until after the
-            # write below, since the body is no longer read until then.
+        # revise never rewrites its own source either -- see version.py's
+        # own comment: ADR006V01 defers this warning until after the
+        # write below, since the body is no longer read until then.
 
-            # One scan shared by all three checks below, avoiding a
-            # duplicate scan_decisions call each.
-            ignored = []
-            members = family_members(
-                folder, config, filename_info.number, warnings=warnings, ignored=ignored
+        # One scan shared by all three checks below, avoiding a
+        # duplicate scan_decisions call each.
+        ignored = []
+        members = family_members(
+            folder, config, filename_info.number, warnings=warnings, ignored=ignored
+        )
+        latest = latest_in_family(folder, config, filename_info.number, members=members)
+        if latest is None:
+            raise CommandError(
+                FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
             )
-            latest = latest_in_family(folder, config, filename_info.number, members=members)
-            if latest is None:
-                raise CommandError(
-                    FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
-                )
-            # The filename decides numbering, counting every file: the next
-            # revision after the highest one this version already holds
-            # (Round 40, a deliberate divergence from AdrPlus, whose
-            # target-revision+1 collided when branching off an older
-            # revision). A migrated placeholder's blank cells play no part.
-            new_revision = (
-                max(
-                    (
-                        (entry[0].revision or 0)
-                        for entry in members + ignored
-                        if entry[0].version == filename_info.version
-                    ),
-                    default=filename_info.revision or 0,
-                )
-                + 1
+        # The filename decides numbering, counting every file: the next
+        # revision after the highest one this version already holds
+        # (Round 40, a deliberate divergence from AdrPlus, whose
+        # target-revision+1 collided when branching off an older
+        # revision). A migrated placeholder's blank cells play no part.
+        new_revision = (
+            max(
+                (
+                    (entry[0].revision or 0)
+                    for entry in members + ignored
+                    if entry[0].version == filename_info.version
+                ),
+                default=filename_info.revision or 0,
+            )
+            + 1
+        )
+
+        if len(str(new_revision)) > config.lenrevision:
+            raise CommandError(
+                FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
+                f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
+                data={"new_revision": new_revision, "lenrevision": config.lenrevision},
+                warnings=warnings,
             )
 
-            if len(str(new_revision)) > config.lenrevision:
-                raise CommandError(
-                    FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
-                    f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
-                    data={"new_revision": new_revision, "lenrevision": config.lenrevision},
-                    warnings=warnings,
-                )
+        # A specific reason code, not one collapsed not-eligible-for-
+        # revision, so the caller knows which recovery action applies.
+        reason = ineligibility_reason_for_version_or_revise(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+        raise_if_superseded_sibling(members, warnings)
+        raise_if_pending_sibling(members, warnings)
+        raise_if_not_latest(filename_info, members, warnings)
+        raise_if_rejected_successor(members, warnings)
+        raise_if_supersede_not_finished(folder, config, members, warnings)
 
-            # A specific reason code, not one collapsed not-eligible-for-
-            # revision, so the caller knows which recovery action applies.
-            reason = ineligibility_reason_for_version_or_revise(header)
-            if reason is not None:
-                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-            raise_if_superseded_sibling(members, warnings)
-            raise_if_pending_sibling(members, warnings)
-            raise_if_not_latest(filename_info, members, warnings)
-            raise_if_rejected_successor(members, warnings)
-            raise_if_supersede_not_finished(folder, config, members, warnings)
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+        not_before = header.date_update or header.date_create
+        if not_before is not None:
+            validate_refdate_not_before(refdate, not_before)
 
-            refdate = parse_refdate(flags.get("refdate"))
-            validate_refdate_not_in_future(refdate)
-            not_before = header.date_update or header.date_create
-            if not_before is not None:
-                validate_refdate_not_before(refdate, not_before)
+        # title/scope/domain are all re-read from the SOURCE file's own
+        # header cells, not live flags -- unlike `version`, which
+        # re-validates scope/domain even when they fall back to the
+        # target's own value, this command never did, so a
+        # hand-edited or migrated file's control character (e.g. VT,
+        # confirmed live to survive an unrelated revise unchanged) would
+        # otherwise propagate silently into every future revision's own
+        # header, plus title's own filesystem-unsafe risk (e.g. ':', an
+        # NTFS Alternate-Data-Stream separator) at build_filename below.
+        reject_embedded_delimiter(header.title, "title")
+        reject_filesystem_unsafe_title(header.title, "title")
+        reject_title_with_no_case_transform_content(header.title, "title")
+        reject_embedded_delimiter(header.scope, "scope")
+        reject_embedded_delimiter(header.domain, "domain")
 
-            # title/scope/domain are all re-read from the SOURCE file's own
-            # header cells, not live flags -- unlike `version`, which
-            # re-validates scope/domain even when they fall back to the
-            # target's own value, this command never did, so a
-            # hand-edited or migrated file's control character (e.g. VT,
-            # confirmed live to survive an unrelated revise unchanged) would
-            # otherwise propagate silently into every future revision's own
-            # header, plus title's own filesystem-unsafe risk (e.g. ':', an
-            # NTFS Alternate-Data-Stream separator) at build_filename below.
-            reject_embedded_delimiter(header.title, "title")
-            reject_filesystem_unsafe_title(header.title, "title")
-            reject_title_with_no_case_transform_content(header.title, "title")
-            reject_embedded_delimiter(header.scope, "scope")
-            reject_embedded_delimiter(header.domain, "domain")
+        record = DecisionRecord(
+            number=filename_info.number,
+            title=header.title,
+            version=filename_info.version,
+            revision=new_revision,
+            scope=header.scope,
+            domain=header.domain,
+            status_create="Proposed",
+            date_create=refdate,
+        )
 
-            record = DecisionRecord(
-                number=filename_info.number,
-                title=header.title,
-                version=filename_info.version,
-                revision=new_revision,
-                scope=header.scope,
-                domain=header.domain,
-                status_create="Proposed",
-                date_create=refdate,
+        filename = build_filename(config, record)
+        new_path = resolve_within(folder, filename)
+        if new_path.exists():
+            raise CommandError(
+                FailureCodes.FILE_ALREADY_EXISTS,
+                f"File already exists: {filename}",
+                data={"file": filename},
+                warnings=warnings,
             )
 
-            filename = build_filename(config, record)
-            new_path = resolve_within(folder, filename)
-            if new_path.exists():
-                raise CommandError(
-                    FailureCodes.FILE_ALREADY_EXISTS,
-                    f"File already exists: {filename}",
-                    data={"file": filename},
-                    warnings=warnings,
-                )
+        # ADR006V01: streams the source's own body straight from
+        # `path` into the new file, without ever holding it in memory.
+        header_text = build_header(config, record)
+        body_report = {}
 
-            # ADR001, part 3: guarantees this write never commits blindly
-            # if the lease was reclaimed.
-            lock.verify_still_held()
-            # ADR006V01: streams the source's own body straight from
-            # `path` into the new file, without ever holding it in memory.
-            header_text = build_header(config, record)
-            body_report = {}
+        def _chunks(path=path, header_text=header_text, body_report=body_report):
+            yield header_text.encode("utf-8")
+            yield from stream_normalized_body_chunks(path, body_report)
 
-            def _chunks(path=path, header_text=header_text, body_report=body_report, lock=lock):
-                yield header_text.encode("utf-8")
-                yield from stream_normalized_body_chunks(path, body_report)
-                # Re-verify right before this generator exhausts -- see
-                # core/lifecycle.py's _rewrite_with_streamed_body for why
-                # (the pre-call check above alone no longer closes the
-                # check-to-commit gap once the write is a real stream, not
-                # an in-memory write).
-                lock.verify_still_held()
-
-            attempts = atomic_write_chunks(new_path, _chunks)
-            if encoding_repaired or body_report["encoding_repaired"]:
-                warnings.append(encoding_repaired_source_warning(path))
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        attempts = atomic_write_chunks(new_path, _chunks)
+        if encoding_repaired or body_report["encoding_repaired"]:
+            warnings.append(encoding_repaired_source_warning(path))
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

@@ -236,9 +236,8 @@ def test_build_filename_includes_revision_when_configured():
 def test_parse_any_filename_recognizes_a_file_built_under_a_different_lenseq():
     """A negative result, recorded per the project's own "a hypothesis
     that gets investigated and doesn't hold becomes a permanent test"
-    rule: every write command bootstraps
-    config BEFORE acquiring the repository lock (necessary -- the lock's
-    own location is derived from folderadr), so a concurrent `config`
+    rule: every write command reads
+    config once, before its write, so a concurrent `config`
     edit to lenseq between that read and the write could, in theory, let
     a file get built with a STALE width. Investigated and confirmed NOT
     to cause the feared corruption (a file becoming unrecognized by a

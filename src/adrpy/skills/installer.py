@@ -27,7 +27,7 @@ _FRONTMATTER_RE = re.compile(r"\A(---\n.*?\n---\n)", re.DOTALL)
 # grow well past that. Still bounded, not unlimited: a Round 37
 # test-adequacy front measured an unbounded read of a planted 100MB file
 # peaking process memory near 200MB -- every other full-content reader in
-# the project already caps for the same reason (see LOCK_READ_MAX_BYTES,
+# the project already caps for the same reason (see
 # CONFIG_READ_MAX_BYTES); this was the one that didn't.
 _READ_TEXT_MAX_BYTES = 10 * 1024 * 1024
 _READ_TEXT_CHUNK_SIZE = 65536
@@ -43,7 +43,7 @@ def _package_version():
 def _read_text(path):
     """Reads `path` as UTF-8, retrying a transient PermissionError the
     same way every other reader in this project already does (core/
-    config.py, core/lock.py, core/lifecycle.py, all via core/io_retry.py)
+    config.py, core/lifecycle.py, all via core/io_retry.py)
     -- installer.py used to be the only reader that didn't, so a single
     transient contention blip (a Windows "pending delete" window under a
     concurrent reader) failed the whole install/remove/list call outright
@@ -133,7 +133,7 @@ def _unlink_with_retry(path):
     holding the file (WinError 32) failed a remove call outright
     (measured: 40 of 60 removes failed under 3 concurrent `list` readers
     pausing 1ms, 0 of 60 with this retry; the read side's flat 3x50ms
-    budget was too short here). Unlike core/lock.py's own best-effort variant, this
+    budget was too short here). This
     re-raises once retries are exhausted: remove must report a delete it
     could not make."""
     for attempt in range(RETRY_ATTEMPTS):

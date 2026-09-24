@@ -789,7 +789,7 @@ def test_read_config_text_accepts_a_config_at_exactly_the_cap_boundary(tmp_path)
 def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeypatch):
     """read_config_text had
     no PermissionError tolerance at all, unlike every other read in this
-    codebase (core/lock.py's _read_lock, core/lifecycle.py's
+    codebase (core/lifecycle.py's
     read_lines_with_report, cli/explore.py's _build_entry) -- this read
     goes through the identical atomic_write_text -> os.replace mechanism
     those retries exist to absorb, and it runs at the start of every

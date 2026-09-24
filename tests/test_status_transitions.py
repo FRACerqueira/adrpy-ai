@@ -31,41 +31,6 @@ def _write_raw(path, config, **record_kwargs):
 # ---- approve ----
 
 
-def test_approve_aborts_if_folderadr_changed_after_lock_acquired(tmp_path, monkeypatch):
-    """Root cause shared by 8 call sites (representative of the 6
-    commands wired through resolve_repo_and_target): approve's own
-    pre-lock config read can go
-    stale if a concurrent config edit changes folderadr before this
-    call's own lock is actually acquired -- it would then lock, and
-    operate against, a directory the repository no longer uses.
-    Simulates the race by patching resolve_repo_and_target's own return
-    to report the stale folderadr while the target file genuinely lives
-    under the new one."""
-    init.run(["--path", str(tmp_path)])
-    stale_config = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    config.run(["--path", str(tmp_path), "--folderadr", "doc/adrB"])
-    new.run(["--path", str(tmp_path), "--title", "Live decision"])
-    adr_path = tmp_path / "doc" / "adrB" / "ADR001V01-live-decision.md"
-    original_content = adr_path.read_text(encoding="utf-8")
-
-    real_resolve = approve.resolve_repo_and_target
-
-    def stale_resolve(fileadr):
-        _config, root, path = real_resolve(fileadr)
-        return stale_config, root, path
-
-    monkeypatch.setattr(approve, "resolve_repo_and_target", stale_resolve)
-
-    with pytest.raises(CommandError) as excinfo:
-        approve.run(["--file", str(adr_path)])
-
-    assert excinfo.value.code == "folderadr-changed-after-lock-acquired"
-    assert excinfo.value.data == {"locked_folderadr": "doc/adr", "current_folderadr": "doc/adrB"}
-    # The live decision under the real, current folder survives untouched.
-    assert adr_path.read_text(encoding="utf-8") == original_content
-
-
 def test_approve_happy_path(tmp_path):
     _, adr_path = _setup_repo(tmp_path)
 
@@ -390,55 +355,6 @@ def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tm
         return real_rewrite(*args, **kwargs)
 
     monkeypatch.setattr(reject_module, "rewrite_status_field", flaky_rewrite)
-
-    with pytest.raises(CommandError) as excinfo:
-        reject_module.run(["--file", str(successor_path)])
-
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
-    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
-    assert "|Superseded||" in adr_path.read_text(encoding="utf-8")  # predecessor genuinely reverted
-    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
-
-
-def test_reject_reveals_predecessor_already_reverted_when_the_lock_is_lost_on_its_own_write(tmp_path, monkeypatch):
-    """Same class as the OSError
-    sibling test above, but for LockLostError on this command's SECOND
-    write. Round 36 retraction: with the predecessor reverted first, the
-    lock steal now has to land on the TARGET's own stream (the second
-    call), not the predecessor's.
-
-    ADR006V01: the target's own body is streamed directly from disk
-    (core/lifecycle.py's stream_normalized_body_chunks) rather than read
-    up front -- so the lock steal happens DURING that stream, to land in
-    the same check-to-commit window `lock.verify_still_held()` is meant to
-    close (see core/lifecycle.py's _rewrite_with_streamed_body, which
-    re-verifies the lock a second time right before this exact write
-    commits, specifically to keep this window shut now that streaming a
-    real body can take non-trivial time)."""
-    from adrpy.cli import supersede
-
-    _, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-    successor_path = Path(result["created"])
-
-    import adrpy.core.lifecycle as lifecycle_module
-    from adrpy.cli import reject as reject_module
-
-    real_stream = lifecycle_module.stream_normalized_body_chunks
-    calls = {"n": 0}
-
-    def steal_lock_then_stream(source_path, report):
-        calls["n"] += 1
-        if calls["n"] == 2:
-            # The FIRST call streams the predecessor's own write, which
-            # must succeed normally -- only the SECOND call, the target's
-            # own write, is where this test steals the lock.
-            lock_path = tmp_path / "doc" / "adr" / ".adrpy.lock"
-            lock_path.write_text(f"someone-else-entirely\n{time.time()}")
-        yield from real_stream(source_path, report)
-
-    monkeypatch.setattr(lifecycle_module, "stream_normalized_body_chunks", steal_lock_then_stream)
 
     with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path)])
@@ -1406,38 +1322,6 @@ def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
     assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in adr_path.read_text(encoding="utf-8")
 
 
-def test_reject_reveals_predecessor_already_reverted_when_the_lock_is_lost_between_its_two_writes(tmp_path, monkeypatch):
-    """The lock can also be lost AFTER the predecessor revert committed but
-    before this decision's own write starts streaming -- caught by the
-    explicit verify_still_held() between the two writes. That check must
-    report the same partial success, not a bare lock-lost ("no write was
-    made"), which would hide the revert that did happen."""
-    from adrpy.cli import supersede
-    from adrpy.cli import reject as reject_module
-
-    _, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    successor_path = Path(supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"])
-
-    real_rewrite = reject_module.rewrite_status_field
-
-    def rewrite_then_steal_lock(*args, **kwargs):
-        result = real_rewrite(*args, **kwargs)
-        if kwargs.get("field") == "change":
-            (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
-        return result
-
-    monkeypatch.setattr(reject_module, "rewrite_status_field", rewrite_then_steal_lock)
-
-    with pytest.raises(CommandError) as excinfo:
-        reject_module.run(["--file", str(successor_path)])
-
-    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
-    assert excinfo.value.data == {"predecessor_file": str(adr_path)}
-    assert "|Superseded||" in adr_path.read_text(encoding="utf-8")
-    assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
-
-
 def test_a_partial_reject_in_a_multi_member_family_completes_on_a_plain_retry(tmp_path, monkeypatch):
     # The recovery path reject's describe() names, end to end, using only
     # tool commands: supersede --resume on the predecessor, then reject.
@@ -1452,17 +1336,16 @@ def test_a_partial_reject_in_a_multi_member_family_completes_on_a_plain_retry(tm
 
     real_rewrite = reject_module.rewrite_status_field
 
-    def rewrite_then_steal_lock(*args, **kwargs):
-        result = real_rewrite(*args, **kwargs)
-        if kwargs.get("field") == "change":
-            (tmp_path / "doc" / "adr" / ".adrpy.lock").write_text(f"someone-else-entirely\n{time.time()}")
-        return result
+    def fail_own_write(*args, **kwargs):
+        if kwargs.get("field") == "update":
+            raise OSError("simulated failure on this decision's own write")
+        return real_rewrite(*args, **kwargs)
 
-    monkeypatch.setattr(reject_module, "rewrite_status_field", rewrite_then_steal_lock)
-    with pytest.raises(CommandError):
+    monkeypatch.setattr(reject_module, "rewrite_status_field", fail_own_write)
+    with pytest.raises(CommandError) as excinfo:
         reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
     monkeypatch.undo()
-    (tmp_path / "doc" / "adr" / ".adrpy.lock").unlink()  # the other process is done
 
     # The first attempt already reverted V02; no family member is
     # Superseded any more, so a plain retry just finishes the reject.

@@ -13,7 +13,7 @@ class CommandError(Exception):
         part of the JSON contract.
 
         `warnings`: a real side effect (an encoding repair, an
-        orphan-temp-file cleanup, a stale-lock reclaim, a retried write)
+        orphan-temp-file cleanup, a retried write)
         can already have happened before this
         same command run goes on to fail for an unrelated reason -- e.g.
         `reject` can finish rewriting the target file's own status
@@ -119,10 +119,6 @@ class FailureCodes:
     CONFIG_STATUSREJ_TOO_LONG = "config-statusrej-too-long"
     CONFIG_STATUSSUP_TOO_LONG = "config-statussup-too-long"
 
-    # src/adrpy/core/lock.py
-    REPOSITORY_LOCKED = "repository-locked"
-    LOCK_LOST = "lock-lost"
-
     # src/adrpy/core/lifecycle.py
     REFDATE_INVALID_FORMAT = "refdate-invalid-format"
     REFDATE_IN_FUTURE = "refdate-in-future"
@@ -133,7 +129,6 @@ class FailureCodes:
     STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE = "status-or-separator-change-scan-incomplete"
     STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS = "status-or-separator-change-blocked-by-existing-decisions"
     SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "separator-change-would-adopt-unrelated-files"
-    FOLDERADR_CHANGED_AFTER_LOCK_ACQUIRED = "folderadr-changed-after-lock-acquired"
     FILE_NOT_FOUND = "file-not-found"
     CANNOT_DETERMINE_ROOT_PATH = "cannot-determine-root-path"
     TARGET_DIRECTORY_NOT_FOUND = "target-directory-not-found"
@@ -211,7 +206,6 @@ class FailureCodes:
     SUPERSEDE_NOT_FINISHED = "supersede-not-finished"
     ALREADY_TOOL_CREATED_ADRS_EXIST = "already-tool-created-adrs-exist"
     NO_ELIGIBLE_FILES_TO_MIGRATE = "no-eligible-files-to-migrate"
-    MIGRATION_LOCK_LOST = "migration-lock-lost"
     MIGRATION_WRITE_FAILED = "migration-write-failed"
 
     # src/adrpy/cli/new.py
@@ -236,7 +230,7 @@ class FailureCodes:
 def build_failure_codes(*sources):
     """ADR008V01: merges any number of {code: condition} mappings -- a
     command's own inline entries plus whichever shared dicts it reaches
-    (core/config.py's, core/header.py's, core/lock.py's) -- into the
+    (core/config.py's, core/header.py's, core/lifecycle.py's) -- into the
     list-of-objects shape every describe() response uses for its own
     failure_codes field, matching the existing `arguments` list's own
     shape rather than a bare dict. Preserves each source's own order;

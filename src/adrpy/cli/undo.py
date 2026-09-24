@@ -16,12 +16,9 @@ from adrpy.core.lifecycle import (
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
     ineligibility_reason_for_undo,
-    read_target,
-    resolve_repo_and_target,
+    load_target,
     rewrite_status_field,
-    verify_folderadr_unchanged_since_lock,
 )
-from adrpy.core.lock import SHARED_FAILURE_CODES as LOCK_FAILURE_CODES, acquire_repo_lock
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -46,11 +43,7 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "May fail with repository-locked if the repository lock could not be acquired in time, or "
-            "lock-lost if it was acquired but reclaimed by another process before the write could commit -- "
-            "in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a "
-            "concurrent config change moved folderadr while this call was acquiring the lock -- no write was "
-            "made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the "
+            "May also fail with family-scan-incomplete if a subdirectory under the "
             "decisions folder could not be scanned (permission denied or similar) -- family membership "
             "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
             "The target's own title/"
@@ -84,76 +77,62 @@ def describe():
             LIFECYCLE_FAILURE_CODES,
             HEADER_FAILURE_CODES,
             CONFIG_FAILURE_CODES,
-            LOCK_FAILURE_CODES,
         ),
     }
 
 
 def run(args):
     flags = parse_flags(args, required=("file",), aliases={"f": "file"})
-    config, root, path = resolve_repo_and_target(flags["file"])
-    folder = resolve_within(root, config.folderadr)
     warnings = []
+    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
+    folder = resolve_within(root, config.folderadr)
     with attach_warnings(warnings):
         if folder.is_dir():
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
 
-        # ADR001's freshness principle (doc/adr/ADR001V01-...): the read
-        # below happens fresh, inside the lock, never from a pre-lock read.
-        with acquire_repo_lock(folder) as lock:
-            warnings.extend(lock.warnings)
-            # Re-reads fresh in case folderadr changed between the pre-lock
-            # read and lock acquisition -- operating against a stale folder
-            # would be silently wrong.
-            config = verify_folderadr_unchanged_since_lock(
-                root / "adr-config.adrplus", config.folderadr, warnings=warnings
-            )
-            filename_info, header, encoding_repaired = read_target(path, config, warnings=warnings)
+        # A specific reason code, not one collapsed not-eligible-for-undo,
+        # so the caller knows which recovery action applies.
+        reason = ineligibility_reason_for_undo(header)
+        if reason is not None:
+            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
 
-            # A specific reason code, not one collapsed not-eligible-for-undo,
-            # so the caller knows which recovery action applies.
-            reason = ineligibility_reason_for_undo(header)
-            if reason is not None:
-                raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
+        # One scan shared by both checks below, avoiding a duplicate
+        # scan_decisions call each.
+        members = family_members(
+            folder, config, filename_info.number, warnings=warnings
+        )
+        raise_if_superseded_sibling(members, warnings)
+        raise_if_pending_sibling(members, warnings, " -- undo would leave two")
+        raise_if_not_latest(filename_info, members, warnings)
+        raise_if_rejected_successor(members, warnings)
 
-            # One scan shared by both checks below, avoiding a duplicate
-            # scan_decisions call each.
-            members = family_members(
-                folder, config, filename_info.number, warnings=warnings
-            )
-            raise_if_superseded_sibling(members, warnings)
-            raise_if_pending_sibling(members, warnings, " -- undo would leave two")
-            raise_if_not_latest(filename_info, members, warnings)
-            raise_if_rejected_successor(members, warnings)
+        # title/scope/domain are re-read from the SOURCE
+        # file's own header cells, not flags -- a hand-edited or
+        # migrated file could carry a filesystem-unsafe character
+        # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
+        # validated until this rewrite. Same defensive re-validation
+        # version/revise/supersede/migrate already apply.
+        reject_embedded_delimiter(header.title, "title")
+        reject_filesystem_unsafe_title(header.title, "title")
+        reject_title_with_no_case_transform_content(header.title, "title")
+        reject_embedded_delimiter(header.scope, "scope")
+        reject_embedded_delimiter(header.domain, "domain")
 
-            # title/scope/domain are re-read from the SOURCE
-            # file's own header cells, not flags -- a hand-edited or
-            # migrated file could carry a filesystem-unsafe character
-            # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
-            # validated until this rewrite. Same defensive re-validation
-            # version/revise/supersede/migrate already apply.
-            reject_embedded_delimiter(header.title, "title")
-            reject_filesystem_unsafe_title(header.title, "title")
-            reject_title_with_no_case_transform_content(header.title, "title")
-            reject_embedded_delimiter(header.scope, "scope")
-            reject_embedded_delimiter(header.domain, "domain")
-
-            lock.verify_still_held()
-            _record, body_encoding_repaired, attempts = rewrite_status_field(
-                path, config, header, filename_info, field="update", status=None, refdate=None, lock=lock
-            )
-            # Accurate only because the write above already succeeded --
-            # the warning claims the file was rewritten. ADR006V01:
-            # combines the header's own flag (known since read_target)
-            # with the body's own (only known now, from the streamed
-            # write).
-            if encoding_repaired or body_encoding_repaired:
-                warnings.append(encoding_repaired_warning(path))
-            warning = retry_warning(attempts)
-            if warning:
-                warnings.append(warning)
+        _record, body_encoding_repaired, attempts = rewrite_status_field(
+            path, config, header, filename_info, field="update", status=None, refdate=None
+        )
+        # Accurate only because the write above already succeeded --
+        # the warning claims the file was rewritten. ADR006V01:
+        # combines the header's own flag (known since load_target)
+        # with the body's own (only known now, from the streamed
+        # write).
+        if encoding_repaired or body_encoding_repaired:
+            warnings.append(encoding_repaired_warning(path))
+        warning = retry_warning(attempts)
+        if warning:
+            warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
     return {"file": str(path), "status": "Proposed", "warnings": warnings}

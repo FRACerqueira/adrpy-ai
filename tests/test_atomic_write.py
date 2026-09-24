@@ -142,12 +142,10 @@ def test_atomic_write_bytes_cleans_up_orphan_on_a_non_oserror_mid_write(tmp_path
 
 
 def test_atomic_write_chunks_cleans_up_orphan_when_the_chunk_producer_raises_a_non_oserror(tmp_path):
-    """ADR006V01's chunk producer can raise LockLostError (core/lock.py)
-    from inside the generator -- not an OSError, so it never hit the
-    existing `except OSError` cleanup branch, leaking the temp file
-    (found via live reproduction against `rewrite_status_field`, not
-    inferred from reading the code alone). Any exception escaping the
-    chunk producer, not just OSError, must still leave no orphan behind."""
+    """ADR006V01's chunk producer can raise something other than an
+    OSError from inside the generator -- it never hits the `except
+    OSError` cleanup branch. Any exception escaping the chunk producer,
+    not just OSError, must still leave no orphan behind."""
     target = tmp_path / "decision.md"
 
     class _SimulatedLockLoss(Exception):
@@ -252,16 +250,12 @@ def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
 
 
 def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be_removed(tmp_path, monkeypatch):
-    """This best-effort
-    housekeeping call runs BEFORE the repository lock in every one of
-    the 8 commands that use it -- a concurrent process's own in-flight
-    write could plausibly hold a temp file open (or have already
+    """Another process could hold a temp file open (or have already
     removed it) at the exact moment this scan reaches it. A transient
     OSError here must not propagate raw and fail the caller's entire
     command over best-effort cleanup unrelated to what it was actually
-    asked to do -- best-effort per candidate instead, matching
-    _unlink_with_retry's own established philosophy for this exact
-    class of problem, reported as a warning when the caller opts in."""
+    asked to do -- best-effort per candidate instead, reported as a
+    warning when the caller opts in."""
     old_temp = tmp_path / f"old.md.{OWN_TEMP_HEX}.tmp"
     old_temp.write_text("stale")
     old_time = time.time() - 60
@@ -403,11 +397,9 @@ def test_cleanup_never_follows_a_link_out_of_the_swept_folder(tmp_path):
 
 
 def test_a_temp_file_that_vanishes_before_replace_fails_instead_of_being_rewritten(tmp_path, monkeypatch):
-    # A concurrent orphan sweep only removes a temp file older than 30s --
-    # the same age at which that process also reclaims this one's lock
-    # (ABANDON_AFTER_SECONDS). Rewriting and retrying here would commit a
-    # write after the lock is gone (reproduced: two ADR001 files, both
-    # commands reporting success); failing is the safe answer.
+    # A concurrent orphan sweep only removes a temp file older than 30s;
+    # failing here, not rewriting and retrying, is the documented answer
+    # (cleanup_orphaned_temp_files's known limitation).
     target = tmp_path / "decision.md"
     target.write_text("original")
     calls = {"n": 0}
