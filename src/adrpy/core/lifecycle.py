@@ -852,33 +852,11 @@ def family_members(folder, config, number, warnings=None, ignored=None):
     return members
 
 
-def has_superseded_sibling(folder, config, number, members=None):
-    """Accepts an already-fetched `members` list (from family_members)
-    so a caller needing more than one of
-    has_superseded_sibling/has_pending_sibling/latest_in_family can scan
-    the directory once and reuse the same snapshot, instead of each
-    function independently re-scanning (undo did 2 scans, version/revise
-    did 3, for a single command invocation)."""
-    if members is None:
-        members = family_members(folder, config, number)
-    return any(header.status_change == "Superseded" for _, header, _ in members)
-
-
-def has_pending_sibling(folder, config, number, members=None):
-    """The undo-specific extra check: a family member that is
-    itself still unresolved (no update status) and NOT a migrated
-    placeholder blocks undo -- undoing would otherwise leave two
-    simultaneously-pending members of the same family. See
-    has_superseded_sibling's own note about the optional `members`."""
-    if members is None:
-        members = family_members(folder, config, number)
-    return any(header.status_update is None and not header.is_migrated for _, header, _ in members)
-
-
 def latest_in_family(folder, config, number, members=None):
     """The family member with the highest (version, revision).
-    Returns (ParsedFileName, HeaderParseResult, Path), or None. See
-    has_superseded_sibling's own note about the optional `members`."""
+    Returns (ParsedFileName, HeaderParseResult, Path), or None. Accepts an
+    already-fetched `members` list (from family_members) so a caller can
+    scan the directory once and reuse the same snapshot."""
     if members is None:
         members = family_members(folder, config, number)
     if not members:
@@ -892,18 +870,20 @@ def locking_member(filename_info, members):
 
     Only the family's latest member is alive. A newer version locks every
     member of an older version, and a newer revision locks the older
-    revisions of the same version -- unless the newer ones are a single
-    member, and that member is Rejected: then the older one is still the
-    live one (Round 40, decided by the project owner). Membership and
+    revisions of the same version -- unless every newer one is Rejected:
+    rejected attempts never lock what came before them (Round 40; widened
+    from "a single Rejected member" in Round 41, both decided by the
+    project owner). Membership and
     status come from `members` (headers that parse); version and revision
     from the filename."""
 
     def blocker(newer):
         if not newer:
             return None
-        if len(newer) == 1 and newer[0][1].status_update == "Rejected":
+        live = [member for member in newer if member[1].status_update != "Rejected"]
+        if not live:
             return None
-        return max(newer, key=lambda member: (member[0].version, member[0].revision or 0))
+        return max(live, key=lambda member: (member[0].version, member[0].revision or 0))
 
     newer_versions = [m for m in members if m[0].version > filename_info.version]
     locked_by = blocker(newer_versions)
@@ -928,13 +908,50 @@ def raise_if_not_latest(filename_info, members, warnings):
     raise CommandError(
         FailureCodes.NOT_LATEST_VERSION,
         f"This decision is no longer the live one in its family: {path.name} is newer. Only the latest "
-        "member can change (a single newer member that was Rejected leaves this one live).",
+        "member can change (newer members that were all Rejected leave this one live).",
         data={
             "latest_file": str(path),
             "latest_version": parsed.version,
             "latest_revision": parsed.revision,
             "latest_status": header.status_update,
         },
+        warnings=warnings,
+    )
+
+
+def _as_number(ref):
+    """A Superseded cell's successor reference as an int, or None when it
+    is not plain ASCII digits (hand-edited)."""
+    ref = (ref or "").strip()
+    return int(ref) if ref.isascii() and ref.isdigit() else None
+
+
+def raise_if_superseded_sibling(members, warnings):
+    """family-member-superseded when a member of the family is Superseded,
+    naming it (data.superseded_file) and its successor's number."""
+    superseded = next((m for m in members if m[1].status_change == "Superseded"), None)
+    if superseded is None:
+        return
+    raise CommandError(
+        FailureCodes.FAMILY_MEMBER_SUPERSEDED,
+        f"A decision in this family has already been superseded: {superseded[2].name}. The one way back is "
+        "rejecting its successor.",
+        data={"superseded_file": str(superseded[2]), "successor_number": _as_number(superseded[1].superseded_by_file)},
+        warnings=warnings,
+    )
+
+
+def raise_if_pending_sibling(members, warnings, consequence=""):
+    """family-member-pending when another member is still Proposed (a
+    migrated placeholder never counts), naming it (data.pending_file)."""
+    pending = next((m for m in members if m[1].status_update is None and not m[1].is_migrated), None)
+    if pending is None:
+        return
+    raise CommandError(
+        FailureCodes.FAMILY_MEMBER_PENDING,
+        f"Another decision in this family is still unresolved (Proposed): {pending[2].name}{consequence}. "
+        "Approve or reject it first.",
+        data={"pending_file": str(pending[2])},
         warnings=warnings,
     )
 
@@ -946,11 +963,15 @@ def raise_if_rejected_successor(members, warnings):
     life or branch off it -- a version of a successor carries no suffix,
     but is the successor's family all the same (Round 40, decided by the
     project owner). `members` is the target's own family."""
-    if any(m[0].superseded_from is not None and m[1].status_update == "Rejected" for m in members):
+    rejected = next(
+        (m for m in members if m[0].superseded_from is not None and m[1].status_update == "Rejected"), None
+    )
+    if rejected is not None:
         raise CommandError(
             FailureCodes.REJECTED_SUCCESSOR_IS_FINAL,
             "This decision belongs to a successor that was rejected: its predecessor was put back, and the "
             "successor's family is the end of its line. Supersede the predecessor again for a new successor.",
+            data={"successor_file": str(rejected[2]), "predecessor_number": rejected[0].superseded_from},
             warnings=warnings,
         )
 

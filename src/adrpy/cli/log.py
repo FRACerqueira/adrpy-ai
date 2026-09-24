@@ -63,7 +63,7 @@ def describe():
             "fail with log-classification-invalid if --classification is not one of the closed set named on "
             "that argument below, log-slug-invalid if --slug is not valid kebab-case, or log-scope-invalid if "
             "--scope is not valid kebab-case (scope becomes a literal segment of the entry's own filename, so "
-            "'/', '\\\\', and an embedded '--' are rejected, not just cosmetically discouraged). May fail with "
+            "'/', '\\', and an embedded '--' are rejected, not just cosmetically discouraged). May fail with "
             "repository-locked if the repository lock could not be acquired in time, or lock-lost if it was "
             "acquired but reclaimed before the write could commit -- in both cases no write was made. May also "
             "fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr "
@@ -97,7 +97,7 @@ def describe():
                 "description": (
                     f"One of: {', '.join(CLASSIFICATIONS)}. audit-finding/doc-drift additionally require "
                     "--front/--severity/--resolution (and accept optional --round); deferred additionally "
-                    "requires --reopenwhen; every other value accepts none of those four flags (usage-error "
+                    "requires --reopenwhen; every other value accepts none of those five flags (usage-error "
                     "if any are passed)."
                 ),
             },
@@ -210,14 +210,16 @@ def describe():
                 FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY: "folderadr and folderlog resolve to the same real directory (or one nested inside the other), typically via a symlink or junction.",
                 FailureCodes.LOG_CLASSIFICATION_INVALID: "--classification is not one of the recognized classifications.",
                 FailureCodes.LOG_SLUG_INVALID: "--slug is not valid kebab-case.",
-                FailureCodes.LOG_SCOPE_INVALID: "--scope is not valid kebab-case, or contains '/' or '\\\\'.",
+                FailureCodes.LOG_SCOPE_INVALID: "--scope is not valid kebab-case, or contains '/' or '\\'.",
                 FailureCodes.LOG_SEVERITY_INVALID: "--severity is not one of Low/Medium/High.",
                 FailureCodes.LOG_RESOLUTION_INVALID: "--resolution is not one of Direct/Escalated/Retraction.",
                 FailureCodes.LOG_ROUND_INVALID: "--round is not a positive integer.",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
+                FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.LOG_ROUND_TOO_LOW: "--round is lower than the highest Round already recorded.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "summary/front/reopenwhen contains '|' or a line-break-like character.",
                 FailureCodes.FIELD_IS_BLANK: "summary/front/reopenwhen is non-empty but blank after stripping whitespace.",
-                FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content -- Round/INDEX.md can't be safely computed while it's present.",
+                FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content, or (checked only when this call's own --classification is audit-finding/doc-drift) is an audit-finding/doc-drift entry whose Round is missing or not a plain integer -- Round/INDEX.md can't be safely computed while it's present.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under folderlog could not be scanned.",
                 FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails).",
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED: "The entry itself was written, but regenerating INDEX.md afterward failed.",

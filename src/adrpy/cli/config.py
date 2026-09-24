@@ -18,7 +18,7 @@ presence-only switch, since either direction is a real edit.
 import json
 from dataclasses import asdict
 
-from adrpy.core.args import parse_flags
+from adrpy.core.args import parse_flags, plain_int
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
@@ -55,7 +55,7 @@ def _field_description(field):
     if field == "folderadr":
         return (
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
-            "cannot be empty, absolute, or escape the repository."
+            "cannot be empty, absolute, escape the repository, or resolve to the repository root itself."
         )
     if field == "folderlog":
         return (
@@ -117,6 +117,12 @@ def _field_description(field):
             f"Header disclaimer text, max {config_schema.HEADER_DISCLAIMER_MAX_LENGTH} characters; "
             "cannot be empty, contain '|', or contain a line-break-like character."
         )
+    if field in ("headertablefields", "headertablevalues"):
+        return (
+            f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
+            "contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- "
+            "these two build the header's table row, where an HTML comment is the migrated-header marker."
+        )
     if field in config_schema._HEADER_LABEL_FIELDS_MAX_40:
         return (
             f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
@@ -173,7 +179,7 @@ def describe():
             "changed while the OLD directory has no decision-log entries yet, otherwise fails with "
             "folderlog-change-blocked-by-existing-entries (data.existing_entries names the count); the NEW "
             "directory is checked too, failing with folderlog-change-would-adopt-unrelated-files "
-            "(data.adopted_files) if it already holds a file that would newly parse as an entry -- unlike "
+            "(data.adopted_files: bare filenames, not paths) if it already holds a file that would newly parse as an entry -- unlike "
             "folderadr's own scan, decision-log's own scan additionally fails LOUDLY "
             "(log-directory-contains-unrecognized-file) on any .md file there that does NOT parse as a valid "
             "entry, rather than silently ignoring it, since that scan can never tell 'unrelated' apart from "
@@ -216,7 +222,8 @@ def describe():
             "where both could coexist, since those two outcomes are mutually exclusive by construction. "
             "A write call may also fail with repository-locked if the repository lock could not be "
             "acquired in time, or lock-lost if it was acquired but reclaimed before the write could "
-            "commit -- in both cases no write was made; a pure read (no field flags) never takes the lock. "
+            "commit -- in both cases the config was not written (the decisions folder itself may already have "
+            "been created); a pure read (no field flags) never takes the lock. "
             "May also fail with folderadr-changed-after-lock-acquired if a concurrent config change moved "
             "folderadr while this call was acquiring the lock -- no write was made either way; retry."
         ),
@@ -320,7 +327,7 @@ def run(args):
             for field in _INT_FIELDS:
                 if field in flags:
                     try:
-                        merged[field] = int(flags[field])
+                        merged[field] = plain_int(flags[field])
                     except ValueError as error:
                         raise CommandError(
                             FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"

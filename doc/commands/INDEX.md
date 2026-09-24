@@ -4,7 +4,7 @@
 
 # Command Reference
 
-One page per `adrpy` command, each generated directly from that command's own
+One page per `adrpy` command, each kept in step with that command's own
 `describe()` contract -- the same JSON `adrpy help <command>` returns at
 runtime. If a page here and the CLI ever disagree, the CLI is right and the
 page has drifted; regenerate it instead of hand-editing around the gap.
@@ -37,8 +37,9 @@ identical meaning everywhere they're reachable (config-schema
 validation, header parsing) are authored once, in a shared source next
 to the code that raises them, and merged into every command's own table
 that can actually return them -- still delivered on that command's own
-page, never referenced from outside it. This claim is checkable by an
-automated test
-(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`).
+page, never referenced from outside it. An automated test
+(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`)
+checks that every code appears in at least one command's table; whether
+each page lists every code its own command can return is kept by review.
 
 Four codes any command can return are not repeated on every page: `usage-error` (a malformed invocation, exit code 2), `unknown-command`, `interrupted` (Ctrl+C; `migrate` adds `data` when it already wrote something) and `internal-error` (a genuinely unexpected exception).

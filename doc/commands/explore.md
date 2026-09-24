@@ -75,4 +75,4 @@ adrpy explore --path .
 
 ---
 
-This page is generated from the command's own `describe()` contract (the same JSON `adrpy help explore` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+This page mirrors the command's own `describe()` contract (the same JSON `adrpy help explore` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.

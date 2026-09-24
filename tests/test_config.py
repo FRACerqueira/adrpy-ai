@@ -816,3 +816,14 @@ def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeyp
 
     assert config.folderadr == "doc/adr"
     assert calls["count"] == 3
+
+
+@pytest.mark.parametrize("value", ["٤", "4_0", "+4"])
+def test_an_integer_field_takes_only_plain_ascii_digits(tmp_path, value):
+    from adrpy.cli import config as config_cmd, init as init_cmd
+
+    init_cmd.run(["--path", str(tmp_path)])
+    with pytest.raises(CommandError) as excinfo:
+        config_cmd.run(["--path", str(tmp_path), "--lenseq", value])
+
+    assert excinfo.value.code == "field-not-an-integer"

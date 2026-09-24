@@ -122,9 +122,9 @@ cell holding something no command writes. The family rules fail with
 
 1. **Only the latest member is alive.** A newer version locks every
    member of an older version, and a newer revision locks the older
-   revisions of the same version -- unless the newer ones are a single
-   member, and that member is `Rejected`: then the older one is still the
-   live one. A locked member can't change at all: every command refuses
+   revisions of the same version -- unless every newer one is `Rejected`:
+   rejected attempts never lock what came before them. A locked member
+   can't change at all: every command refuses
    it -- with `not-latest-version`, naming the newer file, once the
    target's own status check has passed (an Accepted locked member asked
    to `approve` still says `already-accepted`).
@@ -132,30 +132,35 @@ cell holding something no command writes. The family rules fail with
    | Family | Not locked |
    |---|---|
    | V01 Accepted, V02 Accepted (or Proposed) | V02 |
-   | V01 Accepted, V02 Rejected (the only V02) | V01 and V02 |
-   | V01, V02 Rejected, V03 made from V01 | V03 |
-   | V01R01 Accepted, V01R02 Rejected (the only one) | V01R01 and V01R02 |
+   | V01 Accepted, V02 Rejected | V01 and V02 |
+   | V01 Accepted, V02 Rejected, V03 Rejected | V01, V02 and V03 |
+   | V01, V02 Rejected, V03 Accepted (or Proposed) | V03 |
+   | V01R01 Accepted, V01R02 Rejected | V01R01 and V01R02 |
    | V01R02 Accepted, V02R01 Accepted | V02R01 |
 
-   The single-Rejected exception is checked separately for newer versions
+   The all-Rejected exception is checked separately for newer versions
    and for newer revisions of the target's own version.
 
 2. **A superseded family is frozen.** Once any member is `Superseded`, no
-   command acts on any member of that family (`family-member-superseded`).
+   command acts on any member of that family (`family-member-superseded`;
+   `data.superseded_file` names it).
    The one way back is `reject` of the successor -- of its first member,
    the one whose filename carries the `--NNN` suffix, while that member is
-   still not locked. Once the successor has moved on (a newer version or
-   revision that locks it), the supersede is settled: the predecessor no longer comes
-   back, and the line continues from the successor's latest member.
+   still not locked. Once the successor has moved on -- a newer version or
+   revision of it that is not `Rejected` -- the supersede is settled: the
+   predecessor does not come back while that member stands, and the line
+   continues from the successor's latest member. Rejecting those newer
+   members unlocks the first one again.
 3. **At most one open member per family.** `undo`, `supersede`, `version`
    and `revise` refuse while another member is still `Proposed`
-   (`family-member-pending`). `approve` and `reject` are what close that
-   open member.
+   (`family-member-pending`; `data.pending_file` names it). `approve` and
+   `reject` are what close that open member.
 4. **A rejected successor is the end of its line.** Once a successor (its
    filename carries a `--NNN` suffix) is `Rejected`, no member of its
    family -- including versions made from it, which carry no suffix --
-   can be undone, versioned or revised (`rejected-successor-is-final`);
-   supersede the predecessor again for a new successor.
+   can be undone, versioned or revised (`rejected-successor-is-final`;
+   `data.successor_file` and `data.predecessor_number` say which); supersede
+   the predecessor again for a new successor.
 
 ## `supersede` and `reject` together
 
@@ -215,6 +220,11 @@ without inventing dates. `undo` needs a real Changed status and refuses
 it (`still-proposed`), and a placeholder never counts as the family's
 open `Proposed` member. Placeholders follow the family rules like any
 other member: a migrated `V01` with a migrated `V02` next to it is locked.
+
+A supersede chain is something only this tool creates. `migrate` refuses
+the whole run when a file already carries a supersede suffix (`--NNN`,
+`migration-successor-files-exist`, `data.files`): rename it without the
+suffix, migrate, then record the chain with `supersede`.
 
 See each command's page in the [Command Reference](commands/INDEX.md)
 for its full list of failure codes.

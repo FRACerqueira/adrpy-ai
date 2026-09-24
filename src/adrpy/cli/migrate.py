@@ -99,6 +99,7 @@ def describe():
             "earlier, independent write, not atomically bundled with the migration itself: it commits "
             "before the scan/eligibility checks below run, and survives even if this same call goes on "
             "to fail one of them (migration-scan-failed/-incomplete, migration-invalid-headers-exist, "
+            "migration-successor-files-exist, "
             "no-decisions-found, already-tool-created-adrs-exist, no-eligible-files-to-migrate) -- those "
             "refusals mean no DECISION file was touched, not that adr-config.adrplus itself wasn't. "
             "Whenever that persist-back happened, the result -- success, any failure code this command "
@@ -130,6 +131,9 @@ def describe():
             "touched -- if "
             "even ONE scanned file already has a valid, non-migrated header (i.e. this repository has decisions "
             "this tool itself already created). Refuses the whole run the same way with "
+            "migration-successor-files-exist (`data.files`) if a scanned file's name already carries a "
+            "supersede suffix (--NNN): a supersede chain is created by this tool only -- rename the file "
+            "without it, migrate, then record the chain with supersede. And with "
             "migration-invalid-headers-exist (`data.files` names them) if a scanned file carries this tool's "
             "header but it does not parse -- a damaged header is never mistaken for no header, so migrate "
             "never writes a second header on top of one. "
@@ -155,6 +159,7 @@ def describe():
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
+                FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
@@ -362,6 +367,21 @@ def run(args):
                 raise CommandError(
                     FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST,
                     "This repository already has decisions created by this tool; migration refuses to run.",
+                    warnings=warnings,
+                )
+
+            # A supersede chain is a concept this tool creates (Round 41,
+            # decided by the project owner): a file already claiming to be a
+            # successor before migration (a --NNN suffix) is refused, so no
+            # chain ever enters from outside.
+            successor_files = [str(path) for parsed, path, _header in entries if parsed.superseded_from is not None]
+            if successor_files:
+                raise CommandError(
+                    FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST,
+                    f"{len(successor_files)} file(s) already carry a supersede suffix (--NNN): "
+                    f"{', '.join(successor_files)}. A supersede chain is created by this tool only; rename them "
+                    "without the suffix, then migrate, and record the chain with supersede.",
+                    data={"files": successor_files},
                     warnings=warnings,
                 )
 

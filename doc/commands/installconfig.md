@@ -8,7 +8,7 @@ Reads or updates the per-user, install-level default config (seeds new repositor
 
 ## Description
 
-Reads or updates the per-user install-level config (ADR002V01) -- used by `init` as its default seed when no --seed/--language is given, and by `migrate` as a migrationpattern fallback when a repository's own is empty. Unlike every other command, takes no --path: always operates on the one, fixed, per-user location this machine resolves to. With no field flags and no --seed, reads the current config back (read-only, no write); the result's `configured` key is false with no `config` key at all if the file doesn't exist yet -- the normal state for any installation that has never run this command, not an error -- or true with a `config` key otherwise. `updated_fields` is present as an empty list on every read too, same as `config`'s own bare-read shape -- a generic wrapper that reads `data.updated_fields` unconditionally works the same after any call, read or write. `activeplugins` is never included in that read result or accepted as a field to update -- same as the `config` command, the plugin system is out of scope for now -- but is still carried through unchanged from whatever base a write merges onto. Omitted fields keep their current value (or the built-in default's, on first write); only the fields passed are updated. A write call's result never has the `config`/`configured` keys. --seed replaces the file wholesale, same as `init --seed`, and reports every editable field in `updated_fields` since a full replace makes every one of them this call's own -- not a diff against whatever was there before. --language replaces the file wholesale too, with the built-in default's header/status labels and template swapped for that language's own -- same reporting rule as --seed applies to it.
+Reads or updates the per-user install-level config (ADR002V01) -- used by `init` as its default seed when no --seed/--language is given, and by `migrate` as a migrationpattern fallback when a repository's own is empty. Unlike every other command except `help`, targets no repository at all (neither --path nor --file), and so takes no --path: always operates on the one, fixed, per-user location this machine resolves to. With no field flags and no --seed, reads the current config back (read-only, no write); the result's `configured` key is false with no `config` key at all if the file doesn't exist yet -- the normal state for any installation that has never run this command, not an error -- or true with a `config` key otherwise. `updated_fields` is present as an empty list on every read too, same as `config`'s own bare-read shape -- a generic wrapper that reads `data.updated_fields` unconditionally works the same after any call, read or write. `activeplugins` is never included in that read result or accepted as a field to update -- same as the `config` command, the plugin system is out of scope for now -- but is still carried through unchanged from whatever base a write merges onto. Omitted fields keep their current value (or the built-in default's, on first write); only the fields passed are updated. A write call's result never has the `config`/`configured` keys. --seed replaces the file wholesale, same as `init --seed`, and reports every editable field in `updated_fields` since a full replace makes every one of them this call's own -- not a diff against whatever was there before. --language replaces the file wholesale too, with the built-in default's header/status labels and template swapped for that language's own -- same reporting rule as --seed applies to it.
 
 ## Arguments
 
@@ -26,7 +26,7 @@ Relative path to the decisions folder that a newly init'd repository using this 
 
 ### `--folderlog` *(optional, string)*
 
-Relative path to the decision-log directory (ADR007V01) that a newly init'd repository using this as its seed will get by default, max 50 characters; cannot be empty or absolute, or the same as (or nested inside/around) --folderadr (config-folderadr-folderlog-overlap, checked even here). Defaults to --folderadr's own parent sibling 'decision-log' when omitted.
+Relative path to the decision-log directory (ADR007V01) that a newly init'd repository using this as its seed will get by default, max 50 characters; cannot be empty or absolute, or the same as (or nested inside/around) --folderadr (config-folderadr-folderlog-overlap, checked even here). Omitting this flag keeps the currently stored value -- changing --folderadr alone does not move it; the 'decision-log' sibling of folderadr is only the default for a hand-edited file written before this field existed.
 
 ### `--migrationpattern` *(optional, string)*
 
@@ -50,19 +50,19 @@ One of ('CamelCase', 'PascalCase', 'SnakeCase', 'KebabCase').
 
 ### `--statusnew` *(optional, string)*
 
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
 
 ### `--statusacc` *(optional, string)*
 
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
 
 ### `--statusrej` *(optional, string)*
 
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
 
 ### `--statussup` *(optional, string)*
 
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
 
 ### `--headerdisclaimer` *(optional, string)*
 
@@ -102,11 +102,11 @@ Header row label, max 40 characters; cannot be empty, contain '|', or contain a 
 
 ### `--headertablefields` *(optional, string)*
 
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker.
 
 ### `--headertablevalues` *(optional, string)*
 
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
+Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker.
 
 ### `--headermigrated` *(optional, string)*
 
@@ -194,4 +194,4 @@ adrpy installconfig --language pt-br
 
 ---
 
-This page is generated from the command's own `describe()` contract (the same JSON `adrpy help installconfig` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+This page mirrors the command's own `describe()` contract (the same JSON `adrpy help installconfig` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.

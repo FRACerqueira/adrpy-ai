@@ -206,6 +206,7 @@ class FailureCodes:
     MIGRATION_SCAN_INCOMPLETE = "migration-scan-incomplete"
     NO_DECISIONS_FOUND = "no-decisions-found"
     MIGRATION_INVALID_HEADERS_EXIST = "migration-invalid-headers-exist"
+    MIGRATION_SUCCESSOR_FILES_EXIST = "migration-successor-files-exist"
     REJECTED_SUCCESSOR_IS_FINAL = "rejected-successor-is-final"
     ALREADY_TOOL_CREATED_ADRS_EXIST = "already-tool-created-adrs-exist"
     NO_ELIGIBLE_FILES_TO_MIGRATE = "no-eligible-files-to-migrate"

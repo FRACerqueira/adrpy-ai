@@ -6,10 +6,10 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_superseded_sibling,
     raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
-    has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
     parse_refdate,
     read_target,
@@ -30,10 +30,10 @@ from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orph
 
 _INELIGIBILITY_DETAILS = {
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted.",
-    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it.",
+    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it (unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again).",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
 }
 
 
@@ -63,7 +63,7 @@ def describe():
             "already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Accepted unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). "
+            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). "
         ),
         "arguments": [
             {
@@ -88,7 +88,7 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
@@ -142,12 +142,7 @@ def run(args):
             members = family_members(
                 folder, config, filename_info.number, warnings=warnings
             )
-            if has_superseded_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-                    "A sibling decision in this family has already been superseded.",
-                    warnings=warnings,
-                )
+            raise_if_superseded_sibling(members, warnings)
             raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))

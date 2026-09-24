@@ -1019,3 +1019,38 @@ def test_an_interrupt_before_anything_was_written_propagates_as_is(tmp_path, mon
 
     with pytest.raises(KeyboardInterrupt):
         migrate.run(["--path", str(tmp_path)])
+
+
+def test_migrate_refuses_files_that_already_claim_to_be_successors(tmp_path):
+    # Round 41 (H2): a supersede chain is a concept this tool creates; a
+    # file claiming to be a successor before migration (a --NNN suffix) is
+    # refused, naming every such file, and nothing is written.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    _write_legacy_file(tmp_path, "ADR004V01-delta.md", "# Delta\n")
+    successor = _write_legacy_file(tmp_path, "ADR005V01-epsilon--004.md", "# Epsilon\n")
+    before = {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")}
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-successor-files-exist"
+    assert excinfo.value.data["files"] == [str(successor)]
+    assert {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")} == before
+
+
+def test_a_tool_managed_repository_with_a_successor_is_refused_as_already_managed(tmp_path):
+    # The successor refusal is about files arriving from outside; in a
+    # repository the tool already manages, migrate must say so -- never
+    # advise renaming the tool's own successor, which would break its chain.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Alpha", "--refdate", "2026-01-01"])
+    from adrpy.cli import approve, supersede
+
+    alpha = tmp_path / "doc" / "adr" / "ADR001V01-alpha.md"
+    approve.run(["--file", str(alpha), "--refdate", "2026-01-02"])
+    supersede.run(["--file", str(alpha), "--refdate", "2026-01-03"])
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "already-tool-created-adrs-exist"

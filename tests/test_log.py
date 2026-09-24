@@ -896,3 +896,13 @@ def test_an_already_exists_refusal_warns_when_the_index_could_not_be_regenerated
 
     assert excinfo.value.code == "log-entry-already-exists"
     assert any("INDEX.md" in w and "could not be regenerated" in w for w in excinfo.value.warnings)
+
+
+@pytest.mark.parametrize("value", ["٤", "+4", "4_0"])
+def test_round_takes_only_plain_ascii_digits(value):
+    from adrpy.core.decision_log import parse_round
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_round(value)
+
+    assert excinfo.value.code == "log-round-invalid"

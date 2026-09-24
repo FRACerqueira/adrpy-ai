@@ -11,11 +11,11 @@ from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_fail
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_superseded_sibling,
+    raise_if_pending_sibling,
     raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
-    has_pending_sibling,
-    has_superseded_sibling,
     ineligibility_reason_for_supersede,
     mark_superseded,
     next_number,
@@ -41,12 +41,12 @@ _INELIGIBILITY_DETAILS = {
     FailureCodes.STILL_PROPOSED: "This decision must be Accepted before it can be superseded; it is still Proposed.",
     FailureCodes.ALREADY_REJECTED: "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
 }
 
 
-def _not_resumable_reason(orphans, predecessor_header):
+def _not_resumable_reason(orphans):
     """Why --resume can't resume here, naming the step that fixes it."""
     if not orphans:
         return ("--resume found no existing successor of this decision to resume onto; run supersede "
@@ -63,10 +63,6 @@ def _not_resumable_reason(orphans, predecessor_header):
                 "--resume again.")
     if orphan.status_update is not None:
         return f"{name} is no longer Proposed ({orphan.status_update}); undo it back to Proposed, then run --resume again."
-    if orphan.is_migrated and not predecessor_header.is_migrated:
-        return (f"{name} is a migrated placeholder (no status of its own), but this decision is not migrated "
-                "(it was created, versioned or revised by this tool); a placeholder is only adopted onto a "
-                "migrated predecessor. Reject it to create a new successor instead.")
     return (f"{name} has no Created status and date of its own, so it cannot be resumed onto, and no command "
             "can act on it: repair its Created cell by hand and run --resume again, or delete it and run "
             "supersede without --resume.")
@@ -81,7 +77,7 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has "
+            "Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has "
             "already been superseded, or family-member-pending if another member is still "
             "unresolved (Proposed) -- no write is made either way. "
             "This is two writes in sequence, not one, successor first: a failure creating the "
@@ -93,8 +89,7 @@ def describe():
             "no later `new` can take it; re-run with --resume to finish: it finds that successor "
             "(the existing file whose supersede suffix points back at this decision), marks only the "
             "predecessor, and says so in `warnings`. Without --resume, any existing non-Rejected "
-            "successor pointing back at this decision -- left by that failure, or by rejecting and then "
-            "undoing an earlier successor, which looks identical on disk -- is refused with "
+            "successor pointing back at this decision -- left by that failure -- is refused with "
             "supersede-successor-already-exists (data.file/data.files name it) instead of being guessed "
             "at: reject it to create a new successor, or --resume to use it (one approved since must be "
             "undone back to Proposed first -- neither reject nor --resume accepts an Accepted successor; one "
@@ -106,9 +101,7 @@ def describe():
             "A Rejected successor is the "
             "normal end of an earlier attempt and never counts. --resume itself fails with "
             "supersede-orphaned-successor-not-resumable (data.files names what was found) unless exactly "
-            "one such successor exists and it is still Proposed with its own Created status and date -- or "
-            "both it and this decision are migrated placeholders with no status yet (a chain recorded in the "
-            "filenames before adrpy, adopted as is; `status` is then null) -- and "
+            "one such successor exists and it is still Proposed with its own Created status and date, and "
             "with refdate-before-history if --refdate is before that successor's creation; no write is "
             "made in any of these cases. Rejecting a still-Proposed successor directly works too: with no "
             "member of this decision's family marked Superseded, reject has nothing to revert. May instead fail with repository-locked (lock never acquired) or lock-lost (lost before "
@@ -205,7 +198,7 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
@@ -216,7 +209,7 @@ def describe():
                 FailureCodes.SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while allocating the successor's own number.",
                 FailureCodes.SUPERSEDE_WRITE_FAILED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.successor); re-run supersede with --resume to finish.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "The successor's own write (the FIRST of the two writes) failed -- nothing was written (data.intended_successor names the file that would have been created).",
-                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date, or a migrated placeholder successor of a migrated placeholder (data.files names what was found) -- no write was made.",
+                FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date (data.files names what was found) -- no write was made.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS: "A non-Rejected successor already points back at this decision (data.file/data.files name it) and --resume was not given -- no write was made; reject it to create a new successor, or re-run with --resume.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -282,18 +275,8 @@ def run(args):
             members = family_members(
                 folder, config, filename_info.number, warnings=warnings
             )
-            if has_superseded_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-                    "A sibling decision in this family has already been superseded.",
-                    warnings=warnings,
-                )
-            if has_pending_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_PENDING,
-                    "Another decision in this family is still unresolved (Proposed).",
-                    warnings=warnings,
-                )
+            raise_if_superseded_sibling(members, warnings)
+            raise_if_pending_sibling(members, warnings)
             raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
@@ -383,18 +366,12 @@ def run(args):
                     warnings=warnings,
                 )
             if resume:
-                # A migrated placeholder has no Created status of its own;
-                # it is adopted only when the predecessor is a migrated
-                # placeholder too -- a supersede chain recorded by hand, in
-                # the filenames, before adrpy managed these files.
                 resumable = (
                     len(orphans) == 1
                     and orphans[0][2].status_update is None
                     and orphans[0][2].status_change is None
-                    and (
-                        (orphans[0][2].status_create is not None and orphans[0][2].date_create is not None)
-                        or (orphans[0][2].is_migrated and header.is_migrated)
-                    )
+                    and orphans[0][2].status_create is not None
+                    and orphans[0][2].date_create is not None
                 )
                 if not resumable:
                     data = {"files": orphan_files}
@@ -402,7 +379,7 @@ def run(args):
                         data["file"] = orphan_files[0]
                     raise CommandError(
                         FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE,
-                        _not_resumable_reason(orphans, header),
+                        _not_resumable_reason(orphans),
                         data=data,
                         warnings=warnings,
                     )
@@ -485,7 +462,8 @@ def run(args):
                 # instead of a dataless "no write was made".
                 raise CommandError(
                     FailureCodes.SUPERSEDE_WRITE_FAILED,
-                    f"{path}: {error}",
+                    f"{path}: {error}. The successor ({successor_path}) was created; run supersede --resume on "
+                    "this decision to finish.",
                     data={
                         "predecessor": str(path),
                         "predecessor_status": "Accepted",

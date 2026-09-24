@@ -358,6 +358,7 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
         reject_module.run(["--file", str(successor_path)])
 
     assert excinfo.value.code == "reject-own-write-failed-after-predecessor-reverted"
+    assert "run reject on this decision again" in excinfo.value.detail
     assert len(excinfo.value.warnings) == 2
     assert "orphaned" in excinfo.value.warnings[0].lower()
     assert "rewritten" in excinfo.value.warnings[1].lower()
@@ -1601,16 +1602,49 @@ def test_a_single_rejected_newer_version_leaves_the_older_one_alive(tmp_path):
     assert result["status"] == "Proposed"
 
 
-def test_two_newer_versions_lock_the_older_one_even_when_both_are_rejected(tmp_path):
+def test_rejected_newer_versions_never_lock_the_older_one(tmp_path):
+    # Round 41 (H1a): rejected attempts never lock what came before them --
+    # with every newer version Rejected, the Accepted V01 is still alive.
     adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
     v03 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-05"])["created"])
     reject.run(["--file", str(v03), "--refdate", "2026-01-06"])
 
+    assert undo.run(["--file", str(v01)])["status"] == "Proposed"
+
+
+def test_a_newer_version_that_is_not_rejected_still_locks_the_older_one(tmp_path):
+    # Positive control for the rule above: one live newer member is enough.
+    adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
+    v03 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-05"])["created"])
+    approve.run(["--file", str(v03), "--refdate", "2026-01-06"])
+
     with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(v01), "--refdate", "2026-01-07"])
+        undo.run(["--file", str(v01)])
 
     assert excinfo.value.code == "not-latest-version"
     assert excinfo.value.data["latest_file"] == str(v03)
+
+
+def test_family_refusals_name_the_file_to_act_on(tmp_path):
+    # Round 41 (H5a): the refusal says which member is in the way.
+    adr, v01, v02 = _family_with_v02(tmp_path, "Proposed")
+    with pytest.raises(CommandError) as pending:
+        supersede.run(["--file", str(v01), "--refdate", "2026-01-05"])
+    assert pending.value.code == "family-member-pending"
+    assert pending.value.data["pending_file"] == str(v02)
+
+    approve.run(["--file", str(v02), "--refdate", "2026-01-05"])
+    succ = Path(supersede.run(["--file", str(v02), "--refdate", "2026-01-06"])["created"])
+    with pytest.raises(CommandError) as frozen:
+        undo.run(["--file", str(v01)])
+    assert frozen.value.code == "family-member-superseded"
+    assert frozen.value.data["superseded_file"] == str(v02)
+
+    reject.run(["--file", str(succ), "--refdate", "2026-01-07"])
+    with pytest.raises(CommandError) as final:
+        undo.run(["--file", str(succ)])
+    assert final.value.code == "rejected-successor-is-final"
+    assert final.value.data == {"successor_file": str(succ), "predecessor_number": 1}
 
 
 def _rejected_successor(tmp_path):
@@ -1761,3 +1795,82 @@ def test_reject_treats_a_non_ascii_digit_back_reference_as_not_naming_it(tmp_pat
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "superseded-predecessor-not-found"
+
+
+
+def _migrated_family(tmp_path, *names, pattern="N00:04T06V04:02", lenrevision=0):
+    """Legacy files brought in by migrate: placeholders with blank cells."""
+    import json as _json
+    from adrpy.cli import migrate as migrate_cmd
+
+    config = _json.loads(open("tests/fixtures/adr-config.adrplus", encoding="utf-8").read())
+    config.update(migrationpattern=pattern, lenrevision=lenrevision)
+    seed = tmp_path / "seed.json"
+    seed.write_text(_json.dumps(config), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(seed)])
+    adr = tmp_path / config["folderadr"]
+    adr.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (adr / name).write_bytes(b"# legacy\n\nbody\n")
+    migrate_cmd.run(["--path", str(tmp_path)])
+    return adr
+
+
+@pytest.mark.parametrize("command", ["approve", "reject"])
+def test_approve_and_reject_refuse_a_locked_migrated_placeholder(tmp_path, command):
+    # Placeholders never count as the open Proposed member, so the family
+    # lock is the only thing standing between V01 and a second live member.
+    adr = _migrated_family(tmp_path, "000101Foo.md", "000102Foo.md")
+    v01, v02 = adr / "000101Foo.md", adr / "000102Foo.md"
+    before = v01.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        {"approve": approve, "reject": reject}[command].run(["--file", str(v01), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(v02)
+    assert v01.read_bytes() == before
+
+
+def test_approve_refuses_a_locked_migrated_revision(tmp_path):
+    adr = _migrated_family(tmp_path, "00010101Foo.md", "00010102Foo.md", pattern="N00:04T08V04:02R06:02", lenrevision=2)
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(adr / "00010101Foo.md"), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == str(adr / "00010102Foo.md")
+
+
+def test_supersede_of_a_member_whose_newer_versions_are_all_rejected_works(tmp_path):
+    adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
+
+    result = supersede.run(["--file", str(v01), "--refdate", "2026-01-05"])
+
+    assert Path(result["created"]).name.endswith("--001.md")
+
+
+def test_reject_leaves_the_predecessor_alone_for_a_non_ascii_back_reference(tmp_path):
+    tmp_path, _ = _setup_repo(tmp_path)
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    adr_dir = tmp_path / "doc" / "adr"
+    pred = adr_dir / "ADR001V01-first-decision.md"
+    _write_raw(
+        pred, cfg, number=1, title="First decision", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 1),
+        status_update="Accepted", date_update=date(2026, 1, 1),
+        status_change="Superseded", date_change=date(2026, 1, 2), superseded_by_file="002",
+    )
+    pred.write_text(pred.read_text(encoding="utf-8").replace(": 002|", ": \u0660\u0660\u0662|"), encoding="utf-8")
+    before = pred.read_bytes()
+    successor_path = adr_dir / "ADR002V01-successor--001.md"
+    _write_raw(
+        successor_path, cfg, number=2, title="Successor", version=1,
+        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert pred.read_bytes() == before

@@ -636,7 +636,6 @@ def test_a_rejected_earlier_successor_does_not_stop_resuming_onto_the_new_orphan
     assert "|Superseded|Superseded (2026-01-08) <!-- Superseded --> : 003|" in adr_path.read_text(encoding="utf-8")
 
 
-
 def _leave_an_orphan(tmp_path, monkeypatch, refdate="2026-01-05"):
     """A supersede whose predecessor write failed: the successor exists and
     points back, the predecessor is still Accepted."""
@@ -771,84 +770,36 @@ def test_an_orphan_approved_since_is_recovered_by_undo_then_resume(tmp_path, mon
     assert "|Superseded|Superseded (2026-01-07) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
 
 
-def test_resume_records_a_supersede_chain_that_migrate_brought_in(tmp_path):
-    # Both files are migrated placeholders (no Created status of their
-    # own): the chain was recorded by hand before adrpy, in the filenames.
-    # --resume, explicitly, adopts it -- marking the predecessor without
-    # touching the successor.
-    import sys
+def _hand_written_repo(tmp_path, *names):
+    """Accepted decisions written straight to disk under the given names.
+    Round 41: migrate refuses files carrying a supersede suffix, so a file
+    pointing back from the same or a lower number can only come from an
+    edit outside the tool -- written directly here."""
+    from datetime import date
 
-    sys.path.insert(0, str(Path(__file__).parent))
-    from test_migrate import _init_repo_with_pattern, _write_legacy_file
-    from adrpy.cli import migrate
+    from adrpy.core.config import load_repo_config
+    from adrpy.core.header import DecisionRecord, build_header
+    from adrpy.core.naming import parse_any_filename
 
-    _init_repo_with_pattern(tmp_path)
-    _write_legacy_file(tmp_path, "ADR001V01-use-x.md", "# Use X\n\nold\n")
-    _write_legacy_file(tmp_path, "ADR002V01-use-y--001.md", "# Use Y\n\nnew\n")
-    migrate.run(["--path", str(tmp_path)])
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
     adr_dir = tmp_path / "doc" / "adr"
-    predecessor, successor = adr_dir / "ADR001V01-use-x.md", adr_dir / "ADR002V01-use-y--001.md"
-    successor_before = successor.read_bytes()
-
-    result = supersede.run(["--file", str(predecessor), "--refdate", "2026-01-05", "--resume"])
-
-    assert result["created"] == str(successor)
-    assert "|Superseded|Superseded (2026-01-05) <!-- Superseded --> : 002|" in predecessor.read_text(encoding="utf-8")
-    assert successor.read_bytes() == successor_before
-    assert result["status"] is None  # the placeholder has no status of its own to report
-
-
-def test_resume_never_adopts_a_migrated_placeholder_for_a_normal_predecessor(tmp_path):
-    # Only a chain of two migrated placeholders is adopted; a placeholder
-    # pointing at a decision this tool created and approved proves nothing.
-    # migrate refuses to run once tool-created decisions exist, so this
-    # shape is only reachable by hand: the placeholder is built elsewhere.
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).parent))
-    from test_migrate import _init_repo_with_pattern, _write_legacy_file
-    from adrpy.cli import migrate
-
-    other, repo = tmp_path / "other", tmp_path / "repo"
-    other.mkdir()
-    repo.mkdir()
-    _init_repo_with_pattern(other)
-    _write_legacy_file(other, "ADR002V01-use-y--001.md", "# Use Y\n\nnew\n")
-    migrate.run(["--path", str(other)])
-    _init_repo_with_pattern(repo)
-    new.run(["--path", str(repo), "--title", "Use X", "--refdate", "2026-01-01"])
-    predecessor = repo / "doc" / "adr" / "ADR001V01-use-x.md"
-    approve.run(["--file", str(predecessor), "--refdate", "2026-01-02"])
-    placeholder = other / "doc" / "adr" / "ADR002V01-use-y--001.md"
-    (repo / "doc" / "adr" / placeholder.name).write_bytes(placeholder.read_bytes())
-    before = predecessor.read_text(encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(predecessor), "--refdate", "2026-01-05", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert predecessor.read_text(encoding="utf-8") == before
-
-
-
-def _migrated_repo(tmp_path, *names):
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).parent))
-    from test_migrate import _init_repo_with_pattern, _write_legacy_file
-    from adrpy.cli import migrate
-
-    _init_repo_with_pattern(tmp_path)
+    adr_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
-        _write_legacy_file(tmp_path, name, "# " + name + "\n\nbody\n")
-    migrate.run(["--path", str(tmp_path)])
-    return tmp_path / "doc" / "adr"
+        parsed = parse_any_filename(name, config)[1]
+        record = DecisionRecord(
+            number=parsed.number, title=parsed.title, version=parsed.version,
+            status_create="Proposed", date_create=date(2026, 1, 1),
+            status_update="Accepted", date_update=date(2026, 1, 1),
+        )
+        (adr_dir / name).write_bytes((build_header(config, record) + "# body\n").encode("utf-8"))
+    return adr_dir
 
 
-def test_a_placeholder_pointing_at_its_own_number_is_never_resumed_onto_itself(tmp_path):
+def test_a_file_pointing_at_its_own_number_is_never_resumed_onto_itself(tmp_path):
     # A successor always gets a later number than its predecessor; a file
     # whose suffix names its own number is not a successor at all.
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x--001.md")
+    adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-x--001.md")
     target = adr_dir / "ADR001V01-use-x--001.md"
     before = target.read_bytes()
 
@@ -860,7 +811,7 @@ def test_a_placeholder_pointing_at_its_own_number_is_never_resumed_onto_itself(t
 
 
 def test_a_same_family_member_is_never_a_successor(tmp_path):
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR001V02-use-x--001.md")
+    adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-x.md", "ADR001V02-use-x--001.md")
     v01 = adr_dir / "ADR001V01-use-x.md"
     before = v01.read_bytes()
 
@@ -874,7 +825,7 @@ def test_a_same_family_member_is_never_a_successor(tmp_path):
 
 
 def test_a_lower_numbered_file_pointing_back_is_not_a_successor_and_does_not_block(tmp_path):
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-a--002.md", "ADR002V01-use-b.md")
+    adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-a--002.md", "ADR002V01-use-b.md")
     adr002 = adr_dir / "ADR002V01-use-b.md"
 
     with pytest.raises(CommandError) as excinfo:
@@ -892,44 +843,6 @@ def test_the_refusal_for_nothing_to_resume_says_so(tmp_path):
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05", "--resume"])
 
     assert "without --resume" in excinfo.value.detail
-
-
-def test_the_refusal_for_a_placeholder_onto_a_tool_created_version_names_that_reason(tmp_path):
-    # migrate a chain, then continue the predecessor's family with version:
-    # the placeholder is only adopted onto a migrated predecessor.
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
-    v01 = adr_dir / "ADR001V01-use-x.md"
-    approve.run(["--file", str(v01), "--refdate", "2026-01-02"])
-    v02 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-03"])["created"])
-    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(v02), "--refdate", "2026-01-05", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert "migrated placeholder" in excinfo.value.detail and "not migrated" in excinfo.value.detail
-
-
-
-def test_rejecting_a_placeholder_whose_versioned_predecessor_was_never_superseded_just_rejects_it(tmp_path):
-    # No member of the predecessor's family is Superseded, so there is
-    # nothing to revert in any reading; the refusal advice ("reject it")
-    # must actually work.
-    from adrpy.cli import reject
-
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
-    v01 = adr_dir / "ADR001V01-use-x.md"
-    approve.run(["--file", str(v01), "--refdate", "2026-01-02"])
-    v02 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-03"])["created"])
-    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
-    placeholder = adr_dir / "ADR002V01-use-y--001.md"
-
-    result = reject.run(["--file", str(placeholder), "--refdate", "2026-01-05"])
-
-    assert result["undone_predecessor"] is None
-    assert "Rejected" in placeholder.read_text(encoding="utf-8")
-    created = supersede.run(["--file", str(v02), "--refdate", "2026-01-06"])["created"]
-    assert created.endswith("ADR003V01-use-x--001.md")
 
 
 def test_rejecting_a_successor_still_refuses_when_a_family_member_is_superseded_by_another(tmp_path):
@@ -999,20 +912,6 @@ def test_the_already_exists_advice_covers_an_approved_successor_further_down_the
     assert "repeat down the chain" in excinfo.value.detail
 
 
-
-def test_resume_never_marks_a_placeholder_with_an_orphan_already_superseded(tmp_path):
-    adr_dir = _migrated_repo(tmp_path, "ADR001V01-use-x.md", "ADR002V01-use-y--001.md")
-    v01 = adr_dir / "ADR001V01-use-x.md"
-    supersede.run(["--file", str(adr_dir / "ADR002V01-use-y--001.md"), "--refdate", "2026-01-05"])
-    before = v01.read_bytes()
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(v01), "--refdate", "2026-01-06", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert v01.read_bytes() == before
-
-
 def test_the_not_resumable_reasons_name_the_step_that_fixes_them(tmp_path, monkeypatch):
     tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
     approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
@@ -1021,3 +920,14 @@ def test_the_not_resumable_reasons_name_the_step_that_fixes_them(tmp_path, monke
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
 
     assert "undo it back to Proposed" in excinfo.value.detail
+
+
+def test_a_failed_predecessor_write_tells_you_to_resume(tmp_path, monkeypatch):
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    _fail_predecessor_write(monkeypatch)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-write-failed"
+    assert "supersede --resume" in excinfo.value.detail

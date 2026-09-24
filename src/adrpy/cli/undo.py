@@ -9,12 +9,12 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_superseded_sibling,
+    raise_if_pending_sibling,
     raise_if_not_latest,
     raise_if_rejected_successor,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
-    has_pending_sibling,
-    has_superseded_sibling,
     ineligibility_reason_for_undo,
     read_target,
     resolve_repo_and_target,
@@ -33,7 +33,7 @@ from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orph
 _INELIGIBILITY_DETAILS = {
     FailureCodes.STILL_PROPOSED: "This decision has never been approved or rejected; there is nothing to undo.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
 }
 
 
@@ -60,7 +60,7 @@ def describe():
             "control character), or consists entirely of whitespace/'_'/'-'. Fails with one of "
             "still-proposed, already-superseded, or not-proposed if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
-            "already been superseded or is still unresolved (Proposed). Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Fails with "
+            "already been superseded or is still unresolved (Proposed). Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with "
             "rejected-successor-is-final if the target belongs to the family of a successor that was "
             "rejected -- the end of its line. No write is made in any of "
             "these cases."
@@ -77,8 +77,8 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
-                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead.",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
+                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
                 FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed) -- undo would leave two.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -123,18 +123,8 @@ def run(args):
             members = family_members(
                 folder, config, filename_info.number, warnings=warnings
             )
-            if has_superseded_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-                    "A sibling decision in this family has already been superseded.",
-                    warnings=warnings,
-                )
-            if has_pending_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_PENDING,
-                    "Another decision in this family is still unresolved (Proposed) -- undo would leave two.",
-                    warnings=warnings,
-                )
+            raise_if_superseded_sibling(members, warnings)
+            raise_if_pending_sibling(members, warnings, " -- undo would leave two")
             raise_if_not_latest(filename_info, members, warnings)
             raise_if_rejected_successor(members, warnings)
 

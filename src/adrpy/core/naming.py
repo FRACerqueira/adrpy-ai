@@ -24,9 +24,12 @@ from dataclasses import dataclass
 from adrpy.core.casing import to_case
 from adrpy.core.errors import CommandError, FailureCodes
 
-_ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$")
+# re.ASCII: \d must mean 0-9 only -- other scripts' digits would read as the
+# same number and collide with a real decision (the filename decides identity).
+_ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$", re.ASCII)
 _MIGRATION_PATTERN = re.compile(
-    r"^N(\d{2}):(\d{2})T(\d{2})(?:V(\d{2}):(\d{2}))?(?:R(\d{2}):(\d{2}))?(?:P(\d{2}):(\d{2}))?$"
+    r"^N(\d{2}):(\d{2})T(\d{2})(?:V(\d{2}):(\d{2}))?(?:R(\d{2}):(\d{2}))?(?:P(\d{2}):(\d{2}))?$",
+    re.ASCII,
 )
 
 

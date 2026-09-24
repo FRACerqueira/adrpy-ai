@@ -1,5 +1,6 @@
 """`help` command: lists available commands, or describes one of them."""
 
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import FailureCodes, build_failure_codes
 
 _DEFAULTS_PREVIEW_FIELDS = (
@@ -34,7 +35,10 @@ def describe():
             "returns every command's full description and argument list in one call, the same shape "
             "this command always returned before summaries existed. Naming a specific `command` "
             "always returns its full description and argument list, regardless of --full. Fails with "
-            "unknown-command if the named `command` doesn't match any registered command."
+            "unknown-command if the named `command` doesn't match any registered command. The bare "
+            "listing (no command, no --full) also reads this machine's install-level config for its "
+            "defaults preview, so it may fail with a config-* code, or io-error, if that file exists but is "
+            "invalid or unreadable -- `help <command>` and `help --full` never read it."
         ),
         "arguments": [
             {
@@ -48,7 +52,7 @@ def describe():
                 # note an agent generalizing from the other commands would
                 # reasonably (and wrongly) try `help --command X`.
                 "positional": True,
-                "description": "Name of the command to describe.",
+                "description": "Name of the command to describe. Positional, unlike every other command's flags: `adrpy help new`, never `adrpy help --command new` (which fails).",
             },
             {
                 "name": "full",
@@ -62,7 +66,11 @@ def describe():
             },
         ],
         "failure_codes": build_failure_codes(
-            {FailureCodes.UNKNOWN_COMMAND: "The named `command` doesn't match any registered command."},
+            {
+                FailureCodes.UNKNOWN_COMMAND: "The named `command` doesn't match any registered command.",
+                FailureCodes.IO_ERROR: "The bare listing could not read this machine's install-level config (permission denied or similar).",
+            },
+            CONFIG_FAILURE_CODES,
         ),
     }
 

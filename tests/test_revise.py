@@ -356,6 +356,7 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     assert excinfo.value.data["latest_file"] == str(r2_path)
     assert excinfo.value.data["latest_revision"] == 2
     assert excinfo.value.data["latest_status"] == "Accepted"
+    assert sorted(p.name for p in r2_path.parent.glob("*.md")) == [adr_path.name, r2_path.name]
 
 
 def test_revise_branching_off_an_older_revision_takes_the_next_free_number(tmp_path):
@@ -618,7 +619,85 @@ def test_revise_of_a_file_outside_the_decisions_folder_is_not_an_internal_error(
     outside = elsewhere / "ADR001V02R01-use-postgre-sql.md"
     outside.write_bytes(adr_path.read_bytes())
 
-    try:
-        revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
-    except CommandError:
-        pass
+    result = revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
+
+    assert os.path.basename(result["created"]) == "ADR001V02R02-use-postgre-sql.md"
+
+
+
+def test_revise_of_a_rejected_successor_is_final(tmp_path):
+    from adrpy.cli import supersede
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    succ = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", succ, "--refdate", "2026-01-04"])
+    before = sorted(p.name for p in adr_path.parent.glob("*.md"))
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", succ, "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "rejected-successor-is-final"
+    assert sorted(p.name for p in adr_path.parent.glob("*.md")) == before
+
+
+def test_a_newer_revision_still_locks_when_the_newer_version_is_rejected(tmp_path):
+    from adrpy.cli import undo, version
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", r02, "--refdate", "2026-01-04"])
+    v02 = version.run(["--file", r02, "--refdate", "2026-01-05"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-06"])
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.code == "not-latest-version"
+    assert excinfo.value.data["latest_file"] == r02
+
+
+def test_a_newer_version_is_not_locked_by_an_older_versions_higher_revision(tmp_path):
+    from adrpy.cli import version
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", r02, "--refdate", "2026-01-04"])
+    v02 = version.run(["--file", r02, "--refdate", "2026-01-05"])["created"]
+
+    assert approve.run(["--file", v02, "--refdate", "2026-01-06"])["status"] == "Accepted"
+
+
+def test_not_latest_names_the_highest_revision_of_the_newest_version(tmp_path):
+    from adrpy.cli import undo, version
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    v02r01 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", v02r01, "--refdate", "2026-01-04"])
+    v02r02 = revise.run(["--file", v02r01, "--refdate", "2026-01-05"])["created"]
+    approve.run(["--file", v02r02, "--refdate", "2026-01-06"])
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
+
+    assert excinfo.value.data["latest_file"] == v02r02
+
+
+def test_revise_numbers_a_migrated_placeholder_by_its_filename_version(tmp_path):
+    from adrpy.cli import migrate
+
+    config_file = tmp_path / "seed-config.json"
+    config = dict(_config_with_revisions(), migrationpattern="N00:04T08V04:02R06:02")
+    config_file.write_text(json.dumps(config), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    r01, r02 = adr_dir / "00010201Foo.md", adr_dir / "00010202Foo.md"
+    for path in (r01, r02):
+        path.write_bytes(b"# Foo\n\nbody\n")
+    migrate.run(["--path", str(tmp_path)])
+    reject.run(["--file", str(r02), "--refdate", "2026-01-05"])
+    approve.run(["--file", str(r01), "--refdate", "2026-01-05"])
+
+    result = revise.run(["--file", str(r01), "--refdate", "2026-01-06"])
+
+    assert os.path.basename(result["created"]) == "ADR001V02R03-foo.md"

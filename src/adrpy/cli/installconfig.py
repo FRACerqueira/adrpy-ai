@@ -51,7 +51,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from adrpy.core.args import parse_flags
+from adrpy.core.args import parse_flags, plain_int
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import (
@@ -101,8 +101,10 @@ def _field_description(field):
             "Relative path to the decision-log directory (ADR007V01) that a newly init'd repository "
             f"using this as its seed will get by default, max {config_schema.FOLDERLOG_MAX_LENGTH} "
             "characters; cannot be empty or absolute, or the same as (or nested inside/around) "
-            "--folderadr (config-folderadr-folderlog-overlap, checked even here). Defaults to "
-            "--folderadr's own parent sibling 'decision-log' when omitted."
+            "--folderadr (config-folderadr-folderlog-overlap, checked even here). Omitting this flag keeps "
+            "the currently stored value -- changing --folderadr alone does not move it; the 'decision-log' "
+            "sibling of folderadr is only the default for a hand-edited file written before this field "
+            "existed."
         )
     if field == "migrationpattern":
         return (
@@ -132,12 +134,23 @@ def _field_description(field):
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
-            "characters; cannot be empty, contain '|', or contain a line-break-like character."
+            "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
+            "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
+            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
+            "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
+            "corrupt which successor a Superseded row points to."
         )
     if field == "headerdisclaimer":
         return (
             f"Header disclaimer text, max {config_schema.HEADER_DISCLAIMER_MAX_LENGTH} characters; "
             "cannot be empty, contain '|', or contain a line-break-like character."
+        )
+    if field in ("headertablefields", "headertablevalues"):
+        return (
+            f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
+            "contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- "
+            "these two build the header's table row, where an HTML comment is the migrated-header marker."
         )
     if field in config_schema._HEADER_LABEL_FIELDS_MAX_40:
         return (
@@ -169,7 +182,7 @@ def describe():
         "description": (
             "Reads or updates the per-user install-level config (ADR002V01) -- used by `init` as its "
             "default seed when no --seed/--language is given, and by `migrate` as a migrationpattern "
-            "fallback when a repository's own is empty. Unlike every other command, takes no --path: "
+            "fallback when a repository's own is empty. Unlike every other command except `help`, targets no repository at all (neither --path nor --file), and so takes no --path: "
             "always operates on the one, fixed, per-user location this machine resolves to. "
             "With no field flags and no --seed, reads the current config back (read-only, no write); "
             "the result's `configured` key is false with no `config` key at all if the file doesn't "
@@ -328,7 +341,7 @@ def run(args):
     for field in _INT_FIELDS:
         if field in flags:
             try:
-                merged[field] = int(flags[field])
+                merged[field] = plain_int(flags[field])
             except ValueError as error:
                 raise CommandError(
                     FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"

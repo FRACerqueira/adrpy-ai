@@ -21,10 +21,10 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    raise_if_superseded_sibling,
     raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
-    has_superseded_sibling,
     ineligibility_reason_for_approve_or_reject,
     parse_refdate,
     read_target,
@@ -47,8 +47,8 @@ _INELIGIBILITY_DETAILS = {
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
     FailureCodes.ALREADY_REJECTED: "This decision is already Rejected.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
 }
 
 
@@ -76,7 +76,7 @@ def describe():
             "the file already reverted. Retrying `reject` on the same file after that specific failure "
             "is safe and completes the operation: when no member of the predecessor's family is "
             "Superseded any more (the revert already happened, or the predecessor was never marked at "
-            "all -- an interrupted supersede, or a migrated placeholder), there is nothing to revert and "
+            "all -- an interrupted supersede), there is nothing to revert and "
             "reject proceeds straight to this decision's own write (`undone_predecessor` null). It "
             "fails with superseded-predecessor-not-found instead when some member of that family IS "
             "Superseded but not pointing at this decision (another successor took over, or a "
@@ -100,7 +100,7 @@ def describe():
             "of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
             "(the target's own current status makes Rejected unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). "
+            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). "
         ),
         "arguments": [
             {
@@ -125,7 +125,7 @@ def describe():
         "failure_codes": build_failure_codes(
             _INELIGIBILITY_DETAILS,
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
@@ -175,12 +175,7 @@ def run(args):
             members = family_members(
                 folder, config, filename_info.number, warnings=warnings
             )
-            if has_superseded_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-                    "A sibling decision in this family has already been superseded.",
-                    warnings=warnings,
-                )
+            raise_if_superseded_sibling(members, warnings)
             raise_if_not_latest(filename_info, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
@@ -253,7 +248,7 @@ def run(args):
                     # on, so there is no live link left to re-derive from.
                     # Recognize the second case -- or a successor whose
                     # predecessor was never marked at all (an interrupted
-                    # supersede, or a migrated placeholder) -- only when it is
+                    # supersede) -- only when it is
                     # unambiguous: no member of the predecessor's family is
                     # Superseded at all, so there is nothing to revert in any
                     # reading. When some member IS Superseded (pointing at
@@ -356,7 +351,8 @@ def run(args):
                 if undone_predecessor is not None:
                     raise CommandError(
                         FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED,
-                        f"{path}: {error}. The predecessor ({undone_predecessor}) was already reverted for real.",
+                        f"{path}: {error}. The predecessor ({undone_predecessor}) was already reverted for real; run reject on "
+                        "this decision again to finish.",
                         data={"predecessor_file": undone_predecessor},
                         warnings=warnings,
                     ) from error

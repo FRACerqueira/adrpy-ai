@@ -8,12 +8,12 @@ from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, atomic_write_text, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_superseded_sibling,
+    raise_if_pending_sibling,
     raise_if_not_latest,
     raise_if_rejected_successor,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
     family_members,
-    has_pending_sibling,
-    has_superseded_sibling,
     ineligibility_reason_for_version_or_revise,
     latest_in_family,
     parse_refdate,
@@ -37,8 +37,8 @@ from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warnin
 _INELIGIBILITY_DETAILS = {
     FailureCodes.STILL_PROPOSED: "This decision must be Accepted or Rejected before a new version can be created.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own status is not Proposed.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell).",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
 }
 
 
@@ -68,7 +68,7 @@ def describe():
             "produce a successor file the tool can never recognize again. Fails with family-not-found if "
             "this decision's own family can't be resolved, or lenversion-too-small-for-new-version "
             "(data.new_version/data.lenversion) if the next version number doesn't fit the configured "
-            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
+            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
             "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
             "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
@@ -144,8 +144,8 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title, header valid or not), or its resulting filename already exists -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file).",
-                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead.",
+                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
+                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
             LIFECYCLE_FAILURE_CODES,
@@ -223,26 +223,15 @@ def run(args):
                     warnings=warnings,
                 )
 
-            raise_if_not_latest(filename_info, members, warnings)
-            raise_if_rejected_successor(members, warnings)
-
             # A specific reason code, not one collapsed not-eligible-for-
             # version, so the caller knows which recovery action applies.
             reason = ineligibility_reason_for_version_or_revise(header)
             if reason is not None:
                 raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-            if has_superseded_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-                    "A sibling decision in this family has already been superseded.",
-                    warnings=warnings,
-                )
-            if has_pending_sibling(folder, config, filename_info.number, members=members):
-                raise CommandError(
-                    FailureCodes.FAMILY_MEMBER_PENDING,
-                    "Another decision in this family is still unresolved (Proposed).",
-                    warnings=warnings,
-                )
+            raise_if_superseded_sibling(members, warnings)
+            raise_if_pending_sibling(members, warnings)
+            raise_if_not_latest(filename_info, members, warnings)
+            raise_if_rejected_successor(members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)

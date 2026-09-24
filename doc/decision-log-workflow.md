@@ -49,9 +49,12 @@ this table is the quick lookup.
 | `investigation` | A hypothesis was checked and did **not** hold (the narrative twin of a regression test for a fear that didn't materialize). |
 | `process-exception` | A one-off, justified deviation from standing process -- scoped to this instance only. |
 
-Add a new classification only when an entry genuinely fits none of these
--- a category invented for one entry is often a sign that entry is
-actually an ADR in disguise.
+The set is closed and enforced by `adrpy log` (and by every scan of the
+directory: a file with an unknown classification blocks every later
+`log`). Adding one is a code change to `CLASSIFICATIONS` in
+`core/decision_log.py` -- itself an ADR-worthy decision. A category
+invented for one entry is often a sign that entry is actually an ADR in
+disguise.
 
 ## Step 3: write and register the entry
 

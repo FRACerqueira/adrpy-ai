@@ -1155,15 +1155,26 @@ def test_family_members_reports_an_ignored_file_once_per_warnings_list(tmp_path)
     assert len([w for w in warnings if "ignored" in w]) == 1
 
 
-@pytest.mark.parametrize("name", ["ADR001V02-a--².md", "ADR001V²-a.md"])
-def test_a_filename_with_a_non_ascii_digit_is_not_recognized_rather_than_crashing(tmp_path, name):
+@pytest.mark.parametrize("suffix", ["²", "٠٠٢"])
+def test_a_supersede_suffix_with_non_ascii_digits_is_not_recognized(suffix):
     from adrpy.core.naming import parse_any_filename
 
-    config = load_repo_config(FIXTURE_PATH)
-    found = parse_any_filename(name, config)
+    assert parse_any_filename(f"ADR001V02-a--{suffix}.md", load_repo_config(FIXTURE_PATH)) is None
 
-    # Not a crash: either not recognized at all, or recognized without the bogus number.
-    assert found is None or found[1].superseded_from is None
+
+@pytest.mark.parametrize("digits", ["²²", "٠٢"])
+@pytest.mark.parametrize("field", ["number", "version", "revision"])
+def test_a_legacy_filename_with_non_ascii_digits_is_not_recognized(digits, field):
+    from adrpy.core.naming import parse_legacy_filename
+
+    config_dict = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    config_dict["migrationpattern"] = "N00:04T08V04:02R06:02"
+    config = parse_repo_config(json.dumps(config_dict))
+    parts = {"number": "0001", "version": "02", "revision": "01"}
+    parts[field] = (digits * 2)[: len(parts[field])]
+    name = f"{parts['number']}{parts['version']}{parts['revision']}Foo.md"
+
+    assert parse_legacy_filename(name, config) is None
 
 
 def test_a_header_with_a_non_ascii_digit_version_is_invalid_rather_than_crashing(tmp_path):
@@ -1173,4 +1184,24 @@ def test_a_header_with_a_non_ascii_digit_version_is_invalid_rather_than_crashing
 
     header = parse_header(read_header_lines(path), config)
 
-    assert not header.is_valid
+    assert header.error == "adr-header-version-not-found"
+
+
+@pytest.mark.parametrize("digits", ["²", "٢"])
+def test_a_header_with_a_non_ascii_digit_revision_is_invalid(digits):
+    from adrpy.core.header import parse_header
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = build_header(config, DecisionRecord(number=1, title="T", version=1, revision=1)).splitlines()
+    lines[5] = lines[5].replace("|1|", f"|{digits}|").replace("|01|", f"|0{digits}|")
+
+    assert parse_header(lines, config).error == "adr-header-revision-not-found"
+
+
+@pytest.mark.parametrize("name", ["ADR٠٠١V٠٢-a.md", "ADR001V٠٢-a.md"])
+def test_a_filename_numbered_with_non_ascii_digits_is_not_a_decision(name):
+    # Arabic-Indic digits would otherwise read as 001/02 and collide with
+    # ADR001V02 -- the filename decides identity, so it must be exact.
+    from adrpy.core.naming import parse_filename
+
+    assert parse_filename(name, load_repo_config(FIXTURE_PATH)) is None

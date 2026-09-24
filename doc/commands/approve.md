@@ -8,7 +8,7 @@ Marks a `Proposed` decision `Accepted`.
 
 ## Description
 
-Marks a Proposed decision as Accepted. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. May fail with repository-locked if the repository lock could not be acquired in time, or lock-lost if it was acquired but reclaimed by another process before the write could commit -- in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while this call was acquiring the lock -- no write was made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the decisions folder could not be scanned (permission denied or similar) -- family membership can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). The target's own title/scope/domain (re-read from its header cells, not flags) are re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited or migrated source file's title carries '|', a line-break-like character, a filesystem-unsafe character (`<>:"/\|?*` or a control character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file itself, but rewrites its header with the same fields a later rename-capable command (version/revise/supersede) would also need to trust. Fails with one of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own current status makes Accepted unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless the newer ones are a single Rejected member (see doc/lifecycle.md). 
+Marks a Proposed decision as Accepted. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. May fail with repository-locked if the repository lock could not be acquired in time, or lock-lost if it was acquired but reclaimed by another process before the write could commit -- in both cases no write was made. May also fail with folderadr-changed-after-lock-acquired if a concurrent config change moved folderadr while this call was acquiring the lock -- no write was made either way; retry. May also fail with family-scan-incomplete if a subdirectory under the decisions folder could not be scanned (permission denied or similar) -- family membership can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). The target's own title/scope/domain (re-read from its header cells, not flags) are re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited or migrated source file's title carries '|', a line-break-like character, a filesystem-unsafe character (`<>:"/\|?*` or a control character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file itself, but rewrites its header with the same fields a later rename-capable command (version/revise/supersede) would also need to trust. Fails with one of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own current status makes Accepted unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). 
 
 ## Arguments
 
@@ -25,10 +25,10 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | Code | Condition |
 |---|---|
 | `already-accepted` | This decision is already Accepted. |
-| `already-rejected` | This decision is already Rejected; run undo first to reconsider it. |
+| `already-rejected` | This decision is already Rejected; run undo first to reconsider it (unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again). |
 | `already-superseded` | This decision has already been superseded. |
-| `not-proposed` | This decision's own status is not Proposed. |
-| `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell). |
+| `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
+| `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
 | `refdate-in-future` | --refdate is after today. |
 | `refdate-before-history` | --refdate is before this decision's own creation date. |
@@ -40,7 +40,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `folderadr-changed-after-lock-acquired` | A concurrent config change moved folderadr while this call was acquiring the repository lock -- no write was made; retry. |
 | `field-contains-forbidden-character` | A free-text field contains '\|', a line-break-like character, or (for title) a filesystem-unsafe character. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
-| `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless the newer ones are a single Rejected member (data names the newer file). |
+| `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `family-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `header-invalid` | The header failed structural validation, for a reason not covered by a more specific code below. |
@@ -112,4 +112,4 @@ adrpy approve --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore
 
 ---
 
-This page is generated from the command's own `describe()` contract (the same JSON `adrpy help approve` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+This page mirrors the command's own `describe()` contract (the same JSON `adrpy help approve` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.

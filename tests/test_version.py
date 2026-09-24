@@ -532,3 +532,19 @@ def test_a_locked_version_is_refused_before_a_taken_number_is_considered(tmp_pat
         version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "not-latest-version"
+
+
+
+def test_version_checks_the_targets_own_status_before_the_family_lock(tmp_path):
+    # Round 41 (H4a): the target's own status first, as doc/lifecycle.md
+    # says; a hand-made newer V02 must not mask still-proposed.
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Alpha", "--refdate", "2026-01-01"])
+    v01 = tmp_path / "doc" / "adr" / "ADR001V01-alpha.md"
+    v02 = v01.parent / "ADR001V02-alpha.md"
+    v02.write_text(v01.read_text(encoding="utf-8").replace("|Version|01|", "|Version|02|"), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(v01), "--refdate", "2026-01-02"])
+
+    assert excinfo.value.code == "still-proposed"
