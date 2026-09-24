@@ -362,7 +362,9 @@ def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_fi
     filenames = {entry["filename"] for entry in payload["decisions"]}
     assert filenames == {"ADR001V01-flaky.md"}
     assert payload["warnings"] == []
-    assert calls["count"] == 3
+    # Two failures, the successful retry, then the consistency pass's own
+    # read (payload["consistency"]).
+    assert calls["count"] == 4
 
 
 def test_explore_does_not_read_the_whole_file(tmp_path, monkeypatch):

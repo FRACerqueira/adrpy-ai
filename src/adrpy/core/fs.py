@@ -220,6 +220,62 @@ def write_prepared(path, data, exclusive=False):
     return prepared.attempts + commit_write(prepared, exclusive=exclusive) - 1
 
 
+@dataclass(frozen=True)
+class TreeScan:
+    """What scan_tree found under one folder: the `.md` and `.tmp` files
+    inside its real boundary, the candidates excluded for escaping it (a
+    junction or symlink), and the directories that could not be listed."""
+
+    markdown: tuple
+    temp: tuple
+    excluded: tuple
+    unreadable: tuple
+
+
+def scan_tree(folder):
+    """The one traversal of a folder: an os.walk whose `onerror` records
+    every directory it could not list (rglob would skip it silently).
+    Like rglob, it descends into junctions; every file found is kept only
+    if its real path stays inside `folder` (the is_within rule), and a
+    file reached twice through a junction is kept once. The extension
+    match follows the OS's own case rule (os.path.normcase), as rglob's
+    does. A missing `folder` is reported as unreadable."""
+    folder = Path(folder)
+    try:
+        resolved = folder.resolve()
+    except (OSError, ValueError):
+        resolved = None
+    excluded, unreadable = [], []
+    # real path -> the path found; a file reached twice (through a junction
+    # inside the folder) is kept once, under the path that needs no link.
+    found = {".md": {}, ".tmp": {}}
+
+    def _on_error(error):
+        unreadable.append(getattr(error, "filename", None) or str(error))
+
+    for dirpath, _dirnames, filenames in os.walk(folder, onerror=_on_error):
+        for name in filenames:
+            extension = os.path.normcase(name)[-4:]
+            kind = ".md" if extension.endswith(".md") else ".tmp" if extension == ".tmp" else None
+            if kind is None:
+                continue
+            candidate = Path(dirpath) / name
+            try:
+                real = candidate.resolve()
+                inside = resolved is not None and real.is_relative_to(resolved)
+            except (OSError, ValueError):
+                inside = False
+            if not inside:
+                excluded.append(candidate)
+                continue
+            known = found[kind].get(real)
+            if known is None or os.path.normcase(str(candidate.relative_to(folder))) == os.path.normcase(
+                str(real.relative_to(resolved))
+            ):
+                found[kind][real] = candidate
+    return TreeScan(tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable))
+
+
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
     """Removes leftover temp files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed

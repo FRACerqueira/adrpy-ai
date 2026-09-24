@@ -470,3 +470,42 @@ def test_malformed_header_is_not_valid():
     parsed = parse_header(lines, config)
 
     assert not parsed.is_valid
+
+
+@pytest.mark.parametrize(
+    ("row", "cell", "code"),
+    [
+        (3, "Use: PostgreSQL", "field-contains-forbidden-character"),
+        (3, "a/b", "field-contains-forbidden-character"),
+        (3, "---", "field-contains-forbidden-character"),
+        (3, "", "field-contains-forbidden-character"),
+        (6, "scope" + chr(0x0B) + "x", "field-contains-forbidden-character"),
+        (7, "domain" + chr(0x2028) + "x", "field-contains-forbidden-character"),
+    ],
+)
+def test_parse_header_applies_the_free_text_rules_the_commands_use(row, cell, code):
+    """Title, scope and domain pass the same checks prepare() applies
+    before a write (reject_embedded_delimiter; for title also the
+    filesystem-unsafe and no-case-transform-content checks), so a bad
+    cell makes the header itself invalid, with the rule's own code."""
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    label = lines[row].split("|")[1]
+    lines[row] = f"|{label}|{cell}|"
+
+    result = parse_header(lines, config)
+
+    assert result.is_valid is False
+    assert result.error == code
+    assert result.error_detail
+
+
+def test_parse_header_keeps_scope_and_domain_optional():
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+
+    result = parse_header(lines, config)
+
+    assert result.is_valid is True
+    assert (result.scope, result.domain) == ("", "")
+    assert result.error_detail is None

@@ -224,6 +224,23 @@ class FailureCodes:
     # src/adrpy/cli/help.py
     UNKNOWN_COMMAND = "unknown-command"
 
+    # src/adrpy/core/consistency.py: repository-inconsistent is the failure;
+    # the others are the codes of its data.errors entries, one per invariant.
+    REPOSITORY_INCONSISTENT = "repository-inconsistent"
+    MERGE_CONFLICT_MARKERS = "merge-conflict-markers"
+    NO_HEADER = "no-header"
+    INVALID_HEADER = "invalid-header"
+    INVALID_STATUS_COMBINATION = "invalid-status-combination"
+    DUPLICATE_NUMBER = "duplicate-number"
+    PENDING_DUPLICATE = "pending-duplicate"
+    PENDING_NOT_LIVE = "pending-not-live"
+    SUPERSEDED_DUPLICATE = "superseded-duplicate"
+    SUPERSEDED_NOT_LIVE = "superseded-not-live"
+    SUPERSEDED_WITHOUT_SUCCESSOR = "superseded-without-successor"
+    SUCCESSOR_WITHOUT_PREDECESSOR = "successor-without-predecessor"
+    MULTIPLE_LIVE_SUCCESSORS = "multiple-live-successors"
+    SCAN_INCOMPLETE = "scan-incomplete"
+
 
 def build_failure_codes(*sources):
     """ADR008V01: merges any number of {code: condition} mappings -- a

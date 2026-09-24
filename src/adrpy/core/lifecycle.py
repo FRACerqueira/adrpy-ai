@@ -26,6 +26,7 @@ from adrpy.core.header import (
     SHARED_FAILURE_CODES as HEADER_FAILURE_CODES,
     DecisionRecord,
     build_header,
+    describe_header_error,
     parse_header,
 )
 from adrpy.core.fs import (
@@ -35,12 +36,12 @@ from adrpy.core.fs import (
     prepare_write,
     read_bytes,
     read_with_permission_retry,
+    scan_tree,
 )
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.text import is_ascii_digits, strip_leading_boms
 from adrpy.core.security import (
     find_unreadable_subdirectories,
-    is_within,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_title_with_no_case_transform_content,
@@ -103,25 +104,17 @@ def scan_decisions(folder, config, warnings=None, *, strict=False, incomplete_co
     there."""
     if not folder.is_dir():
         return []
-    # Resolved once, not once per candidate -- see is_within's own note.
-    try:
-        resolved_folder = folder.resolve()
-    except (OSError, ValueError):
-        resolved_folder = None
+    scan = scan_tree(folder)
+    excluded = list(scan.excluded)
     found = []
-    excluded = []
-    for candidate in folder.rglob("*.md"):
-        if not is_within(folder, candidate, resolved_base=resolved_folder):
-            excluded.append(candidate)
-            continue
+    for candidate in scan.markdown:
         result = parse_any_filename(candidate.name, config)
         if result is not None:
             scheme, parsed = result
             found.append((scheme, parsed, candidate))
-    # rglob (used above) silently swallows an OSError from an unreadable
-    # subdirectory -- see find_unreadable_subdirectories' own note. Only
-    # computed when actually needed (strict, or warnings collected).
-    unreadable = find_unreadable_subdirectories(folder) if (strict or warnings is not None) else []
+    # scan_tree reports a subdirectory it could not list (rglob would
+    # skip it silently).
+    unreadable = list(scan.unreadable)
     if unreadable and strict:
         raise CommandError(
             incomplete_code,
@@ -744,8 +737,8 @@ def read_target(path, config, warnings=None):
         code = header.error or FailureCodes.HEADER_INVALID
         raise CommandError(
             code,
-            f"{path.name}: its header does not parse ({code}), so its status can't be read and no command "
-            "acts on it. Repair it by hand.",
+            f"{path.name}: its header does not parse ({describe_header_error(header) or code}), so its status "
+            "can't be read and no command acts on it. Repair it by hand.",
         )
 
     if warnings is not None:

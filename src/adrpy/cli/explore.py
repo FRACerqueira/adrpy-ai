@@ -9,11 +9,13 @@ not silently either.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.consistency import check_repository
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header
 from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
+from adrpy.core.fs import scan_tree
+from adrpy.core.security import resolve_within
 from adrpy.core.warnings import excluded_candidate_warning
 
 
@@ -67,15 +69,12 @@ def run(args):
     unreadable_files = []
     unreadable = []
     if folder.is_dir():
-        # Resolved once, not once per candidate -- see is_within's own note.
-        try:
-            resolved_folder = folder.resolve()
-        except (OSError, ValueError):
-            resolved_folder = None
-        for candidate in folder.rglob("*.md"):
-            if not is_within(folder, candidate, resolved_base=resolved_folder):
-                excluded.append(candidate)
-                continue
+        scan = scan_tree(folder)
+        excluded = list(scan.excluded)
+        # scan_tree reports a subdirectory it could not list instead of
+        # skipping it silently.
+        unreadable = list(scan.unreadable)
+        for candidate in scan.markdown:
             # Best-effort: a single persistently unreadable file (locked by
             # an editor, backup tool, or antivirus -- ordinary in a folder
             # of Markdown files people also open by hand) is reported here
@@ -85,9 +84,6 @@ def run(args):
                 entries.append(_build_entry(candidate, config))
             except OSError:
                 unreadable_files.append(candidate)
-        # rglob above silently swallows an OSError from an unreadable
-        # subdirectory -- see find_unreadable_subdirectories' own note.
-        unreadable = find_unreadable_subdirectories(folder)
 
     entries.sort(
         key=lambda entry: (
@@ -122,7 +118,10 @@ def run(args):
             f"{len(unreadable_files)} file(s) could not be read (permission denied or similar) and are "
             f"missing from this report: {names}."
         )
-    return {"decisions": entries, "warnings": warnings}
+    # The repository's consistency errors (core/consistency.py), listed
+    # without failing: explore stays an inventory.
+    errors = check_repository(folder, config)[1]
+    return {"decisions": entries, "consistency": {"errors": errors}, "warnings": warnings}
 
 
 def _build_entry(path, config):

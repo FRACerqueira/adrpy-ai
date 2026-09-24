@@ -287,3 +287,53 @@ def test_a_failing_commit_removes_its_temp_and_keeps_the_target(tmp_path, monkey
 
     assert target.read_bytes() == b"old"
     assert _temps(tmp_path) == []
+
+
+def test_scan_tree_collects_markdown_and_temp_files_recursively(tmp_path):
+    (tmp_path / "sub" / "deeper").mkdir(parents=True)
+    for name in ("a.md", "sub/b.md", "sub/deeper/c.md", "sub/x.md.0123.tmp", "notes.txt", "sub/image.png"):
+        (tmp_path / name).write_bytes(b"x")
+
+    scan = fs.scan_tree(tmp_path)
+
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in scan.markdown) == ["a.md", "sub/b.md", "sub/deeper/c.md"]
+    assert [p.name for p in scan.temp] == ["x.md.0123.tmp"]
+    assert (scan.excluded, scan.unreadable) == ((), ())
+
+
+def test_scan_tree_reports_a_directory_it_cannot_list(tmp_path, monkeypatch):
+    blocked = tmp_path / "restricted"
+    blocked.mkdir()
+    (tmp_path / "a.md").write_bytes(b"x")
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+    scan = fs.scan_tree(tmp_path)
+
+    assert [p.name for p in scan.markdown] == ["a.md"]
+    assert scan.unreadable == (str(blocked),)
+
+
+def test_scan_tree_reports_a_missing_folder_as_unreadable(tmp_path):
+    assert fs.scan_tree(tmp_path / "missing").unreadable == (str(tmp_path / "missing"),)
+
+
+def test_scan_tree_excludes_a_file_whose_real_path_escapes_the_folder(tmp_path):
+    inside, outside = tmp_path / "inside", tmp_path / "outside"
+    inside.mkdir()
+    outside.mkdir()
+    (outside / "victim.md").write_bytes(b"x")
+    try:
+        (inside / "link.md").symlink_to(outside / "victim.md")
+    except OSError:
+        pytest.skip("creating a symlink needs a privilege this host does not grant")
+
+    scan = fs.scan_tree(inside)
+
+    assert (scan.markdown, [p.name for p in scan.excluded]) == ((), ["link.md"])

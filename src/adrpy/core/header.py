@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from datetime import date as date_cls
 
 from adrpy.core.atomic_write import join_lines_with_trailing_terminator
-from adrpy.core.errors import FailureCodes
+from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.security import (
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+)
 from adrpy.core.text import is_ascii_digits
 
 HEADER_LINE_COUNT = 12
@@ -40,6 +45,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.STATUS_LINE_FORMAT_INVALID: "A status cell's own parenthesized-date shape ('label (date)') could not be parsed at all.",
     FailureCodes.STATUS_LINE_UNKNOWN_STATUS: "A status cell's own label text does not match any of statusnew/statusacc/statusrej/statussup, and no canonical marker is present either.",
     FailureCodes.STATUS_LINE_DATE_INVALID: "A status cell's own parenthesized date is not a valid ISO date.",
+    FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "The Title, Scope or Domain cell breaks a free-text rule: a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'.",
 }
 
 _STATUS_CONFIG_FIELD = {
@@ -163,6 +169,9 @@ class HeaderParseResult:
     is_valid: bool = False
     is_migrated: bool = False
     error: str | None = None
+    # The rule's own message, when `error` comes from a free-text rule
+    # (title/scope/domain) rather than the header's structure.
+    error_detail: str | None = None
     disclaimer: str = ""
     title: str = ""
     version: int | None = None
@@ -214,6 +223,8 @@ def parse_header(lines, config):
     if not lines[3].startswith("|") or title is None:
         result.error = FailureCodes.ADR_HEADER_TITLE_NOT_FOUND
         return result
+    if not _passes_free_text_rules(result, title, "title"):
+        return result
     result.title = title
 
     version_text = _extract_cell(lines[4])
@@ -240,11 +251,15 @@ def parse_header(lines, config):
     if not lines[6].startswith("|") or scope is None:
         result.error = FailureCodes.ADR_HEADER_SCOPE_NOT_FOUND
         return result
+    if not _passes_free_text_rules(result, scope, "scope"):
+        return result
     result.scope = scope
 
     domain = _extract_cell(lines[7])
     if not lines[7].startswith("|") or domain is None:
         result.error = FailureCodes.ADR_HEADER_DOMAIN_NOT_FOUND
+        return result
+    if not _passes_free_text_rules(result, domain, "domain"):
         return result
     result.domain = domain
 
@@ -301,6 +316,23 @@ def parse_header(lines, config):
     result.marker_label_mismatches = tuple(mismatches)
     result.is_valid = True
     return result
+
+
+def _passes_free_text_rules(result, value, field_name):
+    """The rules every command applies to title/scope/domain before a
+    write (core/security.py), applied once here instead: a cell that
+    breaks one makes the header invalid, with the rule's own code in
+    `result.error` and its message in `result.error_detail`."""
+    try:
+        reject_embedded_delimiter(value, field_name)
+        if field_name == "title":
+            reject_filesystem_unsafe_title(value, field_name)
+            reject_title_with_no_case_transform_content(value, field_name)
+    except CommandError as error:
+        result.error = error.code
+        result.error_detail = error.detail
+        return False
+    return True
 
 
 def _extract_cell(line):
@@ -363,6 +395,15 @@ def _parse_status_cell(text, config):
         return None, None, False, FailureCodes.STATUS_LINE_DATE_INVALID
 
     return status, parsed_date, mismatch, None
+
+
+def describe_header_error(header):
+    """The header's failure code followed by its own message when the rule
+    that failed gave one (it names the field), e.g.
+    "field-contains-forbidden-character: Field 'title' cannot contain ..."."""
+    if header.error and header.error_detail:
+        return f"{header.error}: {header.error_detail}"
+    return header.error
 
 
 def has_header_shape(lines):
