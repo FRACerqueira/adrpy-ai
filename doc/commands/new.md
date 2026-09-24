@@ -8,7 +8,7 @@ Creates a new decision, status `Proposed`.
 
 ## Description
 
-Creates a new decision with status Proposed. May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- no write is attempted either way. May also fail with new-scan-incomplete if a subdirectory under the decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan; no write was made. Once the scan itself succeeds, fails with title-already-exists (data.existing_file names it) if another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) if the resulting filename happens to already exist on disk -- neither write is made.
+Creates a new decision with status Proposed. May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- no write is attempted either way. Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint; no write is made. Fails with title-already-exists (data.existing_file names it) if another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) if the resulting filename happens to already exist on disk -- neither write is made.
 
 ## Arguments
 
@@ -40,7 +40,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a b
 | `config-not-found` | --path's own directory has no adr-config.adrplus. |
 | `field-contains-forbidden-character` | title/domain/scope contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'. |
 | `field-is-blank` | domain or scope is non-empty but blank after stripping whitespace. |
-| `new-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan. |
+| `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `title-already-exists` | Another decision already has this title, once both are normalized by the configured case transform. |
 | `file-already-exists` | The resulting filename already exists on disk. |
 | `title-produces-unrecognizable-filename` | The title, once case-transformed, would produce a filename this tool could never recognize again. |

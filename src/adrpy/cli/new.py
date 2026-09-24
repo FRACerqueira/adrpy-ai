@@ -11,6 +11,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.fs import cleanup_orphaned_temp_files
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
@@ -18,7 +19,6 @@ from adrpy.core.lifecycle import (
     next_number,
     parse_refdate,
     resolve_target_and_config,
-    scan_decisions,
     validate_refdate_not_in_future,
 )
 from adrpy.core.naming import build_filename
@@ -28,7 +28,7 @@ from adrpy.core.security import (
     reject_title_with_no_case_transform_content,
     resolve_within,
 )
-from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
+from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orphan_cleanup_warning, retry_warning
 
 
 def describe():
@@ -40,10 +40,11 @@ def describe():
             "May fail with target-directory-not-found if --path does not point to an existing directory, "
             "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
             "either way. "
-            "May also fail with new-scan-incomplete if a subdirectory under the "
-            "decisions folder could not be scanned (permission denied or similar) -- title-uniqueness and "
-            "next-number allocation can't be trusted from an incomplete scan; no write was made. Once the "
-            "scan itself succeeds, fails with title-already-exists (data.existing_file names it) if "
+            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
+            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
+            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
+            "repository-inconsistent, every broken rule listed in data.errors with a repair hint; no write "
+            "is made. Fails with title-already-exists (data.existing_file names it) if "
             "another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) "
             "if the resulting filename happens to already exist on disk -- neither write is made."
         ),
@@ -102,7 +103,7 @@ def describe():
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
-                FailureCodes.NEW_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- title-uniqueness and next-number allocation can't be trusted from an incomplete scan.",
+                FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this title, once both are normalized by the configured case transform.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The title, once case-transformed, would produce a filename this tool could never recognize again.",
@@ -128,15 +129,6 @@ def run(args):
 
     target, _config_path, config = resolve_target_and_config(flags["path"])
 
-    reject_embedded_delimiter(title, "title")
-    reject_filesystem_unsafe_title(title, "title")
-    reject_title_with_no_case_transform_content(title, "title")
-    reject_embedded_delimiter(domain, "domain")
-    reject_embedded_delimiter(scope, "scope")
-
-    refdate = parse_refdate(flags.get("refdate"))
-    validate_refdate_not_in_future(refdate)
-
     folder = resolve_within(target, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
@@ -144,16 +136,23 @@ def run(args):
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
             if warning:
                 warnings.append(warning)
+        # Before any other rule: title-uniqueness and next-number
+        # allocation below read this one validated snapshot.
+        snapshot = validate_repository(folder, config)
+        warning = excluded_candidate_warning(list(snapshot.excluded))
+        if warning:
+            warnings.append(warning)
 
-        # strict=True: this scan feeds both title-uniqueness
-        # (find_by_unique_title, below) and next-number allocation,
-        # both real safety decisions. An unreadable subdirectory hiding
-        # an existing title or a higher number must never be silently
-        # treated as "not found" the way explore's own best-effort
-        # listing can.
-        decisions = scan_decisions(
-            folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.NEW_SCAN_INCOMPLETE
-        )
+        reject_embedded_delimiter(title, "title")
+        reject_filesystem_unsafe_title(title, "title")
+        reject_title_with_no_case_transform_content(title, "title")
+        reject_embedded_delimiter(domain, "domain")
+        reject_embedded_delimiter(scope, "scope")
+
+        refdate = parse_refdate(flags.get("refdate"))
+        validate_refdate_not_in_future(refdate)
+
+        decisions = [(decision.scheme, decision.name, decision.path) for decision in snapshot.decisions]
 
         existing = find_by_unique_title(title, config, decisions)
         if existing is not None:

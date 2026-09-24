@@ -62,7 +62,8 @@ def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     assert not (adr_dir / "ADR001V01R02-use-postgre-sql.md").exists()  # no write made
 
 
@@ -117,22 +118,21 @@ def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(t
 
 
 def test_revise_scans_the_directory_only_once(tmp_path, monkeypatch):
-    """Performance backlog item: latest_in_family, has_superseded_sibling,
-    and has_pending_sibling each called family_members (and so
-    scan_decisions) independently -- 3 full directory scans per revise
-    call for information a single scan already has."""
-    from adrpy.core import lifecycle
+    """The repository is read once per call: one scan of the decisions
+    folder (core/consistency), whose snapshot feeds the target, its family
+    and every guard -- no second scan."""
+    from adrpy.core import consistency
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
 
     calls = []
-    original = lifecycle.scan_decisions
+    original = consistency.scan_tree
 
-    def counting_scan_decisions(*args, **kwargs):
+    def counting_scan_tree(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(lifecycle, "scan_decisions", counting_scan_decisions)
+    monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
 
     revise.run(["--file", str(adr_path)])
 
@@ -165,138 +165,32 @@ def test_revise_rejects_when_not_accepted_or_rejected(tmp_path):
 
 
 def test_revise_rejects_when_sibling_superseded(tmp_path):
-    """Family-member-superseded
-    is raised by hand at 8 call sites across 5 command files; revise's
-    own had zero coverage. Target is R02 (latest, Accepted); a lower,
-    non-latest sibling R01 carries status_change=Superseded."""
-    tmp_path, _ = _setup_accepted_repo_with_revisions(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
+    """family-member-superseded, reached with tool commands only: R02 was
+    rejected, which left R01 live, and R01 was then superseded. Revising
+    R02 (Rejected, eligible for revise) is refused."""
+    from adrpy.cli import supersede
 
-    sibling_path = adr_dir / "ADR001V01R01-use-postgre-sql.md"
-    sibling_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="999",
-    )
-    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
-
-    target_path = adr_dir / "ADR001V01R02-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", r02, "--refdate", "2026-01-04"])
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(target_path)])
+        revise.run(["--file", r02, "--refdate", "2026-01-06"])
 
     assert excinfo.value.code == "family-member-superseded"
 
 
 def test_revise_rejects_when_sibling_pending(tmp_path):
-    """Same class as the superseded case above, for family-member-pending."""
-    tmp_path, _ = _setup_accepted_repo_with_revisions(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-
-    sibling_path = adr_dir / "ADR001V01R01-use-postgre-sql.md"
-    sibling_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-    )
-    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
-
-    target_path = adr_dir / "ADR001V01R02-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+    """family-member-pending, reached with tool commands only: R02 is still
+    Proposed when R01 is revised again."""
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+    revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
 
     with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(target_path)])
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
 
     assert excinfo.value.code == "family-member-pending"
-
-
-def test_revise_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Superseded takes priority over pending, deliberately -- a superseded
-    member means the WHOLE family has already been replaced, which
-    blocks it regardless of any other sibling's own state. No existing
-    test constructed a family with BOTH conditions true at once."""
-    tmp_path, _ = _setup_accepted_repo_with_revisions(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-
-    # Both siblings must stay BELOW the target's own (version, revision),
-    # or either one would itself become "the latest" and the
-    # not-latest-version check earlier in revise.run() would fire first,
-    # never reaching the sibling checks this test actually targets.
-    superseded_sibling = adr_dir / "ADR001V01R01-use-postgre-sql.md"
-    superseded_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="999",
-    )
-    atomic_write_text(superseded_sibling, build_header(config, superseded_record) + "# body")
-
-    pending_sibling = adr_dir / "ADR001V01R02-use-postgre-sql.md"
-    pending_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-    )
-    atomic_write_text(pending_sibling, build_header(config, pending_record) + "# body")
-
-    target_path = adr_dir / "ADR001V01R03-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        revision=3,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
-
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(target_path)])
-
-    assert excinfo.value.code == "family-member-superseded"
 
 
 def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
@@ -430,7 +324,10 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
     assert not (tmp_path.parent / "outside.md").exists()
 
 
@@ -473,7 +370,10 @@ def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_tar
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_path):
@@ -502,7 +402,10 @@ def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_pat
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_revise_end_to_end_through_main(tmp_path):
@@ -522,17 +425,18 @@ def test_revise_describe_documents_the_lenrevision_precondition():
     assert "lenrevision" in revise.describe()["description"]
 
 
-def test_revise_numbers_past_a_revision_whose_header_does_not_parse(tmp_path):
-    # The filename decides numbering, counting every file: an R02 left out
-    # of the family (no header) still holds its number, so the new revision
-    # is R03, never a second R02.
+def test_revise_refuses_a_revision_number_held_by_a_file_whose_header_does_not_parse(tmp_path):
+    # An R02 with no header is a broken repository rule (no-header): revise
+    # refuses, never creating a second R02.
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     broken = adr_path.parent / "ADR001V01R02-draft.md"
     broken.write_text("no header\n", encoding="utf-8")
 
-    result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
 
-    assert os.path.basename(result["created"]).startswith("ADR001V01R03-")
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [("no-header", str(broken.resolve()))]
     assert sorted(p.name for p in adr_path.parent.glob("ADR001V01R02*")) == ["ADR001V01R02-draft.md"]
 
 
@@ -560,26 +464,33 @@ def test_revise_numbering_only_counts_revisions_of_its_own_version(tmp_path):
     from adrpy.cli import version
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
-    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
-    approve.run(["--file", v02, "--refdate", "2026-01-04"])
-    (adr_path.parent / "ADR001V01R02-draft.md").write_text("no header\n", encoding="utf-8")
+    r02 = revise.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    approve.run(["--file", r02, "--refdate", "2026-01-04"])
+    v02 = version.run(["--file", r02, "--refdate", "2026-01-05"])["created"]
+    approve.run(["--file", v02, "--refdate", "2026-01-06"])
 
-    result = revise.run(["--file", v02, "--refdate", "2026-01-05"])
+    result = revise.run(["--file", v02, "--refdate", "2026-01-07"])
 
     assert os.path.basename(result["created"]) == "ADR001V02R02-use-postgre-sql.md"
 
 
 
-def test_revise_of_a_file_outside_the_decisions_folder_is_not_an_internal_error(tmp_path):
+def test_revise_of_a_file_outside_the_decisions_folder_is_refused(tmp_path):
+    # Only a decision inside the configured decisions folder is acted on
+    # (target-outside-folderadr); nothing is written, here or there.
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     outside = elsewhere / "ADR001V02R01-use-postgre-sql.md"
     outside.write_bytes(adr_path.read_bytes())
+    before = sorted(p.name for p in adr_path.parent.iterdir())
 
-    result = revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
 
-    assert os.path.basename(result["created"]) == "ADR001V02R02-use-postgre-sql.md"
+    assert excinfo.value.code == "target-outside-folderadr"
+    assert sorted(p.name for p in adr_path.parent.iterdir()) == before
+    assert [p.name for p in elsewhere.iterdir()] == [outside.name]
 
 
 
@@ -662,31 +573,3 @@ def test_revise_numbers_a_migrated_placeholder_by_its_filename_version(tmp_path)
 
 
 
-def test_revise_refuses_the_successor_of_an_unfinished_supersede(tmp_path, monkeypatch):
-    from adrpy.cli import supersede as supersede_module
-    from adrpy.core import lifecycle
-
-    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
-    real_commit = lifecycle.commit_write
-
-    def failing_predecessor_commit(prepared, exclusive=False):
-        # The successor is created exclusively; the predecessor replaced.
-        if not exclusive:
-            raise OSError("simulated disk failure")
-        return real_commit(prepared, exclusive=exclusive)
-
-    with monkeypatch.context() as scoped:
-        scoped.setattr(lifecycle, "commit_write", failing_predecessor_commit)
-        with pytest.raises(CommandError):
-            supersede_module.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
-    orphan = next(p for p in adr_path.parent.glob("ADR002*--001.md"))
-    with monkeypatch.context() as scoped:
-        from adrpy.core import lifecycle as lifecycle_module
-
-        scoped.setattr(lifecycle_module, "raise_if_supersede_not_finished", lambda *a, **k: None)
-        approve.run(["--file", str(orphan), "--refdate", "2026-01-04"])
-
-    with pytest.raises(CommandError) as excinfo:
-        revise.run(["--file", str(orphan), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "supersede-not-finished"

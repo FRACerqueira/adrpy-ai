@@ -27,7 +27,7 @@ The invariants, one error code each (HINTS has a repair hint per code):
   most one successor that is not Rejected;
 - scan: a directory or decision file that could not be read.
 
-"Live" is lifecycle.locking_member's rule: the family's latest member,
+"Live" is family.locking_member's rule: the family's latest member,
 newer members that are all Rejected not counting.
 """
 
@@ -35,8 +35,8 @@ from dataclasses import dataclass
 
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.fs import scan_tree
-from adrpy.core.header import describe_header_error, has_header_shape, parse_header
-from adrpy.core.lifecycle import is_successor, locking_member, read_header_lines
+from adrpy.core.family import is_successor, locking_member
+from adrpy.core.header import describe_header_error, has_header_shape, parse_header, read_header_lines_with_report
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.text import is_ascii_digits
 
@@ -74,8 +74,10 @@ HINTS = {
         "by hand, keeping one version of each of the 12 header lines, then run adrpy check again."
     ),
     FailureCodes.NO_HEADER: (
-        "The file has an ADR name but no header. If it is a decision written before adopting the tool, "
-        "run adrpy migrate; otherwise rename it so its name is not an ADR name, or remove it."
+        "The file has an ADR name but no header. If it is a decision written before adopting the tool and "
+        "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
+        "new). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
+        "created), rename it so its name is not an ADR name, or remove it."
     ),
     FailureCodes.INVALID_HEADER: (
         "The header does not parse (detail names the reason). Repair it by hand, comparing it with the "
@@ -100,7 +102,8 @@ HINTS = {
     ),
     FailureCodes.PENDING_NOT_LIVE: (
         "A Proposed decision is not the live member of its family: a newer member that is not Rejected "
-        "(related_files) locks it. Reject it (Changed cell) or remove it, or reject the newer member."
+        "(related_files) locks it. By hand (commands refuse this repository): set its Changed cell to "
+        "Rejected or remove it, or set the newer member's Changed cell to Rejected."
     ),
     FailureCodes.SUPERSEDED_DUPLICATE: (
         "The family has more than one Superseded member; only the live one can be superseded. Keep the "
@@ -109,8 +112,8 @@ HINTS = {
     ),
     FailureCodes.SUPERSEDED_NOT_LIVE: (
         "A Superseded decision is not the live member of its family: a newer member that is not Rejected "
-        "(related_files) locks it. Move the Superseded cell to the live member, or reject the newer "
-        "member (Changed cell)."
+        "(related_files) locks it. By hand (commands refuse this repository): move the Superseded cell to "
+        "the live member, or set the newer member's Changed cell to Rejected."
     ),
     FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR: (
         "The Superseded cell (': NNN') points at no successor that exists, is not Rejected and names this "
@@ -119,12 +122,15 @@ HINTS = {
     ),
     FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR: (
         "A successor (its filename ends in '<sep><sep>NNN') that is not Rejected has no member of family "
-        "NNN whose Superseded cell points back at it, usually a supersede that stopped halfway. Mark the "
-        "live member of family NNN Superseded with ': <this number>', or reject this successor."
+        "NNN whose Superseded cell points back at it, usually a supersede (or a reject) that stopped "
+        "halfway. By hand (commands refuse this repository): mark the live member of family NNN Superseded "
+        "with ': <this number>', set this successor's Changed cell to Rejected, or remove it if it was "
+        "just created from the template."
     ),
     FailureCodes.MULTIPLE_LIVE_SUCCESSORS: (
-        "More than one successor that is not Rejected names the same predecessor. Keep the one the "
-        "predecessor's Superseded cell points at, and reject or remove the others."
+        "More than one successor that is not Rejected names the same predecessor. By hand (commands "
+        "refuse this repository): keep the one the predecessor's Superseded cell points at, and set the "
+        "others' Changed cell to Rejected or remove them."
     ),
     FailureCodes.SCAN_INCOMPLETE: (
         "A directory or decision file under the decisions folder could not be read (permission denied or "
@@ -140,7 +146,8 @@ class Decision:
     one of the module's state constants, or None when the header does not
     parse or its status cells are outside the closed set.
     `successor_ref` is the Superseded cell's number, for a Superseded
-    decision whose cell holds plain digits."""
+    decision whose cell holds plain digits. `encoding_repaired`: the
+    header read needed a lossy decode (bytes that are not UTF-8)."""
 
     path: object
     scheme: str
@@ -148,6 +155,7 @@ class Decision:
     header: object
     state: object
     successor_ref: object
+    encoding_repaired: bool = False
 
     @property
     def number(self):
@@ -160,11 +168,14 @@ class Decision:
 
 @dataclass(frozen=True)
 class Snapshot:
-    """Every decision (sorted by number, version, revision, path) and the
-    same decisions grouped by number, in that order."""
+    """Every decision (sorted by number, version, revision, path), the
+    same decisions grouped by number, in that order, and the `.md` files
+    left out because their real path escapes the folder (a junction or
+    symlink)."""
 
     decisions: tuple
     by_number: dict
+    excluded: tuple = ()
 
 
 def derive_state(header):
@@ -200,8 +211,7 @@ def _error(code, path, related=(), detail=None):
     }
 
 
-def _read_decisions(folder, config, errors):
-    scan = scan_tree(folder)
+def _read_decisions(scan, config, errors):
     for directory in scan.unreadable:
         errors.append(_error(FailureCodes.SCAN_INCOMPLETE, directory))
     decisions = []
@@ -211,7 +221,7 @@ def _read_decisions(folder, config, errors):
             continue
         scheme, parsed = found
         try:
-            lines = read_header_lines(path)
+            lines, encoding_repaired = read_header_lines_with_report(path)
         except OSError as error:
             errors.append(_error(FailureCodes.SCAN_INCOMPLETE, path, detail=str(error)))
             continue
@@ -230,7 +240,9 @@ def _read_decisions(folder, config, errors):
                 state = derive_state(header)
                 if state is None:
                     errors.append(_error(FailureCodes.INVALID_STATUS_COMBINATION, path))
-        decisions.append(Decision(path, scheme, parsed, header, state, _successor_ref(header, state)))
+        decisions.append(
+            Decision(path, scheme, parsed, header, state, _successor_ref(header, state), encoding_repaired)
+        )
     decisions.sort(key=lambda d: (*d.key, str(d.path)))
     return decisions
 
@@ -246,7 +258,7 @@ def _check_numbering(decisions, errors):
 
 
 def _live_blocker(decision, family):
-    """The member locking `decision`, per lifecycle.locking_member, over
+    """The member locking `decision`, per family.locking_member, over
     the family members whose state is known."""
     members = [(d.name, d.header, d.path) for d in family if d.state is not None]
     blocker = locking_member(decision.name, members)
@@ -307,7 +319,8 @@ def check_repository(folder, config):
     `config`. `errors` is sorted by file, then code; empty when every
     invariant holds. A missing folder is an empty, consistent repository."""
     errors = []
-    decisions = _read_decisions(folder, config, errors) if folder.is_dir() else []
+    scan = scan_tree(folder) if folder.is_dir() else None
+    decisions = _read_decisions(scan, config, errors) if scan is not None else []
     by_number = {}
     for decision in decisions:
         by_number.setdefault(decision.number, []).append(decision)
@@ -319,7 +332,7 @@ def check_repository(folder, config):
     _check_supersede(decisions, by_number, errors)
 
     errors.sort(key=lambda error: (error["file"], error["code"]))
-    return Snapshot(tuple(decisions), by_number), errors
+    return Snapshot(tuple(decisions), by_number, scan.excluded if scan is not None else ()), errors
 
 
 def validate_repository(folder, config):

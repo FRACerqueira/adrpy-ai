@@ -33,11 +33,8 @@ def _setup_accepted_repo(tmp_path):
 
 
 def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Decision log claims this command "inherit[s] [the family_members
-    fail-closed fix] for free" -- but nothing end-to-end proved that.
-    Demonstrated: wrapping this command's own family_members call in
-    try/except CommandError left the full suite green with no test
-    noticing."""
+    """End to end: an unreadable subdirectory stops this command through
+    the repository validation (scan-incomplete), with no write made."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -55,7 +52,8 @@ def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     assert not (adr_dir / "ADR001V02-use-postgre-sql.md").exists()  # no write made
 
 
@@ -84,10 +82,22 @@ def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
     assert excinfo.value.data == {"new_version": 100, "lenversion": 2}
 
 
-def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path):
+def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
+    """The TOCTOU race the exclusive create defends against: the file is
+    created after this call's snapshot was taken (any file already there
+    is in the snapshot, and numbering moves past it)."""
+    from adrpy.core import lifecycle as lifecycle_module
+
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     colliding_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
-    colliding_path.write_text("already here", encoding="utf-8")
+    real_validate = lifecycle_module.validate_repository
+
+    def validate_then_collide(folder, config):
+        snapshot = real_validate(folder, config)
+        colliding_path.write_text("already here", encoding="utf-8")
+        return snapshot
+
+    monkeypatch.setattr(lifecycle_module, "validate_repository", validate_then_collide)
 
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
@@ -155,22 +165,21 @@ def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_version_scans_the_directory_only_once(tmp_path, monkeypatch):
-    """Performance backlog item: latest_in_family, has_superseded_sibling,
-    and has_pending_sibling each called family_members (and so
-    scan_decisions) independently -- 3 full directory scans per version
-    call for information a single scan already has."""
-    from adrpy.core import lifecycle
+    """The repository is read once per call: one scan of the decisions
+    folder (core/consistency), whose snapshot feeds the target, its family
+    and every guard -- no second scan."""
+    from adrpy.core import consistency
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     calls = []
-    original = lifecycle.scan_decisions
+    original = consistency.scan_tree
 
-    def counting_scan_decisions(*args, **kwargs):
+    def counting_scan_tree(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(lifecycle, "scan_decisions", counting_scan_decisions)
+    monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
 
     version.run(["--file", str(adr_path)])
 
@@ -190,131 +199,35 @@ def test_version_rejects_when_not_accepted_or_rejected(tmp_path):
 
 
 def test_version_rejects_when_sibling_superseded(tmp_path):
-    """Family-member-superseded
-    is raised by hand at 8 call sites across 5 command files; version's
-    own had zero coverage. Target is V02 (latest, Accepted); a lower,
-    non-latest sibling V01 carries status_change=Superseded."""
-    tmp_path, _ = _setup_accepted_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
+    """family-member-superseded, reached with tool commands only: V02 was
+    rejected, which left V01 live, and V01 was then superseded. Branching
+    V02 (Rejected, eligible for version) is refused."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-04"])
+    from adrpy.cli import supersede
 
-    sibling_path = adr_dir / "ADR001V01-use-postgre-sql.md"
-    sibling_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="999",
-    )
-    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
-
-    target_path = adr_dir / "ADR001V02-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(target_path)])
+        version.run(["--file", v02, "--refdate", "2026-01-06"])
 
     assert excinfo.value.code == "family-member-superseded"
+    assert excinfo.value.data["superseded_file"] == str(adr_path.resolve())
 
 
 def test_version_rejects_when_sibling_pending(tmp_path):
-    """Same class as the superseded case above, for family-member-pending."""
-    tmp_path, _ = _setup_accepted_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-
-    sibling_path = adr_dir / "ADR001V01-use-postgre-sql.md"
-    sibling_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-    )
-    atomic_write_text(sibling_path, build_header(config, sibling_record) + "# body")
-
-    target_path = adr_dir / "ADR001V02-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
+    """family-member-pending, reached with tool commands only: V02 is
+    still Proposed when V01 is branched again (the pending guard comes
+    before not-latest-version)."""
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
 
     with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(target_path)])
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
 
     assert excinfo.value.code == "family-member-pending"
-
-
-def test_version_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Superseded takes priority over pending, deliberately -- a superseded
-    member means the WHOLE family has already been replaced, which
-    blocks it regardless of any other sibling's own state. No existing
-    test constructed a family with BOTH conditions true at once."""
-    tmp_path, _ = _setup_accepted_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-
-    # Both siblings must stay BELOW the target's own version, or either one
-    # would itself become "the latest" and the not-latest-version check
-    # earlier in version.run() would fire first, never reaching the
-    # sibling checks this test actually targets.
-    superseded_sibling = adr_dir / "ADR001V01-use-postgre-sql.md"
-    superseded_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="999",
-    )
-    atomic_write_text(superseded_sibling, build_header(config, superseded_record) + "# body")
-
-    pending_sibling = adr_dir / "ADR001V02-use-postgre-sql.md"
-    pending_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-    )
-    atomic_write_text(pending_sibling, build_header(config, pending_record) + "# body")
-
-    target_path = adr_dir / "ADR001V03-use-postgre-sql.md"
-    target_record = DecisionRecord(
-        number=1,
-        title="Use PostgreSQL",
-        version=3,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    atomic_write_text(target_path, build_header(config, target_record) + "# body")
-
-    with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(target_path)])
-
-    assert excinfo.value.code == "family-member-superseded"
+    assert excinfo.value.data["pending_file"] == str(Path(v02).resolve())
 
 
 def test_version_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
@@ -444,7 +357,10 @@ def test_version_rejects_path_traversal_via_header_title(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
     assert not (tmp_path.parent / "outside.md").exists()
 
 
@@ -471,7 +387,10 @@ def test_version_rejects_a_header_title_made_only_of_separator_characters(tmp_pa
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_version_accepts_relative_file_path(tmp_path, monkeypatch):
@@ -505,9 +424,9 @@ def test_version_describe_declares_empty_as_a_presence_only_switch():
 
 
 def test_version_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp_path):
-    # The filename decides numbering, counting every file: a V02 left out
-    # of the family (no header) still holds its number, so version refuses
-    # instead of creating a second V02 under another title.
+    # The filename decides numbering: a V02 with no header is a broken
+    # repository rule (no-header), so version refuses instead of creating
+    # a second V02 under another title.
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     broken = adr_path.parent / "ADR001V02-draft.md"
     broken.write_text("no header\n", encoding="utf-8")
@@ -515,40 +434,9 @@ def test_version_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp
     with pytest.raises(CommandError) as excinfo:
         version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
 
-    assert excinfo.value.code == "file-already-exists"
-    assert excinfo.value.data == {"file": "ADR001V02-draft.md"}
-    assert any(w.startswith(f"{broken}: ignored") for w in excinfo.value.warnings)
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [("no-header", str(broken.resolve()))]
     assert sorted(p.name for p in adr_path.parent.glob("ADR001V02*")) == ["ADR001V02-draft.md"]
-
-
-
-def test_a_locked_version_is_refused_before_a_taken_number_is_considered(tmp_path):
-    # Precedence: not-latest-version wins over file-already-exists.
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
-    approve.run(["--file", v02, "--refdate", "2026-01-04"])
-    (adr_path.parent / "ADR001V03-draft.md").write_text("no header\n", encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "not-latest-version"
-
-
-
-def test_version_checks_the_targets_own_status_before_the_family_lock(tmp_path):
-    # Round 41 (H4a): the target's own status first, as doc/lifecycle.md
-    # says; a hand-made newer V02 must not mask still-proposed.
-    init.run(["--path", str(tmp_path)])
-    new.run(["--path", str(tmp_path), "--title", "Alpha", "--refdate", "2026-01-01"])
-    v01 = tmp_path / "doc" / "adr" / "ADR001V01-alpha.md"
-    v02 = v01.parent / "ADR001V02-alpha.md"
-    v02.write_text(v01.read_text(encoding="utf-8").replace("|Version|01|", "|Version|02|"), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        version.run(["--file", str(v01), "--refdate", "2026-01-02"])
-
-    assert excinfo.value.code == "still-proposed"
 
 
 

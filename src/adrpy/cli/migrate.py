@@ -26,9 +26,15 @@ from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atom
 from adrpy.core.fs import cleanup_orphaned_temp_files
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.header import DecisionRecord, build_header, has_header_shape, parse_header
+from adrpy.core.header import (
+    DecisionRecord,
+    build_header,
+    has_header_shape,
+    parse_header,
+    read_header_lines_with_report,
+)
 from adrpy.core.install_config import read_install_config_text
-from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
+from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
 from adrpy.core.security import (
@@ -84,7 +90,7 @@ def describe():
             "earlier, independent write, not atomically bundled with the migration itself: it commits "
             "before the scan/eligibility checks below run, and survives even if this same call goes on "
             "to fail one of them (migration-scan-failed/-incomplete, migration-invalid-headers-exist, "
-            "migration-successor-files-exist, "
+            "migration-successor-files-exist, migration-duplicate-numbers-exist, "
             "no-decisions-found, already-tool-created-adrs-exist, no-eligible-files-to-migrate) -- those "
             "refusals mean no DECISION file was touched, not that adr-config.adrplus itself wasn't. "
             "Whenever that persist-back happened, the result -- success, any failure code this command "
@@ -112,7 +118,10 @@ def describe():
             "this tool itself already created). Refuses the whole run the same way with "
             "migration-successor-files-exist (`data.files`) if a scanned file's name already carries a "
             "supersede suffix (--NNN): a supersede chain is created by this tool only -- rename the file "
-            "without it, migrate, then record the chain with supersede. And with "
+            "without it, migrate, then record the chain with supersede. The same way with "
+            "migration-duplicate-numbers-exist (`data.files`) if two scanned files would share a number, "
+            "version and revision (a missing revision counting as 0) -- a repository every other command "
+            "refuses; rename them so each has its own. And with "
             "migration-invalid-headers-exist (`data.files` names them) if a scanned file carries this tool's "
             "header but it does not parse -- a damaged header is never mistaken for no header, so migrate "
             "never writes a second header on top of one. "
@@ -138,6 +147,7 @@ def describe():
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
+                FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
                 FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
@@ -340,6 +350,24 @@ def run(args):
                 f"{', '.join(successor_files)}. A supersede chain is created by this tool only; rename them "
                 "without the suffix, then migrate, and record the chain with supersede.",
                 data={"files": successor_files},
+                warnings=warnings,
+            )
+
+        # Two files with the same number, version and revision (a missing
+        # revision counting as 0) would leave a repository every other
+        # command refuses (duplicate-number): refused up front, like the
+        # successor files above. Over every scanned file, so an
+        # already-migrated one counts too.
+        by_key = {}
+        for parsed, candidate_path, _header in entries:
+            by_key.setdefault((parsed.number, parsed.version, parsed.revision or 0), []).append(str(candidate_path))
+        duplicate_files = sorted(path for paths in by_key.values() if len(paths) > 1 for path in paths)
+        if duplicate_files:
+            raise CommandError(
+                FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST,
+                f"{len(duplicate_files)} file(s) share a number, version and revision with another: "
+                f"{', '.join(duplicate_files)}. Rename them so each has its own, then migrate.",
+                data={"files": duplicate_files},
                 warnings=warnings,
             )
 

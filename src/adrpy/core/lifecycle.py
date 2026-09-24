@@ -5,7 +5,6 @@ mechanics every status-transition command
 concern, not copies."""
 
 import codecs
-import re
 from dataclasses import dataclass, replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
@@ -21,27 +20,22 @@ from adrpy.core.atomic_write import (
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, _STATUS_LABEL_FIELDS, load_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.header import (
-    HEADER_LINE_COUNT,
-    SHARED_FAILURE_CODES as HEADER_FAILURE_CODES,
-    DecisionRecord,
-    build_header,
-    describe_header_error,
-    parse_header,
-)
+from adrpy.core.family import is_successor, locking_member
+from adrpy.core.consistency import validate_repository
+from adrpy.core.header import _REAL_NEWLINE_BYTES, HEADER_LINE_COUNT, DecisionRecord, _read_header_bytes, build_header
 from adrpy.core.fs import (
     cleanup_orphaned_temp_files,
     commit_write,
     discard_write,
     prepare_write,
     read_bytes,
-    read_with_permission_retry,
     scan_tree,
 )
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.text import is_ascii_digits, strip_leading_boms
 from adrpy.core.security import (
     find_unreadable_subdirectories,
+    is_within,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_title_with_no_case_transform_content,
@@ -50,7 +44,6 @@ from adrpy.core.security import (
 from adrpy.core.warnings import (
     attach_warnings,
     excluded_candidate_warning,
-    ignored_file_warning,
     marker_label_mismatch_warning,
     orphan_cleanup_warning,
     retry_warning,
@@ -81,27 +74,17 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-def scan_decisions(folder, config, warnings=None, *, strict=False, incomplete_code=None):
-    """Recognizes BOTH naming schemes -- every command that resolves
-    "next number" or "does this title already exist" must consider
-    legacy files too. Returns a list of (scheme, ParsedFileName,
-    path) for every recognized file under `folder`.
+def scan_decisions(folder, config, warnings=None):
+    """Recognizes BOTH naming schemes. Returns a list of (scheme,
+    ParsedFileName, path) for every recognized file under `folder` -- by
+    filename only, no header read.
 
     When `warnings` is given, reports any candidate is_within excluded
     because its real path escapes `folder`'s boundary -- otherwise
-    silent, indistinguishable from "no such file" to every caller.
-
-    `strict=True` (with a caller-supplied `incomplete_code`) fails closed
-    instead of merely warning when an unreadable subdirectory makes this
-    scan untrustworthy -- warning alone lets a hidden family member (in
-    an unreadable subdirectory) silently defeat `family_members`'s own
-    safety guards and `next_number`'s allocation, reproducing a "two live
-    successors" corruption with no concurrency needed at all. Callers feeding a real safety
-    decision from this result (family membership, next-number
-    allocation, title uniqueness) must opt into `strict`; callers only
-    reporting (explore, a generic listing) keep the existing warn-only
-    behavior -- nothing unsafe happens from an under-reported inventory
-    there."""
+    silent, indistinguishable from "no such file" to every caller -- and
+    any subdirectory that could not be scanned. The commands that act on
+    decisions read the repository through core/consistency instead,
+    where an unreadable subdirectory is an error (scan-incomplete)."""
     if not folder.is_dir():
         return []
     scan = scan_tree(folder)
@@ -115,14 +98,6 @@ def scan_decisions(folder, config, warnings=None, *, strict=False, incomplete_co
     # scan_tree reports a subdirectory it could not list (rglob would
     # skip it silently).
     unreadable = list(scan.unreadable)
-    if unreadable and strict:
-        raise CommandError(
-            incomplete_code,
-            f"Cannot safely scan {folder}: {len(unreadable)} subdirectory/subdirectories could not be "
-            "scanned (permission denied or similar).",
-            data={"folder": str(folder), "unreadable": unreadable},
-            warnings=warnings,
-        )
     if warnings is not None:
         warning = excluded_candidate_warning(excluded)
         if warning:
@@ -421,98 +396,6 @@ def find_repo_root(file_path):
         directory = parent
 
 
-_HEADER_READ_CHUNK_SIZE = 4096
-# Without this cap, the read loop would continue to EOF whenever a
-# pathological/corrupted file never accumulates `count` real newlines --
-# a single-chunk-per-iteration bound would still let such a file be read
-# in full, just one chunk at a time. 4 chunks (16KB) is generous relative
-# to a genuine header (a few KB at most, per the config schema's own
-# field-length limits) -- a file that still doesn't have `count` real
-# newlines within this cap is treated as too-short/malformed by
-# parse_header's own existing check, never read further.
-_HEADER_READ_MAX_BYTES = _HEADER_READ_CHUNK_SIZE * 4
-_REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
-
-
-def _read_header_bytes(path, count):
-    """Shared by read_header_lines/read_header_lines_with_report: reads
-    only enough of `path` to recover the first `count` real lines (see
-    split_real_lines) -- never the whole file, and never past
-    `_HEADER_READ_MAX_BYTES` even if `count` real newlines never appear.
-    Reads in bounded chunks, growing only if the header genuinely
-    doesn't fit in one (the config schema's own field-length limits keep
-    a real header well under a single chunk in practice).
-
-    Re-scans the whole accumulated buffer (never just the newest chunk in
-    isolation) on every iteration: counting newlines within each
-    freshly-read chunk ALONE double-counts a `\r\n` pair that straddles
-    exactly on a chunk boundary (the `\r` as one chunk's own last byte,
-    matched as a lone CR by that chunk's own isolated scan; the `\n` as
-    the next chunk's own first byte, matched again as a lone LF by ITS
-    isolated scan), which can make the loop believe it already found
-    `count` real newlines one chunk-read too early, silently truncating
-    the returned buffer before the file's true `count`-th line is ever
-    read. Re-scanning the whole buffer each time lets the regex see both
-    halves of a straddling CRLF together, correctly counted as one
-    match. The buffer is still hard-capped at `_HEADER_READ_MAX_BYTES`
-    (16KB), so a rescan is at most ~4 passes over at most 16KB each --
-    O(1) relative to the file's own total size, never an unbounded-file
-    quadratic blowup.
-
-    This read tolerates a transient PermissionError, the same contention
-    window the write side (core/fs.py) already retries. Shares
-    core/fs.py's loop rather than being an independent copy."""
-
-    def _open_and_read():
-        with open(path, "rb") as handle:
-            chunks = []
-            total_bytes = 0
-            newline_count = 0
-            while newline_count < count and total_bytes < _HEADER_READ_MAX_BYTES:
-                more = handle.read(_HEADER_READ_CHUNK_SIZE)
-                if not more:
-                    break
-                chunks.append(more)
-                total_bytes += len(more)
-                newline_count = len(_REAL_NEWLINE_BYTES.findall(b"".join(chunks)))
-            return b"".join(chunks)
-
-    return read_with_permission_retry(_open_and_read)
-
-
-def read_header_lines(path, count=HEADER_LINE_COUNT):
-    """Reads only enough of `path` to recover the first `count` real
-    lines -- never the whole file. Used wherever only the header is
-    needed (family membership checks): reading a candidate's entire
-    body, however large, just to look at its first 12 lines would be
-    wasteful. Tolerates invalid bytes the same way read_lines does."""
-    text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
-    return split_real_lines(strip_leading_boms(text))[:count]
-
-
-def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
-    """Same bounded read as read_header_lines, but also reports whether
-    whatever was actually read needed a lossy decode. A scan deciding
-    only header-based eligibility -- migrate's own scan phase -- only
-    needs to know about corruption within the header itself, since
-    parse_header never looks past line `count`; a corrupted byte in the
-    body is irrelevant to
-    eligibility and passes through untouched in migrate's own write
-    phase either way, which copies raw bytes verbatim). For a small
-    file, the bounded read's own chunk boundary may still include some
-    body content in what it decodes -- that's a harmless side effect of
-    the chunk size, not a claim that corruption is ever checked
-    per-line; only content genuinely beyond the read is never seen."""
-    buffer = _read_header_bytes(path, count)
-    try:
-        text = buffer.decode("utf-8")
-        encoding_repaired = False
-    except UnicodeDecodeError:
-        text = buffer.decode("utf-8", errors="replace")
-        encoding_repaired = True
-    return split_real_lines(strip_leading_boms(text))[:count], encoding_repaired
-
-
 def read_lines_with_report(path):
     """Same as read_lines, but also reports whether the decode was lossy
     -- invalid UTF-8 bytes get silently replaced with U+FFFD permanently,
@@ -640,7 +523,8 @@ def stream_normalized_body_chunks(source_path, report):
 
 # ADR008V01: the one text for every code the 6 per-file lifecycle
 # commands (approve/reject/undo/supersede/version/revise) reach through
-# prepare() -- the ones all of them reach via load_target/family_members,
+# prepare() -- the ones all of them reach while resolving the target and
+# validating the repository,
 # plus the ineligibility and family-guard codes, of which each command
 # lists only those its own TRANSITIONS row can raise (failure_codes
 # below). Each command's own describe() adds its specific entries
@@ -662,6 +546,8 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
     FailureCodes.FILENAME_NOT_RECOGNIZED: "--file's own name matches neither naming scheme.",
+    FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into that folder, or run migrate if it predates the tool.",
+    FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
     FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A free-text field contains '|', a line-break-like character, or (for title) a filesystem-unsafe character.",
@@ -669,14 +555,10 @@ SHARED_FAILURE_CODES = {
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
     FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
     FailureCodes.FAMILY_MEMBER_SUPERSEDED: "Another member of the same family has already been superseded.",
     FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
     FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
     FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
-    FailureCodes.SUPERSEDE_NOT_FINISHED: "This decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it (data.successor_file, data.predecessor_number).",
-    FailureCodes.FAMILY_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan.",
     FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
 }
 
@@ -702,179 +584,22 @@ def resolve_target_and_config(path, *, require_config=True):
     return target, config_path, load_repo_config(config_path)
 
 
-def read_target(path, config, warnings=None):
-    """Reads and parses a decision file's own name and header, given
-    its repository's already-loaded `config` -- load_target's second
-    step, and supersede's per-candidate read.
-
-    `warnings`, when given, reports a genuine marker/label disagreement
-    on this exact file (ADR004V01) -- informational about a pre-existing
-    condition of the file, same as excluded_candidate_warning's own
-    convention, not gated behind whether this command's own write later
-    succeeds.
-
-    ADR006V01: reads only the bounded header (parse_header never looks
-    past line HEADER_LINE_COUNT) -- no longer returns the file's own
-    `lines` at all. A caller that goes on to preserve/carry forward the
-    BODY streams it directly from `path` at write time (see
-    stream_normalized_body_chunks), instead of holding it in memory
-    between this read and that later write. `encoding_repaired` here
-    reflects the HEADER portion only -- combine it (via `or`) with the
-    body stream's own `report["encoding_repaired"]`, known only once
-    that generator is fully consumed, before deciding whether to warn."""
-    header_lines, encoding_repaired = read_header_lines_with_report(path)
-    found = parse_any_filename(path.name, config)
-    if found is None:
-        raise CommandError(FailureCodes.FILENAME_NOT_RECOGNIZED, f"Filename matches no naming scheme: {path.name}")
-    _, filename_info = found
-
-    header = parse_header(header_lines, config)
-    if not header.is_valid:
-        # header.error is already the specific, correctly-computed reason
-        # (adr-file-empty, adr-header-title-not-found,
-        # status-line-date-invalid, ...) -- use it as the code itself
-        # instead of discarding it behind one fixed label.
-        code = header.error or FailureCodes.HEADER_INVALID
-        raise CommandError(
-            code,
-            f"{path.name}: its header does not parse ({describe_header_error(header) or code}), so its status "
-            "can't be read and no command acts on it. Repair it by hand.",
-        )
-
-    if warnings is not None:
-        warning = marker_label_mismatch_warning(header)
-        if warning:
-            warnings.append(warning)
-
-    return filename_info, header, encoding_repaired
+def family_members(snapshot, number):
+    """Every decision of family `number` in `snapshot` (a validated
+    core/consistency Snapshot), as (ParsedFileName, HeaderParseResult,
+    Path), in (version, revision) order. The snapshot is read once; nothing
+    here touches the disk. Every header in it parses: the validator
+    refuses a repository where one does not."""
+    return [(decision.name, decision.header, decision.path) for decision in snapshot.by_number.get(number, ())]
 
 
-def load_target(fileadr, warnings=None):
-    """The common preamble approve/reject/undo/supersede/version/revise
-    all share: resolve the extension default, find the file's own
-    repository root by walking up for adr-config.adrplus, load+validate
-    that config, then parse this file's own name and header (read_target).
-    Recognizes BOTH naming schemes. `warnings` is passed to read_target.
-
-    ADR006V01: no longer returns the file's own `lines` -- see
-    read_target's own note; `encoding_repaired` here reflects the HEADER
-    portion only."""
-    fileadr = Path(fileadr)
-    if fileadr.suffix == "":
-        fileadr = fileadr.with_suffix(".md")
-    if not fileadr.is_file():
-        raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
-
-    config_path = find_repo_root(fileadr)
-    if config_path is None:
-        raise CommandError(
-            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
-        )
-    config = load_repo_config(config_path)
-    filename_info, header, encoding_repaired = read_target(fileadr, config, warnings=warnings)
-    return config, config_path.parent, fileadr, filename_info, header, encoding_repaired
-
-
-def family_members(folder, config, number, warnings=None, ignored=None):
-    """Every decision (current or legacy scheme) sharing `number` whose
-    header parses, with that parsed header attached.
-
-    The filename decides identity and numbering, counting every file; the
-    header decides status, counting only the ones that parse. A file with
-    this number whose header does not parse -- damaged by hand, a lossy
-    decode that broke it, or a legacy file never run through `migrate` --
-    is left out: its status can't be read, and nothing here guesses it.
-    That is an accepted limit, not a guarantee: a family made
-    inconsistent that way (two live decisions after a hand-broken
-    Superseded cell) is not prevented. It is made visible instead: each
-    such file is reported once in `warnings`, and `explore` lists it with
-    the reason.
-
-    `ignored`, when given (a list), receives each such file as
-    (ParsedFileName, HeaderParseResult, Path) -- for a caller that must
-    not act on a family whose status it can't fully read (reject's
-    predecessor revert), or that numbers by filename (version/revise).
-
-    Scans strict -- an unreadable subdirectory or file is an OS error,
-    not an invalid file, and is never treated as "no such member"."""
-    members = []
-    for _, parsed, path in scan_decisions(
-        folder, config, warnings=warnings, strict=True, incomplete_code=FailureCodes.FAMILY_SCAN_INCOMPLETE
-    ):
-        if parsed.number != number:
-            continue
-        # Only the header (12 lines) decides membership -- the body is
-        # never loaded just to check that.
-        header = parse_header(read_header_lines(path), config)
-        # Deliberately does not surface header.marker_label_mismatches
-        # (ADR004V01) here -- a mismatch on a SIBLING would misattribute a
-        # warning about that other file to whatever command (e.g.
-        # approve) is actually acting on a different family member.
-        # read_target's own warning already covers the file actually
-        # being acted on.
-        if not header.is_valid:
-            if ignored is not None:
-                ignored.append((parsed, header, path))
-            if warnings is not None:
-                warning = ignored_file_warning(path, header.error)
-                if warning not in warnings:
-                    warnings.append(warning)
-            continue
-        members.append((parsed, header, path))
-    return members
-
-
-def latest_in_family(folder, config, number, members=None):
-    """The family member with the highest (version, revision).
-    Returns (ParsedFileName, HeaderParseResult, Path), or None. Accepts an
-    already-fetched `members` list (from family_members) so a caller can
-    scan the directory once and reuse the same snapshot."""
-    if members is None:
-        members = family_members(folder, config, number)
+def latest_in_family(members):
+    """The family member with the highest (version, revision), from
+    family_members' list. Returns (ParsedFileName, HeaderParseResult,
+    Path), or None for an empty family."""
     if not members:
         return None
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
-
-
-def is_successor(parsed):
-    """True when a filename names a successor: it carries a supersede
-    suffix (--NNN) and its own number is higher than the one it names.
-    A suffix pointing at its own number or a later one is not a successor
-    for any rule (a successor always gets a later number)."""
-    return parsed.superseded_from is not None and parsed.number > parsed.superseded_from
-
-
-def locking_member(filename_info, members):
-    """The family member that makes `filename_info`'s decision no longer
-    the live one, or None when it is.
-
-    Only the family's latest member is alive. A newer version locks every
-    member of an older version, and a newer revision locks the older
-    revisions of the same version -- unless every newer one is Rejected:
-    rejected attempts never lock what came before them (Round 40; widened
-    from "a single Rejected member" in Round 41, both decided by the
-    project owner). Membership and
-    status come from `members` (headers that parse); version and revision
-    from the filename."""
-
-    def blocker(newer):
-        if not newer:
-            return None
-        live = [member for member in newer if member[1].status_update != "Rejected"]
-        if not live:
-            return None
-        return max(live, key=lambda member: (member[0].version, member[0].revision or 0))
-
-    newer_versions = [m for m in members if m[0].version > filename_info.version]
-    locked_by = blocker(newer_versions)
-    if locked_by is not None:
-        return locked_by
-    newer_revisions = [
-        m
-        for m in members
-        if m[0].version == filename_info.version and (m[0].revision or 0) > (filename_info.revision or 0)
-    ]
-    return blocker(newer_revisions)
 
 
 def raise_if_not_latest(filename_info, members, warnings):
@@ -956,79 +681,30 @@ def raise_if_rejected_successor(members, warnings):
         )
 
 
-def raise_if_supersede_not_finished(folder, config, members, warnings):
-    """supersede-not-finished when the target's family is a successor
-    (its first member carries a --NNN suffix) whose predecessor does not
-    point at it: an interrupted supersede. Approving or branching it then
-    would leave two live lines (Round 41, decided by the project owner);
-    finish with `supersede --resume` on the predecessor, or reject it. A
-    rejected successor is handled by raise_if_rejected_successor."""
-    suffixed = next((m for m in members if is_successor(m[0])), None)
-    if suffixed is None or suffixed[1].status_update == "Rejected":
-        return
-    number = suffixed[0].number
-    predecessor = suffixed[0].superseded_from
-    pred_members = family_members(folder, config, predecessor, warnings=warnings)
-    if any(m[1].status_change == "Superseded" and _as_number(m[1].superseded_by_file) == number for m in pred_members):
-        return
-    raise CommandError(
-        FailureCodes.SUPERSEDE_NOT_FINISHED,
-        f"{suffixed[2].name} is the successor of an interrupted supersede: its predecessor (sequence "
-        f"{predecessor}) does not point at it yet. Run supersede --resume on the predecessor to finish, or "
-        "reject this successor.",
-        data={"successor_file": str(suffixed[2]), "predecessor_number": predecessor},
-        warnings=warnings,
-    )
-
-
-def _ineligibility_reason_for_proposed_state(header):
-    """The two structural checks every ineligibility_reason_for_* below
-    shares byte-for-byte: must be Proposed (or a migrated placeholder
-    with no update status yet), and must not already be superseded.
-    Returns None when both hold, else the shared reason -- each caller
-    layers its own status_update-specific interpretation on top of this
-    when it returns None, since that part genuinely differs per use case
-    (see each function's own docstring for exactly how)."""
-    if not (header.status_create == "Proposed" or (header.status_create is None and header.is_migrated)):
-        return FailureCodes.NOT_PROPOSED
-    if header.status_change is not None:
-        return FailureCodes.ALREADY_SUPERSEDED
-    return None
-
-
 def ineligibility_reason_for_approve_or_reject(header):
     """Confirmed against the reference tool: eligible requires status_update
     to be None, full stop -- not merely "not Accepted and not Rejected".
     Returns None when eligible, else the SPECIFIC reason (a single
     collapsed not-eligible-for-* code couldn't distinguish "already
     Accepted" from "already Rejected" from "already Superseded" -- each
-    calls for a different recovery action). Callers already guarantee
-    header.is_valid via load_target before reaching this check.
-
-    A structurally-valid but corrupted/hand-edited status_update (e.g.
-    the "Changed" cell holding the "Proposed" or "Superseded" label text)
-    could otherwise fall through to eligible here -- confirmed reachable
-    live via approve on such a file. Any non-None, non-Accepted,
-    non-Rejected value must be ineligible too."""
-    shared_reason = _ineligibility_reason_for_proposed_state(header)
-    if shared_reason is not None:
-        return shared_reason
+    calls for a different recovery action). The header comes from a
+    validated repository, so its status cells are in the closed set
+    (core/consistency): Changed is blank, Accepted or Rejected."""
+    if header.status_change is not None:
+        return FailureCodes.ALREADY_SUPERSEDED
     if header.status_update is None:
         return None
     if header.status_update == "Accepted":
         return FailureCodes.ALREADY_ACCEPTED
-    if header.status_update == "Rejected":
-        return FailureCodes.ALREADY_REJECTED
-    return FailureCodes.UNEXPECTED_STATUS
+    return FailureCodes.ALREADY_REJECTED
 
 
 def ineligibility_reason_for_undo(header):
     """See ineligibility_reason_for_approve_or_reject's own note. Unlike
     the other three below, grants NO migrated-placeholder exception --
     undo requires a real, already-applied status_update to undo."""
-    shared_reason = _ineligibility_reason_for_proposed_state(header)
-    if shared_reason is not None:
-        return shared_reason
+    if header.status_change is not None:
+        return FailureCodes.ALREADY_SUPERSEDED
     if header.status_update is None:
         return FailureCodes.STILL_PROPOSED
     return None
@@ -1037,41 +713,25 @@ def ineligibility_reason_for_undo(header):
 def ineligibility_reason_for_supersede(header):
     """Must already be Accepted (or a migrated placeholder with no
     update status yet). See ineligibility_reason_for_approve_or_reject's
-    own note.
-
-    A corrupted status_update (e.g. "Superseded" landing in the wrong
-    cell) must be distinguished from a genuine Rejected value, not
-    mislabeled "already-rejected" -- the boolean outcome (ineligible
-    either way) is unaffected, only the reported reason."""
-    shared_reason = _ineligibility_reason_for_proposed_state(header)
-    if shared_reason is not None:
-        return shared_reason
+    own note."""
+    if header.status_change is not None:
+        return FailureCodes.ALREADY_SUPERSEDED
     if header.status_update == "Accepted" or (header.status_update is None and header.is_migrated):
         return None
     if header.status_update is None:
         return FailureCodes.STILL_PROPOSED
-    if header.status_update == "Rejected":
-        return FailureCodes.ALREADY_REJECTED
-    return FailureCodes.UNEXPECTED_STATUS
+    return FailureCodes.ALREADY_REJECTED
 
 
 def ineligibility_reason_for_version_or_revise(header):
     """Must already be Accepted OR Rejected (or a migrated placeholder
     with no update status yet). See
-    ineligibility_reason_for_approve_or_reject's own note.
-
-    Same mislabel class as ineligibility_reason_for_supersede -- a
-    corrupted non-None, non-Accepted, non-Rejected value must not be
-    labeled "still-proposed", which is only accurate when status_update
-    genuinely is None."""
-    shared_reason = _ineligibility_reason_for_proposed_state(header)
-    if shared_reason is not None:
-        return shared_reason
+    ineligibility_reason_for_approve_or_reject's own note."""
+    if header.status_change is not None:
+        return FailureCodes.ALREADY_SUPERSEDED
     if header.status_update in ("Accepted", "Rejected") or (header.status_update is None and header.is_migrated):
         return None
-    if header.status_update is None:
-        return FailureCodes.STILL_PROPOSED
-    return FailureCodes.UNEXPECTED_STATUS
+    return FailureCodes.STILL_PROPOSED
 
 
 @dataclass(frozen=True)
@@ -1079,14 +739,15 @@ class Transition:
     """One row of TRANSITIONS: what prepare() checks for one command, in
     this order -- the eligibility of the target's own status (`reasons`
     lists every code `eligibility` can return), the family guards, the
-    refdate bounds and the fields re-validated before a write.
+    refdate bounds and the fields re-validated before a write. Every row
+    runs after the repository was validated (core/consistency).
 
     - `revision_required`: revision-not-configured when lenrevision is 0,
-      checked before the decisions folder is even resolved.
-    - `scan_first`: the family is scanned, and the new number worked out
-      (`numbering`: "version" or "revision", family-not-found and the
-      lenversion/lenrevision bound), BEFORE the target's own eligibility;
-      otherwise the family is scanned right after it.
+      checked once the repository is validated and the target found.
+    - `scan_first`: the new number is worked out (`numbering`: "version"
+      or "revision", family-not-found and the lenversion/lenrevision
+      bound) BEFORE the target's own eligibility; otherwise right after
+      it.
     - `guards`: family-guard failure codes, in the order they are checked.
     - `pending_consequence`: appended to family-member-pending's detail.
     - `refdate_anchor`: None (no --refdate at all), "create" (not before
@@ -1113,36 +774,27 @@ _APPROVE_OR_REJECT_REASONS = (
     FailureCodes.ALREADY_ACCEPTED,
     FailureCodes.ALREADY_REJECTED,
     FailureCodes.ALREADY_SUPERSEDED,
-    FailureCodes.NOT_PROPOSED,
-    FailureCodes.UNEXPECTED_STATUS,
 )
 _VERSION_OR_REVISE_REASONS = (
     FailureCodes.STILL_PROPOSED,
     FailureCodes.ALREADY_SUPERSEDED,
-    FailureCodes.NOT_PROPOSED,
-    FailureCodes.UNEXPECTED_STATUS,
 )
 _VERSION_OR_REVISE_GUARDS = (
     FailureCodes.FAMILY_MEMBER_SUPERSEDED,
     FailureCodes.FAMILY_MEMBER_PENDING,
     FailureCodes.NOT_LATEST_VERSION,
     FailureCodes.REJECTED_SUCCESSOR_IS_FINAL,
-    FailureCodes.SUPERSEDE_NOT_FINISHED,
 )
 
 # The asymmetries between rows are deliberate current behavior, not
-# oversights: reject has no supersede-not-finished and approve/reject no
-# family-member-pending; only version/revise scan before eligibility;
-# version validates scope/domain before title, the others title first.
+# oversights: approve/reject have no family-member-pending; only
+# version/revise work out the new number before eligibility; version
+# validates scope/domain before title, the others title first.
 TRANSITIONS = {
     "approve": Transition(
         eligibility=ineligibility_reason_for_approve_or_reject,
         reasons=_APPROVE_OR_REJECT_REASONS,
-        guards=(
-            FailureCodes.FAMILY_MEMBER_SUPERSEDED,
-            FailureCodes.NOT_LATEST_VERSION,
-            FailureCodes.SUPERSEDE_NOT_FINISHED,
-        ),
+        guards=(FailureCodes.FAMILY_MEMBER_SUPERSEDED, FailureCodes.NOT_LATEST_VERSION),
         refdate_anchor="create",
         fields=_HEADER_FIELDS,
     ),
@@ -1155,7 +807,7 @@ TRANSITIONS = {
     ),
     "undo": Transition(
         eligibility=ineligibility_reason_for_undo,
-        reasons=(FailureCodes.STILL_PROPOSED, FailureCodes.ALREADY_SUPERSEDED, FailureCodes.NOT_PROPOSED),
+        reasons=(FailureCodes.STILL_PROPOSED, FailureCodes.ALREADY_SUPERSEDED),
         guards=(
             FailureCodes.FAMILY_MEMBER_SUPERSEDED,
             FailureCodes.FAMILY_MEMBER_PENDING,
@@ -1191,8 +843,6 @@ TRANSITIONS = {
             FailureCodes.STILL_PROPOSED,
             FailureCodes.ALREADY_REJECTED,
             FailureCodes.ALREADY_SUPERSEDED,
-            FailureCodes.NOT_PROPOSED,
-            FailureCodes.UNEXPECTED_STATUS,
         ),
         guards=(
             FailureCodes.FAMILY_MEMBER_SUPERSEDED,
@@ -1211,7 +861,9 @@ def failure_codes(command, own):
     """describe()'s failure_codes for one of the 6 commands: the
     ineligibility codes its row can raise, then its `own` entries, then
     its row's family guards and the codes all 6 share (in
-    SHARED_FAILURE_CODES order), then the header and config codes."""
+    SHARED_FAILURE_CODES order), then the config codes. A header that
+    does not parse is one of repository-inconsistent's data.errors (its
+    parse-failure code in `detail`), never a failure of its own."""
     row = TRANSITIONS[command]
     head = {code: text for code, text in SHARED_FAILURE_CODES.items() if code in row.reasons}
     tail = {
@@ -1219,18 +871,19 @@ def failure_codes(command, own):
         for code, text in SHARED_FAILURE_CODES.items()
         if code in row.guards or code not in _ROW_SPECIFIC_CODES
     }
-    return build_failure_codes(head, own, tail, HEADER_FAILURE_CODES, CONFIG_FAILURE_CODES)
+    return build_failure_codes(head, own, tail, CONFIG_FAILURE_CODES)
 
 
 @dataclass(frozen=True)
 class Context:
-    """What prepare() hands back: the loaded target (load_target's
-    values), its decisions folder, its family (`ignored`: the members
-    whose header does not parse, see family_members), the new version or
-    revision number when the row numbers one, the checked refdate (None
-    without an anchor), the re-validated title/scope/domain, and the
-    warnings accumulated so far -- the same list the command keeps
-    appending to."""
+    """What prepare() hands back: the target (its repository's config and
+    root, the path as given, its filename identity and header, whether
+    its header read needed a lossy decode), its decisions folder, the
+    validated repository (`snapshot`, core/consistency) and the target's
+    family in it, the new version or revision number when the row numbers
+    one, the checked refdate (None without an anchor), the re-validated
+    title/scope/domain, and the warnings accumulated so far -- the same
+    list the command keeps appending to."""
 
     config: object
     root: object
@@ -1239,8 +892,8 @@ class Context:
     header: object
     encoding_repaired: bool
     folder: object
+    snapshot: object
     members: list
-    ignored: list
     new_version: object
     new_revision: object
     refdate: object
@@ -1250,8 +903,8 @@ class Context:
     warnings: list
 
 
-def _new_version(config, number, members, warnings):
-    latest = latest_in_family(None, config, number, members=members)
+def _new_version(config, members, warnings):
+    latest = latest_in_family(members)
     if latest is None:
         raise CommandError(
             FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
@@ -1267,20 +920,19 @@ def _new_version(config, number, members, warnings):
     return new_version
 
 
-def _new_revision(config, filename_info, members, ignored, warnings):
-    latest = latest_in_family(None, config, filename_info.number, members=members)
+def _new_revision(config, filename_info, members, warnings):
+    latest = latest_in_family(members)
     if latest is None:
         raise CommandError(
             FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
         )
-    # The filename decides numbering, counting every file: the next
-    # revision after the highest one this version already holds
+    # The next revision after the highest one this version already holds
     # (Round 40, a deliberate divergence from AdrPlus, whose
     # target-revision+1 collided when branching off an older
     # revision). A migrated placeholder's blank cells play no part.
     new_revision = (
         max(
-            ((entry[0].revision or 0) for entry in members + ignored if entry[0].version == filename_info.version),
+            ((entry[0].revision or 0) for entry in members if entry[0].version == filename_info.version),
             default=filename_info.revision or 0,
         )
         + 1
@@ -1295,7 +947,7 @@ def _new_revision(config, filename_info, members, ignored, warnings):
     return new_revision
 
 
-def _check_guard(code, row, folder, config, filename_info, members, warnings):
+def _check_guard(code, row, filename_info, members, warnings):
     if code == FailureCodes.FAMILY_MEMBER_SUPERSEDED:
         raise_if_superseded_sibling(members, warnings)
     elif code == FailureCodes.FAMILY_MEMBER_PENDING:
@@ -1304,8 +956,6 @@ def _check_guard(code, row, folder, config, filename_info, members, warnings):
         raise_if_not_latest(filename_info, members, warnings)
     elif code == FailureCodes.REJECTED_SUCCESSOR_IS_FINAL:
         raise_if_rejected_successor(members, warnings)
-    elif code == FailureCodes.SUPERSEDE_NOT_FINISHED:
-        raise_if_supersede_not_finished(folder, config, members, warnings)
 
 
 def _validated_field(name, source, flags, header, filename_info):
@@ -1327,24 +977,83 @@ def _validated_field(name, source, flags, header, filename_info):
     return value
 
 
+def _resolve_file(fileadr):
+    """--file's path (a bare name gets '.md'), its repository's config
+    (found by walking up for adr-config.adrplus) and root, and its
+    filename identity (a ParsedFileName) -- nothing read from the file itself yet."""
+    fileadr = Path(fileadr)
+    if fileadr.suffix == "":
+        fileadr = fileadr.with_suffix(".md")
+    if not fileadr.is_file():
+        raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
+    config_path = find_repo_root(fileadr)
+    if config_path is None:
+        raise CommandError(
+            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
+        )
+    config = load_repo_config(config_path)
+    found = parse_any_filename(fileadr.name, config)
+    if found is None:
+        raise CommandError(FailureCodes.FILENAME_NOT_RECOGNIZED, f"Filename matches no naming scheme: {fileadr.name}")
+    return fileadr, config, config_path.parent, found[1]
+
+
+def _target_in(snapshot, path, number):
+    """The Decision of `snapshot` that is `path` (compared by real path,
+    within its family). Not there only when its name is not a decision's
+    after all -- e.g. an extension other than .md."""
+    real = path.resolve()
+    target = next((decision for decision in snapshot.by_number.get(number, ()) if decision.path.resolve() == real), None)
+    if target is None:
+        raise CommandError(FailureCodes.FILENAME_NOT_RECOGNIZED, f"Not a decision file: {path.name}")
+    return target
+
+
 def prepare(command, fileadr, flags):
     """The preamble the 6 file-targeted lifecycle commands share, driven by
-    their TRANSITIONS row: load the target, clean up orphaned temp files,
-    then the checks of the row, in its order. Writes nothing to a decision
-    (only removes orphaned temp files); each command does its own writes
-    afterward. Every failure after load_target carries the warnings
-    accumulated so far."""
+    their TRANSITIONS row: resolve --file and its repository, refuse a
+    target outside the decisions folder, clean up orphaned temp files,
+    validate the whole repository (core/consistency.validate_repository:
+    repository-inconsistent, with data.errors, before any other rule),
+    then the checks of the row, in its order. The target and its family
+    come from that one validated snapshot; nothing is read twice. Writes
+    nothing to a decision (only removes orphaned temp files); each command
+    does its own writes afterward. Every failure after the repository is
+    resolved carries the warnings accumulated so far.
+
+    The target's own filename is checked before the repository is
+    validated: a file that is not a decision, or not in the decisions
+    folder, is refused as such, whatever state the repository is in."""
     row = TRANSITIONS[command]
     warnings = []
-    config, root, path, filename_info, header, encoding_repaired = load_target(fileadr, warnings=warnings)
+    path, config, root, parsed = _resolve_file(fileadr)
     with attach_warnings(warnings):
+        folder = resolve_within(root, config.folderadr)
+        if not is_within(folder, path):
+            raise CommandError(
+                FailureCodes.TARGET_OUTSIDE_FOLDERADR,
+                f"{path} is not inside the decisions folder ({config.folderadr}). Only a decision there is acted "
+                "on: move it into that folder, or run migrate if it predates the tool.",
+                data={"file": str(path), "folderadr": config.folderadr},
+            )
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
+        if warning:
+            warnings.append(warning)
+        snapshot = validate_repository(folder, config)
+        warning = excluded_candidate_warning(list(snapshot.excluded))
+        if warning:
+            warnings.append(warning)
+
+        target = _target_in(snapshot, path, parsed.number)
+        filename_info, header = target.name, target.header
+        # ADR004V01: a marker/label disagreement on the target itself, not
+        # on a sibling (that would misattribute it to this command).
+        warning = marker_label_mismatch_warning(header)
+        if warning:
+            warnings.append(warning)
+
         if row.revision_required and config.lenrevision == 0:
             raise CommandError(FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0.")
-        folder = resolve_within(root, config.folderadr)
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
-            if warning:
-                warnings.append(warning)
 
         def check_eligibility():
             # A specific reason code, not one collapsed not-eligible-for-*,
@@ -1355,21 +1064,16 @@ def prepare(command, fileadr, flags):
 
         if not row.scan_first:
             check_eligibility()
-        # One scan shared by every check below. Pre-fetching members here
-        # is also how the scan's own warnings (an excluded is_within
-        # candidate, a member whose header does not parse) reach the
-        # command.
-        ignored = []
-        members = family_members(folder, config, filename_info.number, warnings=warnings, ignored=ignored)
+        members = family_members(snapshot, filename_info.number)
         new_version = new_revision = None
         if row.numbering == "version":
-            new_version = _new_version(config, filename_info.number, members, warnings)
+            new_version = _new_version(config, members, warnings)
         elif row.numbering == "revision":
-            new_revision = _new_revision(config, filename_info, members, ignored, warnings)
+            new_revision = _new_revision(config, filename_info, members, warnings)
         if row.scan_first:
             check_eligibility()
         for code in row.guards:
-            _check_guard(code, row, folder, config, filename_info, members, warnings)
+            _check_guard(code, row, filename_info, members, warnings)
 
         refdate = None
         if row.refdate_anchor is not None:
@@ -1392,10 +1096,10 @@ def prepare(command, fileadr, flags):
         path=path,
         filename_info=filename_info,
         header=header,
-        encoding_repaired=encoding_repaired,
+        encoding_repaired=target.encoding_repaired,
         folder=folder,
+        snapshot=snapshot,
         members=members,
-        ignored=ignored,
         new_version=new_version,
         new_revision=new_revision,
         refdate=refdate,
@@ -1491,18 +1195,21 @@ def prepare_mark_superseded(path, config, header, filename_info, successor_numbe
     return record, report["encoding_repaired"], prepared
 
 
-def commit_in_order(steps, warnings, *, already_applied=(), hint):
+def commit_in_order(steps, warnings, *, hint, repair=None):
     """Commits several prepared writes in the given order. `steps` is a
     list of (prepared, exclusive, warnings_once_applied); each file's own
     warnings join `warnings` only once that file is committed. On a
     failure, every temp not yet committed is discarded.
 
     A failure before any file of the operation is on disk (none committed
-    here, and `already_applied` empty) propagates unchanged, for the
+    here) propagates unchanged, for the
     caller to map to its own nothing-written code. A failure after that
     raises multi-file-write-partially-applied, with data.applied and
-    data.pending naming the files, and `hint` telling how to finish."""
-    applied = [str(path) for path in already_applied]
+    data.pending naming the files, and `hint` telling how to finish.
+    `repair`, when given ({file, row}), is the exact header row to put
+    in `file` by hand to make the repository consistent again; it goes
+    into data.repair and the detail."""
+    applied = []
     for index, (prepared, exclusive, applied_warnings) in enumerate(steps):
         try:
             attempts = prepared.attempts + commit_write(prepared, exclusive=exclusive) - 1
@@ -1517,8 +1224,9 @@ def commit_in_order(steps, warnings, *, already_applied=(), hint):
             raise CommandError(
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED,
                 f"{prepared.path}: {error}. Already written: {', '.join(applied)}; not written: "
-                f"{', '.join(pending)}. {hint}",
-                data={"applied": applied, "pending": pending},
+                f"{', '.join(pending)}. {hint}"
+                + (f" In {repair['file']}, replace the row starting '|{repair['row'].split('|')[1]}|' with: {repair['row']}" if repair else ""),
+                data={"applied": applied, "pending": pending, **({"repair": repair} if repair else {})},
                 warnings=warnings,
             ) from error
         applied.append(str(prepared.path))

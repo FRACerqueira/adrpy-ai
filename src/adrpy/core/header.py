@@ -8,14 +8,15 @@ import re
 from dataclasses import dataclass
 from datetime import date as date_cls
 
-from adrpy.core.atomic_write import join_lines_with_trailing_terminator
+from adrpy.core.atomic_write import join_lines_with_trailing_terminator, split_real_lines
 from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.fs import read_with_permission_retry
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_title_with_no_case_transform_content,
 )
-from adrpy.core.text import is_ascii_digits
+from adrpy.core.text import is_ascii_digits, strip_leading_boms
 
 HEADER_LINE_COUNT = 12
 
@@ -137,9 +138,9 @@ def build_header(config, record, migrated=False):
         ),
         f"|{config.headerscope}|{record.scope}|" if record.scope else f"|{config.headerscope}||",
         f"|{config.headerdomain}|{record.domain}|" if record.domain else f"|{config.headerdomain}||",
-        _status_row(config, config.headertitlestatuscreated, record.status_create, record.date_create),
-        _status_row(config, config.headertitlestatuschanged, record.status_update, record.date_update),
-        _status_row(
+        status_row(config, config.headertitlestatuscreated, record.status_create, record.date_create),
+        status_row(config, config.headertitlestatuschanged, record.status_update, record.date_update),
+        status_row(
             config,
             config.headertitlestatussuperseded,
             record.status_change,
@@ -155,7 +156,8 @@ def build_header(config, record, migrated=False):
     return join_lines_with_trailing_terminator(lines)
 
 
-def _status_row(config, row_label, status, date_value, suffix=""):
+def status_row(config, row_label, status, date_value, suffix=""):
+    """One status row exactly as build_header writes it."""
     if status is None:
         return f"|{row_label}||"
     status_text = getattr(config, _STATUS_CONFIG_FIELD[status])
@@ -419,3 +421,95 @@ def has_header_shape(lines):
     return any(
         "|Adr-Plus " in line or line.rstrip() == "|--|--|" or "\x00" in line for line in lines[:HEADER_LINE_COUNT]
     )
+
+
+_HEADER_READ_CHUNK_SIZE = 4096
+# Without this cap, the read loop would continue to EOF whenever a
+# pathological/corrupted file never accumulates `count` real newlines --
+# a single-chunk-per-iteration bound would still let such a file be read
+# in full, just one chunk at a time. 4 chunks (16KB) is generous relative
+# to a genuine header (a few KB at most, per the config schema's own
+# field-length limits) -- a file that still doesn't have `count` real
+# newlines within this cap is treated as too-short/malformed by
+# parse_header's own existing check, never read further.
+_HEADER_READ_MAX_BYTES = _HEADER_READ_CHUNK_SIZE * 4
+_REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
+
+
+def _read_header_bytes(path, count):
+    """Shared by read_header_lines/read_header_lines_with_report: reads
+    only enough of `path` to recover the first `count` real lines (see
+    split_real_lines) -- never the whole file, and never past
+    `_HEADER_READ_MAX_BYTES` even if `count` real newlines never appear.
+    Reads in bounded chunks, growing only if the header genuinely
+    doesn't fit in one (the config schema's own field-length limits keep
+    a real header well under a single chunk in practice).
+
+    Re-scans the whole accumulated buffer (never just the newest chunk in
+    isolation) on every iteration: counting newlines within each
+    freshly-read chunk ALONE double-counts a `\r\n` pair that straddles
+    exactly on a chunk boundary (the `\r` as one chunk's own last byte,
+    matched as a lone CR by that chunk's own isolated scan; the `\n` as
+    the next chunk's own first byte, matched again as a lone LF by ITS
+    isolated scan), which can make the loop believe it already found
+    `count` real newlines one chunk-read too early, silently truncating
+    the returned buffer before the file's true `count`-th line is ever
+    read. Re-scanning the whole buffer each time lets the regex see both
+    halves of a straddling CRLF together, correctly counted as one
+    match. The buffer is still hard-capped at `_HEADER_READ_MAX_BYTES`
+    (16KB), so a rescan is at most ~4 passes over at most 16KB each --
+    O(1) relative to the file's own total size, never an unbounded-file
+    quadratic blowup.
+
+    This read tolerates a transient PermissionError, the same contention
+    window the write side (core/fs.py) already retries. Shares
+    core/fs.py's loop rather than being an independent copy."""
+
+    def _open_and_read():
+        with open(path, "rb") as handle:
+            chunks = []
+            total_bytes = 0
+            newline_count = 0
+            while newline_count < count and total_bytes < _HEADER_READ_MAX_BYTES:
+                more = handle.read(_HEADER_READ_CHUNK_SIZE)
+                if not more:
+                    break
+                chunks.append(more)
+                total_bytes += len(more)
+                newline_count = len(_REAL_NEWLINE_BYTES.findall(b"".join(chunks)))
+            return b"".join(chunks)
+
+    return read_with_permission_retry(_open_and_read)
+
+
+def read_header_lines(path, count=HEADER_LINE_COUNT):
+    """Reads only enough of `path` to recover the first `count` real
+    lines -- never the whole file. Used wherever only the header is
+    needed (family membership checks): reading a candidate's entire
+    body, however large, just to look at its first 12 lines would be
+    wasteful. Tolerates invalid bytes the same way read_lines does."""
+    text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
+    return split_real_lines(strip_leading_boms(text))[:count]
+
+
+def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
+    """Same bounded read as read_header_lines, but also reports whether
+    whatever was actually read needed a lossy decode. A scan deciding
+    only header-based eligibility -- migrate's own scan phase -- only
+    needs to know about corruption within the header itself, since
+    parse_header never looks past line `count`; a corrupted byte in the
+    body is irrelevant to
+    eligibility and passes through untouched in migrate's own write
+    phase either way, which copies raw bytes verbatim). For a small
+    file, the bounded read's own chunk boundary may still include some
+    body content in what it decodes -- that's a harmless side effect of
+    the chunk size, not a claim that corruption is ever checked
+    per-line; only content genuinely beyond the read is never seen."""
+    buffer = _read_header_bytes(path, count)
+    try:
+        text = buffer.decode("utf-8")
+        encoding_repaired = False
+    except UnicodeDecodeError:
+        text = buffer.decode("utf-8", errors="replace")
+        encoding_repaired = True
+    return split_real_lines(strip_leading_boms(text))[:count], encoding_repaired

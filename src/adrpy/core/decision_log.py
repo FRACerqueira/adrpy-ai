@@ -23,7 +23,7 @@ from pathlib import Path
 
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.lifecycle import read_header_lines
+from adrpy.core.header import read_header_lines
 from adrpy.core.security import find_unreadable_subdirectories, resolve_within
 from adrpy.core.text import parse_ascii_int
 

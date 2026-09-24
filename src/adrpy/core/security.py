@@ -182,8 +182,8 @@ def reject_status_marker_forgery_characters(value, field_name):
     necessarily the real one the tool itself writes after the marker --
     a statussup label containing its own ':' wins instead, corrupting
     `superseded_by_file` into the whole cell remainder (confirmed live:
-    a statussup of 'Status: Superseded' made `reject` fail with
-    superseded-predecessor-not-found on a successor whose primary write
+    a statussup of 'Status: Superseded' made
+    reject fail to find the predecessor of a successor whose primary write
     had already committed)."""
     for forbidden in ("(", ")", "<!--", "-->", ":"):
         if forbidden in value:

@@ -581,16 +581,16 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
     """Reading a candidate's ENTIRE content (read_lines_with_report) just to
     parse its 12-line header and check its encoding would be wasteful --
     the same class of waste already closed for family_members. Wired
-    instead to core.lifecycle.read_header_lines_with_report, the
+    instead to core.header.read_header_lines_with_report, the
     bounded equivalent."""
     _init_repo_with_pattern(tmp_path)
     legacy_path = _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
 
     from adrpy.cli import migrate as migrate_module
-    from adrpy.core import lifecycle
+    from adrpy.core import header
 
     calls = []
-    real = lifecycle.read_header_lines_with_report
+    real = header.read_header_lines_with_report
 
     def spy(path, *args, **kwargs):
         calls.append(path)

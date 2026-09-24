@@ -128,8 +128,9 @@ def test_new_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_p
     colliding_path.write_text("already here", encoding="utf-8")
 
     from adrpy.cli import new as new_module
+    from adrpy.core.consistency import Snapshot
 
-    monkeypatch.setattr(new_module, "scan_decisions", lambda *args, **kwargs: [])
+    monkeypatch.setattr(new_module, "validate_repository", lambda *args, **kwargs: Snapshot((), {}))
 
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
@@ -308,7 +309,8 @@ def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatc
     with pytest.raises(CommandError) as excinfo:
         new.run(["--path", str(tmp_path), "--title", "Some decision"])
 
-    assert excinfo.value.code == "new-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     assert not (adr_dir / "ADR001V01-some-decision.md").exists()
 
 

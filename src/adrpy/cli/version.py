@@ -21,9 +21,12 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "May also fail with family-scan-incomplete if a subdirectory under the "
-            "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
+            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
+            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
+            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
+            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
+            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
+            "made either way. "
             "The target's own title (re-read "
             "from its header cell, not a flag) is re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
@@ -34,14 +37,13 @@ def describe():
             "produce a successor file the tool can never recognize again. Fails with family-not-found if "
             "this decision's own family can't be resolved, or lenversion-too-small-for-new-version "
             "(data.new_version/data.lenversion) if the next version number doesn't fit the configured "
-            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with supersede-not-finished if this decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it. Fails with rejected-successor-is-final if the "
+            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
             "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
-            "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
+            "already-superseded if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
             "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
             "(data.file names it) if the resulting filename already exists on disk, or if any file of "
-            "this family already holds the number it would create -- whatever its title, whether or not "
-            "its header parses. No write is made in "
+            "this family already holds the number it would create -- whatever its title. No write is made in "
             "any of these cases."
         ),
         "arguments": [
@@ -106,7 +108,7 @@ def describe():
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
-                FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title, header valid or not), or its resulting filename already exists -- data.file names it.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title), or its resulting filename already exists -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
@@ -153,10 +155,10 @@ def run(args):
         )
 
         filename = build_filename(config, record)
-        # The filename decides numbering, counting every file: a version
-        # number already held by any file of this family is taken, never
-        # given to a second file.
-        taken = next((entry[2] for entry in ctx.members + ctx.ignored if entry[0].version == new_version), None)
+        # The filename decides numbering: a version number already held by
+        # any file of this family (in the validated snapshot) is taken,
+        # never given to a second file.
+        taken = next((entry[2] for entry in ctx.members if entry[0].version == new_version), None)
         if taken is not None:
             raise CommandError(
                 FailureCodes.FILE_ALREADY_EXISTS,

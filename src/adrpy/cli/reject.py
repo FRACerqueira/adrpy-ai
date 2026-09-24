@@ -16,19 +16,19 @@ safely retryable from scratch.
 """
 
 from adrpy.core.args import parse_flags
+from adrpy.core.consistency import SUPERSEDED
 from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.family import is_successor
+from adrpy.core.header import status_row
 from adrpy.core.lifecycle import (
     commit_in_order,
     discard_prepared,
     failure_codes,
-    family_members,
-    is_successor,
     prepare,
     prepare_status_field_rewrite,
     rewrite_status_field,
 )
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
-from adrpy.core.text import is_ascii_digits
 
 
 def describe():
@@ -40,39 +40,34 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
+            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
+            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
+            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
+            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
+            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
+            "made either way. "
             "If this decision is itself a successor "
             "(created by `supersede`), the predecessor's Superseded status is reverted FIRST, before "
             "this decision's own status is written -- the result's `undone_predecessor` names that file "
-            "when this happens, or is null otherwise. This is two writes, not one: both files are prepared "
+            "when this happens, or is null otherwise. In a consistent repository that predecessor always "
+            "exists: a successor that is not Rejected with no predecessor pointing back at it is itself a "
+            "broken rule (successor-without-predecessor). This is two writes, not one: both files are prepared "
             "first, then committed predecessor first, and every failure up to and including the "
-            "predecessor's own commit leaves NOTHING committed at all: superseded-predecessor-not-found "
-            "or reject-predecessor-write-failed (a real OSError preparing either file or committing the "
-            "predecessor), or -- if the scan for the predecessor's own family hits an "
-            "unreadable subdirectory -- family-scan-incomplete, all mean no write was made and the "
-            "call is safely retryable from scratch. Only multi-file-write-partially-applied is a genuine "
+            "predecessor's own commit leaves NOTHING committed at all: reject-predecessor-write-failed (a "
+            "real OSError preparing either file or committing the predecessor) means no write was made and "
+            "the call is safely retryable from scratch. Only multi-file-write-partially-applied is a genuine "
             "partial success: the predecessor was already reverted for real when committing THIS "
             "decision's own Rejected status then failed -- `data.applied` names the file already "
-            "reverted, `data.pending` this decision. Retrying `reject` on the same file after that specific failure "
-            "is safe and completes the operation: when no member of the predecessor's family is "
-            "Superseded any more (the revert already happened, or the predecessor was never marked at "
-            "all -- an interrupted supersede), there is nothing to revert and "
-            "reject proceeds straight to this decision's own write (`undone_predecessor` null). It "
-            "fails with superseded-predecessor-not-found instead when some member of that family IS "
-            "Superseded but not pointing at this decision (another successor took over, or a "
-            "back-reference edited by hand) -- reject only ever reverts a Superseded mark that names "
-            "this decision -- or when any file named into that family (by its number) has a header that "
-            "does not parse, damaged or missing, so its status can't be read (`data.unparseable_files` "
-            "names it; repair or remove it by hand and retry). That refusal applies to the retry above "
-            "too. May also fail with family-scan-incomplete BEFORE any write (this "
-            "decision's own family scan, unrelated to the predecessor lookup above) if a subdirectory under "
-            "the decisions folder could not be scanned -- no write made in that case. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
+            "reverted, `data.pending` this decision. The repository is then inconsistent "
+            "(successor-without-predecessor), so every command refuses it until it is repaired by hand: "
+            "mark this decision Rejected in its Changed cell. "
             "The target's own title/scope/domain "
             "(re-read from its header cells, not flags) are re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
             "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
             "character), or consists entirely of whitespace/'_'/'-'; no write made in that case either. "
             "BEFORE any write, fails with one "
-            "of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
+            "of already-accepted, already-rejected, or already-superseded "
             "(the target's own current status makes Rejected unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
             "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). "
@@ -103,9 +98,8 @@ def describe():
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
-                FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND: "This decision's own predecessor (per its filename's supersede suffix) could not be found, a member of its family is Superseded but not pointing at this decision, or -- when no valid member names this decision -- a file of that family does not parse (data.unparseable_files); no write was made.",
                 FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made.",
-                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; retry is safe.",
+                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; the repository is then inconsistent until this decision is marked Rejected by hand, with the exact row in data.repair.",
             },
         ),
     }
@@ -115,7 +109,7 @@ def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
     ctx = prepare("reject", flags["file"], flags)
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
-    folder, refdate, warnings = ctx.folder, ctx.refdate, ctx.warnings
+    refdate, warnings = ctx.refdate, ctx.warnings
     with attach_warnings(warnings):
         # Round-36 retraction of the original order (this decision's own
         # write, then the predecessor's): reverting the predecessor
@@ -128,97 +122,27 @@ def run(args):
         undone_predecessor = None
         predecessor = None
         if is_successor(filename_info):
-            # No write has happened yet at this point, so a scan
-            # failure here needs no special partial-success re-raise --
-            # it propagates exactly like this command's own primary
-            # family scan above.
-            pred_ignored = []
-            pred_members = family_members(
-                folder, config, filename_info.superseded_from, warnings=warnings, ignored=pred_ignored
-            )
-            pred_unparseable = [str(entry[2]) for entry in pred_ignored]
-            # latest_in_family picks whichever sibling has the highest
-            # (version, revision) -- not necessarily the one this
-            # successor actually came from. Reachable whenever the
-            # predecessor's family has more than one member (e.g. an
-            # earlier `version` bump) and the superseded member isn't
-            # the latest. Match the specific member this successor's
-            # own number was stamped onto instead (prepare_mark_superseded's own
-            # superseded_by_file, a bare zero-padded sequence number,
-            # never a filename). Compared as a number: the padding is the
-            # lenseq in force when it was written, which a later config
-            # change may have altered.
-            def names_this_successor(ref):
-                ref = (ref or "").strip()
-                return is_ascii_digits(ref) and int(ref) == filename_info.number
-
+            # The member of the predecessor's family whose Superseded cell
+            # names this decision -- not necessarily its latest member (an
+            # earlier `version` bump). The repository was validated: this
+            # decision is not Rejected, so exactly that member exists
+            # (successor-without-predecessor otherwise).
             predecessor = next(
-                (
-                    member
-                    for member in pred_members
-                    if member[1].status_change == "Superseded" and names_this_successor(member[1].superseded_by_file)
-                ),
-                None,
+                decision
+                for decision in ctx.snapshot.by_number.get(filename_info.superseded_from, ())
+                if decision.state == SUPERSEDED and decision.successor_ref == filename_info.number
             )
-            if predecessor is None:
-                # Two distinct reasons this can happen: a genuinely
-                # missing/corrupted predecessor reference (must fail
-                # loudly), or this exact successor was already
-                # processed once by an earlier call whose OWN write
-                # (below) then failed -- the predecessor revert already
-                # succeeded and cleared status_change, and with it the
-                # superseded_by_file back-reference this match depends
-                # on, so there is no live link left to re-derive from.
-                # Recognize the second case -- or a successor whose
-                # predecessor was never marked at all (an interrupted
-                # supersede) -- only when it is
-                # unambiguous: no member of the predecessor's family is
-                # Superseded at all, so there is nothing to revert in any
-                # reading. When some member IS Superseded (pointing at
-                # another successor, or with a back-reference edited by
-                # hand), that case still fails loudly: reject only reverts a Superseded
-                # mark that names this successor. Residual, accepted risk: a
-                # corrupted predecessor-sequence reference in the
-                # successor's own filename that happens to name a real,
-                # never-superseded family would also match here and be
-                # silently accepted -- narrow (requires a corrupted
-                # filename AND a coincidental real match) and disclosed,
-                # since nothing in that family's own content can tell
-                # "already reverted" from "never superseded" either way.
-                # A member whose header doesn't parse is left out of
-                # pred_members, and its status can't be read -- it may
-                # be the Superseded one, so it refuses, naming the file.
-                if pred_unparseable:
-                    raise CommandError(
-                        FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND,
-                        f"Could not tell whether the decision this one superseded (sequence "
-                        f"{filename_info.superseded_from}) is still marked Superseded: "
-                        f"{', '.join(pred_unparseable)} has a header that does not parse. Repair it by "
-                        "hand and retry. No write was made.",
-                        data={"unparseable_files": pred_unparseable},
-                        warnings=warnings,
-                    )
-                already_reverted = bool(pred_members) and all(
-                    member[1].status_change is None for member in pred_members
-                )
-                if not already_reverted:
-                    raise CommandError(
-                        FailureCodes.SUPERSEDED_PREDECESSOR_NOT_FOUND,
-                        f"Could not find the decision this one superseded (sequence "
-                        f"{filename_info.superseded_from}). No write was made.",
-                        warnings=warnings,
-                    )
 
         if predecessor is not None:
-            _revert_then_reject(ctx, predecessor)
-            undone_predecessor = str(predecessor[2])
+            _revert_then_reject(ctx, (predecessor.name, predecessor.header, predecessor.path))
+            undone_predecessor = str(predecessor.path)
         else:
             _record, body_encoding_repaired, attempts = rewrite_status_field(
                 path, config, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
             # Accurate only because the write above already succeeded --
             # the warning claims the file was rewritten. ADR006V01:
-            # combines the header's own flag (known since load_target)
+            # combines the header's own flag (known since prepare)
             # with the body's own (only known now, from the streamed
             # write).
             if ctx.encoding_repaired or body_encoding_repaired:
@@ -238,15 +162,17 @@ def _revert_then_reject(ctx, predecessor):
     to there leaves nothing written. They are committed predecessor
     FIRST: a failure of that commit also leaves nothing written, and one
     of this decision's commit after it is reported as
-    multi-file-write-partially-applied; a retry of reject then finds no
-    member Superseded and makes only this decision's write."""
+    multi-file-write-partially-applied. That leaves this decision a
+    successor with no predecessor pointing at it, which the validator
+    refuses (successor-without-predecessor) until it is repaired by
+    hand."""
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
     warnings = ctx.warnings
     pred_parsed, pred_header, pred_path = predecessor
     prepared = []
     try:
-        # pred_header already comes from pred_members' own scan
-        # (family_members, via read_header_lines_with_report) -- no
+        # pred_header already comes from the validated snapshot's own
+        # read (core/consistency, via read_header_lines_with_report) -- no
         # separate read needed for the header portion. It parsed, so
         # whatever that read replaced did not affect the status read
         # from it -- only the BODY's own encoding status (ADR006V01,
@@ -278,7 +204,12 @@ def _revert_then_reject(ctx, predecessor):
         commit_in_order(
             [(pred_prepared, False, pred_warnings), (own_prepared, False, own_warnings)],
             warnings,
-            hint="Run reject on this decision again to finish.",
+            hint="The repository is now inconsistent (adrpy check names it): mark this decision Rejected by hand "
+            "to finish (data.repair).",
+            repair={
+                "file": str(path),
+                "row": status_row(config, config.headertitlestatuschanged, "Rejected", ctx.refdate),
+            },
         )
     except OSError as error:
         # The predecessor's commit, the first: nothing has been written.

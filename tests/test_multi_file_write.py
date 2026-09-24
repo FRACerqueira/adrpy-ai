@@ -81,28 +81,10 @@ def test_supersede_failing_after_the_successor_names_what_was_written(tmp_path, 
         supersede.run(["--file", str(path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert excinfo.value.data == {"applied": [str(successor)], "pending": [str(path)]}
+    assert {k: v for k, v in excinfo.value.data.items() if k != "repair"} == {"applied": [str(successor)], "pending": [str(path)]}
+    assert set(excinfo.value.data["repair"]) == {"file", "row"}
     assert successor.exists()
     assert path.read_bytes() == before
-    assert list(path.parent.glob("*.tmp")) == []
-
-
-def test_supersede_resume_failing_to_mark_the_predecessor_reports_the_same_partial_state(tmp_path, monkeypatch):
-    path = _accepted(tmp_path)
-    successor = path.parent / "ADR002V01-first-decision--001.md"
-    with monkeypatch.context() as scoped:
-        _fail_nth_commit(scoped, 2)
-        with pytest.raises(CommandError):
-            supersede.run(["--file", str(path), "--refdate", "2026-01-05"])
-
-    for failing in (_fail_nth_commit, _fail_nth_prepare):
-        with monkeypatch.context() as scoped:
-            failing(scoped, 1)
-            with pytest.raises(CommandError) as excinfo:
-                supersede.run(["--file", str(path), "--refdate", "2026-01-06", "--resume"])
-        assert excinfo.value.code == "multi-file-write-partially-applied"
-        assert excinfo.value.data == {"applied": [str(successor)], "pending": [str(path)]}
-        assert "--resume" in excinfo.value.detail
     assert list(path.parent.glob("*.tmp")) == []
 
 
@@ -134,7 +116,8 @@ def test_reject_of_a_successor_failing_after_the_revert_names_what_was_written(t
         reject.run(["--file", str(successor), "--refdate", "2026-01-06"])
 
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert excinfo.value.data == {"applied": [str(path)], "pending": [str(successor)]}
+    assert {k: v for k, v in excinfo.value.data.items() if k != "repair"} == {"applied": [str(path)], "pending": [str(successor)]}
+    assert set(excinfo.value.data["repair"]) == {"file", "row"}
     assert "|Superseded||" in path.read_text(encoding="utf-8")
     assert successor.read_bytes() == successor_before
     assert list(path.parent.glob("*.tmp")) == []

@@ -438,10 +438,12 @@ def test_a_superseded_decision_must_point_at_a_successor_naming_it(tmp_path, fil
     assert first["file"] == str(repo.paths[0])
 
 
-def test_a_superseded_cell_with_a_non_numeric_reference_has_no_successor(tmp_path):
+@pytest.mark.parametrize("reference", ["two", "²", "٠٠٢"], ids=["word", "superscript", "arabic-indic"])
+def test_a_superseded_cell_with_a_non_numeric_reference_has_no_successor(tmp_path, reference):
+    # Non-ASCII digits are not a number either: they never name a successor.
     probe = make_repo(tmp_path / "probe")
     text = build_header(probe.config, decision_record(probe.config, D(1, state="superseded", successor=2)))
-    text = text.replace("<!-- Superseded --> : 002", "<!-- Superseded --> : two")
+    text = text.replace("<!-- Superseded --> : 002", f"<!-- Superseded --> : {reference}")
     repo = make_repo(tmp_path / "repo", files=[D(1, content=text + "# body\n"), D(2, suffix=1)])
 
     codes = _codes(repo)
@@ -458,6 +460,28 @@ def test_a_live_successor_without_a_predecessor_pointing_back(tmp_path):
 
     assert [error["code"] for error in errors] == [FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR]
     assert errors[0]["file"] == str(repo.paths[1])
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        [D(1, state="accepted"), D(1, version=2, state="accepted")],
+        [D(1, state="accepted"), D(1, version=2, state="rejected")],
+    ],
+    ids=["two-accepted", "newer-rejected"],
+)
+def test_a_live_successor_is_without_predecessor_whatever_its_predecessors_family(tmp_path, family):
+    """A predecessor family of several members, none marked Superseded (a
+    partial reject that already reverted it, or a supersede that never
+    marked it): the successor has no predecessor pointing back."""
+    repo = make_repo(tmp_path, files=[*family, D(2, suffix=1)])
+
+    errors = _raised(repo)
+
+    assert [(error["code"], error["file"]) for error in errors] == [
+        (FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR, str(repo.paths[-1]))
+    ]
+    assert errors[0]["related_files"] == sorted(str(path) for path in repo.paths[:-1])
 
 
 def test_a_suffix_naming_the_same_or_a_higher_number_is_not_a_successor(tmp_path):
@@ -490,14 +514,14 @@ def test_an_unreadable_subdirectory_is_scan_incomplete(tmp_path, monkeypatch):
 
 def test_an_unreadable_decision_file_is_scan_incomplete(tmp_path, monkeypatch):
     repo = make_repo(tmp_path, files=[D(1), D(2)])
-    real_read = consistency.read_header_lines
+    real_read = consistency.read_header_lines_with_report
 
     def flaky_read(path, *args, **kwargs):
         if path == repo.paths[1]:
             raise PermissionError(13, "Access is denied", str(path))
         return real_read(path, *args, **kwargs)
 
-    monkeypatch.setattr(consistency, "read_header_lines", flaky_read)
+    monkeypatch.setattr(consistency, "read_header_lines_with_report", flaky_read)
 
     errors = _raised(repo)
 

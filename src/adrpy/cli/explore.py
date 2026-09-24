@@ -11,8 +11,8 @@ from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.consistency import check_repository
 from adrpy.core.errors import FailureCodes, build_failure_codes
-from adrpy.core.header import has_header_shape, parse_header
-from adrpy.core.lifecycle import read_header_lines_with_report, resolve_target_and_config
+from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
+from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.fs import scan_tree
 from adrpy.core.security import resolve_within

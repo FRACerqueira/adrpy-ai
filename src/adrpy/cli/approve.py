@@ -15,9 +15,12 @@ def describe():
             "May fail with file-not-found if --file does not point to an existing file (a bare name with "
             "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
             "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "May also fail with family-scan-incomplete if a subdirectory under the "
-            "decisions folder could not be scanned (permission denied or similar) -- family membership "
-            "can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). "
+            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
+            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
+            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
+            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
+            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
+            "made either way. "
             "The target's own title/scope/"
             "domain (re-read from its header cells, not flags) are re-validated before use -- may fail with "
             "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
@@ -25,10 +28,10 @@ def describe():
             "character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file "
             "itself, but rewrites its header with the same fields a later rename-capable command "
             "(version/revise/supersede) would also need to trust. Fails with one of "
-            "already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status "
+            "already-accepted, already-rejected, or already-superseded "
             "(the target's own current status makes Accepted unreachable from here) if the target isn't "
             "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with supersede-not-finished if this decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it. "
+            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). "
         ),
         "arguments": [
             {

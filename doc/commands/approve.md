@@ -8,7 +8,7 @@ Marks a `Proposed` decision `Accepted`.
 
 ## Description
 
-Marks a Proposed decision as Accepted. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. May also fail with family-scan-incomplete if a subdirectory under the decisions folder could not be scanned (permission denied or similar) -- family membership can't be trusted from an incomplete scan; no write was made. A sibling whose header does not parse is left out of the family rules and reported in `warnings` (see doc/lifecycle.md). The target's own title/scope/domain (re-read from its header cells, not flags) are re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited or migrated source file's title carries '|', a line-break-like character, a filesystem-unsafe character (`<>:"/\|?*` or a control character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file itself, but rewrites its header with the same fields a later rename-capable command (version/revise/supersede) would also need to trust. Fails with one of already-accepted, already-rejected, already-superseded, not-proposed, or unexpected-status (the target's own current status makes Accepted unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with supersede-not-finished if this decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it. 
+Marks a Proposed decision as Accepted. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. The target's own title/scope/domain (re-read from its header cells, not flags) are re-validated before use -- may fail with field-contains-forbidden-character if a hand-edited or migrated source file's title carries '|', a line-break-like character, a filesystem-unsafe character (`<>:"/\|?*` or a control character), or consists entirely of whitespace/'_'/'-' -- this command never renames the file itself, but rewrites its header with the same fields a later rename-capable command (version/revise/supersede) would also need to trust. Fails with one of already-accepted, already-rejected, or already-superseded (the target's own current status makes Accepted unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). 
 
 ## Arguments
 
@@ -27,38 +27,20 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `already-accepted` | This decision is already Accepted; run undo first to reconsider it. |
 | `already-rejected` | This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again. |
 | `already-superseded` | This decision has already been superseded. |
-| `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
-| `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
 | `refdate-in-future` | --refdate is after today. |
 | `refdate-before-history` | --refdate is before this decision's own creation date. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme. |
+| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into that folder, or run migrate if it predates the tool. |
+| `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `field-contains-forbidden-character` | A free-text field contains '\|', a line-break-like character, or (for title) a filesystem-unsafe character. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
-| `family-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
-| `header-invalid` | The header failed structural validation, for a reason not covered by a more specific code below. |
-| `adr-file-empty` | The file has no content at all. |
-| `adr-file-too-short` | The file has fewer than the 12 required header lines. |
-| `adr-header-comment-not-found` | Line 1 (or line 12) is not the '<!-- ... -->' disclaimer comment this format requires. |
-| `adr-header-invalid-format` | Line 2 or line 3 does not match the fixed table-header shape this format requires. |
-| `adr-header-title-not-found` | The Title row's own cell is missing or malformed. |
-| `adr-header-version-not-found` | The Version row's own cell is missing, malformed, or not a plain digit run. |
-| `adr-header-revision-not-found` | The Revision row's own cell is missing, malformed, or not a plain digit run. |
-| `adr-header-scope-not-found` | The Scope row's own cell is missing or malformed. |
-| `adr-header-domain-not-found` | The Domain row's own cell is missing or malformed. |
-| `adr-header-status-created-not-found` | The Created status row's own cell is missing or malformed. |
-| `adr-header-status-updated-not-found` | The Changed status row's own cell is missing or malformed. |
-| `adr-header-status-superseded-not-found` | The Superseded status row's own cell is missing or malformed. |
-| `adr-status-supersede-format-invalid` | The Superseded row's own status is set, but its successor-reference suffix (': <number>') is missing. |
-| `status-line-format-invalid` | A status cell's own parenthesized-date shape ('label (date)') could not be parsed at all. |
-| `status-line-unknown-status` | A status cell's own label text does not match any of statusnew/statusacc/statusrej/statussup, and no canonical marker is present either. |
-| `status-line-date-invalid` | A status cell's own parenthesized date is not a valid ISO date. |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
@@ -100,7 +82,6 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
-| `supersede-not-finished` | This decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it (data.successor_file, data.predecessor_number). |
 
 ## Example
 

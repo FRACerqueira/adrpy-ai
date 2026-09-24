@@ -234,15 +234,18 @@ def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
     assert "init-existing-numbers-scan-incomplete" in info["description"]
 
 
-def test_every_family_member_command_documents_family_scan_incomplete():
-    """family_members() (used by
-    every per-file command's own family guard) now fails closed on an
-    unreadable subdirectory instead of merely warning -- documented on
-    all 6 commands that call it."""
+def test_every_file_command_documents_the_repository_validation():
+    """Every one of the 6 per-file commands validates the whole
+    repository before any other rule (repository-inconsistent) and
+    refuses a target outside the decisions folder
+    (target-outside-folderadr) -- both in its failure_codes and its
+    description."""
     for name in _PER_FILE_COMMANDS:
         info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "family-scan-incomplete" in text, f"{name}'s describe() never mentions family-scan-incomplete"
+        codes = {entry["code"] for entry in info["failure_codes"]}
+        for code in ("repository-inconsistent", "target-outside-folderadr"):
+            assert code in codes, f"{name}'s failure_codes never lists {code}"
+            assert code in info["description"], f"{name}'s describe() never mentions {code}"
 
 
 def test_short_flag_aliases_are_documented_in_describe():

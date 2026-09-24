@@ -76,7 +76,10 @@ def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         approve.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
@@ -122,7 +125,8 @@ def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
     with pytest.raises(CommandError) as excinfo:
         approve.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     # unchanged, no write made
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
@@ -153,7 +157,8 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         approve.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "unexpected-status"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["invalid-status-combination"]
     # And the file must not have been silently overwritten to Accepted.
     assert "|Changed|Accepted" not in adr_path.read_text(encoding="utf-8")
 
@@ -263,8 +268,9 @@ def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
     """Round 36 retraction: an earlier version of this command wrote this
     decision's own status FIRST, so a missing predecessor still reported a
     successful mutation despite the overall failure. The predecessor
-    lookup now runs BEFORE any write -- a missing predecessor means
-    nothing was committed at all, safely retryable from scratch."""
+    lookup now runs BEFORE any write -- and a successor with no
+    predecessor pointing at it is a broken repository rule
+    (successor-without-predecessor): nothing is committed at all."""
     target = tmp_path
     init.run(["--path", str(target)])
     config = load_repo_config(target / "adr-config.adrplus")
@@ -286,8 +292,8 @@ def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(successor_path)])
 
-    assert excinfo.value.code == "superseded-predecessor-not-found"
-    assert excinfo.value.data is None
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["successor-without-predecessor"]
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")
 
 
@@ -333,7 +339,7 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
         reject_module.run(["--file", str(successor_path)])
 
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert "Run reject on this decision again" in excinfo.value.detail
+    assert "mark this decision Rejected by hand" in excinfo.value.detail
     assert len(excinfo.value.warnings) == 2
     assert "orphaned" in excinfo.value.warnings[0].lower()
     assert "rewritten" in excinfo.value.warnings[1].lower()
@@ -359,7 +365,8 @@ def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tm
         reject_module.run(["--file", str(successor_path)])
 
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert excinfo.value.data == {"applied": [str(adr_path)], "pending": [str(successor_path)]}
+    assert {k: v for k, v in excinfo.value.data.items() if k != "repair"} == {"applied": [str(adr_path)], "pending": [str(successor_path)]}
+    assert set(excinfo.value.data["repair"]) == {"file", "row"}
     assert "|Superseded||" in adr_path.read_text(encoding="utf-8")  # predecessor genuinely reverted
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 
@@ -391,13 +398,11 @@ def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monk
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 
 
-def test_reject_retries_safely_after_predecessor_already_reverted_single_member_family(tmp_path, monkeypatch):
-    """Round 36: the whole point of reverting the predecessor first is
-    that the failure above is safely retryable. For a predecessor with no
-    version/revision history (the common case), a plain retry recognizes
-    the since-reverted predecessor (status_change is None, single family
-    member) and completes -- it does not re-attempt the revert and does
-    not report superseded-predecessor-not-found."""
+def test_a_retry_after_a_partial_reject_is_refused_until_repaired(tmp_path, monkeypatch):
+    """The predecessor was reverted, then this decision's own write
+    failed: the successor is left with no predecessor pointing at it
+    (successor-without-predecessor), so a retry is refused with nothing
+    written; the repair is by hand (mark it Rejected)."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -413,124 +418,43 @@ def test_reject_retries_safely_after_predecessor_already_reverted_single_member_
     assert excinfo.value.code == "multi-file-write-partially-applied"
 
     monkeypatch.undo()
-    result = reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    before = successor_path.read_bytes()
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
 
-    assert result["status"] == "Rejected"
-    assert result["undone_predecessor"] is None  # nothing left to revert this time
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
+        ("successor-without-predecessor", str(successor_path.resolve()))
+    ]
+    assert "by hand" in excinfo.value.data["errors"][0]["hint"].lower()
+    assert successor_path.read_bytes() == before
 
 
-def test_reject_retry_completes_for_a_multi_member_family_with_no_member_superseded(tmp_path):
-    """Same retry scenario as the single-member test above, but the
-    predecessor's family has version history (two members). No member is
-    Superseded at all, so there is nothing to revert in any reading, and
-    the retry completes -- which sibling had been reverted doesn't matter
-    when none is marked any more. Simulates the already-reverted state directly
-    (hand-written via _write_raw, both members already status_change=None
-    -- as they would be after a genuine revert, or simply never
-    superseded) rather than via an injected write failure, since the
-    point here is the detection logic itself, not how the state was
-    reached."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+def test_following_a_partial_rejects_repair_literally_leaves_a_consistent_repository(tmp_path, monkeypatch):
+    from adrpy.cli import reject as reject_module
+    from adrpy.cli import supersede
+    from adrpy.core.config import load_repo_config
+    from adrpy.core.consistency import check_repository
 
-    v01_path = adr_dir / "ADR001V01-first-decision.md"
-    _write_raw(
-        v01_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 1),
-        # Already back to normal -- as it would be after an earlier,
-        # partially-failed reject already reverted it for real.
-    )
-    v02_path = adr_dir / "ADR001V02-first-decision.md"
-    _write_raw(
-        v02_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 2),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-    )
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path,
-        cfg,
-        number=2,
-        title="Successor",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 3),
-        superseded=1,
+    _, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    successor_path = Path(supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"])
+    _fail_nth_reject_commit(monkeypatch, 2)
+    with pytest.raises(CommandError) as excinfo:
+        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    monkeypatch.undo()
+
+    repair = excinfo.value.data["repair"]
+    assert repair["file"] == str(successor_path)
+    assert repair["row"] in excinfo.value.detail
+    label = repair["row"].split("|")[1]
+    lines = successor_path.read_text(encoding="utf-8").split("\n")
+    successor_path.write_text(
+        "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
     )
 
-    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    assert result["undone_predecessor"] is None
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
-    assert "|Superseded||" in v01_path.read_text(encoding="utf-8")
-    assert "|Superseded||" in v02_path.read_text(encoding="utf-8")
-
-
-def test_reject_single_member_shortcut_false_positive_on_a_coincidental_match(tmp_path):
-    """Round 37, Class P9: reject.py's own docstring discloses a narrow,
-    accepted residual risk in the single-member already-reverted
-    shortcut -- a corrupted superseded_from reference in the successor's
-    own filename that happens to coincide with a real, never-superseded,
-    single-member ADR is silently accepted as "already reverted" instead
-    of failing loudly. This pins that disclosed behavior with a real
-    test rather than leaving it as an unverified comment -- if this ever
-    starts failing loudly instead, the risk note in reject.py should be
-    revisited, not this test blindly updated to match."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    # An ordinary, standalone, never-superseded ADR -- single-member
-    # family, status_change is None because nothing ever happened to it,
-    # not because it was reverted.
-    v01_path = adr_dir / "ADR001V01-first-decision.md"
-    _write_raw(
-        v01_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 1),
-    )
-    # Its filename claims to supersede ADR001 (a corrupted/hand-edited
-    # superseded_from, or a copy-paste mistake), but ADR001's own header
-    # has no back-reference to it at all -- it was never actually marked
-    # Superseded by this successor.
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path,
-        cfg,
-        number=2,
-        title="Successor",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 3),
-        superseded=1,
-    )
-
-    result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    assert result["status"] == "Rejected"
-    assert result["undone_predecessor"] is None
-    assert "|Changed|Rejected" in successor_path.read_text(encoding="utf-8")
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert check_repository(adr_path.parent, config)[1] == []
 
 
 def test_approve_rejects_refdate_before_create(tmp_path):
@@ -556,30 +480,6 @@ def test_approve_rejects_refdate_in_future(tmp_path):
         approve.run(["--file", str(adr_path), "--refdate", future])
 
     assert excinfo.value.code == "refdate-in-future"
-
-
-def test_approve_rejects_when_sibling_superseded(tmp_path):
-    tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
-    _write_raw(
-        sibling_path,
-        config,
-        number=1,
-        title="First decision v2",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="ADR002V01-something.md",  # required: a Superseded row with
-        # no ": <file>" suffix is itself unparseable, in the reference tool too
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        approve.run(["--file", str(adr_path)])
-
-    assert excinfo.value.code == "family-member-superseded"
 
 
 def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
@@ -636,6 +536,36 @@ def test_approve_file_not_found(tmp_path):
     assert excinfo.value.code == "file-not-found"
 
 
+@pytest.mark.parametrize("command", ["approve", "reject"])
+def test_approve_and_reject_refuse_a_placeholder_whose_sibling_was_superseded(tmp_path, command):
+    """family-member-superseded on approve/reject, reached with tool
+    commands only: two migrated placeholders (V01, V02), V02 superseded
+    straight from the placeholder. A Proposed decision never coexists with
+    a live Superseded one, but a placeholder is not Proposed."""
+    from adrpy.cli import migrate
+
+    data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
+    data.update(lenrevision=2, migrationpattern="N00:04T08V04:02R06:02")
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    v01, v02 = adr_dir / "00010101Foo.md", adr_dir / "00010201Foo.md"
+    for path in (v01, v02):
+        path.write_bytes(b"# Foo\n\nbody\n")
+    migrate.run(["--path", str(tmp_path)])
+    supersede.run(["--file", str(v02), "--refdate", "2026-01-05"])
+    before = v01.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        (approve if command == "approve" else reject).run(["--file", str(v01), "--refdate", "2026-01-06"])
+
+    assert excinfo.value.code == "family-member-superseded"
+    assert excinfo.value.data["superseded_file"] == str(v02.resolve())
+    assert v01.read_bytes() == before
+
+
 # ---- reject ----
 
 
@@ -659,7 +589,10 @@ def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -683,7 +616,8 @@ def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     # unchanged, no write made
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
@@ -696,33 +630,6 @@ def test_reject_rejects_already_resolved(tmp_path):
         reject.run(["--file", str(adr_path)])
 
     assert excinfo.value.code == "already-accepted"
-
-
-def test_reject_rejects_when_sibling_superseded(tmp_path):
-    """Family-member-superseded
-    is raised by hand at 8 separate call sites across 5 command files;
-    only approve's own was tested. reject's own raise site (reject.py)
-    had zero coverage."""
-    tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
-    _write_raw(
-        sibling_path,
-        config,
-        number=1,
-        title="First decision v2",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="ADR002V01-something.md",
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(adr_path)])
-
-    assert excinfo.value.code == "family-member-superseded"
 
 
 def test_reject_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
@@ -850,187 +757,23 @@ def test_reject_undoes_predecessor_supersede_status(tmp_path):
 
 
 def test_reject_reverts_the_correct_predecessor_not_just_the_latest_family_member(tmp_path):
-    """Reject picked the
-    predecessor to revert via latest_in_family (highest version/revision)
-    instead of matching the family member whose own superseded_by_file
-    actually names this successor. Reachable without any concurrency and
-    without the back-reference-matching bug covered separately below: a
-    family that already has more than one
-    member (e.g. from an earlier `version` bump) where the SUPERSEDED
-    member isn't the latest one already selects the wrong file -- reject
-    would revert the untouched latest member and leave the real
-    predecessor permanently, silently Superseded."""
-    # Round 40: superseding an older member while a newer one is alive is
-    # now refused (only the latest member is alive), so this state can only
-    # come from outside the tool (a hand edit, an older repository) -- it is
-    # written directly, and reject must still pick the member the
-    # back-reference names.
+    """Reject picks the predecessor to revert by the member whose
+    Superseded cell names this successor, not the family's latest member
+    (highest version/revision). Reached with tool commands only: V02 was
+    rejected, which left V01 live, and V01 -- not the latest member -- was
+    superseded."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-    _write_raw(
-        adr_path, cfg, number=1, title="First decision", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 1),
-        status_update="Accepted", date_update=date(2026, 1, 1),
-        status_change="Superseded", date_change=date(2026, 1, 4), superseded_by_file="002",
-    )
-    v02_path = adr_dir / "ADR001V02-first-decision.md"
-    _write_raw(
-        v02_path, cfg, number=1, title="First decision", version=2,
-        status_create="Proposed", date_create=date(2026, 1, 2),
-        status_update="Accepted", date_update=date(2026, 1, 3),
-    )
-    successor_path = adr_dir / "ADR002V01-first-decision--001.md"
-    _write_raw(
-        successor_path, cfg, number=2, title="First decision", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 4), superseded=1,
-    )
-
-    reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    v01_text = adr_path.read_text(encoding="utf-8")
-    v02_text = v02_path.read_text(encoding="utf-8")
-    assert "|Superseded||" in v01_text, "V01 (the real predecessor) should have been un-superseded"
-    assert "|Superseded|Superseded" not in v02_text, "V02 was never superseded and must stay untouched"
-
-
-def test_reject_matches_the_predecessor_by_back_reference_not_merely_by_being_superseded(tmp_path):
-    """Reverts the
-    predecessor by matching its own superseded_by_file back-reference,
-    not merely "a Superseded sibling" -- but every existing test only
-    ever has ONE Superseded member in the family at the point reject
-    runs, so "the only Superseded sibling" and "the sibling whose own
-    back-reference names this successor" were indistinguishable. This
-    constructs a family with TWO independently-Superseded members (hand-
-    written via _write_raw, bypassing supersede's own family guard by
-    design -- proving the SELECTION logic itself, not reachable through
-    the normal command flow) pointing to two DIFFERENT successors, and
-    confirms rejecting one successor reverts the matching predecessor,
-    not just whichever Superseded sibling scan_decisions happens to
-    return first."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    v01_path = adr_dir / "ADR001V01-first-decision.md"
-    _write_raw(
-        v01_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 3),
-        superseded_by_file="002",  # points at ADR002, NOT this test's successor (ADR003)
-    )
-    v02_path = adr_dir / "ADR001V02-first-decision.md"
-    _write_raw(
-        v02_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 2),
-        status_update="Accepted",
-        date_update=date(2026, 1, 2),
-        status_change="Superseded",
-        date_change=date(2026, 1, 4),
-        superseded_by_file="003",  # the REAL predecessor of this test's successor (ADR003)
-    )
-    successor_path = adr_dir / "ADR003V01-successor--001.md"
-    _write_raw(
-        successor_path,
-        cfg,
-        number=3,
-        title="Successor",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 4),
-        superseded=1,
-    )
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    v02_path = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"])
+    reject.run(["--file", str(v02_path), "--refdate", "2026-01-03"])
+    successor_path = Path(supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])["created"])
+    v02_before = v02_path.read_bytes()
 
     result = reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
-    assert result["undone_predecessor"] == str(v02_path)
-    assert "|Superseded||" in v02_path.read_text(encoding="utf-8"), "V02 (the real predecessor) should be un-superseded"
-    assert "|Superseded|Superseded" in v01_path.read_text(encoding="utf-8"), "V01 must stay untouched"
-
-
-def test_reject_family_scan_incomplete_makes_no_write_at_all(tmp_path, monkeypatch):
-    """Round 36 retraction: the predecessor-family scan now runs BEFORE
-    any write, like every other family_members call in this codebase --
-    unlike the old order, where it ran AFTER the primary write had already
-    committed and needed a special partial-success re-raise merging in
-    file/status. That merge is gone now: the original family-scan-
-    incomplete error propagates completely unchanged, and nothing was
-    written."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    predecessor_path = adr_dir / "ADR001V01-first-decision.md"
-    _write_raw(
-        predecessor_path,
-        cfg,
-        number=1,
-        title="First decision",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_update="Accepted",
-        date_update=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 3),
-        superseded_by_file="002",
-    )
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path,
-        cfg,
-        number=2,
-        title="Successor",
-        version=1,
-        status_create="Proposed",
-        date_create=date(2026, 1, 3),
-    )
-
-    from adrpy.cli import reject as reject_module
-
-    real_family_members = reject_module.family_members
-    calls = {"count": 0}
-
-    def flaky_family_members(folder, config, number, warnings=None, ignored=None):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            return real_family_members(folder, config, number, warnings=warnings, ignored=ignored)
-        raise CommandError(
-            "family-scan-incomplete",
-            "Cannot safely scan: 1 subdirectory could not be scanned.",
-            data={"folder": str(folder), "unreadable": [str(folder / "restricted")]},
-            warnings=warnings,
-        )
-
-    monkeypatch.setattr(reject_module, "family_members", flaky_family_members)
-    # The first (own-family) scan runs in lifecycle.prepare.
-    from adrpy.core import lifecycle as lifecycle_module
-
-    monkeypatch.setattr(lifecycle_module, "family_members", flaky_family_members)
-
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path), "--refdate", "2026-01-04"])
-
-    assert excinfo.value.code == "family-scan-incomplete"
-    # The original error's own data (which subdirectories couldn't be
-    # scanned) survives completely unmodified -- no file/status merged in,
-    # since nothing has been written by this point.
-    assert excinfo.value.data == {"folder": str(adr_dir), "unreadable": [str(adr_dir / "restricted")]}
-    assert "Rejected (2026-01-04)" not in successor_path.read_text(encoding="utf-8")
-    assert calls["count"] == 2
+    assert result["undone_predecessor"] == str(adr_path.resolve())
+    assert "|Superseded||" in adr_path.read_text(encoding="utf-8"), "V01 (the real predecessor) should have been un-superseded"
+    assert v02_path.read_bytes() == v02_before, "V02 was never superseded and must stay untouched"
 
 
 # ---- undo ----
@@ -1059,7 +802,10 @@ def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         undo.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "field-contains-forbidden-character"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert error["code"] == "invalid-header"
+    assert error["detail"].startswith("field-contains-forbidden-character")
 
 
 def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -1083,7 +829,8 @@ def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypat
     with pytest.raises(CommandError) as excinfo:
         undo.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     assert "|Changed|Accepted" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
 
 
@@ -1134,23 +881,22 @@ def test_undo_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 
 
 def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):
-    """Performance backlog item: has_superseded_sibling and
-    has_pending_sibling each called family_members (and so scan_decisions)
-    independently -- 2 full directory scans per undo call for information
-    a single scan already has."""
-    from adrpy.core import lifecycle
+    """The repository is read once per call: one scan of the decisions
+    folder (core/consistency), whose snapshot feeds the target, its family
+    and every guard -- no second scan."""
+    from adrpy.core import consistency
 
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
 
     calls = []
-    original = lifecycle.scan_decisions
+    original = consistency.scan_tree
 
-    def counting_scan_decisions(*args, **kwargs):
+    def counting_scan_tree(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(lifecycle, "scan_decisions", counting_scan_decisions)
+    monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
 
     undo.run(["--file", str(adr_path)])
 
@@ -1167,30 +913,22 @@ def test_undo_rejects_when_still_proposed(tmp_path):
 
 
 def test_undo_rejects_when_sibling_superseded(tmp_path):
-    """Undo's own
-    family-member-superseded raise site had zero coverage (only its
-    sibling family-member-pending check, below, was tested)."""
+    """family-member-superseded, reached with tool commands only: V02 was
+    rejected, which left V01 live, and V01 was then superseded. Undoing
+    V02's Rejected status would bring a second live line back."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-    sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
-    _write_raw(
-        sibling_path,
-        config,
-        number=1,
-        title="First decision v2",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="ADR002V01-something.md",
-    )
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-03"])
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
+    before = Path(v02).read_bytes()
 
     with pytest.raises(CommandError) as excinfo:
-        undo.run(["--file", str(adr_path)])
+        undo.run(["--file", v02])
 
     assert excinfo.value.code == "family-member-superseded"
+    assert excinfo.value.data["superseded_file"] == str(adr_path.resolve())
+    assert Path(v02).read_bytes() == before
 
 
 def test_undo_rejects_when_pending_sibling_exists(tmp_path):
@@ -1214,56 +952,12 @@ def test_undo_rejects_when_pending_sibling_exists(tmp_path):
     assert excinfo.value.code == "family-member-pending"
 
 
-def test_undo_prioritizes_superseded_sibling_over_pending_sibling(tmp_path):
-    """Superseded takes priority over pending, deliberately -- a superseded
-    member means the WHOLE family this decision belonged to has already
-    been replaced, which blocks it regardless of any other sibling's own
-    state. No existing test constructed a family with BOTH conditions
-    true at once; every existing test above exercised exactly one."""
-    tmp_path, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    superseded_sibling = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
-    _write_raw(
-        superseded_sibling,
-        config,
-        number=1,
-        title="First decision v2",
-        version=2,
-        status_create="Proposed",
-        date_create=date(2026, 1, 1),
-        status_change="Superseded",
-        date_change=date(2026, 1, 2),
-        superseded_by_file="ADR003V01-something.md",
-    )
-    pending_sibling = tmp_path / "doc" / "adr" / "ADR001V03-first-decision-v3.md"
-    _write_raw(
-        pending_sibling,
-        config,
-        number=1,
-        title="First decision v3",
-        version=3,
-        status_create="Proposed",
-        date_create=date(2026, 1, 3),
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        undo.run(["--file", str(adr_path)])
-
-    assert excinfo.value.code == "family-member-superseded"
-
-
-def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
-    """family_members applied neither
-    is_structurally_valid nor counts_as_family_member -- it counted ANY
-    filename-matching sibling as a family member, even one whose header
-    doesn't parse at all (a hand-written legacy file nobody has run
-    `migrate` on yet). has_pending_sibling's predicate
-    (`status_update is None and not is_migrated`) then falsely fired for
-    it, blocking undo/version/revise on the *current-scheme* family member
-    during the entire window between "legacy file exists" and "migrate
-    has run" -- a window that must work correctly."""
+def test_undo_refuses_a_repository_with_an_unmigrated_legacy_file(tmp_path):
+    """A hand-written, never-migrated legacy file (matched by
+    migrationpattern "N00:04T04") has an ADR name and no header: a broken
+    repository rule (no-header, with the migrate hint), so undo refuses
+    with nothing written. (It used to be left out of the family and
+    ignored.)"""
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["migrationpattern"] = "N00:04T04"
     config_file = tmp_path / "seed-config.json"
@@ -1273,15 +967,18 @@ def test_undo_does_not_block_on_an_unmigrated_legacy_sibling(tmp_path):
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-first-decision.md"
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
 
-    # A hand-written, never-migrated legacy file sharing sequence number 1
-    # (matched by the "N00:04T04" pattern: 4-digit number at position 0,
-    # title starting at position 4) -- no AdrPlus header at all.
     legacy_sibling = tmp_path / "doc" / "adr" / "0001LegacyNotes.md"
     legacy_sibling.write_text("# Some legacy notes\n\nNever run through migrate.\n", encoding="utf-8")
+    before = adr_path.read_bytes()
 
-    result = undo.run(["--file", str(adr_path)])
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(adr_path)])
 
-    assert result["status"] == "Proposed"
+    assert excinfo.value.code == "repository-inconsistent"
+    [error] = excinfo.value.data["errors"]
+    assert (error["code"], error["file"]) == ("no-header", str(legacy_sibling.resolve()))
+    assert "migrate" in error["hint"]
+    assert adr_path.read_bytes() == before
 
 
 def test_status_transitions_end_to_end_through_main(tmp_path):
@@ -1305,107 +1002,6 @@ def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
 
     assert main(["approve", "-f", str(adr_path), "-r", "2026-01-02"]) == EXIT_SUCCESS
     assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in adr_path.read_text(encoding="utf-8")
-
-
-def test_a_partial_reject_in_a_multi_member_family_completes_on_a_plain_retry(tmp_path, monkeypatch):
-    # The recovery path reject's describe() names, end to end, using only
-    # tool commands: supersede --resume on the predecessor, then reject.
-    from adrpy.cli import supersede
-    from adrpy.cli import reject as reject_module
-
-    _, adr_path = _setup_repo(tmp_path)
-    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
-    v02 = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"])
-    approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
-    successor_path = Path(supersede.run(["--file", str(v02), "--refdate", "2026-01-05"])["created"])
-
-    _fail_nth_reject_commit(monkeypatch, 2)
-    with pytest.raises(CommandError) as excinfo:
-        reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
-    assert excinfo.value.code == "multi-file-write-partially-applied"
-    monkeypatch.undo()
-
-    # The first attempt already reverted V02; no family member is
-    # Superseded any more, so a plain retry just finishes the reject.
-    result = reject_module.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
-
-    assert result["undone_predecessor"] is None
-    assert "|Superseded||" in v02.read_text(encoding="utf-8")
-    assert "Rejected" in successor_path.read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize("members", [1, 2, 3])
-def test_reject_refuses_when_a_predecessor_family_member_has_an_unparseable_header(tmp_path, members):
-    """A Superseded member whose header no longer parses (a hand-edited
-    Superseded cell with no colon) is dropped by family_members, so it
-    used to look like "no member Superseded -- nothing to revert" and
-    reject went ahead without reverting it. It must refuse instead,
-    naming the file, whatever the family size."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-
-    for version in range(1, members + 1):
-        is_last = version == members
-        _write_raw(
-            adr_dir / f"ADR001V0{version}-first-decision.md",
-            cfg,
-            number=1,
-            title="First decision",
-            version=version,
-            status_create="Proposed",
-            date_create=date(2026, 1, 1),
-            status_update="Accepted",
-            date_update=date(2026, 1, 1),
-            status_change="Superseded" if is_last else None,
-            date_change=date(2026, 1, 2) if is_last else None,
-            superseded_by_file="002" if is_last else None,
-        )
-    corrupted = adr_dir / f"ADR001V0{members}-first-decision.md"
-    text = corrupted.read_text(encoding="utf-8")
-    assert text.count(": 002|") == 1
-    corrupted.write_text(text.replace(": 002|", " --> 002|"), encoding="utf-8")
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path, cfg, number=2, title="Successor", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
-    )
-    before = successor_path.read_text(encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "superseded-predecessor-not-found"
-    assert excinfo.value.data == {"unparseable_files": [str(corrupted)]}
-    assert successor_path.read_text(encoding="utf-8") == before
-
-
-def test_reject_refuses_when_a_same_number_file_has_no_header(tmp_path):
-    """The filename decides identity: a file named into the predecessor's
-    family belongs to it, even with no header at all. Its status can't be
-    read, so reject can't tell whether it is the Superseded member to
-    revert -- it refuses and names it, rather than guessing."""
-    tmp_path, _ = _setup_repo(tmp_path)
-    adr_dir = tmp_path / "doc" / "adr"
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-    _write_raw(
-        adr_dir / "ADR001V01-first-decision.md", cfg, number=1, title="First decision", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 1),
-        status_update="Accepted", date_update=date(2026, 1, 1),
-    )
-    notes = adr_dir / "ADR001V02-notes.md"
-    notes.write_text("# Notes\n\nPlain text, no header.\n" * 5, encoding="utf-8")
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path, cfg, number=2, title="Successor", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "superseded-predecessor-not-found"
-    assert excinfo.value.data == {"unparseable_files": [str(notes)]}
 
 
 @pytest.mark.parametrize("boms", [1, 2])
@@ -1566,50 +1162,20 @@ def test_reject_still_reverts_the_predecessor_after_lenseq_changes(tmp_path):
 
 
 def test_a_superseded_sibling_saved_with_a_bom_still_freezes_the_family(tmp_path):
-    # The BOM strip also applies to the family scan, not only to the target.
-    tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-    v01 = adr_dir / "ADR001V01-first-decision.md"
-    _write_raw(
-        v01, cfg, number=1, title="First decision", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 1),
-        status_update="Accepted", date_update=date(2026, 1, 1),
-        status_change="Superseded", date_change=date(2026, 1, 2), superseded_by_file="002",
-    )
-    v01.write_bytes(b"\xef\xbb\xbf" + v01.read_bytes())
-    v02 = adr_dir / "ADR001V02-first-decision.md"
-    _write_raw(v02, cfg, number=1, title="First decision", version=2, status_create="Proposed", date_create=date(2026, 1, 3))
+    # The BOM strip also applies to the family's members, not only to the
+    # target: V01 (Superseded, reached with tool commands only) saved with a
+    # BOM still blocks undoing the rejected V02.
+    tmp_path, adr_path = _setup_repo(tmp_path)
+    approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-03"])
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
+    adr_path.write_bytes(b"\xef\xbb\xbf" + adr_path.read_bytes())
 
     with pytest.raises(CommandError) as excinfo:
-        approve.run(["--file", str(v02), "--refdate", "2026-01-04"])
+        undo.run(["--file", v02])
 
     assert excinfo.value.code == "family-member-superseded"
-
-
-def test_reject_names_every_file_of_the_predecessor_family_that_does_not_parse(tmp_path):
-    tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
-    adr_dir = tmp_path / "doc" / "adr"
-    _write_raw(
-        adr_dir / "ADR001V01-first-decision.md", cfg, number=1, title="First decision", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 1),
-        status_update="Accepted", date_update=date(2026, 1, 1),
-    )
-    broken = [adr_dir / "ADR001V02-notes.md", adr_dir / "ADR001V03-more.md"]
-    for path in broken:
-        path.write_text("# no header\n", encoding="utf-8")
-    successor_path = adr_dir / "ADR002V01-successor--001.md"
-    _write_raw(
-        successor_path, cfg, number=2, title="Successor", version=1,
-        status_create="Proposed", date_create=date(2026, 1, 3), superseded=1,
-    )
-
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
-
-    assert sorted(excinfo.value.data["unparseable_files"]) == sorted(str(p) for p in broken)
-
 
 
 def test_the_whole_family_of_a_rejected_successor_is_final(tmp_path):
@@ -1657,7 +1223,7 @@ def test_reject_treats_a_non_ascii_digit_back_reference_as_not_naming_it(tmp_pat
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.code == "repository-inconsistent"
 
 
 
@@ -1735,5 +1301,5 @@ def test_reject_leaves_the_predecessor_alone_for_a_non_ascii_back_reference(tmp_
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.code == "repository-inconsistent"
     assert pred.read_bytes() == before

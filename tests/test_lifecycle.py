@@ -17,11 +17,9 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_supersede,
     ineligibility_reason_for_undo,
     ineligibility_reason_for_version_or_revise,
-    load_target,
+    prepare,
     next_number,
     read_body,
-    read_header_lines,
-    read_header_lines_with_report,
     reject_folderadr_change_if_decisions_exist,
     resolve_target_and_config,
     rewrite_status_field,
@@ -31,7 +29,12 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
 )
 
+from adrpy.core.consistency import check_repository
+from adrpy.core.header import read_header_lines, read_header_lines_with_report
+
 import json
+
+from conftest import D, make_repo
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
 
@@ -81,18 +84,18 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     assert find_by_unique_title("Totally different", config, decisions) is None
 
 
-def test_load_target_reports_when_no_adr_config_is_found_above(tmp_path):
+def test_prepare_reports_when_no_adr_config_is_found_above(tmp_path):
     """Cannot-determine-root-path
     (raised when find_repo_root walks all the way up without finding
     adr-config.adrplus) had zero coverage -- reachable from every one of
-    the 6 status-transition commands via load_target."""
+    the 6 status-transition commands via prepare."""
     orphan_dir = tmp_path / "no-repo-here"
     orphan_dir.mkdir()
     target = orphan_dir / "ADR001V01-orphan.md"
     target.write_text("not a real decision", encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
-        load_target(target)
+        prepare("approve", target, {})
 
     assert excinfo.value.code == "cannot-determine-root-path"
 
@@ -136,15 +139,15 @@ def test_resolve_target_and_config_skips_the_config_check_when_not_required(tmp_
 @pytest.mark.parametrize(
     ("content", "expected_code"),
     [
-        ("", "adr-file-empty"),
-        ("|only one line|", "adr-file-too-short"),
+        ("", "no-header"),
+        ("|only one line|", "no-header"),
+        ("|--|--|", "invalid-header"),
     ],
 )
-def test_load_target_surfaces_the_specific_header_error_as_the_code(tmp_path, content, expected_code):
-    """Header.error is already a specific, correctly-
-    computed reason (adr-file-empty, adr-header-title-not-found, ...);
-    load_target discarded it behind a single fixed "header-invalid" code,
-    forcing an agent to fall back to a stderr string it can't rely on."""
+def test_prepare_reports_the_targets_own_header_through_the_validator(tmp_path, content, expected_code):
+    """A target whose header does not parse is one of the repository's
+    broken rules: repository-inconsistent, the file named in data.errors
+    (its parse-failure code, for a damaged header, in `detail`)."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -153,12 +156,15 @@ def test_load_target_surfaces_the_specific_header_error_as_the_code(tmp_path, co
     (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
-        load_target(target)
+        prepare("approve", target, {})
 
-    assert excinfo.value.code == expected_code
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(error["code"], error["file"]) for error in excinfo.value.data["errors"]] == [
+        (expected_code, str(target.resolve()))
+    ]
 
 
-def test_load_target_reports_no_encoding_repair_for_a_clean_file(tmp_path):
+def test_prepare_reports_no_encoding_repair_for_a_clean_file(tmp_path):
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -168,19 +174,17 @@ def test_load_target_reports_no_encoding_repair_for_a_clean_file(tmp_path):
         handle.write(build_header(config, record) + "# body\n")
     (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
-    *_rest, encoding_repaired = load_target(target)
-
-    assert encoding_repaired is False
+    assert prepare("approve", target, {}).encoding_repaired is False
 
 
-def test_load_target_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(tmp_path):
+def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(tmp_path):
     """Reading a file with invalid UTF-8 bytes WITHIN its 12-line header
     (Fase 4: tolerated, confirmed live to match the reference tool)
     silently replaces them with U+FFFD -- nothing told the caller this
     happened, even though it's a real, permanent loss of the original
     bytes the moment the file is rewritten.
 
-    ADR006V01: load_target/read_target now read ONLY the bounded header
+    ADR006V01: prepare reads ONLY the bounded header
     (never the body) -- invalid bytes WITHIN THE BODY are no longer
     detectable from this call alone; that signal now comes from
     stream_normalized_body_chunks' own `report["encoding_repaired"]` at
@@ -195,7 +199,7 @@ def test_load_target_reports_encoding_repair_when_the_header_has_invalid_utf8_by
     target = adr_dir / "ADR001V01-dirty.md"
     header_text = build_header(config, record)
     # Corrupt a byte WITHIN the header itself (inside the title cell),
-    # not past it -- the only case load_target's own bounded header read
+    # not past it -- the only case prepare's own bounded header read
     # can still see.
     corrupted_header = header_text.encode("utf-8").replace(b"Dirty", b"Dir\xa4ty")
     with open(target, "wb") as handle:
@@ -203,9 +207,7 @@ def test_load_target_reports_encoding_repair_when_the_header_has_invalid_utf8_by
         handle.write(b"# body\n")
     (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
-    *_rest, encoding_repaired = load_target(target)
-
-    assert encoding_repaired is True
+    assert prepare("approve", target, {}).encoding_repaired is True
 
 
 _BODY_MATRIX_CASES = [
@@ -334,7 +336,7 @@ def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
     with open(target, "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body")
     from adrpy.core.header import parse_header
-    from adrpy.core.lifecycle import read_header_lines_with_report
+    from adrpy.core.header import read_header_lines_with_report
     from adrpy.core.naming import parse_any_filename
 
     header_lines, _encoding_repaired = read_header_lines_with_report(target)
@@ -361,21 +363,6 @@ def _header(**overrides):
         ({"status_update": "Accepted"}, "already-accepted"),
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_change": "Superseded"}, "already-superseded"),
-        ({"status_create": "Accepted"}, "not-proposed"),
-        # A status_update value that is
-        # structurally valid (one of the 4 configured status labels, so
-        # header.is_valid stays True) but is neither "Accepted" nor
-        # "Rejected" -- reachable via a hand-edited/corrupted file whose
-        # "Changed" cell contains the "Proposed" or "Superseded" label
-        # text. Confirmed against the reference tool's own equivalent check
-        # and this project's own pre-refactor boolean (`status_update is
-        # None`): BOTH require
-        # status_update to be None to be eligible -- any other value,
-        # known or not, must be ineligible. The granular-code refactor
-        # only excluded "Accepted"/"Rejected" explicitly, silently
-        # falling through to eligible for anything else.
-        ({"status_update": "Proposed"}, "unexpected-status"),
-        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reason):
@@ -395,7 +382,6 @@ def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reas
         ({"status_update": "Rejected"}, None),
         ({"status_update": None}, "still-proposed"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
-        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
     ],
 )
 def test_ineligibility_reason_for_undo(header_kwargs, expected_reason):
@@ -411,12 +397,6 @@ def test_ineligibility_reason_for_undo(header_kwargs, expected_reason):
         ({"status_update": None}, "still-proposed"),
         ({"status_update": "Rejected"}, "already-rejected"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
-        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
-        # Same class as approve_or_reject's own
-        # case above, but here it's a mislabel rather than a false
-        # eligibility -- ineligible either way, but calling a corrupted
-        # "Superseded"-in-the-wrong-cell value "already-rejected" is wrong.
-        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
@@ -432,11 +412,6 @@ def test_ineligibility_reason_for_supersede(header_kwargs, expected_reason):
         ({"status_update": "Rejected"}, None),
         ({"status_update": None}, "still-proposed"),
         ({"status_update": "Accepted", "status_change": "Superseded"}, "already-superseded"),
-        ({"status_create": "Accepted", "status_update": "Accepted"}, "not-proposed"),
-        # Mislabel, not a false-eligibility bug
-        # here (the boolean outcome already matched) -- but "still-proposed"
-        # is wrong for a status_update that isn't actually None.
-        ({"status_update": "Superseded"}, "unexpected-status"),
     ],
 )
 def test_ineligibility_reason_for_version_or_revise(header_kwargs, expected_reason):
@@ -718,30 +693,6 @@ def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tm
     assert encoding_repaired is False
 
 
-def test_family_members_excludes_a_structurally_invalid_file(tmp_path):
-    """family_members counts only headers that parse (Round 39; the
-    reference tool also counted a damaged migrated header) -- a
-    filename-matching file whose header
-    doesn't parse at all (unmigrated legacy, or simply corrupt) must never
-    be counted as a family member, regardless of which naming scheme
-    matched its filename."""
-    config_dict = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
-    config_dict["migrationpattern"] = "N00:04T04"
-    config = parse_repo_config(json.dumps(config_dict))
-
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    record = DecisionRecord(number=1, title="Existing decision", version=1, status_create="Proposed")
-    with open(adr_dir / "ADR001V01-existing-decision.md", "w", encoding="utf-8", newline="") as handle:
-        handle.write(build_header(config, record) + "# body")
-    (adr_dir / "0001LegacyNotes.md").write_text("# Not a real header at all\n", encoding="utf-8")
-
-    members = family_members(adr_dir, config, 1)
-
-    assert len(members) == 1
-    assert members[0][0].title == "existing-decision"
-
-
 def _written_decision(tmp_path, corrupt_old, corrupt_new):
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
@@ -754,34 +705,17 @@ def _written_decision(tmp_path, corrupt_old, corrupt_new):
     return config, adr_dir, path
 
 
-def test_a_sibling_whose_header_no_longer_parses_is_left_out_and_reported(tmp_path):
-    """Round 39 policy: the header decides status, counting only headers
-    that parse. Invalid bytes in the table separator row break it,
-    so the file is left out of the family -- its status can't be read --
-    and reported in `warnings`. Round 25 failed closed here instead; a
-    family made inconsistent this way is now an accepted, visible limit."""
-    config, adr_dir, path = _written_decision(tmp_path, b"|--|--|", b"|-\xff|--|")
-    ignored = []
-    warnings = []
-
-    members = family_members(adr_dir, config, 1, warnings=warnings, ignored=ignored)
-
-    assert members == []
-    assert [entry[2] for entry in ignored] == [path]
-    assert warnings == [f"{path}: ignored -- its header does not parse (adr-header-invalid-format); see explore."]
-
-
 def test_a_sibling_whose_lossy_decode_still_parses_stays_a_member(tmp_path):
     """Positive control: a lossy decode only matters when it breaks the
     header. An invalid byte in the title cell still parses, so the file
-    keeps its place in the family."""
+    keeps its place in the family -- and in the validated snapshot."""
     config, adr_dir, path = _written_decision(tmp_path, b"Existing decision", b"Existing decisio\xff")
-    warnings = []
 
-    members = family_members(adr_dir, config, 1, warnings=warnings)
+    snapshot, errors = check_repository(adr_dir, config)
 
-    assert [entry[2] for entry in members] == [path]
-    assert warnings == []
+    assert errors == []
+    assert [entry[2] for entry in family_members(snapshot, 1)] == [path]
+    assert snapshot.by_number[1][0].encoding_repaired is True
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
@@ -880,67 +814,6 @@ def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkey
     assert len(warnings) == 1
     assert "could not be scanned" in warnings[0]
     assert str(blocked) in warnings[0]
-
-
-def test_scan_decisions_fails_closed_when_strict_and_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Warning alone lets a hidden family member (in an unreadable
-    subdirectory) silently defeat safety decisions built on top of this
-    scan (family guards, next-number allocation), reproducing a "two
-    live successors" corruption with no concurrency needed at all.
-    `strict=True` fails closed instead, for callers that need a
-    trustworthy result rather than a best-effort listing."""
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    blocked = adr_dir / "restricted"
-    blocked.mkdir()
-
-    real_scandir = os.scandir
-
-    def flaky_scandir(path="."):
-        if os.path.abspath(path) == os.path.abspath(blocked):
-            raise PermissionError(13, "Access is denied", str(blocked))
-        return real_scandir(path)
-
-    monkeypatch.setattr(os, "scandir", flaky_scandir)
-
-    with pytest.raises(CommandError) as excinfo:
-        scan_decisions(adr_dir, config, strict=True, incomplete_code="probe-scan-incomplete")
-
-    assert excinfo.value.code == "probe-scan-incomplete"
-    assert str(blocked) in excinfo.value.data["unreadable"][0]
-
-
-def test_family_members_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Reproduced directly at the source: family_members feeds
-    has_superseded_sibling/has_pending_
-    sibling/latest_in_family in every per-file command's own family
-    guard -- a hidden Superseded/Pending sibling inside an unreadable
-    subdirectory must never be silently treated as "no such member"."""
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    blocked = adr_dir / "restricted"
-    blocked.mkdir()
-
-    real_scandir = os.scandir
-
-    def flaky_scandir(path="."):
-        if os.path.abspath(path) == os.path.abspath(blocked):
-            raise PermissionError(13, "Access is denied", str(blocked))
-        return real_scandir(path)
-
-    monkeypatch.setattr(os, "scandir", flaky_scandir)
-
-    with pytest.raises(CommandError) as excinfo:
-        family_members(adr_dir, config, 1)
-
-    assert excinfo.value.code == "family-scan-incomplete"
-    # Checks the unreadable list's own contents, not just the code, unlike
-    # its sibling tests right above/below -- a mutation corrupting the
-    # contents while keeping the code correct would otherwise slip
-    # through here.
-    assert str(blocked) in excinfo.value.data["unreadable"][0]
 
 
 def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
@@ -1043,16 +916,16 @@ def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_with_unr
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / "repo" / config.folderadr
-    adr_dir.mkdir(parents=True)
+def test_prepare_reports_a_decision_excluded_through_a_junction(tmp_path):
+    """The snapshot leaves out a file whose real path escapes the
+    decisions folder, and prepare says so in `warnings`."""
+    repo = make_repo(tmp_path / "repo", files=[D(1)])
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
-    record = DecisionRecord(number=1, title="Victim outside the repo", version=1)
-    with open(outside_dir / "ADR001V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
-        handle.write(build_header(config, record) + "# body")
-    junction = adr_dir / "linked"
+    record = DecisionRecord(number=2, title="Victim outside the repo", version=1)
+    with open(outside_dir / "ADR002V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(build_header(repo.config, record) + "# body")
+    junction = repo.folder / "linked"
     result = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
         capture_output=True,
@@ -1060,8 +933,7 @@ def test_family_members_forwards_the_warnings_list_to_its_own_scan(tmp_path):
     )
     assert result.returncode == 0, result.stderr
 
-    warnings = []
-    family_members(adr_dir, config, 1, warnings=warnings)
+    warnings = prepare("approve", repo.paths[0], {}).warnings
 
     assert len(warnings) == 1
     assert "escapes the repository boundary" in warnings[0]
@@ -1083,16 +955,6 @@ def test_read_body_joins_with_the_host_line_separator(tmp_path):
 
     assert read_body(header_and_body) == "first body line" + os.linesep + "second body line" + os.linesep
 
-
-
-def test_family_members_reports_an_ignored_file_once_per_warnings_list(tmp_path):
-    config, adr_dir, path = _written_decision(tmp_path, b"|--|--|", b"|-x|--|")
-    warnings = []
-
-    family_members(adr_dir, config, 1, warnings=warnings)
-    family_members(adr_dir, config, 1, warnings=warnings)
-
-    assert len([w for w in warnings if "ignored" in w]) == 1
 
 
 @pytest.mark.parametrize("suffix", ["²", "٠٠٢"])

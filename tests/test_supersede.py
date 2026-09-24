@@ -70,9 +70,9 @@ def test_supersede_writes_nothing_when_the_successor_write_fails(tmp_path, monke
 def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_path, monkeypatch):
     """The predecessor is the SECOND write. When it fails, the successor
     already exists on disk -- so the number the predecessor would point at
-    can never be handed to an unrelated `new` in the meantime (the old
-    order left the predecessor pointing at ': 002' with no ADR002 on disk,
-    and the next `new` took 002)."""
+    can never be handed to an unrelated `new` in the meantime: the
+    repository is inconsistent (successor-without-predecessor) and `new`
+    refuses it until it is repaired by hand."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     _fail_predecessor_write(monkeypatch)
 
@@ -81,62 +81,26 @@ def test_a_failed_predecessor_write_leaves_the_successor_holding_its_number(tmp_
 
     successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert excinfo.value.data == {"applied": [str(successor_path)], "pending": [str(adr_path)]}
+    assert {k: excinfo.value.data[k] for k in ("applied", "pending")} == {
+        "applied": [str(successor_path)],
+        "pending": [str(adr_path)],
+    }
+    assert excinfo.value.data["repair"]["file"] == str(adr_path)
     assert successor_path.exists()
     assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
 
     monkeypatch.undo()
-    result = new.run(["--path", str(tmp_path), "--title", "Unrelated caching decision", "--refdate", "2026-01-06"])
-    assert result["created"].endswith("ADR003V01-unrelated-caching-decision.md")
-
-
-def test_retrying_after_a_failed_predecessor_write_resumes_instead_of_creating_a_second_successor(
-    tmp_path, monkeypatch
-):
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    _fail_predecessor_write(monkeypatch)
-    with pytest.raises(CommandError):
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-    monkeypatch.undo()
-    successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
-    successor_before = successor_path.read_text(encoding="utf-8")
-
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
-
-    assert result["created"] == str(successor_path)
-    assert any("resumed" in warning for warning in result["warnings"])
-    assert "|Superseded|Superseded (2026-01-06) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
-    assert successor_path.read_text(encoding="utf-8") == successor_before
-    assert sorted(p.name for p in (tmp_path / "doc" / "adr").glob("*.md")) == [
-        "ADR001V01-use-postgre-sql.md",
-        SUCCESSOR_NAME,
-    ]
-
-
-def test_an_orphaned_successor_that_moved_on_is_not_resumed(tmp_path, monkeypatch):
-    """Only a successor still Proposed -- untouched since the interrupted
-    call -- is resumed. One already approved or rejected in the meantime
-    is refused rather than guessed at."""
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    _fail_predecessor_write(monkeypatch)
-    with pytest.raises(CommandError):
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-    monkeypatch.undo()
-    successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
-    _approve_as_a_pre_round_41_repository_could_have(successor_path, "2026-01-06", monkeypatch)
-    predecessor_before = adr_path.read_text(encoding="utf-8")
-
     with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert excinfo.value.data["file"] == str(successor_path)
-    assert adr_path.read_text(encoding="utf-8") == predecessor_before
+        new.run(["--path", str(tmp_path), "--title", "Unrelated caching decision", "--refdate", "2026-01-06"])
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
+        ("successor-without-predecessor", str(successor_path.resolve()))
+    ]
 
 
 def test_a_successor_of_a_different_predecessor_is_never_mistaken_for_an_orphan(tmp_path):
     # Positive control: ADR002 supersedes ADR001; superseding ADR003 must
-    # create its own successor, not resume onto ADR002.
+    # create its own successor, not reuse ADR002.
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     new.run(["--path", str(tmp_path), "--title", "Use Redis", "--refdate", "2026-01-06"])
@@ -146,27 +110,27 @@ def test_a_successor_of_a_different_predecessor_is_never_mistaken_for_an_orphan(
     result = supersede.run(["--file", str(third), "--refdate", "2026-01-08"])
 
     assert result["created"].endswith("ADR004V01-use-redis--003.md")
-    assert not any("resumed" in warning for warning in result["warnings"])
 
 
 def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists(tmp_path, monkeypatch):
     """Simulates the TOCTOU race file-already-exists defends against: a
     concurrent write creates the successor's target filename after this
-    call's own scan already took its snapshot (the scan itself would
-    otherwise always see any pre-existing file matching the naming scheme
-    and bump next_number past it)."""
+    call's own snapshot was taken (the validated snapshot would otherwise
+    always see any pre-existing file matching the naming scheme and bump
+    next_number past it)."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     colliding_path = tmp_path / "doc" / "adr" / "ADR002V01-use-postgre-sql--001.md"
-    colliding_path.write_text("already here", encoding="utf-8")
 
-    from adrpy.cli import supersede as supersede_module
+    from adrpy.core import lifecycle as lifecycle_module
 
-    real_scan_decisions = supersede_module.scan_decisions
+    real_validate = lifecycle_module.validate_repository
 
-    def scan_without_colliding_file(folder, config, warnings=None, **kwargs):
-        return [entry for entry in real_scan_decisions(folder, config) if entry[2].name != colliding_path.name]
+    def validate_then_collide(folder, config):
+        snapshot = real_validate(folder, config)
+        colliding_path.write_text("already here", encoding="utf-8")
+        return snapshot
 
-    monkeypatch.setattr(supersede_module, "scan_decisions", scan_without_colliding_file)
+    monkeypatch.setattr(lifecycle_module, "validate_repository", validate_then_collide)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
@@ -253,22 +217,22 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
     collapses into an NTFS Alternate-Data-Stream instead of a literal
     filename -- confirmed live), so this drives the exact scenario a
     corrupted predecessor filename (from a different OS, or a future code
-    path) would, via a monkeypatched load_target, the same technique
+    path) would, via a monkeypatched target lookup, the same technique
     already used for migrate's own equivalent gap. Must be a per-call
     failure, not a silent forgery."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     from adrpy.core import lifecycle as lifecycle_module
 
-    real_load_target = lifecycle_module.load_target
+    real_target_in = lifecycle_module._target_in
 
-    def flaky_load_target(fileadr, warnings=None):
-        config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
+    def flaky_target_in(snapshot, path, number):
         from dataclasses import replace as replace_fields
 
-        return config, root, path, replace_fields(filename_info, title="evil:hidden"), header, encoding_repaired
+        target = real_target_in(snapshot, path, number)
+        return replace_fields(target, name=replace_fields(target.name, title="evil:hidden"))
 
-    monkeypatch.setattr(lifecycle_module, "load_target", flaky_load_target)
+    monkeypatch.setattr(lifecycle_module, "_target_in", flaky_target_in)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
@@ -287,15 +251,15 @@ def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters
 
     from adrpy.core import lifecycle as lifecycle_module
 
-    real_load_target = lifecycle_module.load_target
+    real_target_in = lifecycle_module._target_in
 
-    def flaky_load_target(fileadr, warnings=None):
-        config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
+    def flaky_target_in(snapshot, path, number):
         from dataclasses import replace as replace_fields
 
-        return config, root, path, replace_fields(filename_info, title="---"), header, encoding_repaired
+        target = real_target_in(snapshot, path, number)
+        return replace_fields(target, name=replace_fields(target.name, title="---"))
 
-    monkeypatch.setattr(lifecycle_module, "load_target", flaky_load_target)
+    monkeypatch.setattr(lifecycle_module, "_target_in", flaky_target_in)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
@@ -366,15 +330,9 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_pat
 def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
     """An unreadable subdirectory
     must never let this command silently treat a hidden, higher-numbered
-    decision (or a hidden family member) as "not found". supersede's own
-    family_members() call (feeding has_superseded_sibling/has_pending_
-    sibling) reads the SAME folder earlier IN THIS COMMAND'S OWN CONTROL
-    FLOW than the successor-number scan, and is strict too -- given a
-    genuinely unreadable subdirectory (as opposed to one that becomes
-    unreadable only in the narrow window between the two scans), it
-    deterministically fires first every time. The separate, independent
-    wiring of the later successor-number scan's own incomplete_code is
-    proven on its own terms by the companion test right below ."""
+    decision (or a hidden family member) as "not found": the one validated
+    snapshot, which feeds both the family guards and the successor's
+    number, refuses it (scan-incomplete)."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -392,32 +350,9 @@ def test_supersede_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monk
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.code == "family-scan-incomplete"
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     assert not (adr_dir / "ADR002V01-use-postgre-sql--001.md").exists()
-
-
-def test_supersede_successor_number_scan_wires_its_own_incomplete_code(tmp_path, monkeypatch):
-    """Precise companion to the test above: family_members() reads the
-    SAME folder earlier and always fires first for a genuinely unreadable
-    subdirectory, which could make the later, independent
-    supersede-successor-scan-incomplete path look unreachable/dead.
-    Proves it isn't -- patches only supersede.py's own direct
-    scan_decisions call (family_members uses lifecycle.py's own
-    reference, untouched here), confirming this command really does wire
-    its own incomplete_code into that second, independent scan."""
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-
-    from adrpy.cli import supersede as supersede_module
-
-    def failing_scan_decisions(folder, config, warnings=None, **kwargs):
-        raise CommandError(kwargs.get("incomplete_code", "scan-incomplete"), "simulated incomplete scan", warnings=warnings)
-
-    monkeypatch.setattr(supersede_module, "scan_decisions", failing_scan_decisions)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-
-    assert excinfo.value.code == "supersede-successor-scan-incomplete"
 
 
 def test_supersede_rejects_not_yet_accepted(tmp_path):
@@ -568,37 +503,6 @@ def test_superseding_again_after_the_successor_was_rejected_still_creates_a_new_
     result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
 
     assert result["created"].endswith("ADR003V01-use-postgre-sql--001.md")
-    assert not any("resumed" in warning for warning in result["warnings"])
-
-
-def test_a_rejected_earlier_successor_does_not_stop_resuming_onto_the_new_orphan(tmp_path, monkeypatch):
-    from adrpy.cli import reject
-
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
-    reject.run(["--file", str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME), "--refdate", "2026-01-06"])
-    _fail_predecessor_write(monkeypatch)
-    with pytest.raises(CommandError):
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07"])
-    monkeypatch.undo()
-
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-08", "--resume"])
-
-    assert result["created"].endswith("ADR003V01-use-postgre-sql--001.md")
-    assert any("resumed" in warning for warning in result["warnings"])
-    assert "|Superseded|Superseded (2026-01-08) <!-- Superseded --> : 003|" in adr_path.read_text(encoding="utf-8")
-
-
-def _approve_as_a_pre_round_41_repository_could_have(path, refdate, monkeypatch):
-    """Round 41 (K2a) refuses approving the successor of an unfinished
-    supersede; repositories from before that rule -- or hand edits -- can
-    still hold one, and the recovery advice below must work for them. The
-    setup approves it with that one check switched off."""
-    from adrpy.core import lifecycle as lifecycle_module
-
-    with monkeypatch.context() as scoped:
-        scoped.setattr(lifecycle_module, "raise_if_supersede_not_finished", lambda *args, **kwargs: None)
-        approve.run(["--file", str(path), "--refdate", refdate])
 
 
 def _leave_an_orphan(tmp_path, monkeypatch, refdate="2026-01-05"):
@@ -612,15 +516,45 @@ def _leave_an_orphan(tmp_path, monkeypatch, refdate="2026-01-05"):
     return tmp_path, adr_path, tmp_path / "doc" / "adr" / SUCCESSOR_NAME
 
 
-def test_a_retry_without_resume_refuses_instead_of_guessing(tmp_path, monkeypatch):
+def test_following_a_partial_supersedes_repair_literally_leaves_a_consistent_repository(tmp_path, monkeypatch):
+    from adrpy.core.config import load_repo_config
+    from adrpy.core.consistency import check_repository
+
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    _fail_predecessor_write(monkeypatch)
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+    monkeypatch.undo()
+
+    repair = excinfo.value.data["repair"]
+    assert repair["file"] == str(adr_path)
+    assert repair["row"] in excinfo.value.detail
+    label = repair["row"].split("|")[1]
+    lines = adr_path.read_text(encoding="utf-8").split("\n")
+    adr_path.write_text(
+        "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
+    )
+
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    assert check_repository(adr_path.parent, config)[1] == []
+
+
+def test_a_retry_after_a_partial_supersede_refuses_instead_of_guessing(tmp_path, monkeypatch):
+    # The successor left by the failed predecessor write points back at a
+    # predecessor that does not point at it: the repository is refused
+    # until repaired by hand, so no second successor is ever created.
     tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
     before = adr_path.read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
 
-    assert excinfo.value.code == "supersede-successor-already-exists"
-    assert excinfo.value.data["file"] == str(successor_path)
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
+        ("successor-without-predecessor", str(successor_path.resolve()))
+    ]
+    # The hint is a repair by hand: reject itself refuses this repository.
+    assert "by hand" in excinfo.value.data["errors"][0]["hint"].lower()
     assert adr_path.read_text(encoding="utf-8") == before
     assert len(list((tmp_path / "doc" / "adr").glob("*.md"))) == 2
 
@@ -645,65 +579,14 @@ def test_an_undone_rejected_successor_is_not_silently_resumed_onto(tmp_path):
     assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
 
 
-def test_resume_refuses_successor_content_flags_it_would_otherwise_ignore(tmp_path, monkeypatch):
+def test_supersede_no_longer_takes_resume(tmp_path):
     from adrpy.core.errors import UsageError
 
-    tmp_path, adr_path, _successor_path = _leave_an_orphan(tmp_path, monkeypatch)
-
-    for flag in (["--title", "Other"], ["--scope", "Other"], ["--domain", "Other"]):
-        with pytest.raises(UsageError):
-            supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume", *flag])
-
-
-def test_resume_refuses_a_refdate_before_the_successors_own_creation(tmp_path, monkeypatch):
-    tmp_path, adr_path, _successor_path = _leave_an_orphan(tmp_path, monkeypatch, refdate="2026-01-20")
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-10", "--resume"])
-
-    assert excinfo.value.code == "refdate-before-history"
-    assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
-
-
-def test_resume_with_nothing_to_resume_is_refused(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert excinfo.value.data["files"] == []
-    assert len(list((tmp_path / "doc" / "adr").glob("*.md"))) == 1
-
-
-def test_resume_refuses_more_than_one_orphan_and_names_them_all(tmp_path, monkeypatch):
-    tmp_path, adr_path, first = _leave_an_orphan(tmp_path, monkeypatch)
-    second = tmp_path / "doc" / "adr" / "ADR003V01-use-postgre-sql--001.md"
-    second.write_bytes(first.read_bytes().replace(b"ADR002", b"ADR003").replace(b"|002|", b"|003|"))
-    names_before = sorted(p.name for p in (tmp_path / "doc" / "adr").glob("*.md"))
-
-    with pytest.raises(CommandError) as excinfo:
+    with pytest.raises(UsageError):
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert sorted(excinfo.value.data["files"]) == sorted([str(first), str(second)])
-    assert sorted(p.name for p in (tmp_path / "doc" / "adr").glob("*.md")) == names_before
-
-
-def test_resume_refuses_a_successor_with_no_creation_status(tmp_path, monkeypatch):
-    # A migrated placeholder carries the supersede suffix but no Created
-    # status/date of its own: nothing proves it came from an interrupted
-    # supersede of this decision.
-    tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
-    text = successor_path.read_text(encoding="utf-8")
-    created_row = [line for line in text.splitlines() if line.startswith("|Created|")][0]
-    successor_path.write_text(text.replace(created_row, "|Created||"), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert "|Superseded|Superseded" not in adr_path.read_text(encoding="utf-8")
+    assert "resume" not in {argument["name"] for argument in supersede.describe()["arguments"]}
 
 
 def test_an_unreadable_file_pointing_back_is_named_in_the_error(tmp_path):
@@ -714,25 +597,8 @@ def test_an_unreadable_file_pointing_back_is_named_in_the_error(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
-    assert excinfo.value.data["file"] == str(broken)
-
-
-def test_an_orphan_approved_since_is_recovered_by_undo_then_resume(tmp_path, monkeypatch):
-    # The recovery path the refusal messages name: neither reject nor
-    # --resume accepts an Accepted successor, so undo comes first.
-    from adrpy.cli import reject, undo
-
-    tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
-    _approve_as_a_pre_round_41_repository_could_have(successor_path, "2026-01-06", monkeypatch)
-    with pytest.raises(CommandError) as excinfo:
-        reject.run(["--file", str(successor_path), "--refdate", "2026-01-07"])
-    assert excinfo.value.code == "already-accepted"
-
-    undo.run(["--file", str(successor_path)])
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
-
-    assert result["created"] == str(successor_path)
-    assert "|Superseded|Superseded (2026-01-07) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [("no-header", str(broken.resolve()))]
 
 
 def _hand_written_repo(tmp_path, *names):
@@ -761,27 +627,13 @@ def _hand_written_repo(tmp_path, *names):
     return adr_dir
 
 
-def test_a_file_pointing_at_its_own_number_is_never_resumed_onto_itself(tmp_path):
-    # A successor always gets a later number than its predecessor; a file
-    # whose suffix names its own number is not a successor at all.
-    adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-x--001.md")
-    target = adr_dir / "ADR001V01-use-x--001.md"
-    before = target.read_bytes()
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(target), "--refdate", "2026-01-05", "--resume"])
-
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-    assert target.read_bytes() == before
-
-
 def test_a_same_family_member_is_never_a_successor(tmp_path):
     adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-x.md", "ADR001V02-use-x--001.md")
     v01 = adr_dir / "ADR001V01-use-x.md"
     before = v01.read_bytes()
 
     with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(v01), "--refdate", "2026-01-05", "--resume"])
+        supersede.run(["--file", str(v01), "--refdate", "2026-01-05"])
 
     # Round 40: V02 (same family, newer) locks V01, which is refused before
     # any successor lookup -- either way V01 is never marked.
@@ -793,27 +645,14 @@ def test_a_lower_numbered_file_pointing_back_is_not_a_successor_and_does_not_blo
     adr_dir = _hand_written_repo(tmp_path, "ADR001V01-use-a--002.md", "ADR002V01-use-b.md")
     adr002 = adr_dir / "ADR002V01-use-b.md"
 
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr002), "--refdate", "2026-01-05", "--resume"])
-    assert excinfo.value.code == "supersede-orphaned-successor-not-resumable"
-
     result = supersede.run(["--file", str(adr002), "--refdate", "2026-01-05"])
     assert result["created"].endswith("ADR003V01-use-b--002.md")
 
 
-def test_the_refusal_for_nothing_to_resume_says_so(tmp_path):
-    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05", "--resume"])
-
-    assert "without --resume" in excinfo.value.detail
-
-
 def test_rejecting_a_successor_still_refuses_when_a_family_member_is_superseded_by_another(tmp_path):
-    # Positive control: a family member IS Superseded, pointing at some
-    # other successor -- which member this one came from is ambiguous, so
-    # reject still refuses rather than guess.
+    # A second successor naming the same predecessor, the one it does not
+    # point at: the repository is refused (multiple-live-successors),
+    # reject never guesses which one to revert.
     from adrpy.cli import reject
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
@@ -827,67 +666,12 @@ def test_rejecting_a_successor_still_refuses_when_a_family_member_is_superseded_
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(impostor), "--refdate", "2026-01-06"])
 
-    assert excinfo.value.code == "superseded-predecessor-not-found"
+    assert excinfo.value.code == "repository-inconsistent"
+    codes = {error["code"] for error in excinfo.value.data["errors"]}
+    assert codes == {"multiple-live-successors", "successor-without-predecessor"}
 
 
-def test_following_the_no_created_status_advice_recovers(tmp_path, monkeypatch):
-    # The message must name a step that works: reject can't act on a file
-    # with no Created status, so the only ways out are by hand.
-    tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
-    text = successor_path.read_text(encoding="utf-8")
-    created_row = [line for line in text.splitlines() if line.startswith("|Created|")][0]
-    successor_path.write_text(text.replace(created_row, "|Created||"), encoding="utf-8")
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
-    assert "delete it and run supersede without --resume" in excinfo.value.detail
-
-    successor_path.unlink()
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
-    assert Path(result["created"]).name == "ADR002V01-use-postgre-sql--001.md"
-
-
-def test_following_the_superseded_since_advice_recovers_when_its_successor_was_approved(tmp_path, monkeypatch):
-    from adrpy.cli import reject, undo
-
-    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
-    second = Path(supersede.run(["--file", str(orphan), "--refdate", "2026-01-07"])["created"])
-    approve.run(["--file", str(second), "--refdate", "2026-01-08"])
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-09", "--resume"])
-    assert "undo that successor first if it was approved" in excinfo.value.detail
-
-    undo.run(["--file", str(second)])
-    reject.run(["--file", str(second), "--refdate", "2026-01-09"])
-    undo.run(["--file", str(orphan)])
-    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-09", "--resume"])
-    assert result["created"] == str(orphan)
-
-
-def test_the_already_exists_advice_covers_an_approved_successor_further_down_the_chain(tmp_path, monkeypatch):
-    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
-
-    assert excinfo.value.code == "supersede-successor-already-exists"
-    assert "undo that successor first if it was approved" in excinfo.value.detail
-    assert "repeat down the chain" in excinfo.value.detail
-
-
-def test_the_not_resumable_reasons_name_the_step_that_fixes_them(tmp_path, monkeypatch):
-    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
-
-    with pytest.raises(CommandError) as excinfo:
-        supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
-
-    assert "undo it back to Proposed" in excinfo.value.detail
-
-
-def test_a_failed_predecessor_write_tells_you_to_resume(tmp_path, monkeypatch):
+def test_a_failed_predecessor_write_tells_you_how_to_repair_it(tmp_path, monkeypatch):
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     _fail_predecessor_write(monkeypatch)
 
@@ -895,44 +679,39 @@ def test_a_failed_predecessor_write_tells_you_to_resume(tmp_path, monkeypatch):
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "multi-file-write-partially-applied"
-    assert "supersede --resume" in excinfo.value.detail
+    assert "remove the successor" in excinfo.value.detail
+    assert "--resume" not in excinfo.value.detail
 
 
 
-@pytest.mark.parametrize("command", ["approve", "version"])
-def test_an_unfinished_supersede_must_be_finished_before_its_successor_moves_on(tmp_path, monkeypatch, command):
-    # Round 41 (K2a): the successor of an interrupted supersede can't be
-    # approved (or branched) while its predecessor doesn't point at it --
-    # that would leave two live lines; finish with --resume, or reject it.
-    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    if command == "version":
-        _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
-    before = orphan.read_bytes()
-
-    with pytest.raises(CommandError) as excinfo:
-        if command == "approve":
-            approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
-        else:
-            version.run(["--file", str(orphan), "--refdate", "2026-01-07"])
-
-    assert excinfo.value.code == "supersede-not-finished"
-    assert excinfo.value.data["predecessor_number"] == 1
-    assert orphan.read_bytes() == before
-
-
-def test_after_resume_the_successor_can_be_approved(tmp_path, monkeypatch):
-    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
-
-    assert approve.run(["--file", str(orphan), "--refdate", "2026-01-07"])["status"] == "Accepted"
-
-
-def test_an_unfinished_successor_can_still_be_rejected(tmp_path, monkeypatch):
+@pytest.mark.parametrize("command", ["approve", "reject"])
+def test_the_successor_of_a_partial_supersede_is_refused_until_repaired(tmp_path, monkeypatch, command):
+    # Its predecessor does not point at it (successor-without-predecessor):
+    # neither approving nor rejecting it goes ahead; the repair is by hand.
     from adrpy.cli import reject
 
     tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    before = orphan.read_bytes()
 
-    assert reject.run(["--file", str(orphan), "--refdate", "2026-01-06"])["status"] == "Rejected"
+    with pytest.raises(CommandError) as excinfo:
+        (approve if command == "approve" else reject).run(["--file", str(orphan), "--refdate", "2026-01-06"])
+
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [e["code"] for e in excinfo.value.data["errors"]] == ["successor-without-predecessor"]
+    assert orphan.read_bytes() == before
+
+
+def test_removing_the_successor_of_a_partial_supersede_repairs_it(tmp_path, monkeypatch):
+    # The repair the hint names: the successor was just created from the
+    # template, so removing it restores a consistent repository and
+    # supersede runs again.
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    orphan.unlink()
+
+    result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
+
+    assert result["created"] == str(tmp_path / "doc" / "adr" / SUCCESSOR_NAME)
+    assert "|Superseded|Superseded (2026-01-06) <!-- Superseded --> : 002|" in adr_path.read_text(encoding="utf-8")
 
 
 def _hand_written_proposed(adr_dir, name):

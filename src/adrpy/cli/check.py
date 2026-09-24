@@ -4,6 +4,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import FailureCodes, build_failure_codes
+from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.security import resolve_within
 
@@ -21,6 +22,13 @@ _ERROR_CODES = {
     FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR: "data.errors[].code: a non-Rejected successor has no predecessor whose Superseded cell points back at it.",
     FailureCodes.MULTIPLE_LIVE_SUCCESSORS: "data.errors[].code: more than one non-Rejected successor names the same predecessor.",
     FailureCodes.SCAN_INCOMPLETE: "data.errors[].code: a directory or decision file under the decisions folder could not be read.",
+}
+
+# The reason an invalid-header entry gives: its `detail` starts with one of
+# these codes (the same data.errors the file commands and new report).
+_HEADER_DETAIL_CODES = {
+    code: f"data.errors[].detail of an invalid-header entry starts with this code: {text[0].lower()}{text[1:]}"
+    for code, text in HEADER_FAILURE_CODES.items()
 }
 
 
@@ -52,6 +60,7 @@ def describe():
                 FailureCodes.REPOSITORY_INCONSISTENT: "At least one consistency rule is broken; data.errors lists every one.",
             },
             _ERROR_CODES,
+            _HEADER_DETAIL_CODES,
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",

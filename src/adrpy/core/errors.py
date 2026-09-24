@@ -47,8 +47,6 @@ class FailureCodes:
     # Shared verbatim across 2+ CLI commands -- the confirmed drift risk this class exists to close.
     ALREADY_SUPERSEDED = "already-superseded"
     FAMILY_MEMBER_SUPERSEDED = "family-member-superseded"
-    NOT_PROPOSED = "not-proposed"
-    UNEXPECTED_STATUS = "unexpected-status"
     FAMILY_MEMBER_PENDING = "family-member-pending"
     FILE_ALREADY_EXISTS = "file-already-exists"
     STILL_PROPOSED = "still-proposed"
@@ -134,8 +132,8 @@ class FailureCodes:
     TARGET_DIRECTORY_NOT_FOUND = "target-directory-not-found"
     CONFIG_NOT_FOUND = "config-not-found"
     FILENAME_NOT_RECOGNIZED = "filename-not-recognized"
+    TARGET_OUTSIDE_FOLDERADR = "target-outside-folderadr"
     HEADER_INVALID = "header-invalid"
-    FAMILY_SCAN_INCOMPLETE = "family-scan-incomplete"
 
     # src/adrpy/core/header.py
     ADR_FILE_EMPTY = "adr-file-empty"
@@ -172,7 +170,6 @@ class FailureCodes:
     FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "folderlog-change-would-adopt-unrelated-files"
 
     # src/adrpy/cli/reject.py
-    SUPERSEDED_PREDECESSOR_NOT_FOUND = "superseded-predecessor-not-found"
     REJECT_PREDECESSOR_WRITE_FAILED = "reject-predecessor-write-failed"
 
     # src/adrpy/cli/supersede.py and src/adrpy/cli/reject.py: a write of
@@ -182,9 +179,6 @@ class FailureCodes:
 
     # src/adrpy/cli/supersede.py
     SUPERSEDE_SUCCESSOR_WRITE_FAILED = "supersede-successor-write-failed"
-    SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE = "supersede-orphaned-successor-not-resumable"
-    SUPERSEDE_SUCCESSOR_ALREADY_EXISTS = "supersede-successor-already-exists"
-    SUPERSEDE_SUCCESSOR_SCAN_INCOMPLETE = "supersede-successor-scan-incomplete"
 
     # src/adrpy/cli/version.py
     LENVERSION_TOO_SMALL_FOR_NEW_VERSION = "lenversion-too-small-for-new-version"
@@ -200,15 +194,14 @@ class FailureCodes:
     NO_DECISIONS_FOUND = "no-decisions-found"
     MIGRATION_INVALID_HEADERS_EXIST = "migration-invalid-headers-exist"
     MIGRATION_SUCCESSOR_FILES_EXIST = "migration-successor-files-exist"
+    MIGRATION_DUPLICATE_NUMBERS_EXIST = "migration-duplicate-numbers-exist"
     REJECTED_SUCCESSOR_IS_FINAL = "rejected-successor-is-final"
-    SUPERSEDE_NOT_FINISHED = "supersede-not-finished"
     ALREADY_TOOL_CREATED_ADRS_EXIST = "already-tool-created-adrs-exist"
     NO_ELIGIBLE_FILES_TO_MIGRATE = "no-eligible-files-to-migrate"
     MIGRATION_WRITE_FAILED = "migration-write-failed"
 
     # src/adrpy/cli/new.py
     TITLE_ALREADY_EXISTS = "title-already-exists"
-    NEW_SCAN_INCOMPLETE = "new-scan-incomplete"
 
     # src/adrpy/cli/init.py
     CONFIG_ALREADY_EXISTS = "config-already-exists"

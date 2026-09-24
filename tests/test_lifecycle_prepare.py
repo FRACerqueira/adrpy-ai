@@ -37,10 +37,11 @@ def test_revision_not_configured_carries_the_marker_label_warning(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_folder_resolution_failure_carries_the_marker_label_warning(tmp_path):
+def test_a_decisions_folder_escaping_the_repository_is_refused_before_the_target_is_read(tmp_path):
     """folderadr is a junction to a directory outside the repository, and
-    the target sits at the repository root: the target reads fine, then
-    resolving the decisions folder fails."""
+    the target sits at the repository root: resolving the decisions
+    folder fails before the target's own header is read, so no warning
+    about that header can exist yet."""
     repo = tmp_path / "repo"
     repo.mkdir()
     adr_path = _repo_with_mismatched_label(repo)
@@ -57,4 +58,4 @@ def test_folder_resolution_failure_carries_the_marker_label_warning(tmp_path):
         approve.run(["--file", str(moved), "--refdate", "2026-01-02"])
 
     assert excinfo.value.code == "path-outside-repository"
-    assert any("marker" in w for w in (excinfo.value.warnings or []))
+    assert excinfo.value.warnings == []
