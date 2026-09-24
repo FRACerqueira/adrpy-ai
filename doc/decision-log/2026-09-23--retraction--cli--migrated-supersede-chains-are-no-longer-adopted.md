@@ -1,0 +1,3 @@
+# supersede --resume no longer adopts a supersede chain brought in by migrate
+
+Retracts 2026-09-23--audit-finding--cli--supersede-resume-adopts-a-migrated-chain (Round 38, the owner's option (a)). H2, decided by the owner in Round 41: a supersede chain is a concept this tool creates, so it must not exist before migration. migrate now refuses the whole run when a scanned file already carries a supersede suffix (migration-successor-files-exist, data.files) -- checked after already-tool-created-adrs-exist, so a managed repository is never told to rename its own successors -- and the --resume adoption clause and its reason message are gone (075cb80). Nothing was published, so no repository relied on the old behavior.

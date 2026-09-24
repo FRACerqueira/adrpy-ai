@@ -1,0 +1,3 @@
+# Round 41 residuals accepted: resume onto a newer predecessor version, hand-made successors with no predecessor
+
+Accepted by the owner. C2a: with an interrupted supersede's orphan, if the predecessor gains a new version, supersede --resume marks that version, not the one the orphan came from -- consistent, since the suffix names the family number. A hand-written successor whose predecessor has no file at all can be neither approved (supersede-not-finished) nor rejected (superseded-predecessor-not-found) -- reachable only by an edit outside the tool, which H2 rules out as a tool state; repair it by hand.

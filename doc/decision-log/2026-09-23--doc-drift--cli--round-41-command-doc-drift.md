@@ -1,0 +1,5 @@
+# config, init, installconfig, log and help docs corrected against the code
+
+**Front:** Round 41: documentation-vs-code front (remaining commands) | **Severity:** Medium | **Resolution:** Direct | **Round:** 41
+
+Fixed in 075cb80. log did not list refdate-invalid-format/refdate-in-future; help's bare listing reads the install-level config yet listed only unknown-command (now config-* and io-error); installconfig's --folderlog claimed a default it does not apply, its status labels omitted the (, ), <!--, --> and : restriction, and config/installconfig headertablefields/values omitted <!--/-->; CHANGELOG said a TOCTOU window was closed (it is narrowed) and placed the temp sweep wrongly; the decision-log workflow invited new classifications, which break adrpy log; init --seed notes (a corrupted existing config still blocks, scan-incomplete precedence); log's five flags and Round case; config's root-collapse and lock wording; command pages now say they mirror describe(), and the commands index states what its test really checks. Four universal codes are noted there.
