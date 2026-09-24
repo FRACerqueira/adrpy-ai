@@ -37,8 +37,8 @@ is filled. `undo` never touches the Superseded cell.
   scheme counts, whatever its content. A number held by any file is
   never given to a second one: `new` takes the number after the highest
   one held (gaps are not reused), `revise` the revision after the
-  highest one its version holds, and `version` refuses with
-  `file-already-exists` when the version it would create is already held.
+  highest one its version holds, and `version` the version after the
+  highest one its family holds.
 - **Status comes from the header.** Every file with an ADR name must have
   a header that parses, with a status combination the tool writes (see
   the next section). A header written by AdrPlus 1.0.0 -- the status read

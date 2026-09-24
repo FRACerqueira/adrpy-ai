@@ -97,10 +97,19 @@ def run(args):
             # decision is not Rejected, so exactly that member exists
             # (successor-without-predecessor otherwise).
             predecessor = next(
-                decision
-                for decision in ctx.snapshot.by_number.get(filename_info.superseded_from, ())
-                if decision.state == SUPERSEDED and decision.successor_ref == filename_info.number
+                (
+                    decision
+                    for decision in ctx.snapshot.by_number.get(filename_info.superseded_from, ())
+                    if decision.state == SUPERSEDED and decision.successor_ref == filename_info.number
+                ),
+                None,
             )
+            if predecessor is None:
+                # Unreachable: validate_repository refuses a live successor
+                # with no predecessor pointing back (successor-without-
+                # predecessor). Never fall through to rejecting this file
+                # alone.
+                raise AssertionError(f"No Superseded predecessor names {path.name}; the validator guarantees one.")
 
         if predecessor is not None:
             _revert_then_reject(ctx, (predecessor.name, predecessor.header, predecessor.path))

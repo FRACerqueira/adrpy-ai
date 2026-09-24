@@ -13,6 +13,14 @@ def is_ascii_digits(text):
     return text.isascii() and text.isdigit()
 
 
+def ascii_digits_int(text):
+    """`text` (None allowed) as an int when, once stripped, it is plain
+    ASCII digits (is_ascii_digits); None otherwise, never an error -- for
+    a header cell that may have been hand-edited."""
+    stripped = (text or "").strip()
+    return int(stripped) if is_ascii_digits(stripped) else None
+
+
 def parse_ascii_int(text):
     """int() for a flag value, taking only ASCII digits with an optional
     leading '-' (surrounding spaces allowed). Plain int() also accepts other

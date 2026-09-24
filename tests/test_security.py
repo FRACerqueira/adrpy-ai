@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 
@@ -6,7 +5,6 @@ import pytest
 
 from adrpy.core.errors import CommandError
 from adrpy.core.security import (
-    find_unreadable_subdirectories,
     is_within,
     reject_aliased_repo_folders,
     reject_embedded_delimiter,
@@ -336,64 +334,3 @@ def test_reject_title_with_no_case_transform_content_rejects_separator_only_titl
 @pytest.mark.parametrize("value", ["A normal title", "!!!", "a", "-a-", "a-b-c"])
 def test_reject_title_with_no_case_transform_content_accepts_titles_with_real_content(value):
     reject_title_with_no_case_transform_content(value, "title")
-
-
-def test_find_unreadable_subdirectories_returns_empty_when_everything_scans_fine(tmp_path):
-    (tmp_path / "a").mkdir()
-    (tmp_path / "a" / "b").mkdir()
-
-    assert find_unreadable_subdirectories(tmp_path) == []
-
-
-def test_find_unreadable_subdirectories_reports_a_subdirectory_os_walk_cannot_enter(tmp_path, monkeypatch):
-    """`Path.rglob` (used by every
-    scan in this project) silently swallows an `OSError` raised while
-    walking a subtree -- a subfolder that becomes unreadable mid-scan
-    makes it return fewer results, or none, with no exception and no
-    signal at all. `os.scandir` is the primitive `os.walk` (and
-    `Path.rglob` internally) both build on -- monkeypatching it to deny
-    one specific subdirectory reproduces the class without needing a
-    real OS-level ACL setup."""
-    blocked = tmp_path / "restricted"
-    blocked.mkdir()
-
-    real_scandir = os.scandir
-
-    def flaky_scandir(path="."):
-        if os.path.abspath(path) == os.path.abspath(blocked):
-            raise PermissionError(13, "Access is denied", str(blocked))
-        return real_scandir(path)
-
-    monkeypatch.setattr(os, "scandir", flaky_scandir)
-
-    result = find_unreadable_subdirectories(tmp_path)
-
-    assert len(result) == 1
-    assert str(blocked) in result[0]
-
-
-def test_find_unreadable_subdirectories_reports_all_of_several_blocked_at_once(tmp_path, monkeypatch):
-    """Every prior test here (and
-    every caller's own fail-closed test) only ever blocks ONE
-    subdirectory -- the accumulation behavior (does the list actually
-    grow past one entry, not just fire once) was never exercised."""
-    blocked_a = tmp_path / "restricted-a"
-    blocked_a.mkdir()
-    blocked_b = tmp_path / "restricted-b"
-    blocked_b.mkdir()
-
-    real_scandir = os.scandir
-    blocked_paths = {os.path.abspath(blocked_a), os.path.abspath(blocked_b)}
-
-    def flaky_scandir(path="."):
-        if os.path.abspath(path) in blocked_paths:
-            raise PermissionError(13, "Access is denied", str(path))
-        return real_scandir(path)
-
-    monkeypatch.setattr(os, "scandir", flaky_scandir)
-
-    result = find_unreadable_subdirectories(tmp_path)
-
-    assert len(result) == 2
-    assert any(str(blocked_a) in entry for entry in result)
-    assert any(str(blocked_b) in entry for entry in result)

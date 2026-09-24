@@ -13,9 +13,6 @@ from adrpy.core.atomic_write import (
     LINESEP_BYTES,
     STREAM_CHUNK_SIZE,
     atomic_write_chunks,
-    atomic_write_text,
-    join_lines_with_trailing_terminator,
-    split_real_lines,
 )
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import (
@@ -35,11 +32,10 @@ from adrpy.core.fs import (
     commit_write,
     discard_write,
     prepare_write,
-    read_bytes,
     scan_tree,
 )
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.text import is_ascii_digits, strip_leading_boms
+from adrpy.core.text import ascii_digits_int
 from adrpy.core.security import (
     is_within,
     reject_embedded_delimiter,
@@ -96,8 +92,7 @@ def validate_refdate_not_before(refdate, not_before):
 # has no mirror risk -- parse_filename never reads it, so a
 # current-scheme file can never be reclassified legacy by a
 # migrationpattern change.
-_STATUS_LABEL_GUARD_FIELDS = _STATUS_LABEL_FIELDS
-_BLANKET_GUARD_FIELDS = _STATUS_LABEL_GUARD_FIELDS + ("separator",)
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator",)
 _LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
 # Every config field whose change validate_config_change guards.
 GUARDED_CONFIG_FIELDS = ("folderadr", "folderlog") + _BLANKET_GUARD_FIELDS + _LEGACY_SCHEME_GUARD_FIELDS
@@ -312,32 +307,6 @@ def find_repo_root(file_path):
         directory = parent
 
 
-def read_lines_with_report(path):
-    """Same as read_lines, but also reports whether the decode was lossy
-    -- invalid UTF-8 bytes get silently replaced with U+FFFD permanently,
-    the instant the file is next rewritten, with nothing telling the
-    caller this happened otherwise.
-
-    Same transient-PermissionError tolerance as _read_header_bytes' own
-    note."""
-    raw_bytes = read_bytes(path)
-    try:
-        text = raw_bytes.decode("utf-8")
-        encoding_repaired = False
-    except UnicodeDecodeError:
-        text = raw_bytes.decode("utf-8", errors="replace")
-        encoding_repaired = True
-    return split_real_lines(strip_leading_boms(text)), encoding_repaired
-
-
-def read_body(lines):
-    """Rejoins everything past the 12-line header with THIS host's line
-    separator (discarding whatever per-line terminator the source had),
-    plus exactly one trailing terminator when there is any body content
-    at all."""
-    return join_lines_with_trailing_terminator(lines[HEADER_LINE_COUNT:])
-
-
 def _body_start_offset(header_buffer, count):
     """The exact byte offset in the ORIGINAL FILE where the body begins
     -- the end of the `count`-th real line terminator within
@@ -357,8 +326,8 @@ _BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
 
 def stream_normalized_body_chunks(source_path, report):
     """Streams `source_path`'s own BODY (everything past its 12-line
-    header), reproducing `read_body(read_lines_with_report(source_path))`'s
-    historical output byte-for-byte (ADR006V01) -- every real line
+    header), reproducing the whole-file read it replaced byte-for-byte
+    (ADR006V01; tests/test_lifecycle.py keeps that read as its reference) -- every real line
     terminator converted to this host's os.linesep, invalid UTF-8 bytes
     replaced with U+FFFD, exactly one trailing terminator ensured for a
     non-empty body -- without ever holding the whole body in memory. The
@@ -533,13 +502,6 @@ def raise_if_not_latest(filename_info, members, warnings):
     )
 
 
-def _as_number(ref):
-    """A Superseded cell's successor reference as an int, or None when it
-    is not plain ASCII digits (hand-edited)."""
-    ref = (ref or "").strip()
-    return int(ref) if is_ascii_digits(ref) else None
-
-
 def raise_if_superseded_sibling(members, warnings):
     """family-member-superseded when a member of the family is Superseded,
     naming it (data.superseded_file) and its successor's number."""
@@ -550,7 +512,10 @@ def raise_if_superseded_sibling(members, warnings):
         FailureCodes.FAMILY_MEMBER_SUPERSEDED,
         f"A decision in this family has already been superseded: {superseded[2].name}. The one way back is "
         "rejecting its successor.",
-        data={"superseded_file": str(superseded[2]), "successor_number": _as_number(superseded[1].superseded_by_file)},
+        data={
+            "superseded_file": str(superseded[2]),
+            "successor_number": ascii_digits_int(superseded[1].superseded_by_file),
+        },
         warnings=warnings,
     )
 
@@ -786,9 +751,8 @@ class Context:
     """What prepare() hands back: the target (its repository's config and
     root, the path as given, its filename identity and header, whether
     its header read needed a lossy decode), its decisions folder, the
-    validated repository (`snapshot`, core/consistency) and the target's
-    family in it, the new version or revision number when the row numbers
-    one, the checked refdate (None without an anchor), the title/scope/
+    validated repository (`snapshot`, core/consistency), the new version
+    or revision number when the row numbers one, the checked refdate (None without an anchor), the title/scope/
     domain the write uses, and the warnings accumulated so far -- the same
     list the command keeps appending to."""
 
@@ -800,7 +764,6 @@ class Context:
     encoding_repaired: bool
     folder: object
     snapshot: object
-    members: list
     new_version: object
     new_revision: object
     refdate: object
@@ -1015,7 +978,6 @@ def prepare(command, fileadr, flags):
         encoding_repaired=target.encoding_repaired,
         folder=folder,
         snapshot=snapshot,
-        members=members,
         new_version=new_version,
         new_revision=new_revision,
         refdate=refdate,

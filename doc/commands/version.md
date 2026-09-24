@@ -35,7 +35,7 @@ Creates a new major version of an Accepted or Rejected decision, status Proposed
 | `refdate-before-history` | --refdate is before this decision's own last update date (or creation date, if never updated). |
 | `field-contains-forbidden-character` | --scope or --domain contains '\|' or a line-break-like character. |
 | `field-is-blank` | --scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace. |
-| `file-already-exists` | The new version's number is already held by a file of this family (any title), or its resulting filename already exists -- data.file names it. |
+| `file-already-exists` | The new version's filename is already taken on disk (e.g. created by another process after this call's scan) -- data.file names it. |
 | `lenversion-too-small-for-new-version` | The next version number does not fit in the configured lenversion width. |
 | `title-produces-unrecognizable-filename` | The new version's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |

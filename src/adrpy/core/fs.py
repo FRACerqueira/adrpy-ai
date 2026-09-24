@@ -22,8 +22,6 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from adrpy.core.security import is_within
-
 # Write side: exponential backoff (a flat 3x50ms window was empirically
 # only ~68% reliable under an aggressive concurrent reader).
 RETRY_ATTEMPTS = 5
@@ -66,11 +64,6 @@ def retry_on_permission(fn, *, attempts, delay, exponential=False):
 def read_with_permission_retry(read, attempts=READ_RETRY_ATTEMPTS, delay=READ_RETRY_DELAY_SECONDS):
     """The read side's retry: `read()`'s own result, flat delay."""
     return retry_on_permission(read, attempts=attempts, delay=delay)[0]
-
-
-def read_bytes(path):
-    """The whole file, with the read side's retry."""
-    return read_with_permission_retry(Path(path).read_bytes)
 
 
 def read_bounded(path, max_bytes, chunk_size):
@@ -228,8 +221,9 @@ def write_prepared(path, data, exclusive=False):
 @dataclass(frozen=True)
 class TreeScan:
     """What scan_tree found under one folder: the `.md` and `.tmp` files
-    inside its real boundary, the candidates excluded for escaping it (a
-    junction or symlink), and the directories that could not be listed."""
+    inside its real boundary, the candidates excluded for escaping it
+    (through a junction or a file symlink), and the directories that
+    could not be listed."""
 
     markdown: tuple
     temp: tuple
@@ -272,8 +266,9 @@ def scan_tree(folder):
     symlinks; every file found is kept only if its real path stays inside
     `folder` (the is_within rule), and a file reached twice through a
     junction is kept once; a directory reached again through a junction
-    cycle is not listed twice, and a link to a directory outside `folder`
-    is excluded as a whole, not entered. The extension match follows the OS's own case
+    cycle is not listed twice, and a junction to a directory outside
+    `folder` is excluded as a whole, not entered. A directory symlink is
+    neither entered nor reported in `excluded`, wherever it points. The extension match follows the OS's own case
     rule (os.path.normcase), as rglob's does. A missing `folder` is
     reported as unreadable.
 
@@ -397,19 +392,9 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     # `scan`: the folder's scan_tree when the caller already walked it
     # (its `.tmp` files are already inside the folder's real boundary);
     # otherwise the folder is walked here.
-    if scan is not None:
-        candidates = (candidate for candidate in scan.temp if _OWN_TEMP_NAME.fullmatch(candidate.name))
-        return _remove_orphans(candidates, max_age_seconds, warnings)
-    # is_within: rglob descends into a junction/symlink planted inside
-    # the folder, which every other rglob consumer in this codebase
-    # already guards against (core/security.py).
-    root = Path(directory)
-    resolved_root = root.resolve()
-    candidates = (
-        candidate
-        for candidate in root.rglob("*.tmp")
-        if _OWN_TEMP_NAME.fullmatch(candidate.name) and is_within(root, candidate, resolved_base=resolved_root)
-    )
+    if scan is None:
+        scan = scan_tree(directory)
+    candidates = (candidate for candidate in scan.temp if _OWN_TEMP_NAME.fullmatch(candidate.name))
     return _remove_orphans(candidates, max_age_seconds, warnings)
 
 

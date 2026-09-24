@@ -24,7 +24,9 @@ from pathlib import Path
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import read_header_lines
-from adrpy.core.security import find_unreadable_subdirectories, resolve_within
+from adrpy.core.fs import scan_tree
+from adrpy.core.warnings import excluded_candidate_warning
+from adrpy.core.security import resolve_within
 from adrpy.core.text import parse_ascii_int
 
 CLASSIFICATIONS = (
@@ -256,18 +258,23 @@ def _parse_entry(path):
 
 
 def _existing_entries(decision_log_dir, *, warnings=None):
-    """ADR007V01: recursive (`rglob`, matching `folderadr`'s own scan
-    convention), now that `folderlog` is independently placeable and no
-    longer guaranteed flat by construction. Fails closed on an unreadable
-    subdirectory instead of silently under-reporting -- every real caller
-    of this function makes a safety decision from the result (Round
-    allocation, index correctness, the change guard below), so it always
-    fails closed. It keeps its own rglob walk rather than core/fs.scan_tree
-    (the decisions-folder scan), whose junction semantics differ."""
+    """ADR007V01: recursive, now that `folderlog` is independently
+    placeable and no longer guaranteed flat by construction. Walked with
+    core/fs.scan_tree, the decisions folder's own scan. Fails closed on an
+    unreadable subdirectory instead of silently under-reporting -- every
+    real caller of this function makes a safety decision from the result
+    (Round allocation, index correctness, the change guard below). A file
+    whose real path escapes the folder (through a junction) is excluded
+    and reported in `warnings`, once per command."""
     decision_log_dir = Path(decision_log_dir)
     if not decision_log_dir.is_dir():
         return []
-    unreadable = find_unreadable_subdirectories(decision_log_dir)
+    scan = scan_tree(decision_log_dir)
+    if warnings is not None:
+        warning = excluded_candidate_warning(list(scan.excluded))
+        if warning and warning not in warnings:
+            warnings.append(warning)
+    unreadable = list(scan.unreadable)
     if unreadable:
         raise CommandError(
             FailureCodes.LOG_SCAN_INCOMPLETE,
@@ -278,7 +285,7 @@ def _existing_entries(decision_log_dir, *, warnings=None):
         )
     return [
         _parse_entry(path)
-        for path in sorted(decision_log_dir.rglob("*.md"))
+        for path in sorted(scan.markdown)
         if path.name not in _NON_ENTRY_FILES
     ]
 

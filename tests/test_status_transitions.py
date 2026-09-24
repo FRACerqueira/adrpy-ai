@@ -1331,3 +1331,25 @@ def test_reject_leaves_the_predecessor_alone_for_a_non_ascii_back_reference(tmp_
 
     assert excinfo.value.code == "repository-inconsistent"
     assert pred.read_bytes() == before
+
+
+def test_reject_of_a_successor_with_no_predecessor_never_rejects_it_alone(tmp_path, monkeypatch):
+    """The validator refuses a live successor no predecessor points back
+    at (successor-without-predecessor), so reject's predecessor lookup
+    cannot come back empty. With the validator bypassed, the lookup's
+    guard fails loudly, naming the file, and nothing is written."""
+    from adrpy.core import lifecycle
+    from adrpy.core.consistency import check_repository
+
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(1, state="accepted"), D(2, state="proposed", suffix=1)])
+    monkeypatch.setattr(
+        lifecycle, "validate_repository", lambda folder, cfg, scan=None: check_repository(folder, cfg, scan)[0]
+    )
+    before = [path.read_bytes() for path in repo.paths]
+
+    with pytest.raises(AssertionError, match=repo.paths[1].name):
+        reject.run(["--file", str(repo.paths[1])])
+
+    assert [path.read_bytes() for path in repo.paths] == before

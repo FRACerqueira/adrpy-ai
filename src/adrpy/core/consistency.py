@@ -39,7 +39,7 @@ from adrpy.core.fs import scan_tree
 from adrpy.core.family import is_successor, locking_member
 from adrpy.core.header import describe_header_error, has_header_shape, parse_header, read_header_lines_with_report
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.text import is_ascii_digits
+from adrpy.core.text import ascii_digits_int
 
 PROPOSED = "proposed"
 ACCEPTED = "accepted"
@@ -197,8 +197,7 @@ def derive_state(header):
 def _successor_ref(header, state):
     if state != SUPERSEDED:
         return None
-    ref = (header.superseded_by_file or "").strip()
-    return int(ref) if is_ascii_digits(ref) else None
+    return ascii_digits_int(header.superseded_by_file)
 
 
 def _has_conflict_markers(lines):

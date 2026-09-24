@@ -465,6 +465,24 @@ def test_a_superseded_decision_must_point_at_a_successor_naming_it(tmp_path, fil
     assert first["file"] == str(repo.paths[0])
 
 
+def test_a_live_successor_of_the_right_predecessor_but_another_number_is_not_the_one_named(tmp_path):
+    """ADR001 is Superseded naming 003, while the live successor naming
+    ADR001 back is ADR002: the Superseded cell's number and the successor's
+    own number must match on both sides -- a live successor of the right
+    predecessor is not enough, and neither is a Superseded predecessor."""
+    repo = make_repo(
+        tmp_path,
+        files=[D(1, state="superseded", successor=3), D(2, state="accepted", suffix=1), D(3, state="accepted")],
+    )
+
+    errors = _errors(repo)
+
+    assert [(e["code"], e["file"], e["related_files"]) for e in errors] == [
+        (FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR, str(repo.paths[0]), [str(repo.paths[2])]),
+        (FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR, str(repo.paths[1]), [str(repo.paths[0])]),
+    ]
+
+
 @pytest.mark.parametrize("reference", ["two", "²", "٠٠٢"], ids=["word", "superscript", "arabic-indic"])
 def test_a_superseded_cell_with_a_non_numeric_reference_has_no_successor(tmp_path, reference):
     # Non-ASCII digits are not a number either: they never name a successor.

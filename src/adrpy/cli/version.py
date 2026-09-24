@@ -85,7 +85,7 @@ def describe():
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "--scope or --domain contains '|' or a line-break-like character.",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
-                FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title), or its resulting filename already exists -- data.file names it.",
+                FailureCodes.FILE_ALREADY_EXISTS: "The new version's filename is already taken on disk (e.g. created by another process after this call's scan) -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
@@ -132,17 +132,6 @@ def run(args):
         )
 
         filename = build_filename(config, record)
-        # The filename decides numbering: a version number already held by
-        # any file of this family (in the validated snapshot) is taken,
-        # never given to a second file.
-        taken = next((entry[2] for entry in ctx.members if entry[0].version == new_version), None)
-        if taken is not None:
-            raise CommandError(
-                FailureCodes.FILE_ALREADY_EXISTS,
-                f"Version {new_version} is already held by {taken.name}.",
-                data={"file": taken.name},
-                warnings=warnings,
-            )
         new_path = resolve_within(folder, filename)
 
         # ADR006V01: --empty uses config.template (schema-bounded, safe

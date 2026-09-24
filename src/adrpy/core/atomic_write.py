@@ -69,10 +69,9 @@ LINESEP_BYTES = os.linesep.encode("ascii")
 def join_lines_with_trailing_terminator(lines):
     """Joins `lines` with THIS host's own os.linesep, always ensuring
     exactly one trailing terminator when there's any content at all --
-    the shared "list of lines back to file content" shape used by both
-    build_header (core/header.py) and read_body (core/lifecycle.py), so
-    the host-OS line-ending decision lives in exactly one place instead
-    of being duplicated at each call site. Distinct from
+    the "list of lines back to file content" shape build_header
+    (core/header.py) uses, so the host-OS line-ending decision lives in
+    one place. Distinct from
     normalize_newlines above, which normalizes already-joined text and
     only adds a trailing terminator when the SOURCE text already had
     one; this always adds one for a non-empty `lines`, matching how a

@@ -9,7 +9,7 @@
 
 adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, check that a repository is consistent, and migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool.
 
-adrpy-ai is the reference implementation of the ADR lifecycle it shares with [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira: AdrPlus follows adrpy's rules, and adrpy reads AdrPlus 1.0.0 repositories as they are. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
+adrpy-ai is the reference implementation of the ADR lifecycle it shares with [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira: AdrPlus will follow adrpy's rules, and adrpy reads AdrPlus 1.0.0 repositories as they are. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
 
 ## Table of Contents
 
@@ -231,7 +231,7 @@ AdrPlus 1.0.0 can leave a few states that adrpy's rules do not allow. Every life
 | A `Superseded` cell pointing at a successor that was rejected | `superseded-without-successor` | Clear the Superseded cell, or fix its number. |
 | A version or revision of a successor that was rejected, itself not `Rejected` | `rejected-successor-family-not-final` | Set its Changed cell to `Rejected`, or remove it; the line continues by superseding the predecessor again. |
 
-A file with an ADR name but no header gets `no-header`; if no decision in the repository has a header yet (none was created with AdrPlus or adrpy), `adrpy migrate` gives every such file a header in one run -- set `migrationpattern` first if the file names need it (`adrpy config --migrationpattern ...`; config tolerates the `no-header` files for exactly this). A `.md` whose name is not an ADR name (a README, an index) is ignored.
+A file with an ADR name but no header gets `no-header`; while no decision has a valid header that migrate did not write, `adrpy migrate` gives every such file a header in one run -- set `migrationpattern` first if the file names need it (`adrpy config --migrationpattern ...`; config tolerates the `no-header` files for exactly this). A `.md` whose name is not an ADR name (a README, an index) is ignored.
 
 ## Architecture and Design Decisions
 

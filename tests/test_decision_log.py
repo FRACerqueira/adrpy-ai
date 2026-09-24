@@ -584,3 +584,62 @@ def test_max_existing_round_fails_closed_on_a_round_int_would_otherwise_accept(t
     with pytest.raises(CommandError) as excinfo:
         max_existing_round(log_dir)
     assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junctions are Windows-specific")
+def test_existing_entries_excludes_a_junction_out_of_folderlog(tmp_path):
+    """A junction inside folderlog pointing outside it: its entry-shaped
+    file is outside the decision log's real boundary (the is_within rule,
+    shared with the decisions-folder scan), so it never counts toward the
+    Round, nor makes INDEX.md list it."""
+    import subprocess
+
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "2026-01-01--audit-finding--lock--elsewhere.md").write_text(
+        "# Elsewhere\n\n**Front:** stability | **Severity:** High | **Resolution:** Direct | **Round:** 7\n\nbody\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(log_dir / "alias"), str(outside)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+    warnings = []
+    assert max_existing_round(log_dir, warnings=warnings) == 0
+    regenerate_index(log_dir, warnings=warnings)
+    assert "elsewhere" not in (log_dir / "INDEX.md").read_text(encoding="utf-8").lower()
+    # Excluded, but not silently: reported once, like the decisions folder's.
+    assert len([w for w in warnings if "escapes the repository boundary" in w]) == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junctions are Windows-specific")
+def test_existing_entries_counts_an_entry_reached_twice_through_a_junction_once(tmp_path):
+    import subprocess
+
+    log_dir = tmp_path / "decision-log"
+    (log_dir / "team").mkdir(parents=True)
+    (log_dir / "team" / "2026-01-01--audit-finding--cli--dup.md").write_text(
+        "# Dup\n\n**Front:** stability | **Severity:** Low | **Resolution:** Direct | **Round:** 3\n\nbody\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(log_dir / "alias"), str(log_dir / "team")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+    regenerate_index(log_dir)
+
+    # One index row (each row names the file twice: link text and target).
+    assert (log_dir / "INDEX.md").read_text(encoding="utf-8").count("[2026-01-01--audit-finding--cli--dup.md]") == 1
+
+
+def test_a_directory_named_like_an_entry_is_not_an_entry(tmp_path):
+    # The scan treats a directory as a directory, as the decisions
+    # folder's does: its name is not a file name to recognize.
+    log_dir = tmp_path / "decision-log"
+    (log_dir / "folder.md").mkdir(parents=True)
+
+    assert max_existing_round(log_dir) == 0

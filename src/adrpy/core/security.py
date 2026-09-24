@@ -1,6 +1,5 @@
 """Adversarial-input safety checks."""
 
-import os
 import re
 from pathlib import Path
 
@@ -96,35 +95,6 @@ def is_within(base_dir, candidate, *, resolved_base=None):
         return Path(candidate).resolve().is_relative_to(base)
     except (OSError, ValueError):
         return False
-
-
-def find_unreadable_subdirectories(folder):
-    """`Path.rglob` (CPython's own pathlib implementation) silently swallows any
-    `OSError` raised while walking a subtree -- a subfolder that is
-    unreadable (an ordinary ACL choice for a team-restricted area in a
-    repo organized into per-team/per-domain subfolders) makes an
-    `rglob("*.md")` silently return fewer results, or none, with no
-    exception and no signal at all. Used by core/decision_log.py's scan
-    of the decision-log folder (the decisions folder goes through
-    core/fs.scan_tree, which reports unreadable directories itself).
-
-    `os.walk`'s own `onerror` hook is the one stdlib mechanism that
-    surfaces this instead of swallowing it -- used here PURELY for error
-    detection; its own file/directory listing is discarded, so the
-    caller keeps using `folder.rglob()` unchanged for the actual scan,
-    preserving its junction-following behavior exactly.
-
-    Returns a list of the directory paths (as strings) that could not be
-    scanned -- empty when nothing was unreadable."""
-    folder = Path(folder)
-    unreadable = []
-
-    def _on_error(error):
-        unreadable.append(getattr(error, "filename", None) or str(error))
-
-    for _dirpath, _dirnames, _filenames in os.walk(folder, onerror=_on_error):
-        pass
-    return unreadable
 
 
 def reject_embedded_delimiter(value, field_name):

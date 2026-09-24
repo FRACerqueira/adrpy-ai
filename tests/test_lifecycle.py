@@ -8,9 +8,10 @@ from unittest.mock import patch
 
 import pytest
 
+from adrpy.core.atomic_write import join_lines_with_trailing_terminator, split_real_lines
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
-from adrpy.core.header import DecisionRecord, HeaderParseResult, build_header
+from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, HeaderParseResult, build_header
 from adrpy.core.lifecycle import (
     family_members,
     find_by_unique_title,
@@ -20,7 +21,6 @@ from adrpy.core.lifecycle import (
     ineligibility_reason_for_version_or_revise,
     prepare,
     next_number,
-    read_body,
     resolve_target_and_config,
     rewrite_status_field,
     stream_normalized_body_chunks,
@@ -31,6 +31,7 @@ from adrpy.core.lifecycle import (
 
 from adrpy.core.consistency import check_repository
 from adrpy.core.header import read_header_lines, read_header_lines_with_report
+from adrpy.core.text import strip_leading_boms
 
 import json
 
@@ -219,6 +220,21 @@ def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(
     assert prepare("approve", target, {}).encoding_repaired is True
 
 
+def _reference_body(path):
+    """The whole-file read stream_normalized_body_chunks replaced
+    (ADR006V01), kept as its reference: the file decoded as UTF-8
+    (invalid bytes replaced, reported), leading BOMs dropped, split on
+    real line terminators, and the lines past the header rejoined with
+    this host's separator plus one trailing terminator."""
+    raw_bytes = Path(path).read_bytes()
+    try:
+        text, repaired = raw_bytes.decode("utf-8"), False
+    except UnicodeDecodeError:
+        text, repaired = raw_bytes.decode("utf-8", errors="replace"), True
+    lines = split_real_lines(strip_leading_boms(text))
+    return join_lines_with_trailing_terminator(lines[HEADER_LINE_COUNT:]), repaired
+
+
 _BODY_MATRIX_CASES = [
     b"",
     b"line1",
@@ -239,15 +255,12 @@ _BODY_MATRIX_CASES = [
 
 
 @pytest.mark.parametrize("body_bytes", _BODY_MATRIX_CASES)
-def test_stream_normalized_body_chunks_matches_read_body_byte_for_byte(tmp_path, body_bytes):
+def test_stream_normalized_body_chunks_matches_the_whole_file_read_byte_for_byte(tmp_path, body_bytes):
     """ADR006V01: the streaming replacement must reproduce
-    read_body(read_lines_with_report(path))'s own historical output
-    byte-for-byte, including its encoding_repaired signal, for every
-    line-ending combination and invalid-UTF-8 placement -- verified
-    against the STILL-PRESENT, unmodified reference implementation
-    (read_lines_with_report + read_body), not a hand-derived
-    expectation."""
-    from adrpy.core.lifecycle import read_lines_with_report
+    whole-file read's output (_reference_body) byte-for-byte, including
+    its encoding_repaired signal, for every line-ending combination and
+    invalid-UTF-8 placement -- verified against that reference
+    implementation, not a hand-derived expectation."""
 
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
@@ -259,8 +272,7 @@ def test_stream_normalized_body_chunks_matches_read_body_byte_for_byte(tmp_path,
         handle.write(header_text.encode("utf-8"))
         handle.write(body_bytes)
 
-    lines, expected_repaired = read_lines_with_report(target)
-    expected_text = read_body(lines)
+    expected_text, expected_repaired = _reference_body(target)
 
     report = {}
     actual_bytes = b"".join(stream_normalized_body_chunks(target, report))
@@ -276,7 +288,6 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
     regardless of where the boundary falls -- forced here with
     deliberately tiny chunk sizes to guarantee every case straddles."""
     import adrpy.core.lifecycle as lifecycle_module
-    from adrpy.core.lifecycle import read_lines_with_report
 
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
@@ -289,8 +300,7 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
         handle.write(header_text.encode("utf-8"))
         handle.write(body_bytes)
 
-    lines, expected_repaired = read_lines_with_report(target)
-    expected_text = read_body(lines)
+    expected_text, expected_repaired = _reference_body(target)
 
     monkeypatch.setattr(lifecycle_module, "STREAM_CHUNK_SIZE", chunk_size)
     report = {}
@@ -653,33 +663,6 @@ def test_read_header_lines_with_report_raises_when_the_permission_error_persists
         read_header_lines_with_report(target, count=12)
 
 
-def test_read_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """Same class as the header-read test above, for read_lines_with_report
-    (used by read_target's own primary read on every per-file command)."""
-    from adrpy.core.lifecycle import read_lines_with_report
-
-    target = tmp_path / "flaky.md"
-    target.write_text("body\n", encoding="utf-8")
-
-    real_read_bytes = Path.read_bytes
-    calls = {"count": 0}
-
-    def flaky_read_bytes(self, *args, **kwargs):
-        if self == target:
-            calls["count"] += 1
-            if calls["count"] < 3:
-                raise PermissionError("Access is denied")
-        return real_read_bytes(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_bytes", flaky_read_bytes)
-
-    lines, encoding_repaired = read_lines_with_report(target)
-
-    assert lines == ["body"]
-    assert encoding_repaired is False
-    assert calls["count"] == 3
-
-
 def test_read_header_lines_with_report_ignores_corruption_far_past_the_header(tmp_path):
     """The bounded read stops once it recovers `count` real lines --
     content genuinely never read is never decoded, so corruption placed
@@ -882,24 +865,6 @@ def test_prepare_reports_a_decision_excluded_through_a_junction(tmp_path):
 
     assert len(warnings) == 1
     assert "escapes the repository boundary" in warnings[0]
-
-
-def test_read_body_returns_empty_string_when_there_is_no_body(tmp_path):
-    """read_body's `if not
-    body_lines: return ""` branch had zero coverage -- config.py's own
-    schema documents an empty template as a legitimate, reachable state
-    (`config.py`'s `template` field "may be empty"), but every existing
-    fidelity test uses a non-empty body."""
-    header_only_lines = [f"line{i}" for i in range(12)]
-
-    assert read_body(header_only_lines) == ""
-
-
-def test_read_body_joins_with_the_host_line_separator(tmp_path):
-    header_and_body = [f"line{i}" for i in range(12)] + ["first body line", "second body line"]
-
-    assert read_body(header_and_body) == "first body line" + os.linesep + "second body line" + os.linesep
-
 
 
 @pytest.mark.parametrize("suffix", ["²", "٠٠٢"])

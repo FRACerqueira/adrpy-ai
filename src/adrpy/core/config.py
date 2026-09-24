@@ -366,8 +366,8 @@ def read_config_text(path):
 
     Retries a transient PermissionError the same way every other read in
     this codebase
-    already does (core/lifecycle.py's
-    read_lines_with_report, cli/explore.py's _build_entry) -- this read
+    already does (core/fs.py's
+    read_with_permission_retry, cli/explore.py's _build_entry) -- this read
     goes through the identical atomic_write_text -> os.replace mechanism
     those retries exist to absorb, and it runs for every single command
     (the repository's own config load), most of it
