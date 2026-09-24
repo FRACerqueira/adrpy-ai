@@ -1,6 +1,6 @@
 # Decision log index
 
-Generated -- do not edit by hand (see `doc/decision-log-workflow.md`).
+Generated -- do not edit by hand (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).
 
 ## How entries are named
 
@@ -8,7 +8,7 @@ Every file follows `{ISO date}--{classification}--{scope}--{slug}.md` (date firs
 
 - **date** -- ISO date the entry was written, not necessarily when the underlying event happened.
 - **classification** -- a closed vocabulary: `audit-finding` (a bug found and fixed, or a review pass's closure claim), `retraction` (a prior verdict or decision that didn't hold), `doc-drift` (a durable doc describing something that stopped being true), `accepted-divergence` (a confirmed difference from some external reference, not an architecture change), `scope-note` (a clarification of an existing decision's boundary), `deferred` (postponed, with a named reopening condition), `risk-accepted` (a known gap left unfixed on purpose, no reopening condition), `investigation` (a suspicion checked and found not to hold), or `process-exception` (a one-off deviation from standing process).
-- **scope** -- the module/command/concern the entry is about, reusing the project's own vocabulary (e.g. `lock`, `config`, `cli`).
+- **scope** -- the module/command/concern the entry is about, reusing the project's own vocabulary (e.g. `io`, `config`, `cli`).
 - **slug** -- a few kebab-case words identifying this specific entry; what actually guarantees the filename is unique, since classification+date+scope alone commonly repeat.
 
 For `audit-finding`/`doc-drift` entries specifically, the four extra columns below come from a structured line inside the entry itself (`**Front:** ... | **Severity:** ... | **Resolution:** ... | **Round:** ...`), used by the `pre-release-audit` skill's calibration step -- blank for every other classification, which doesn't carry that line:
@@ -16,7 +16,7 @@ For `audit-finding`/`doc-drift` entries specifically, the four extra columns bel
 - **Front** -- which review angle found it (free text -- may still mention the round narratively, but **Round** below is the authoritative, mechanically-parseable value).
 - **Severity** -- Low / Medium / High.
 - **Resolution** -- `Direct` (followed an already-established pattern, no design choice needed), `Escalated` (a real trade-off, presented as options and chosen by the project owner before implementation), or `Retraction` (reverses a previously confirmed decision that didn't hold).
-- **Round** -- a single, project-wide, ever-increasing integer identifying the pre-release-audit round this entry belongs to. Never resets. Reusing the same Round across several entries in the same round is normal and expected (`adrpy log --round N`); omitting `--round` always starts a new one. A human-friendly **Cycle** name grouping a range of rounds, when one is warranted, lives separately in [`doc/decision-log/CYCLES.md`](CYCLES.md) -- never repeated on individual entries, and only ever assigned in hindsight once a cycle's own boundary is visible (see that file for the naming rule).
+- **Round** -- a single, project-wide, ever-increasing integer identifying the pre-release-audit round this entry belongs to. Never resets. Reusing the same Round across several entries in the same round is normal and expected (`adrpy log --round N`); omitting `--round` always starts a new one. A human-friendly **Cycle** name grouping a range of rounds, when one is warranted, lives separately in this folder's `CYCLES.md`, if present -- never repeated on individual entries, and only ever assigned in hindsight once a cycle's own boundary is visible (see that file for the naming rule).
 
 `deferred` entries carry their own, different structured line instead -- `**Reopen-when:** ...` -- the reopening condition every `deferred` entry already has to name, structured so it can be checked mechanically without re-reading each entry's own prose.
 

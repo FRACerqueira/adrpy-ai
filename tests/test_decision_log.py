@@ -643,3 +643,29 @@ def test_a_directory_named_like_an_entry_is_not_an_entry(tmp_path):
     (log_dir / "folder.md").mkdir(parents=True)
 
     assert max_existing_round(log_dir) == 0
+
+
+def test_the_index_header_points_at_documents_a_users_repository_actually_has(tmp_path):
+    # INDEX.md is written into the user's own repository, which has no
+    # doc/decision-log-workflow.md and may have no CYCLES.md: the workflow
+    # is linked by its absolute URL, and CYCLES.md is only "if present".
+    log_dir = tmp_path / "decision-log"
+    log_dir.mkdir()
+
+    regenerate_index(log_dir)
+    text = (log_dir / "INDEX.md").read_text(encoding="utf-8")
+
+    assert "https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md" in text
+    assert "`doc/decision-log-workflow.md`" not in text
+    assert "(decision-log-workflow.md)" not in text
+    assert "`CYCLES.md`, if present" in text
+    assert "](CYCLES.md)" not in text
+
+
+def test_log_help_links_the_workflow_by_its_absolute_url():
+    from adrpy.cli import log
+
+    description = log.describe()["description"]
+
+    assert "https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md" in description
+    assert "see doc/decision-log-workflow.md" not in description

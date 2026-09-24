@@ -11,7 +11,7 @@ Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`.
 
 ## Description
 
-Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell. The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); nothing is written when a rule fails.
+Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell; the result is {file, status, warnings}, `status` being "Proposed", or null for a migrated decision, whose blank Created cell makes it a placeholder again (as explore reports it). The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); nothing is written when a rule fails.
 
 ## Arguments
 
@@ -28,7 +28,7 @@ Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cel
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme. |
-| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into that folder, or run migrate if it predates the tool. |
+| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |

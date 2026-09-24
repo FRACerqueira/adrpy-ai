@@ -517,6 +517,8 @@ def test_revise_of_a_file_outside_the_decisions_folder_is_refused(tmp_path):
         revise.run(["--file", str(outside), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "target-outside-folderadr"
+    # migrate only reads folderadr: moving the file comes first.
+    assert "move it into folderadr (then run migrate if it has no header)" in excinfo.value.detail
     assert sorted(p.name for p in adr_path.parent.iterdir()) == before
     assert [p.name for p in elsewhere.iterdir()] == [outside.name]
 
@@ -629,3 +631,32 @@ def test_revise_refdate_is_bounded_by_the_target_not_by_a_newer_rejected_revisio
     result = revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert os.path.basename(result["created"]) == "ADR001V01R03-use-postgre-sql.md"
+
+
+def test_revise_checks_the_new_revision_width_after_refdate(tmp_path):
+    # Owner rule: the new number is checked last in every command (as
+    # new/supersede do with lenseq), so a bad --refdate is reported
+    # before a lenrevision that widening would only trade for it.
+    data = _config_with_revisions()
+    data["lenrevision"] = 1
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=1,
+        revision=9,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01R9-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
+
+    assert excinfo.value.code == "refdate-before-history"

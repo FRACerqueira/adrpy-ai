@@ -509,3 +509,39 @@ def test_parse_header_keeps_scope_and_domain_optional():
     assert result.is_valid is True
     assert (result.scope, result.domain) == ("", "")
     assert result.error_detail is None
+
+
+@pytest.mark.parametrize(
+    "index, row, code",
+    [
+        (3, "|File title md|Baseline|extra|", "field-contains-forbidden-character"),
+        (6, "|Scope|core|extra|", "field-contains-forbidden-character"),
+        (7, "|Domain|db|extra|", "field-contains-forbidden-character"),
+        (4, "|Version|01|02|", "adr-header-version-not-found"),
+        (5, "|Revision||1|", "adr-header-revision-not-found"),
+        (8, "|Created|Proposed (2026-01-01) <!-- Proposed -->|x|", "adr-header-status-created-not-found"),
+        (9, "|Changed||Accepted (2026-01-02)|", "adr-header-status-updated-not-found"),
+        (10, "|Superseded||x|", "adr-header-status-superseded-not-found"),
+    ],
+)
+def test_a_header_row_with_an_extra_cell_makes_the_header_invalid(index, row, code):
+    # A row is |label|value|: a third cell was silently dropped, so a
+    # hand-edited value could be half lost with the header still valid.
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    lines[index] = row
+
+    result = parse_header(lines, config)
+
+    assert not result.is_valid
+    assert result.error == code
+
+
+def test_a_header_row_without_an_extra_cell_still_parses():
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    lines[6] = "|Scope|core|   "
+
+    result = parse_header(lines, config)
+
+    assert result.is_valid and result.scope == "core"

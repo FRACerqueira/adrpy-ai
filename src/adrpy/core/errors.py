@@ -127,6 +127,7 @@ class FailureCodes:
     STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE = "status-or-separator-change-scan-incomplete"
     STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS = "status-or-separator-change-blocked-by-existing-decisions"
     SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "separator-change-would-adopt-unrelated-files"
+    PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "prefix-change-would-adopt-unrelated-files"
     FILE_NOT_FOUND = "file-not-found"
     CANNOT_DETERMINE_ROOT_PATH = "cannot-determine-root-path"
     TARGET_DIRECTORY_NOT_FOUND = "target-directory-not-found"
@@ -176,6 +177,9 @@ class FailureCodes:
     # several files failed after at least one was committed
     # (data.applied/data.pending).
     MULTI_FILE_WRITE_PARTIALLY_APPLIED = "multi-file-write-partially-applied"
+    # supersede/reject (after a first commit) and log (after the entry,
+    # before INDEX.md): interrupted halfway, with what was written in data.
+    INTERRUPTED = "interrupted"
 
     # src/adrpy/cli/supersede.py
     SUPERSEDE_SUCCESSOR_WRITE_FAILED = "supersede-successor-write-failed"
@@ -202,6 +206,7 @@ class FailureCodes:
 
     # src/adrpy/cli/new.py
     TITLE_ALREADY_EXISTS = "title-already-exists"
+    LENSEQ_TOO_SMALL_FOR_NEW_NUMBER = "lenseq-too-small-for-new-number"
 
     # src/adrpy/cli/init.py
     CONFIG_ALREADY_EXISTS = "config-already-exists"

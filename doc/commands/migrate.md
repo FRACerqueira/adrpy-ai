@@ -11,7 +11,7 @@ Adds an adrpy-compliant header to existing, hand-written decision files.
 
 ## Description
 
-Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback; a fallback value is persisted into adr-config.adrplus first (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is a one-time step, refused as a whole when the tool already created a decision here, or when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome.
+Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback. It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome.
 
 ## Arguments
 
@@ -32,7 +32,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `migration-successor-files-exist` | A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run. |
 | `migration-duplicate-numbers-exist` | Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own. |
 | `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (a `\|Adr-Plus ` row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
-| `already-tool-created-adrs-exist` | At least one scanned file already has a valid, non-migrated header -- refuses the whole run. |
+| `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created) -- nothing needs migration. |
 | `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. |
@@ -81,6 +81,31 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
 <!-- generated:end -->
+
+## `migrationpattern` syntax
+
+`migrationpattern` says where the parts of a legacy file name are, by
+position: `N<pos>:<len>T<pos>`, optionally followed by `V<pos>:<len>`,
+`R<pos>:<len>` and `P<pos>:<len>`, always in that order (N, T, V, R, P).
+Every `<pos>` and `<len>` is exactly two digits, and positions count from
+0 in the file name without `.md`.
+
+| Part | Required | Reads |
+|---|---|---|
+| `N##:##` | yes | The decision number: the ASCII digits at that position and length. |
+| `T##` | yes | The title: from that position to the end of the name. |
+| `V##:##` | no | The version (ASCII digits); without it, the version is 0. |
+| `R##:##` | no | The revision (ASCII digits); without it, the revision is 0. |
+| `P##:##` | no | A prefix (any characters). |
+
+A name too short for a part, or with anything but digits where `N`, `V`
+or `R` expects them, is not a legacy ADR name. The current naming scheme
+is always tried first, so the pattern only reads names that are not
+already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
+
+- `N00:04T05` reads `0001-use-postgres.md` as decision 1, title `use-postgres`.
+- `N04:04T13V10:02P00:03` reads `ADR-0007-v02-use-postgres.md` as decision 7,
+  version 2, prefix `ADR`, title `use-postgres`.
 
 ## Example
 

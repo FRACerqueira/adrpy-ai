@@ -22,12 +22,18 @@ from adrpy.core.config import (
     read_config_text,
 )
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
-from adrpy.core.fs import scan_tree
+from adrpy.core.fs import cleanup_orphaned_temp_files_for, scan_tree
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import resolve_target_and_config, validate_config_change
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
-from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, no_install_level_config_warning, retry_warning
+from adrpy.core.warnings import (
+    attach_warnings,
+    excluded_candidate_warning,
+    no_install_level_config_warning,
+    orphan_cleanup_warning,
+    retry_warning,
+)
 
 
 def describe():
@@ -84,16 +90,16 @@ def describe():
                     "folderlog (ADR007V01) gets the same treatment: folderlog-change-blocked-by-existing-"
                     "entries / folderlog-change-would-adopt-unrelated-files / log-scan-incomplete, same rule "
                     "as the `config` command's own --folderlog guard. Likewise, if the "
-                    "seed's own statusnew/statusacc/statusrej/statussup/separator/"
+                    "seed's own statusnew/statusacc/statusrej/statussup/separator/prefix/"
                     "migrationpattern differ from the current ones in a way that would break recognition of "
                     "an existing decision, fails with status-or-separator-change-blocked-by-existing-decisions "
                     "(ADR004V01/V02; same rule as the `config` command's own guard for these fields -- status "
-                    "labels and --separator block on any recognized decision (--separator's recognition "
+                    "labels, --separator and --prefix block on any recognized decision (--separator's recognition "
                     "dependency is current-scheme-only, but a value already present in a legacy filename could "
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
                     "exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
-                    "migration path -- for the four status fields and --separator that means ANY recognized "
+                    "migration path -- for the four status fields, --separator and --prefix that means ANY recognized "
                     "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already "
                     "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
                     "config change itself -- a marker-protected repository is blocked exactly the same as one "
@@ -102,9 +108,10 @@ def describe():
                     "field(s) actually blocking, not necessarily every field the seed touched) -- or "
                     "status-or-separator-change-scan-incomplete if that check itself can't be completed (that "
                     "sibling error's own data.changed_fields DOES list every guarded field touched, since it "
-                    "fails closed unconditionally). If the seed's own separator would make a file NOT currently "
+                    "fails closed unconditionally). If the seed's own separator (or prefix) would make a file NOT currently "
                     "recognized as a decision (by either scheme) newly parse as one, fails instead with "
-                    "separator-change-would-adopt-unrelated-files (data.adopted_files lists the file paths) -- "
+                    "separator-change-would-adopt-unrelated-files (prefix-change-would-adopt-unrelated-files for the prefix; "
+                    "data.adopted_files lists the file paths) -- "
                     "unlike migrationpattern, which is deliberately allowed to newly recognize pre-existing "
                     "legacy files as its own documented purpose, separator has no intentional-adoption use "
                     "case, so any file it would newly sweep in is treated as an unintended side effect and "
@@ -146,9 +153,10 @@ def describe():
                 FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderlog already holds a file that would newly parse as a decision-log entry.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking --seed's own folderlog change.",
-                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own status-label/separator/migrationpattern would break recognition of an existing decision.",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own status-label/separator/prefix/migrationpattern would break recognition of an existing decision.",
                 FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD folderadr could not be scanned while checking a guarded field change.",
                 FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--seed's own separator would make a file NOT currently recognized as a decision newly parse as one.",
+                FailureCodes.PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--seed's own prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files).",
                 FailureCodes.INIT_EXISTING_NUMBERS_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned while computing the existing max number/version/revision.",
                 FailureCodes.LENSEQ_TOO_SMALL_FOR_EXISTING_DECISIONS: "The resulting lenseq is too narrow for a decision number that already exists on disk.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_EXISTING_DECISIONS: "The resulting lenversion is too narrow for a decision version that already exists on disk.",
@@ -224,6 +232,12 @@ def run(args):
     warnings = []
     if used_built_in_default_uninformed:
         warnings.append(no_install_level_config_warning())
+    # A write of the config interrupted earlier leaves its temp at the
+    # repository root, outside every folder sweep.
+    with attach_warnings(warnings):
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for([config_path], warnings=warnings))
+    if warning:
+        warnings.append(warning)
 
     if config_already_existed:
         # --seed overwriting an ALREADY-existing repository: the PRE-edit

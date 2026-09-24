@@ -11,7 +11,7 @@ Writes a decision-log entry -- the lighter-weight sibling of a formal ADR.
 
 ## Description
 
-Writes a decision-log entry under folderlog -- the lighter-weight sibling of an ADR, for an event worth recording that is not an architectural decision (see doc/decision-log-workflow.md) -- and regenerates the log's INDEX.md. It owns only the mechanics: every value is an argument, checked before the write, and the result is {created, round, warnings}, `round` being allocated for audit-finding/doc-drift. An entry already written stays on disk when the index regeneration after it fails; data.file then names it.
+Writes a decision-log entry under folderlog -- the lighter-weight sibling of an ADR, for an event worth recording that is not an architectural decision (see https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md) -- and regenerates the log's INDEX.md. It owns only the mechanics: every value is an argument, checked before the write, and the result is {created, round, warnings}, `round` being allocated for audit-finding/doc-drift. An entry already written stays on disk when the index regeneration after it fails; data.file then names it.
 
 ## Arguments
 
@@ -52,6 +52,7 @@ Writes a decision-log entry under folderlog -- the lighter-weight sibling of an 
 | `log-scan-incomplete` | A subdirectory under folderlog could not be scanned. |
 | `log-entry-already-exists` | An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails). |
 | `log-index-regeneration-failed` | The entry itself was written, but regenerating INDEX.md afterward failed. |
+| `interrupted` | Interrupted (Ctrl+C) after the entry was written but before INDEX.md was regenerated; data.file names the entry. An interrupt before the entry is written is reported without data. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |

@@ -743,3 +743,30 @@ def test_a_suffix_from_the_same_or_a_higher_number_is_not_a_successor_for_any_ru
     reject.run(["--file", str(target), "--refdate", "2026-01-06"])
     created = version.run(["--file", str(target), "--refdate", "2026-01-07"])["created"]
     assert Path(created).name.startswith("ADR001V02-")
+
+
+def test_supersede_refuses_a_successor_number_that_does_not_fit_lenseq_and_says_how_to_widen_it(tmp_path):
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(999, state="accepted")])
+    before = {path.name: path.read_bytes() for path in repo.folder.iterdir()}
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(repo.paths[0])])
+
+    assert excinfo.value.code == "lenseq-too-small-for-new-number"
+    assert excinfo.value.data == {"new_number": 1000, "lenseq": 3}
+    assert "adrpy config --path <repository> --lenseq 4" in excinfo.value.detail
+    assert {path.name: path.read_bytes() for path in repo.folder.iterdir()} == before
+
+
+def test_supersede_says_when_lenseq_cannot_be_widened_any_further(tmp_path):
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, config={"lenseq": 6}, files=[D(999999, state="accepted")])
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(repo.paths[0])])
+
+    assert excinfo.value.code == "lenseq-too-small-for-new-number"
+    assert "maximum (6)" in excinfo.value.detail

@@ -35,6 +35,7 @@ Creates a new decision, status Proposed, in a new family under the number after 
 | `refdate-in-future` | --refdate is after today. |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `title-already-exists` | Another decision already has this title, once both are normalized by the configured case transform. |
+| `lenseq-too-small-for-new-number` | The next number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. |
 | `file-already-exists` | The resulting filename already exists on disk. |
 | `title-produces-unrecognizable-filename` | The title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |

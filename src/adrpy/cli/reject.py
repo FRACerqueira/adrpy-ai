@@ -70,6 +70,7 @@ def describe():
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
                 FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made.",
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; the repository is then inconsistent until this decision is marked Rejected by hand, with the exact row in data.repair.",
+                FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the predecessor's Superseded status was reverted but before this decision was marked Rejected -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). An interrupt before the first write is reported without data.",
             },
         ),
     }

@@ -384,3 +384,50 @@ def test_parse_filename_rejects_more_than_one_supersede_suffix():
     config = load_repo_config(FIXTURE_PATH)
 
     assert parse_filename("ADR005V01-new-decision--002--003.md", config) is None
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "2024-01-15-meeting.md",  # a dated note: no prefix, no version
+        "v1-notes.md",
+        "0001-use-postgres.md",  # a legacy name: only migrationpattern recognizes it
+        "XYZ001V01-x.md",  # another prefix than the configured ADR
+        "ADR001-no-version.md",  # the version is required
+    ],
+)
+def test_a_name_without_the_configured_prefix_and_a_version_is_not_a_decision(filename):
+    config = load_repo_config(FIXTURE_PATH)
+
+    assert parse_filename(filename, config) is None
+    assert parse_any_filename(filename, config) is None
+
+
+def test_the_prefix_is_matched_case_insensitively_and_kept_as_written():
+    config = load_repo_config(FIXTURE_PATH)
+
+    parsed = parse_filename("adr007v02-lower-case.md", config)
+
+    assert (parsed.number, parsed.version, parsed.prefix) == (7, 2, "adr")
+
+
+def test_an_empty_prefix_still_requires_the_version():
+    with open(FIXTURE_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    data["prefix"] = ""
+    config = parse_repo_config(json.dumps(data))
+
+    assert parse_filename("001V01-x.md", config).number == 1
+    assert parse_filename("0001-use-postgres.md", config) is None
+    assert parse_filename("ADR001V01-x.md", config) is None
+
+
+def test_a_unicode_fold_of_a_prefix_letter_is_not_the_prefix():
+    # KELVIN SIGN lowercases to 'k': only ASCII letters may match the prefix.
+    with open(FIXTURE_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    data["prefix"] = "KB"
+    config = parse_repo_config(json.dumps(data))
+
+    assert parse_filename("kb001V01-x.md", config).number == 1
+    assert parse_filename("\u212aB001V01-x.md", config) is None

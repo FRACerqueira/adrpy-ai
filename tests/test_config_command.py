@@ -514,6 +514,37 @@ def test_config_rejects_a_migrationpattern_change_when_a_legacy_decision_already
     assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
 
 
+def test_config_clears_migrationpattern_with_an_empty_value_when_no_legacy_decision_exists(tmp_path):
+    """Owner decision: `--migrationpattern ""` clears the pattern -- the
+    one optional flag whose empty value is a real value, not an omission."""
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", ""])
+
+    assert result["updated_fields"] == ["migrationpattern"]
+    assert config.run(["--path", str(tmp_path)])["config"]["migrationpattern"] == ""
+
+
+def test_config_refuses_to_clear_migrationpattern_while_a_legacy_decision_exists(tmp_path):
+    """Clearing is a migrationpattern change like any other: the legacy
+    decision would stop being recognized, so the existing guard refuses
+    it and the config file is left untouched."""
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0001T01.md")
+    config_file = tmp_path / "adr-config.adrplus"
+    before = config_file.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--migrationpattern", ""])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
+    assert config_file.read_bytes() == before
+
+
 def test_config_rejects_a_separator_change_when_only_legacy_scheme_decisions_exist(tmp_path):
     """ADR004V02 (corrected): separator is only ever READ by naming.py's
     parse_filename (the current scheme), but that is not enough to scope
@@ -571,14 +602,14 @@ def test_config_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecog
     tmp_path = _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
-    (adr_dir / "0001_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
+    (adr_dir / "ADR001V01_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--separator", "_"])
 
     assert excinfo.value.code == "separator-change-would-adopt-unrelated-files"
     assert len(excinfo.value.data["adopted_files"]) == 1
-    assert "0001_MyTitle.md" in excinfo.value.data["adopted_files"][0]
+    assert "ADR001V01_MyTitle.md" in excinfo.value.data["adopted_files"][0]
     # Nothing committed.
     config_after = load_repo_config(tmp_path / "adr-config.adrplus")
     assert config_after.separator == "-"
@@ -990,18 +1021,21 @@ def test_config_describe_documents_the_real_domain_constraints():
     assert "true" in arguments["disableplugins"] and "false" in arguments["disableplugins"]
 
 
-def test_config_describe_does_not_falsely_claim_these_three_fields_are_settable_to_empty():
+def test_config_describe_does_not_falsely_claim_these_two_fields_are_settable_to_empty():
     """_field_description advertised
-    "may be empty" for migrationpattern/template/prefix, but every
-    optional flag goes through parse_flags, which structurally rejects
-    an empty string before it ever reaches the field -- this command can
-    never actually set any of the three to empty (only `init --seed`
-    can). The description must not claim otherwise without qualifying it."""
+    "may be empty" for template/prefix, but parse_flags structurally
+    rejects an empty optional value before it ever reaches the field --
+    this command can never actually set either to empty (only `init
+    --seed` can). The description must not claim otherwise without
+    qualifying it. migrationpattern is the exception: config accepts an
+    empty value to clear it, and its description says so."""
     arguments = {argument["name"]: argument["description"] for argument in config.describe()["arguments"]}
 
-    for field in ("migrationpattern", "template", "prefix"):
+    for field in ("template", "prefix"):
         assert "can't set it to an empty string here" in arguments[field]
         assert "init --seed" in arguments[field]
+    assert "clears it" in arguments["migrationpattern"]
+    assert "status-or-separator-change-blocked-by-existing-decisions" in arguments["migrationpattern"]
 
 
 def test_config_describe_documents_the_forbidden_character_constraint():
@@ -1045,3 +1079,90 @@ def test_field_description_fails_loudly_for_a_field_it_does_not_recognize():
 
     with pytest.raises(AssertionError, match="no-such-field"):
         _field_description("no-such-field")
+
+
+def test_config_refuses_a_prefix_change_while_a_decision_is_recognized(tmp_path):
+    # The prefix is part of every current-scheme name: changing it would
+    # make every existing decision unrecognized.
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "Keep me"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--prefix", "DEC"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["prefix"], "existing_decisions": 1}
+    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+
+
+def test_config_refuses_a_prefix_change_that_would_adopt_an_unrelated_file(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    (adr_dir / "XYZ001V01-x.md").write_bytes(b"hand written, not a real decision file\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--prefix", "XYZ"])
+
+    assert excinfo.value.code == "prefix-change-would-adopt-unrelated-files"
+    assert [os.path.basename(path) for path in excinfo.value.data["adopted_files"]] == ["XYZ001V01-x.md"]
+    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+
+
+def test_config_refuses_a_prefix_and_separator_change_that_adopts_only_together(tmp_path):
+    # Neither field alone makes this file an ADR name; both together do.
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    (adr_dir / "XYZ0001V01_foo.md").write_bytes(b"hand written, not a real decision file\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--prefix", "XYZ", "--separator", "_"])
+
+    assert excinfo.value.code in (
+        "prefix-change-would-adopt-unrelated-files",
+        "separator-change-would-adopt-unrelated-files",
+    )
+    assert [os.path.basename(path) for path in excinfo.value.data["adopted_files"]] == ["XYZ0001V01_foo.md"]
+    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+
+
+def test_config_allows_a_prefix_change_on_an_empty_repository(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--prefix", "DEC"])
+
+    assert result["updated_fields"] == ["prefix"]
+    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "DEC"
+
+
+def test_a_refused_config_does_not_recreate_a_missing_folderadr(tmp_path):
+    import shutil
+
+    tmp_path = _init_repo(tmp_path)
+    shutil.rmtree(tmp_path / "doc" / "adr")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--lenseq", "abc"])
+
+    assert excinfo.value.code == "field-not-an-integer"
+    assert not (tmp_path / "doc" / "adr").exists()
+
+
+def test_a_guard_refusal_does_not_leave_behind_the_folderadr_it_created_to_scan(tmp_path):
+    import shutil
+
+    from adrpy.cli import log
+
+    tmp_path = _init_repo(tmp_path)
+    log.run(
+        [
+            "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock",
+            "--slug", "a-note", "--summary", "A note", "--body", "Body.",
+        ]
+    )
+    shutil.rmtree(tmp_path / "doc" / "adr")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderlog", "doc/elsewhere"])
+
+    assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
+    assert not (tmp_path / "doc" / "adr").exists()

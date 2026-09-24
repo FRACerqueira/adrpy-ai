@@ -235,6 +235,67 @@ def test_a_setext_underline_alone_is_not_a_merge_conflict(tmp_path):
     assert _codes(repo) == [FailureCodes.NO_HEADER]
 
 
+def _conflicted(tmp_path, spec):
+    """spec's file content with a merge conflict in its header."""
+    probe = make_repo(tmp_path / "probe")
+    lines = build_header(probe.config, decision_record(probe.config, spec)).splitlines()
+    lines.insert(4, "<<<<<<< HEAD")
+    return "\n".join(lines) + "\n"
+
+
+def test_a_conflicted_successor_does_not_also_make_its_predecessor_an_error(tmp_path):
+    # While the conflict exists, the successor's state is unknown: the
+    # predecessor pointing at it is not "without successor" -- only the
+    # conflict itself is reported.
+    successor = D(2, state="accepted", suffix=1)
+    repo = make_repo(
+        tmp_path / "repo",
+        files=[D(1, state="superseded", successor=2), D(2, suffix=1, content=_conflicted(tmp_path, successor))],
+    )
+
+    assert _codes(repo) == [FailureCodes.MERGE_CONFLICT_MARKERS]
+
+
+def test_a_conflicted_predecessor_does_not_also_make_its_successor_an_error(tmp_path):
+    predecessor = D(1, state="superseded", successor=2)
+    repo = make_repo(
+        tmp_path / "repo",
+        files=[D(1, content=_conflicted(tmp_path, predecessor)), D(2, state="accepted", suffix=1)],
+    )
+
+    assert _codes(repo) == [FailureCodes.MERGE_CONFLICT_MARKERS]
+
+
+def test_a_conflict_elsewhere_does_not_hide_a_real_missing_successor(tmp_path):
+    # Decision 2 is conflicted, but it is not the successor 1 points at
+    # (no --001 suffix): 1's missing successor is still reported.
+    repo = make_repo(
+        tmp_path / "repo",
+        files=[D(1, state="superseded", successor=2), D(2, content=_conflicted(tmp_path, D(2)))],
+    )
+
+    assert sorted(_codes(repo)) == sorted(
+        [FailureCodes.MERGE_CONFLICT_MARKERS, FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR]
+    )
+
+
+def test_the_merge_conflict_hint_names_only_the_markers_that_are_detected(tmp_path):
+    assert "=======" not in HINTS[FailureCodes.MERGE_CONFLICT_MARKERS]
+
+
+def test_an_invalid_status_combination_names_the_three_cells(tmp_path):
+    repo = make_repo(tmp_path, files=[D(1, state="proposed", change="Superseded", successor=2)])
+
+    (error,) = [e for e in _errors(repo) if e["code"] == FailureCodes.INVALID_STATUS_COMBINATION]
+
+    assert error["detail"] == "Created: Proposed; Changed: blank; Superseded: Superseded."
+
+
+def test_the_hints_of_superseded_not_live_and_duplicate_number_give_the_whole_repair():
+    assert "Accepted" in HINTS[FailureCodes.SUPERSEDED_NOT_LIVE]
+    assert "Version/Revision" in HINTS[FailureCodes.DUPLICATE_NUMBER]
+
+
 def test_a_decision_reached_twice_through_a_junction_is_counted_once(tmp_path):
     if os.name != "nt":
         pytest.skip("junctions are Windows-only; POSIX symlinked dirs are not descended")
@@ -597,3 +658,13 @@ def test_errors_are_sorted_by_file_then_code_and_carry_the_same_keys(tmp_path):
 def test_every_invariant_code_has_one_static_hint():
     assert set(HINTS) == _INVARIANT_CODES
     assert all(hint.strip() for hint in HINTS.values())
+
+
+def test_the_no_header_hint_says_migrate_always_needs_a_migrationpattern():
+    # migrate refuses with migration-pattern-not-configured whenever the
+    # repository and the install-level config both lack one, whatever the
+    # file names look like.
+    hint = HINTS[FailureCodes.NO_HEADER]
+
+    assert "if the names need it" not in hint
+    assert "migrate always needs one" in hint

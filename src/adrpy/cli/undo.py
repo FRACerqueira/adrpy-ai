@@ -13,7 +13,9 @@ def describe():
         "name": "undo",
         "summary": "Reverts a decision's Accepted/Rejected status back to Proposed.",
         "description": (
-            "Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell. The whole "
+            "Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell; the result is "
+            "{file, status, warnings}, `status` being \"Proposed\", or null for a migrated decision, whose "
+            "blank Created cell makes it a placeholder again (as explore reports it). The whole "
             "repository is validated first (see `adrpy check`), then the target's status and its family rules"
             " (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); "
             "nothing is written when a rule fails."
@@ -50,5 +52,8 @@ def run(args):
         if warning:
             warnings.append(warning)
 
-    # Canonical keyword, not the repo's configured status label.
-    return {"file": str(path), "status": "Proposed", "warnings": warnings}
+    # Canonical keyword, not the repo's configured status label; a
+    # migrated decision's Created cell is blank, so clearing Changed
+    # returns it to the placeholder (null, like explore's status_create).
+    status = "Proposed" if ctx.header.status_create is not None else None
+    return {"file": str(path), "status": status, "warnings": warnings}

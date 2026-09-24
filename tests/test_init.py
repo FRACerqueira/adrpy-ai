@@ -265,7 +265,7 @@ def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unre
     init.run(["--path", str(tmp_path)])
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
-    (adr_dir / "0001_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
+    (adr_dir / "ADR001V01_MyTitle.md").write_bytes(b"hand written, not a real decision file\n")
 
     seed = json.loads(init.default_repo_config_text())
     seed["separator"] = "_"

@@ -9,10 +9,10 @@ from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.security import resolve_within
 
 _ERROR_CODES = {
-    FailureCodes.MERGE_CONFLICT_MARKERS: "data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file).",
+    FailureCodes.MERGE_CONFLICT_MARKERS: "data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists).",
     FailureCodes.NO_HEADER: "data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool).",
     FailureCodes.INVALID_HEADER: "data.errors[].code: a file's header does not parse; `detail` names the parse failure.",
-    FailureCodes.INVALID_STATUS_COMBINATION: "data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes.",
+    FailureCodes.INVALID_STATUS_COMBINATION: "data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells).",
     FailureCodes.DUPLICATE_NUMBER: "data.errors[].code: two files share number, version and revision (a missing revision counts as 0).",
     FailureCodes.PENDING_DUPLICATE: "data.errors[].code: a family has more than one open Proposed decision (a migrated placeholder does not count).",
     FailureCodes.PENDING_NOT_LIVE: "data.errors[].code: a Proposed decision is locked by a newer family member that is not Rejected.",
@@ -27,10 +27,16 @@ _ERROR_CODES = {
 
 # The reason an invalid-header entry gives: its `detail` starts with one of
 # these codes (the same data.errors the file commands and new report).
+# An empty file has none of the header's shape, so it is no-header, never
+# an invalid-header whose detail is adr-file-empty.
 _HEADER_DETAIL_CODES = {
     code: f"data.errors[].detail of an invalid-header entry starts with this code: {text[0].lower()}{text[1:]}"
     for code, text in HEADER_FAILURE_CODES.items()
 }
+_HEADER_DETAIL_CODES[FailureCodes.ADR_FILE_EMPTY] = (
+    "Never an invalid-header detail: a 0-byte file with an ADR name is reported as no-header "
+    "(explore's header.invalid_reason is where this code appears)."
+)
 
 
 def describe():

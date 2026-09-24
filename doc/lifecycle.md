@@ -43,17 +43,48 @@ is filled. `undo` never touches the Superseded cell.
   a header that parses, with a status combination the tool writes (see
   the next section). A header written by AdrPlus 1.0.0 -- the status read
   from its label, with no hidden canonical marker -- and a file `migrate`
-  brought in (`<!-- Migrated -->`) both count.
+  brought in (`<!-- Migrated -->`) both count. When a status cell has both
+  the hidden marker (`<!-- Accepted -->`) and a label, the marker wins; a
+  label that says otherwise is reported as a warning.
 - **Encoding.** A byte that is not valid UTF-8 only matters if it breaks
   the header. One that doesn't is replaced on the next rewrite, with a
   warning. Leading BOMs are ignored.
+
+## ADR names
+
+A file is a decision only when its name is an **ADR name**:
+
+```
+<prefix><number>V<version>[R<revision>]<sep><title>[<sep><sep><NNN>].md
+```
+
+- `<prefix>` is the configured `prefix` (default `ADR`, possibly empty),
+  compared ASCII case-insensitively: `adr001V01-x.md` is an ADR name when
+  the prefix is `ADR`.
+- `<number>`, `<version>` and `<revision>` are runs of ASCII digits, of any
+  length (a number wider than `lenseq` still counts). `V<version>` is
+  mandatory; `R<revision>` is optional. `V` and `R` may be lower case.
+- `<sep>` is the configured `separator`; the title is everything after the
+  first one.
+- `<sep><sep><NNN>` (digits only) is the supersede suffix. It makes the
+  file a successor of decision `NNN` only when `NNN` is **lower** than the
+  file's own number; a suffix naming its own number or a higher one links
+  to nothing, and no supersede rule reads it. Everything after a doubled
+  separator is read as the suffix: a name where that part is not all
+  digits, or with more than one doubled separator, is not an ADR name.
+
+A legacy name (`0001-use-postgres.md`) is an ADR name only through the
+`migrationpattern` (see [`config`](commands/config.md)). Anything else --
+a README, an index, `2024-01-15-meeting.md`, a name without the prefix or
+without `V` -- is not a decision: validation and numbering ignore it
+(`explore` still lists it).
 
 ## Validate the whole repository before acting
 
 Every lifecycle command -- `new`, `approve`, `reject`, `undo`,
 `supersede`, `version` and `revise` -- first validates the whole
 decisions folder, and `config` does the same before changing a guarded
-field (`folderadr`, `folderlog`, a status label, `separator`,
+field (`folderadr`, `folderlog`, a status label, `separator`, `prefix`,
 `migrationpattern`). If any rule below is broken, the command fails with
 `repository-inconsistent` and writes nothing: `data.errors` lists every
 broken rule, sorted by file, each as `{code, file, related_files, detail,
@@ -65,10 +96,9 @@ validation on its own and changes nothing.
 
 What is validated:
 
-- every file with an ADR name (one that matches the naming scheme, or the
-  legacy `migrationpattern`) anywhere under the decisions folder
-  (`folderadr`), subdirectories included. A `.md` whose name is not an ADR
-  name -- a README, an index -- is not a decision and is ignored;
+- every file with an ADR name (see above) anywhere under the decisions
+  folder (`folderadr`), subdirectories included. A `.md` whose name is not
+  an ADR name is not a decision and is ignored;
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
@@ -77,9 +107,9 @@ The rules, one error code each:
 
 | Rule | `data.errors[].code` |
 |---|---|
-| No git merge-conflict marker line (starting `<<<<<<< ` or `>>>>>>> `) in the 12 header lines -- checked first, and reported alone for that file | `merge-conflict-markers` |
+| No git merge-conflict marker line (starting `<<<<<<< ` or `>>>>>>> `) in the 12 header lines -- checked first, and reported alone for that file. The file keeps its name, so it still holds its number (`duplicate-number`, the next number), but it has no status: the family rules skip it, and a supersede link to or from it is not reported broken while the conflict lasts | `merge-conflict-markers` |
 | Every file with an ADR name has a header (the hint points at `migrate` for a file that predates the tool) | `no-header` |
-| The header parses, its title, scope and domain included (no `\|`, no line-break-like character; the title also no filesystem-unsafe character and not only whitespace, `_` or `-`); `detail` names the reason | `invalid-header` |
+| The header parses: every row has exactly its two cells (an extra `\|` makes the row invalid), and the title, scope and domain have no `\|` and no line-break-like character (the title also no filesystem-unsafe character and not only whitespace, `_` or `-`); `detail` names the reason | `invalid-header` |
 | The Created/Changed/Superseded cells form a combination the tool writes (below) | `invalid-status-combination` |
 | No two files share number, version and revision (a missing revision counts as 0) | `duplicate-number` |
 | At most one open `Proposed` member per family (a migrated placeholder is not one) | `pending-duplicate` |
@@ -91,6 +121,12 @@ The rules, one error code each:
 | A predecessor has at most one successor that is not `Rejected` | `multiple-live-successors` |
 | In the family of a `Rejected` successor, every member is `Rejected` (a rejected successor ends its whole family) | `rejected-successor-family-not-final` |
 | Every directory and decision file under the decisions folder can be read | `scan-incomplete` |
+
+A rule broken by several files together -- `duplicate-number`,
+`pending-duplicate`, `superseded-duplicate`, `multiple-live-successors` --
+gives one entry, on the first of those files in sort order, with the
+others in `related_files`. Every other rule gives one entry per file that
+breaks it.
 
 "Live" is the first family rule below: the family's latest member, newer
 members that are all `Rejected` not counting.
@@ -169,6 +205,29 @@ has: `still-proposed`, `already-accepted`, `already-rejected` or
 `already-superseded`. The family rules fail with
 `family-member-superseded`, `family-member-pending`,
 `not-latest-version` and `rejected-successor-is-final`.
+
+The checks run in a fixed order, and only the first one that fails is
+reported:
+
+1. The target: it exists, has an ADR name (`filename-not-recognized`) and
+   is inside the decisions folder (`target-outside-folderadr`).
+2. The whole repository (`repository-inconsistent`).
+3. `revise` only: `revision-not-configured` (`lenrevision` is 0).
+4. The target's own status.
+5. The family rules the command has, in this order:
+   `family-member-superseded`, `family-member-pending`,
+   `not-latest-version`, `rejected-successor-is-final`.
+6. `--refdate`, then the title, scope and domain values.
+7. The new number, last: `version` and `revise`, the new version or
+   revision must fit `lenversion` / `lenrevision`; `supersede`, the
+   successor's number must fit `lenseq`
+   (`lenseq-too-small-for-new-number`).
+
+`new` checks the repository, then its title, scope and domain values and
+`--refdate`, then `title-already-exists`, and the number
+(`lenseq-too-small-for-new-number`) last. A number that does not fit says
+which `adrpy config --lenseq` / `--lenversion` / `--lenrevision` widens
+it, or that the field is already at its maximum.
 
 ## Family rules, in short
 
@@ -255,6 +314,11 @@ Changed row); the repository then breaks
 `successor-without-predecessor` until that row is put in the successor
 by hand.
 
+An interrupt (Ctrl+C) after the first file is written fails with
+`interrupted` and the same `data` (`applied`, `pending`, `repair`) as
+`multi-file-write-partially-applied`; an interrupt before it has written
+nothing and carries no `data`.
+
 `reject` only reverts a `Superseded` cell that names this successor
 (compared as a number, so a later `lenseq` change doesn't matter).
 
@@ -283,15 +347,44 @@ whose status cells are blank. Such a **migrated placeholder** counts as
 `supersede`, `version` and `revise`, so an old chain can be continued
 without inventing dates. `undo` needs a real Changed status and refuses
 it (`still-proposed`), and a placeholder never counts as the family's
-open `Proposed` member. Placeholders follow the family rules like any
+open `Proposed` member. `undo` of a migrated decision that was accepted
+or rejected clears its Changed cell, which makes it a placeholder again:
+its result's `status` is `null`, not `"Proposed"`. Placeholders follow the family rules like any
 other member: a migrated `V01` with a migrated `V02` next to it is locked.
 `migrate`, like `init`, does not validate the repository first -- it is
 what brings a repository to a state that validates.
 
-A supersede chain is something only this tool creates. `migrate` refuses
-the whole run when a file already carries a supersede suffix (`--NNN`,
-`migration-successor-files-exist`, `data.files`): rename it without the
-suffix, migrate, then record the chain with `supersede`.
+`migrate` always needs a `migrationpattern`: the repository's own, or
+the install-level fallback, which it then saves into the repository's
+config. It needs one even when every file already has an ADR name (the
+ADR name is read first). The pattern also makes a decision of every
+other name it matches -- a dated note, now or added later -- so choose
+one that matches nothing else in the folder, and look at `explore`
+(`scheme: legacy`) before migrating. A pattern set by mistake can be
+changed or cleared (`adrpy config --migrationpattern ""`) only while no
+legacy-scheme decision exists: once one does, every change is refused
+(`status-or-separator-change-blocked-by-existing-decisions`). `migrate` refuses the whole run, checking
+in this order:
+
+1. a file that looks like this tool's header but does not parse
+   (`migration-invalid-headers-exist`), then a file with a valid header
+   `migrate` did not write -- AdrPlus's or adrpy's
+   (`already-tool-created-adrs-exist`); both before the pattern is needed;
+2. no pattern (`migration-pattern-not-configured`);
+3. a file or directory it cannot read (`migration-scan-failed`,
+   `migration-scan-incomplete`), then no decision at all
+   (`no-decisions-found`);
+4. the two header checks of step 1 again, over the names the pattern adds;
+5. a file that already carries a supersede suffix (`--NNN`, whatever its
+   number; `migration-successor-files-exist`): a supersede chain is
+   something only this tool creates -- rename the file without the
+   suffix, migrate, then record the chain with `supersede`;
+6. files sharing number, version and revision
+   (`migration-duplicate-numbers-exist`);
+7. nothing left to migrate (`no-eligible-files-to-migrate`).
+
+The refusals about specific files (steps 1, 4, 5 and 6) name them in
+`data.files`.
 
 See each command's page in the [Command Reference](commands/INDEX.md)
 for its full list of failure codes.

@@ -23,6 +23,20 @@ The first release of adrpy-ai.
 - **`adrpy-skills`**, a separate console script in the same distribution, never called by `adrpy`: installs the `decision-log`, `pre-release-audit` and `comment-audit` skills for Claude Code, Cursor, GitHub Copilot and a generic `AGENTS.md`, as a full body or a short stub plus one shared doc depending on the provider ([ADR009](doc/adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md), [`doc/skills/`](doc/skills/README.md)). Every file it writes carries a content-hash drift marker: a file or block that is foreign, hand-edited or malformed is left alone unless `--force` is given, and `list` reports the same state read-only.
 - Public project scaffolding: `LICENSE` (MIT), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, this changelog.
 
+### Changed
+
+Changes from the development builds, made in the last hardening round:
+
+- **The ADR name rule is stricter (contract change).** A decision's name must start with the configured `prefix` (compared case-insensitively) and carry a `V` version: `<prefix><number>V<version>[R<revision>]<sep><title>[<sep><sep><NNN>].md`. A name without the prefix or without `V` -- `0001-use-postgres.md`, `2024-01-15-meeting.md` -- is no longer a decision and is ignored; a legacy name is recognized only through `migrationpattern`. A `--NNN` suffix makes a successor only when `NNN` is lower than the file's own number. See "ADR names" in [`doc/lifecycle.md`](doc/lifecycle.md).
+- **`prefix` is a guarded config field**, like the separator: it can't be changed once a decision exists, or when the new value would adopt files that are not decisions today (`prefix-change-would-adopt-unrelated-files`).
+- **A header row with an extra `|` is invalid** instead of having the extra cell silently dropped (`field-contains-forbidden-character` for the title, scope and domain).
+- **`new` and `supersede` refuse a number that does not fit `lenseq`** (`lenseq-too-small-for-new-number`), saying which `adrpy config --lenseq` widens it, or that it is already at its maximum.
+- **`interrupted` carries data once something was written**: `supersede` and `reject` after their first file (`data.applied`, `data.pending`, `data.repair`), `log` after the entry, before `INDEX.md` (`data.file`).
+- **Orphaned temp files are swept everywhere this tool writes**: the decisions folder, the decision-log folder (by `log`), and the temps of `adr-config.adrplus` (by `init`, `config` and `migrate`) and of the install-level config (by `installconfig`).
+- **`migrate` checks in a fixed order** -- a damaged header, then a valid header it did not write, both before a `migrationpattern` is needed -- and every refusal about specific files names them in `data.files`. It always needs a `migrationpattern`.
+- **`undo` of a migrated decision returns `status: null`**: clearing its Changed cell makes it a migrated placeholder again, not `Proposed`.
+- **Python 3.14** is supported and tested in CI.
+
 ### Security
 
 - Every path the tool resolves must stay inside the repository, by real path resolution (following `..`, symlinks and junctions), never a string pattern. `folderadr` and `folderlog` must not be the same directory or nested in each other, compared both as normalized paths and as real paths, so a junction or symlink that aliases them is refused too.

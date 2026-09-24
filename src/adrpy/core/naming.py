@@ -1,7 +1,11 @@
 """Filename parsing for both naming schemes.
 
-**Current scheme** -- `^([A-Za-z]*)(\\d+)(?:[Vv](\\d+)(?:[Rr](\\d+))?)?$`:
-number/version/revision are variable-length digit runs, NOT padded to the
+**Current scheme** -- the configured `prefix` (ASCII case-insensitive),
+then `(\\d+)[Vv](\\d+)(?:[Rr](\\d+))?`, before the first separator: the
+prefix and the version are required, so a name without them (a dated
+note, `0001-use-postgres.md`) is not a decision -- a legacy file is
+recognized only through `migrationpattern`.
+Number/version/revision are variable-length digit runs, NOT padded to the
 config's lenseq/lenversion/lenrevision -- deliberately so, since a file
 whose digits no longer fit a newly-*shrunk* config must still be
 recognized (needed by `init`'s digit-overflow check).
@@ -27,7 +31,7 @@ from adrpy.core.text import is_ascii_digits
 
 # re.ASCII: \d must mean 0-9 only -- other scripts' digits would read as the
 # same number and collide with a real decision (the filename decides identity).
-_ADR_PATTERN = re.compile(r"^([A-Za-z]*)(\d+)(?:[Vv](\d+)(?:[Rr](\d+))?)?$", re.ASCII)
+_ADR_PATTERN = re.compile(r"^(\d+)[Vv](\d+)(?:[Rr](\d+))?$", re.ASCII)
 _MIGRATION_PATTERN = re.compile(
     r"^N(\d{2}):(\d{2})T(\d{2})(?:V(\d{2}):(\d{2}))?(?:R(\d{2}):(\d{2}))?(?:P(\d{2}):(\d{2}))?$",
     re.ASCII,
@@ -75,15 +79,21 @@ def parse_filename(filename, config):
     head = name[:index]
     title = name[index + len(config.separator) :]
 
-    match = _ADR_PATTERN.match(head)
+    prefix = config.prefix or ""
+    # The configured prefix, compared case-insensitively (ASCII only: a
+    # prefix is ASCII letters, and a Unicode fold would let e.g. the
+    # Kelvin sign stand in for 'K').
+    if head[: len(prefix)].lower() != prefix.lower() or not head[: len(prefix)].isascii():
+        return None
+    match = _ADR_PATTERN.match(head[len(prefix) :])
     if match is None:
         return None
 
     return ParsedFileName(
-        number=int(match.group(2)),
-        version=int(match.group(3)) if match.group(3) else 0,
-        revision=int(match.group(4)) if match.group(4) else None,
-        prefix=match.group(1) or None,
+        number=int(match.group(1)),
+        version=int(match.group(2)),
+        revision=int(match.group(3)) if match.group(3) else None,
+        prefix=head[: len(prefix)] or None,
         title=title,
         superseded_from=superseded_from,
     )

@@ -1353,3 +1353,18 @@ def test_reject_of_a_successor_with_no_predecessor_never_rejects_it_alone(tmp_pa
         reject.run(["--file", str(repo.paths[1])])
 
     assert [path.read_bytes() for path in repo.paths] == before
+
+
+def test_undo_on_a_migrated_decision_reports_the_placeholder_it_returns_to(tmp_path):
+    # A migrated decision keeps Created blank: clearing Changed returns it
+    # to the placeholder, not to Proposed, and the answer says so (null,
+    # as explore reports its blank Created cell).
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(1, state="accepted", migrated=True)])
+
+    result = undo.run(["--file", str(repo.paths[0])])
+
+    assert result["status"] is None
+    text = repo.paths[0].read_text(encoding="utf-8")
+    assert "|Created||" in text and "|Changed||" in text

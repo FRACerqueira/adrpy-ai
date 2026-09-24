@@ -11,7 +11,7 @@ Reads or updates an existing repository's own `adr-config.adrplus`.
 
 ## Description
 
-With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or written.
+With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or written.
 
 ## Arguments
 
@@ -20,9 +20,9 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `--path` | -- | yes | string | Repository root directory. |
 | `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
 | `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
-| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
+| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a recognized LEGACY-scheme decision would lose recognition. |
 | `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
-| `--prefix` | -- | no | string | ASCII letters only, max 5 characters; the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
+| `--prefix` | -- | no | string | ASCII letters only, max 5 characters; every decision name starts with it (compared case-insensitively), so it is guarded like --separator. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--separator` | -- | no | string | One of ('-', '_', '.'). |
 | `--casetransform` | -- | no | string | One of ('CamelCase', 'PascalCase', 'SnakeCase', 'KebabCase'). |
 | `--statusnew` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
@@ -63,8 +63,9 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `folderlog-change-would-adopt-unrelated-files` | The NEW folderlog already holds a file that would newly parse as a decision-log entry. |
 | `log-directory-contains-unrecognized-file` | The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry. |
 | `log-scan-incomplete` | A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change. |
-| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--migrationpattern change would break recognition of an existing decision. |
+| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--prefix/--migrationpattern change would break recognition of an existing decision. |
 | `separator-change-would-adopt-unrelated-files` | --separator would make a file NOT currently recognized as a decision newly parse as one. |
+| `prefix-change-would-adopt-unrelated-files` | --prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files). |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
@@ -111,6 +112,36 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
 <!-- generated:end -->
 
+## `migrationpattern` syntax
+
+`migrationpattern` says where the parts of a legacy file name are, by
+position: `N<pos>:<len>T<pos>`, optionally followed by `V<pos>:<len>`,
+`R<pos>:<len>` and `P<pos>:<len>`, always in that order (N, T, V, R, P).
+Every `<pos>` and `<len>` is exactly two digits, and positions count from
+0 in the file name without `.md`.
+
+| Part | Required | Reads |
+|---|---|---|
+| `N##:##` | yes | The decision number: the ASCII digits at that position and length. |
+| `T##` | yes | The title: from that position to the end of the name. |
+| `V##:##` | no | The version (ASCII digits); without it, the version is 0. |
+| `R##:##` | no | The revision (ASCII digits); without it, the revision is 0. |
+| `P##:##` | no | A prefix (any characters). |
+
+A name too short for a part, or with anything but digits where `N`, `V`
+or `R` expects them, is not a legacy ADR name. The current naming scheme
+is always tried first, so the pattern only reads names that are not
+already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
+
+- `N00:04T05` reads `0001-use-postgres.md` as decision 1, title `use-postgres`.
+- `N04:04T13V10:02P00:03` reads `ADR-0007-v02-use-postgres.md` as decision 7,
+  version 2, prefix `ADR`, title `use-postgres`.
+
+An empty value (`--migrationpattern ""`) clears the pattern. Clearing is a
+change like any other: it is refused
+(`status-or-separator-change-blocked-by-existing-decisions`) while a
+recognized legacy-scheme decision would lose recognition.
+
 ## Example
 
 ```bash
@@ -119,6 +150,9 @@ adrpy config --path .
 
 # Update one field
 adrpy config --path . --lenrevision 2
+
+# Clear the migration pattern (no legacy-scheme decision may exist)
+adrpy config --path . --migrationpattern ""
 ```
 
 ---

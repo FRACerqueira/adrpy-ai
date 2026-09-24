@@ -356,3 +356,44 @@ def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
     text = created.read_text(encoding="utf-8")
     assert "|Domain|Backend|" in text
     assert "|Scope|Data|" in text
+
+
+def test_a_dated_note_in_the_decisions_folder_neither_blocks_nor_takes_a_number(tmp_path):
+    # Before the prefix and the version were required, `2024-01-15-meeting.md`
+    # read as decision 2024 with no header: every command refused the
+    # repository (no-header), and once it had one, `new` numbered the next
+    # decision ADR2025V01. It is not an ADR name now.
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "adr"
+    (folder / "2024-01-15-meeting.md").write_bytes(b"# Meeting notes\n")
+    (folder / "v1-notes.md").write_bytes(b"notes\n")
+
+    result = new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
+
+    assert Path(result["created"]).name == "ADR001V01-use-postgre-sql.md"
+
+
+def test_new_refuses_a_number_that_does_not_fit_lenseq_and_says_how_to_widen_it(tmp_path):
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(999, state="accepted")])
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(repo.root), "--title", "One too many"])
+
+    assert excinfo.value.code == "lenseq-too-small-for-new-number"
+    assert excinfo.value.data == {"new_number": 1000, "lenseq": 3}
+    assert "adrpy config --path <repository> --lenseq 4" in excinfo.value.detail
+    assert sorted(path.name for path in repo.folder.iterdir()) == [repo.paths[0].name]
+
+
+def test_new_says_when_lenseq_cannot_be_widened_any_further(tmp_path):
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, config={"lenseq": 6}, files=[D(999999, state="accepted")])
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(repo.root), "--title", "One too many"])
+
+    assert excinfo.value.code == "lenseq-too-small-for-new-number"
+    assert "maximum (6)" in excinfo.value.detail

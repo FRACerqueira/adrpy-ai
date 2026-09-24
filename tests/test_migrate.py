@@ -983,3 +983,33 @@ def test_an_interrupt_once_the_per_file_loop_started_is_reported_even_with_no_fi
 
     assert excinfo.value.code == "interrupted"
     assert excinfo.value.data == {"results": []}
+
+
+def test_a_repository_with_a_header_migrate_did_not_write_is_refused_before_the_pattern_is_needed(tmp_path):
+    # A repository created by AdrPlus or adrpy (no migrationpattern needed
+    # there) must hear that it already has headers, with the files, not be
+    # sent to configure a migrationpattern first.
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Already tool created"])
+    created = tmp_path / "doc" / "adr" / "ADR001V01-already-tool-created.md"
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "already-tool-created-adrs-exist"
+    assert excinfo.value.data == {"files": [str(created)]}
+    assert "AdrPlus or adrpy" in excinfo.value.detail
+
+
+def test_a_repository_with_a_header_migrate_did_not_write_does_not_get_the_fallback_pattern(tmp_path, monkeypatch):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Already tool created"])
+    config_before = (tmp_path / "adr-config.adrplus").read_bytes()
+    monkeypatch.setattr(migrate, "read_install_config_text", lambda *a, **k: json.dumps(_seed_config_with_pattern("N00:04T04")))
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "already-tool-created-adrs-exist"
+    assert "migrationpattern_persisted" not in excinfo.value.data
+    assert (tmp_path / "adr-config.adrplus").read_bytes() == config_before

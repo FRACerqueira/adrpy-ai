@@ -251,7 +251,7 @@ def test_exclusive_commit_refuses_a_dangling_symlink_instead_of_writing_through_
 @pytest.mark.parametrize("err", [errno.EPERM, errno.EOPNOTSUPP])
 def test_exclusive_commit_falls_back_to_o_excl_where_hard_links_are_unsupported(tmp_path, monkeypatch, err):
     # exFAT, FAT and some network shares refuse hard links; the create is
-    # still exclusive through O_EXCL, only no longer atomic.
+    # still exclusive (an O_EXCL reservation) and atomic (os.replace onto it).
     monkeypatch.setattr(fs, "_IS_WINDOWS", False)
     calls = []
 
@@ -272,6 +272,85 @@ def test_exclusive_commit_falls_back_to_o_excl_where_hard_links_are_unsupported(
     with pytest.raises(FileExistsError):
         fs.commit_write(fs.prepare_write(target, b"mine"), exclusive=True)
     assert target.read_bytes() == b"theirs"
+    assert _temps(tmp_path) == []
+
+
+class _Crash(BaseException):
+    """Stands in for the process dying (not KeyboardInterrupt, which would
+    stop the whole test session if it escaped)."""
+
+
+def _no_hard_links(monkeypatch):
+    monkeypatch.setattr(fs, "_IS_WINDOWS", False)
+
+    def no_links(_src, _dst):
+        raise OSError(errno.EPERM, os.strerror(errno.EPERM))
+
+    monkeypatch.setattr(os, "link", no_links)
+
+
+def test_a_crash_in_the_no_hard_link_fallback_never_leaves_a_partial_decision(tmp_path, monkeypatch):
+    # A killed process runs no cleanup, so _discard does nothing here. The
+    # crash can come at any point of the fallback: while the content is
+    # read into the target, or right before the complete temp is moved
+    # onto it. Either way the target may only be absent or empty (an empty
+    # file fails the validator as no-header), never a truncated decision.
+    _no_hard_links(monkeypatch)
+    monkeypatch.setattr(fs, "_discard", lambda _path: None)
+    target = tmp_path / "decision.md"
+    content = b"x" * (3 * (1 << 16) + 7)
+    prepared = fs.prepare_write(target, content)
+
+    real_open, real_replace = open, os.replace
+
+    def crashing_open(path, mode="r", *args, **kwargs):
+        handle = real_open(path, mode, *args, **kwargs)
+        if "r" in mode and Path(path) == prepared.temp_path:
+            first = handle.read
+
+            def read_once(size=-1, _calls=[]):
+                _calls.append(1)
+                if len(_calls) > 1:
+                    raise _Crash()
+                return first(size)
+
+            handle.read = read_once
+        return handle
+
+    def crashing_replace(src, dst):
+        if Path(dst) == target:
+            raise _Crash()
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fs, "open", crashing_open, raising=False)
+    monkeypatch.setattr(os, "replace", crashing_replace)
+
+    with pytest.raises(_Crash):
+        fs.commit_write(prepared, exclusive=True)
+
+    assert target.read_bytes() == b""
+    assert prepared.temp_path.read_bytes() == content
+
+
+def test_the_no_hard_link_fallback_retries_a_transient_permission_error(tmp_path, monkeypatch):
+    # The retry runs the whole fallback again: its own reservation from the
+    # failed attempt must not be taken for someone else's file.
+    _no_hard_links(monkeypatch)
+    real_replace = os.replace
+    calls = []
+
+    def busy_once(src, dst):
+        calls.append(1)
+        if len(calls) == 1:
+            raise PermissionError(errno.EACCES, "busy")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", busy_once)
+    target = tmp_path / "decision.md"
+
+    assert fs.commit_write(fs.prepare_write(target, b"new"), exclusive=True) == 2
+
+    assert target.read_bytes() == b"new"
     assert _temps(tmp_path) == []
 
 

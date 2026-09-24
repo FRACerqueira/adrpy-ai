@@ -10,12 +10,14 @@ def _names_a_flag(token, known, aliases):
     return len(token) == 2 and token[1] in aliases
 
 
-def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
+def parse_flags(args, required=(), optional=(), switches=(), aliases=None, allow_empty=()):
     """`required`/`optional` are flag names (without `--`) that take a
     value; `switches` are presence-only flags (e.g. `--empty`) that take
-    none. `aliases` maps a single-letter short form (without `-`, e.g.
-    "p") to the long flag name it stands for (e.g. "path") -- `-p value`
-    is then exactly equivalent to `--path value`. Returns a dict keyed
+    none. `allow_empty` names the value-flags whose empty string is a real
+    value (e.g. clearing a field) rather than a missing one. `aliases`
+    maps a single-letter short form (without `-`, e.g. "p") to the long
+    flag name it stands for (e.g. "path") -- `-p value` is then exactly
+    equivalent to `--path value`. Returns a dict keyed
     by the LONG flag name --
     switches map to True when present, and are simply absent from the
     dict otherwise. Raises UsageError for an unknown flag, a value-flag
@@ -52,7 +54,7 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
             # `-p --path x`: the value was left out, and the next flag was
             # swallowed as if it were one.
             raise UsageError(f"--{name} requires a value (got the flag {value})")
-        if value == "":
+        if value == "" and name not in allow_empty:
             # An empty string is treated the same as an omitted value,
             # not as a real (if unusual) one.
             raise UsageError(f"--{name} requires a non-empty value")

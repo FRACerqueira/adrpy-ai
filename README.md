@@ -45,7 +45,7 @@ pip install adrpy-ai
 adrpy help
 ```
 
-Requires Python 3.11+.
+Requires Python 3.11+. The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project.
 
 To install from source instead — for development, or to run a specific commit:
 
@@ -103,7 +103,9 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 }
 ```
 
-(Trimmed for readability — the real response includes a few more fields per decision, all documented via `adrpy help explore`.)
+(Trimmed for readability — the real response includes a few more fields per decision.)
+
+Only files with an **ADR name** are decisions: the configured `prefix` (`ADR` by default, any case), the number, a mandatory `V` version, an optional `R` revision, then the separator and the title — `ADR001V01-use-postgre-sql.md` — plus a `--NNN` suffix on a successor. Any other `.md` in the decisions folder (a README, `0001-use-postgres.md`, `2024-01-15-meeting.md`) is ignored, unless `migrationpattern` describes it as a legacy name. The exact rule is under "ADR names" in [`doc/lifecycle.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/lifecycle.md).
 
 ## Commands
 
@@ -139,9 +141,9 @@ adrpy help <command>
 adrpy check --path .
 ```
 
-`check` validates the whole repository and writes nothing. It exits `0` with `{"success": true, "data": {"decisions": <count>, ...}}` when every rule holds, and `1` with `repository-inconsistent` otherwise; `data.errors` lists every broken rule, each with its `code`, `file`, `related_files`, `detail` and a repair `hint`. The rules are listed in [`doc/lifecycle.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/lifecycle.md). Every lifecycle command runs the same validation first and refuses the same way, so a repository `check` accepts is one every command can act on.
+`check` validates the whole repository and writes nothing. It exits `0` with `{"success": true, "data": {"decisions": <count>, ...}}` when every rule holds, and `1` with `repository-inconsistent` otherwise; `data.errors` lists every broken rule, each with its `code`, `file`, `related_files`, `detail` (`null` when the code says it all) and a repair `hint`. The rules are listed in [`doc/lifecycle.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/lifecycle.md). Every lifecycle command runs the same validation first and refuses the same way, so a repository `check` accepts is one every command can act on.
 
-As a git pre-commit hook (`.git/hooks/pre-commit`, made executable) — the JSON goes to `/dev/null`, the human-readable `detail` still reaches the terminal on stderr:
+As a git pre-commit hook (`.git/hooks/pre-commit`, made executable) — the JSON goes to `/dev/null`, the human-readable `detail` still reaches the terminal on stderr. `check` reads the working tree, not what is staged: to check what you commit, stash the unstaged changes and untracked files first (`git stash push --keep-index --include-untracked`, then `git stash pop` after the commit) or use a hook manager that does it for you:
 
 ```sh
 #!/bin/sh
@@ -205,7 +207,7 @@ Supported providers: `claude` (Claude Code, project or global scope), `cursor`, 
 
 ## Configuration
 
-A repository's own settings (ADR numbering, naming scheme, header labels, status labels) live in `adr-config.adrplus`, edited via `adrpy config`. For a new repository, `adrpy init` seeds those settings from, in order: an explicit `--seed <file>`, a per-user install-level default (`adrpy installconfig`, if one has been set up on this machine), or a built-in default. Status labels and the naming-scheme separator can only be changed while doing so wouldn't break recognition of an already-written decision (see [ADR004](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR004V02-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md)) — in practice this means the four status labels and the separator become permanently fixed the moment the repository has its first decision of any kind, while the legacy-scheme `migrationpattern` becomes permanently fixed only once the repository has its first legacy-scheme decision specifically; `adrpy help config` documents the exact failure codes.
+A repository's own settings (ADR numbering, naming scheme, header labels, status labels) live in `adr-config.adrplus`, edited via `adrpy config`. For a new repository, `adrpy init` seeds those settings from, in order: an explicit `--seed <file>`, a per-user install-level default (`adrpy installconfig`, if one has been set up on this machine), or a built-in default. Status labels, the naming-scheme separator and the prefix can only be changed while doing so wouldn't break recognition of an already-written decision (see [ADR004](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR004V02-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md)) — in practice this means the four status labels, the separator and the prefix become permanently fixed the moment the repository has its first decision of any kind, while the legacy-scheme `migrationpattern` becomes permanently fixed only once the repository has its first legacy-scheme decision specifically (until then it can also be cleared with `adrpy config --migrationpattern ""`); `adrpy help config` documents the exact failure codes.
 
 `adrpy installconfig` manages that per-user default directly — the same schema as a repository's own config, so it doubles as a way to keep every new repository on a machine consistent without repeating flags every time. Both `init` and `installconfig` also accept `--language` (e.g. `pt-br`), which seeds the built-in header/status labels and default template from a bundled language pack instead of the English defaults; it's a bootstrapping-only convenience — an already-initialized repository's own `config` has no equivalent flag, since its labels are already concrete values on disk, not something to re-derive from a language choice.
 
@@ -229,9 +231,28 @@ AdrPlus 1.0.0 can leave a few states that adrpy's rules do not allow. Every life
 | Two `Superseded` members in one family | `superseded-duplicate` | Keep the Superseded cell on the live member and clear it on the others (their successors then need their suffix or status repaired too). |
 | Two successors that are not `Rejected` naming the same predecessor | `multiple-live-successors` | Keep the one the predecessor's Superseded cell points at; set the others' Changed cell to `Rejected`, or remove them. |
 | A `Superseded` cell pointing at a successor that was rejected | `superseded-without-successor` | Clear the Superseded cell, or fix its number. |
-| A version or revision of a successor that was rejected, itself not `Rejected` | `rejected-successor-family-not-final` | Set its Changed cell to `Rejected`, or remove it; the line continues by superseding the predecessor again. |
+| A version or revision of a successor that was rejected, itself not `Rejected` | `rejected-successor-family-not-final` | Set its Changed cell to `Rejected`, or remove it. If the predecessor's Superseded cell still points at the rejected successor, clear it too (otherwise `superseded-without-successor`); the line then continues by superseding the predecessor again. |
 
-A file with an ADR name but no header gets `no-header`; while no decision has a valid header that migrate did not write, `adrpy migrate` gives every such file a header in one run -- set `migrationpattern` first if the file names need it (`adrpy config --migrationpattern ...`; config tolerates the `no-header` files for exactly this). A `.md` whose name is not an ADR name (a README, an index) is ignored.
+A file with an ADR name but no header gets `no-header`; while no decision has a valid header that migrate did not write, `adrpy migrate` gives every such file a header in one run. `migrate` always needs a `migrationpattern`, set first with `adrpy config --migrationpattern ...` (config tolerates the `no-header` files for exactly this) or taken from the install-level config; it is needed even when every file already has an ADR name (the ADR name is read first). The pattern also makes a decision of every other name it matches — a dated note like `2024-01-15-meeting.md`, now or added later — so choose one that matches nothing else in the folder, and check with `adrpy explore` (`scheme: legacy`) before migrating. The syntax is on the [`config` page](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/commands/config.md). Once any decision has a valid header migrate did not write, `migrate` refuses (`already-tool-created-adrs-exist`): give the remaining files a header by hand. A `.md` whose name is not an ADR name (a README, an index) is ignored.
+
+What an AdrPlus 1.0.0 header looks like — the 12 lines at the top of every decision, the status read from the label alone (adrpy also writes a hidden `<!-- Accepted -->` marker after the date; both forms are read):
+
+```markdown
+<!-- Do not remove this comment, lines and table (1-12) -->
+|Adr-Plus Fields|Values|
+|--|--|
+|File title md|Use PostgreSQL|
+|Version|01|
+|Revision||
+|Scope||
+|Domain||
+|Created|Proposed (2026-01-10)|
+|Changed|Accepted (2026-01-12)|
+|Superseded||
+<!-- Do not remove this comment, lines and table (1-12) -->
+```
+
+A file AdrPlus (or adrpy) migrated says so on line 2, `|Adr-Plus Fields|Values Migrated <!-- Migrated -->|`, and may have blank Version and status cells.
 
 ## Architecture and Design Decisions
 

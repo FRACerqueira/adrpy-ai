@@ -13,6 +13,7 @@ harmless either way) but needs an explicit true/false value, not a
 presence-only switch, since either direction is a real edit.
 """
 
+import contextlib
 import json
 from dataclasses import asdict
 
@@ -22,7 +23,7 @@ from adrpy.core import config as config_schema
 from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.fs import scan_tree
+from adrpy.core.fs import cleanup_orphaned_temp_files_for, scan_tree
 from adrpy.core.lifecycle import (
     guarded_fields_changed,
     resolve_target_and_config,
@@ -30,7 +31,7 @@ from adrpy.core.lifecycle import (
 )
 from adrpy.core.text import parse_ascii_int
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
-from adrpy.core.warnings import attach_warnings, retry_warning
+from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 _BOOLEAN_FIELD_FLAGS = ("disableplugins",)
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
@@ -64,18 +65,16 @@ def _field_description(field):
             "'decision-log' when omitted from a hand-edited config written before this field existed."
         )
     # "may be empty" describes the STORED value's own schema rule (no
-    # cannot-be-empty validation for these 3) -- it does NOT mean this
-    # flag can set it to empty. Every
-    # optional flag goes through parse_flags, which rejects an empty
-    # string outright before ever reaching the field; only `init --seed`
-    # (which bypasses parse_flags, reading an arbitrary JSON file) can
-    # actually persist an empty value here.
+    # cannot-be-empty validation for template/prefix) -- it does NOT mean
+    # the flag can set it to empty: parse_flags rejects an empty optional
+    # value outright, except for migrationpattern (allow_empty in run),
+    # so only `init --seed` can persist an empty template or prefix.
     if field == "migrationpattern":
         return (
             "Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' "
-            "(N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it "
-            "to an empty string here (parse_flags rejects any empty optional value outright) -- use "
-            "`init --seed` for that."
+            "(N##:##T##[V##:##][R##:##][P##:##]); an empty value (--migrationpattern \"\") clears it. Like "
+            "any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) "
+            "while a recognized LEGACY-scheme decision would lose recognition."
         )
     if field == "template":
         return (
@@ -86,7 +85,8 @@ def _field_description(field):
         )
     if field == "prefix":
         return (
-            f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; the stored value may be "
+            f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; every decision name starts "
+            "with it (compared case-insensitively), so it is guarded like --separator. The stored value may be "
             "empty, but this flag can't set it to an empty string here (parse_flags rejects any empty "
             "optional value outright) -- use `init --seed` for that."
         )
@@ -149,7 +149,7 @@ def describe():
         "description": (
             "With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` "
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
-            "key). Changing a guarded field -- folderadr, folderlog, a status label, separator or "
+            "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
             "reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or "
             "written."
@@ -181,8 +181,9 @@ def describe():
                 FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderlog already holds a file that would newly parse as a decision-log entry.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change.",
-                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "A status-label/--separator/--migrationpattern change would break recognition of an existing decision.",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "A status-label/--separator/--prefix/--migrationpattern change would break recognition of an existing decision.",
                 FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--separator would make a file NOT currently recognized as a decision newly parse as one.",
+                FailureCodes.PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files).",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
@@ -193,7 +194,7 @@ def describe():
 
 
 def run(args):
-    flags = parse_flags(args, required=("path",), optional=_EDITABLE_FIELDS)
+    flags = parse_flags(args, required=("path",), optional=_EDITABLE_FIELDS, allow_empty=("migrationpattern",))
     target, config_path, config = resolve_target_and_config(flags["path"])
 
     # Which fields (if any) this call would touch is knowable from the
@@ -210,14 +211,12 @@ def run(args):
 
     current = config
     folder = resolve_within(target, current.folderadr)
-    # Nothing requires this directory to exist before `config` runs --
-    # ensure it does, matching init's own precedent: the folderadr/
-    # status/separator guards below scan it, and scan_tree treats a
-    # missing folder as unreadable.
-    folder.mkdir(parents=True, exist_ok=True)
 
     warnings = []
     with attach_warnings(warnings):
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for([config_path], warnings=warnings))
+        if warning:
+            warnings.append(warning)
         merged = asdict(current)
         updated_fields = []
 
@@ -270,11 +269,25 @@ def run(args):
         # would be orphaned, unrecognized or silently adopted -- one scan
         # of the pre-edit folder feeds both checks.
         if guarded_fields_changed(current, new_config):
-            scan = scan_tree(folder)
-            # no-header is tolerated: before its one migrate a repository
-            # is made of such files, and migrate needs config first.
-            validate_repository(folder, current, scan=scan, tolerate=(FailureCodes.NO_HEADER,))
-            validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
+            # Nothing requires this directory to exist before `config`
+            # runs -- ensure it does, now that the new values are valid,
+            # matching init's own precedent: the folderadr/status/
+            # separator/prefix guards below scan it, and scan_tree treats
+            # a missing folder as unreadable.
+            # A refusal removes it again when this call created it.
+            created_folder = not folder.exists()
+            folder.mkdir(parents=True, exist_ok=True)
+            try:
+                scan = scan_tree(folder)
+                # no-header is tolerated: before its one migrate a repository
+                # is made of such files, and migrate needs config first.
+                validate_repository(folder, current, scan=scan, tolerate=(FailureCodes.NO_HEADER,))
+                validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
+            except CommandError:
+                if created_folder:
+                    with contextlib.suppress(OSError):
+                        folder.rmdir()
+                raise
 
         # Creating the new folder here, BEFORE the config commits,
         # means a failure creating it aborts cleanly with nothing yet

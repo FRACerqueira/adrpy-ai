@@ -6,6 +6,7 @@ never a collision-disambiguator. `--open` is permanently not implemented
 """
 
 from adrpy.core.args import parse_flags
+from adrpy.core.config import LENSEQ_MAX
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header, status_row
 from adrpy.core.atomic_write import normalize_newlines
@@ -17,6 +18,7 @@ from adrpy.core.lifecycle import (
     next_number,
     prepare,
     prepare_mark_superseded,
+    widening_hint,
 )
 from adrpy.core.naming import build_filename
 from adrpy.core.security import resolve_within
@@ -100,9 +102,11 @@ def describe():
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the predecessor's own last update date (or creation date, if never updated).",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "--title/--scope/--domain, or the title taken from the predecessor's own filename, contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
+                FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER: "The successor's number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. Nothing was written.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.applied names it, data.pending the predecessor); the repository is then inconsistent until repaired by hand (remove the successor and supersede again, or mark the predecessor Superseded with the exact row in data.repair).",
+                FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the successor was created but before the predecessor was marked Superseded -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). An interrupt before the first write is reported without data.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "Preparing either file, or creating the successor (the FIRST of the two commits), failed -- nothing was written (data.intended_successor names the file that would have been created).",
             },
         ),
@@ -129,6 +133,16 @@ def run(args):
         successor_number = next_number(
             [(decision.scheme, decision.name, decision.path) for decision in ctx.snapshot.decisions]
         )
+        if len(str(successor_number)) > config.lenseq:
+            raise CommandError(
+                FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER,
+                f"New number {successor_number} does not fit in lenseq={config.lenseq}."
+                + widening_hint(
+                    "lenseq", len(str(successor_number)), LENSEQ_MAX, "this repository has no room for another decision"
+                ),
+                data={"new_number": successor_number, "lenseq": config.lenseq},
+                warnings=warnings,
+            )
 
         successor = DecisionRecord(
             number=successor_number,

@@ -157,14 +157,15 @@ _NO_HARD_LINKS = {errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.ENOSYS}
 
 def _copy_exclusive(source, target):
     """Fallback for filesystems without hard links (exFAT, FAT, some
-    network shares): O_EXCL still refuses an existing name, but the copy
-    is not atomic -- a crash midway leaves a truncated file, which the
-    repository validator reports."""
-    descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    network shares): an empty file created with O_EXCL reserves the name
+    (refusing an existing one), then the complete temp replaces it in one
+    atomic step. A crash in between leaves at most that empty file (the
+    repository validator reports it: no header) and the temp; never a
+    truncated decision. A failure before the replace removes the
+    reservation, so a retry does not take it for someone else's file."""
+    os.close(os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
     try:
-        with os.fdopen(descriptor, "wb") as out, open(source, "rb") as src:
-            while chunk := src.read(1 << 16):
-                out.write(chunk)
+        os.replace(source, target)
     except BaseException:
         _discard(target)
         raise

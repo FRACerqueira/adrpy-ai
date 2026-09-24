@@ -836,3 +836,34 @@ def test_round_takes_only_plain_ascii_digits(value):
         parse_round(value)
 
     assert excinfo.value.code == "log-round-invalid"
+
+
+def _plain_entry_args(tmp_path):
+    return [
+        "--path", str(tmp_path),
+        "--classification", "scope-note",
+        "--scope", "lock",
+        "--slug", "a-note",
+        "--summary", "A clarifying note",
+        "--body", "The body text.",
+        "--refdate", "2026-09-18",
+    ]
+
+
+def test_log_interrupted_after_the_entry_names_the_entry_written(tmp_path, monkeypatch):
+    # Ctrl+C while INDEX.md is regenerated: the entry is already on disk,
+    # so the answer names it, like log-index-regeneration-failed does.
+    _init_repo(tmp_path)
+
+    def interrupted_regenerate_index(_log_dir, **_kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(log, "regenerate_index", interrupted_regenerate_index)
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(_plain_entry_args(tmp_path))
+
+    created = tmp_path / "doc" / "decision-log" / "2026-09-18--scope-note--lock--a-note.md"
+    assert excinfo.value.code == "interrupted"
+    assert excinfo.value.data == {"file": str(created)}
+    assert created.is_file()

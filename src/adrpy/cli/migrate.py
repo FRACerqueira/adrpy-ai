@@ -22,7 +22,7 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text
-from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
+from adrpy.core.fs import cleanup_orphaned_temp_files, cleanup_orphaned_temp_files_for, scan_tree
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import (
@@ -80,6 +80,51 @@ def _carries_supersede_suffix(parsed, config):
     return bool(separator) and is_ascii_digits(tail)
 
 
+def _existing_headers(scan, config):
+    """(damaged, not_written_by_migrate): the files of `scan` recognized
+    under `config` whose header has this tool's shape but does not parse,
+    and those whose header parses and is not migrate's placeholder
+    (written by AdrPlus or adrpy). A file that cannot be read is left to
+    the full scan in run(), which refuses it."""
+    damaged, not_written_by_migrate = [], []
+    for candidate in scan.markdown:
+        if parse_any_filename(candidate.name, config) is None:
+            continue
+        try:
+            lines, _encoding_repaired = read_header_lines_with_report(candidate)
+        except OSError:
+            continue
+        header = parse_header(lines, config)
+        if not header.is_valid and has_header_shape(lines):
+            damaged.append(str(candidate))
+        elif header.is_valid and not header.is_migrated:
+            not_written_by_migrate.append(str(candidate))
+    return damaged, sorted(not_written_by_migrate)
+
+
+def _refuse_damaged_headers(files, warnings):
+    raise CommandError(
+        FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
+        f"{len(files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
+        f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
+        f"byte there, e.g. UTF-16), and no header parses: "
+        f"{', '.join(files)}. Repair or remove them by hand, then run migrate again.",
+        data={"files": files},
+        warnings=warnings,
+    )
+
+
+def _refuse_headers_migrate_did_not_write(files, warnings):
+    raise CommandError(
+        FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST,
+        f"{len(files)} file(s) already have a valid header migrate did not write (AdrPlus or adrpy): "
+        f"{', '.join(files)}. migrate only runs on a repository with no such header: give each remaining "
+        "file without one a header by hand (copy it from one of these), or rename or remove it.",
+        data={"files": files},
+        warnings=warnings,
+    )
+
+
 def describe():
     return {
         "name": "migrate",
@@ -87,10 +132,11 @@ def describe():
         "description": (
             "Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written "
             "decision file matching the repository's migrationpattern, which must be set in this repository's"
-            " config or come from the install-level config's fallback; a fallback value is persisted into "
-            "adr-config.adrplus first (reported as migrationpattern_persisted) and survives a later refusal, "
-            "in which case no decision file is touched. It is a one-time step, refused as a whole when the "
-            "tool already created a decision here, or when a scanned file has a damaged header, carries a "
+            " config or come from the install-level config's fallback. It is a one-time step, refused as a whole"
+            " when a file already has a valid header migrate did not write (checked first, before anything is "
+            "written); a fallback value is then persisted into adr-config.adrplus (reported as "
+            "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
+            "touched. It is also refused as a whole when a scanned file has a damaged header, carries a "
             "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
             " one; if any fails, data.results names every file's outcome."
         ),
@@ -108,7 +154,7 @@ def describe():
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
                 FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
-                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid, non-migrated header -- refuses the whole run.",
+                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
                 FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome.",
@@ -162,6 +208,23 @@ def run(args):
             warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings, scan=scan))
             if warning:
                 warnings.append(warning)
+        # The config's own temps (from an interrupted migrationpattern
+        # persist-back) sit at the repository root, outside that sweep.
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files_for([config_path], warnings=warnings))
+        if warning:
+            warnings.append(warning)
+
+        # Before migrationpattern is even needed (or persisted from the
+        # fallback): a repository AdrPlus or adrpy already manages is
+        # told so (a damaged header first, as below), never sent to
+        # configure a pattern first. The same checks run again below,
+        # over the names a fallback pattern adds.
+        if scan is not None:
+            damaged, tool_created = _existing_headers(scan, config)
+            if damaged:
+                _refuse_damaged_headers(damaged, warnings)
+            if tool_created:
+                _refuse_headers_migrate_did_not_write(tool_created, warnings)
 
         # ADR002V01: the install-level fallback is only consulted when
         # the repository's own migrationpattern is empty.
@@ -274,22 +337,11 @@ def run(args):
         # would stamp a second one on top, and it may be the one
         # tool-created decision the check below needs to see.
         if adulterated_files:
-            raise CommandError(
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
-                f"{len(adulterated_files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
-                f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
-                f"byte there, e.g. UTF-16), and no header parses: "
-                f"{', '.join(adulterated_files)}. Repair or remove them by hand, then run migrate again.",
-                data={"files": adulterated_files},
-                warnings=warnings,
-            )
+            _refuse_damaged_headers(adulterated_files, warnings)
 
-        if any(header.is_valid and not header.is_migrated for _, _, header in entries):
-            raise CommandError(
-                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST,
-                "This repository already has decisions created by this tool; migration refuses to run.",
-                warnings=warnings,
-            )
+        tool_created = sorted(str(path) for _, path, header in entries if header.is_valid and not header.is_migrated)
+        if tool_created:
+            _refuse_headers_migrate_did_not_write(tool_created, warnings)
 
         # A supersede chain is a concept this tool creates (decided by
         # the project owner): a file already claiming to be a

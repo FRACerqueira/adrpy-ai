@@ -63,7 +63,8 @@ from adrpy.core.config import (
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import resolve_install_config_path
 from adrpy.core.text import parse_ascii_int
-from adrpy.core.warnings import retry_warning
+from adrpy.core.fs import cleanup_orphaned_temp_files_for
+from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 
 _EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS
 
@@ -246,6 +247,16 @@ def run(args):
     if seed_arg is not None and language_arg is not None:
         raise UsageError("--language cannot be combined with --seed.")
 
+    def _write(text):
+        """Writes `text` to the install-level config, after sweeping the
+        temps an earlier interrupted write of it left; returns the
+        warnings of both."""
+        sweep_warnings = []
+        swept = orphan_cleanup_warning(cleanup_orphaned_temp_files_for([target], warnings=sweep_warnings))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        attempts = atomic_write_text(target, text)
+        return [*sweep_warnings, *filter(None, [swept, retry_warning(attempts)])]
+
     if seed_arg is not None:
         # Decision-log: 2026-09-18--audit-finding--install-config--seed-
         # plus-field-flag-misreports-updated-fields.md -- a co-passed
@@ -264,13 +275,10 @@ def run(args):
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
         parse_repo_config(seed_text)  # validates before writing
-        target.parent.mkdir(parents=True, exist_ok=True)
-        attempts = atomic_write_text(target, seed_text)
-        warning = retry_warning(attempts)
         return {
             "file": str(target),
             "updated_fields": list(_EDITABLE_FIELDS),
-            "warnings": [warning] if warning else [],
+            "warnings": _write(seed_text),
         }
 
     if language_arg is not None:
@@ -286,13 +294,10 @@ def run(args):
             )
         language_text = default_repo_config_text_for_language(language_arg)
         parse_repo_config(language_text)  # validates before writing
-        target.parent.mkdir(parents=True, exist_ok=True)
-        attempts = atomic_write_text(target, language_text)
-        warning = retry_warning(attempts)
         return {
             "file": str(target),
             "updated_fields": list(_EDITABLE_FIELDS),
-            "warnings": [warning] if warning else [],
+            "warnings": _write(language_text),
         }
 
     if not any(field in flags for field in _EDITABLE_FIELDS):
@@ -338,7 +343,4 @@ def run(args):
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    attempts = atomic_write_text(target, merged_text)
-    warning = retry_warning(attempts)
-    return {"file": str(target), "updated_fields": updated_fields, "warnings": [warning] if warning else []}
+    return {"file": str(target), "updated_fields": updated_fields, "warnings": _write(merged_text)}

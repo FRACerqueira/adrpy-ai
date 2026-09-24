@@ -44,7 +44,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.STATUS_LINE_FORMAT_INVALID: "A status cell's own parenthesized-date shape ('label (date)') could not be parsed at all.",
     FailureCodes.STATUS_LINE_UNKNOWN_STATUS: "A status cell's own label text does not match any of statusnew/statusacc/statusrej/statussup, and no canonical marker is present either.",
     FailureCodes.STATUS_LINE_DATE_INVALID: "A status cell's own parenthesized date is not a valid ISO date.",
-    FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "The Title, Scope or Domain cell breaks a free-text rule: a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'.",
+    FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "The Title, Scope or Domain cell breaks a free-text rule: a '|' (an extra cell in its row), a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'.",
 }
 
 _STATUS_CONFIG_FIELD = {
@@ -212,7 +212,7 @@ def parse_header(lines, config):
         result.error = FailureCodes.ADR_HEADER_INVALID_FORMAT
         return result
 
-    title = _extract_cell(lines[3])
+    title = _extract_cell(lines[3], free_text=True)
     if not lines[3].startswith("|") or title is None:
         result.error = FailureCodes.ADR_HEADER_TITLE_NOT_FOUND
         return result
@@ -240,7 +240,7 @@ def parse_header(lines, config):
             return result
         result.revision = int(revision_text)
 
-    scope = _extract_cell(lines[6])
+    scope = _extract_cell(lines[6], free_text=True)
     if not lines[6].startswith("|") or scope is None:
         result.error = FailureCodes.ADR_HEADER_SCOPE_NOT_FOUND
         return result
@@ -248,7 +248,7 @@ def parse_header(lines, config):
         return result
     result.scope = scope
 
-    domain = _extract_cell(lines[7])
+    domain = _extract_cell(lines[7], free_text=True)
     if not lines[7].startswith("|") or domain is None:
         result.error = FailureCodes.ADR_HEADER_DOMAIN_NOT_FOUND
         return result
@@ -328,14 +328,23 @@ def _passes_free_text_rules(result, value, field_name):
     return True
 
 
-def _extract_cell(line):
+def _extract_cell(line, free_text=False):
+    """The value cell of a `|label|value|` row: everything between the
+    label's closing '|' and the row's last one, so an extra cell is never
+    silently dropped. In a free-text row (title, scope, domain) a '|'
+    left in the value is refused by the free-text rules
+    (field-contains-forbidden-character); in any other row the cell is
+    malformed (None: the row's own not-found code)."""
     start = line.find("|", 1)
     if start == -1:
         return None
-    end = line.find("|", start + 1)
-    if end == -1:
+    end = line.rstrip().rfind("|")
+    if end <= start:
         return None
-    return line[start + 1 : end].strip()
+    cell = line[start + 1 : end].strip()
+    if not free_text and "|" in cell:
+        return None
+    return cell
 
 
 def _parse_status_cell(text, config):

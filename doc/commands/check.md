@@ -24,10 +24,10 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | Code | Condition |
 |---|---|
 | `repository-inconsistent` | At least one consistency rule is broken; data.errors lists every one. |
-| `merge-conflict-markers` | data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file). |
+| `merge-conflict-markers` | data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists). |
 | `no-header` | data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool). |
 | `invalid-header` | data.errors[].code: a file's header does not parse; `detail` names the parse failure. |
-| `invalid-status-combination` | data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes. |
+| `invalid-status-combination` | data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells). |
 | `duplicate-number` | data.errors[].code: two files share number, version and revision (a missing revision counts as 0). |
 | `pending-duplicate` | data.errors[].code: a family has more than one open Proposed decision (a migrated placeholder does not count). |
 | `pending-not-live` | data.errors[].code: a Proposed decision is locked by a newer family member that is not Rejected. |
@@ -39,7 +39,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `rejected-successor-family-not-final` | data.errors[].code: a member of a Rejected successor's family is not Rejected. |
 | `scan-incomplete` | data.errors[].code: a directory or decision file under the decisions folder could not be read. |
 | `header-invalid` | data.errors[].detail of an invalid-header entry starts with this code: the header failed structural validation, for a reason not covered by a more specific code below. |
-| `adr-file-empty` | data.errors[].detail of an invalid-header entry starts with this code: the file has no content at all. |
+| `adr-file-empty` | Never an invalid-header detail: a 0-byte file with an ADR name is reported as no-header (explore's header.invalid_reason is where this code appears). |
 | `adr-file-too-short` | data.errors[].detail of an invalid-header entry starts with this code: the file has fewer than the 12 required header lines. |
 | `adr-header-comment-not-found` | data.errors[].detail of an invalid-header entry starts with this code: line 1 (or line 12) is not the '<!-- ... -->' disclaimer comment this format requires. |
 | `adr-header-invalid-format` | data.errors[].detail of an invalid-header entry starts with this code: line 2 or line 3 does not match the fixed table-header shape this format requires. |
@@ -55,7 +55,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `status-line-format-invalid` | data.errors[].detail of an invalid-header entry starts with this code: a status cell's own parenthesized-date shape ('label (date)') could not be parsed at all. |
 | `status-line-unknown-status` | data.errors[].detail of an invalid-header entry starts with this code: a status cell's own label text does not match any of statusnew/statusacc/statusrej/statussup, and no canonical marker is present either. |
 | `status-line-date-invalid` | data.errors[].detail of an invalid-header entry starts with this code: a status cell's own parenthesized date is not a valid ISO date. |
-| `field-contains-forbidden-character` | data.errors[].detail of an invalid-header entry starts with this code: the Title, Scope or Domain cell breaks a free-text rule: a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'. |
+| `field-contains-forbidden-character` | data.errors[].detail of an invalid-header entry starts with this code: the Title, Scope or Domain cell breaks a free-text rule: a '\|' (an extra cell in its row), a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'. |
 | `target-directory-not-found` | --path does not point to an existing directory. |
 | `config-not-found` | --path's own directory has no adr-config.adrplus. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |

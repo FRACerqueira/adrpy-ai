@@ -77,3 +77,24 @@ def test_explore_consistency_is_empty_without_decisions(tmp_path, folder_exists)
         repo.folder.rmdir()
 
     assert explore.run(["--path", str(repo.root)])["consistency"] == {"errors": []}
+
+
+def test_an_empty_file_with_an_adr_name_is_no_header_never_an_invalid_header_detail(tmp_path, capsys):
+    # A 0-byte file has nothing of this tool's header shape, so check
+    # reports it as no-header; adr-file-empty is only ever explore's
+    # header.invalid_reason, and check's table must not promise it as an
+    # invalid-header detail.
+    repo = make_repo(tmp_path, files=[D(1, state="accepted")])
+    (repo.folder / "ADR002V01-empty.md").write_bytes(b"")
+
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+
+    assert code == EXIT_FAILURE
+    assert [(error["code"], error["detail"]) for error in payload["data"]["errors"]] == [
+        (FailureCodes.NO_HEADER, None)
+    ]
+    entries = {entry["filename"]: entry for entry in explore.run(["--path", str(repo.root)])["decisions"]}
+    assert entries["ADR002V01-empty.md"]["header"]["invalid_reason"] == FailureCodes.ADR_FILE_EMPTY
+    text = {entry["code"]: entry["condition"] for entry in COMMANDS["check"].describe()["failure_codes"]}
+    assert "invalid-header entry starts with" not in text[FailureCodes.ADR_FILE_EMPTY]
+    assert "no-header" in text[FailureCodes.ADR_FILE_EMPTY]

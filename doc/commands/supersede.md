@@ -35,14 +35,16 @@ Marks an Accepted decision Superseded and creates its successor, status Proposed
 | `refdate-before-history` | --refdate is before the predecessor's own last update date (or creation date, if never updated). |
 | `field-contains-forbidden-character` | --title/--scope/--domain, or the title taken from the predecessor's own filename, contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'. |
 | `field-is-blank` | --scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace. |
+| `lenseq-too-small-for-new-number` | The successor's number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. Nothing was written. |
 | `file-already-exists` | The successor's own resulting filename already exists on disk. |
 | `title-produces-unrecognizable-filename` | The successor's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `multi-file-write-partially-applied` | The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.applied names it, data.pending the predecessor); the repository is then inconsistent until repaired by hand (remove the successor and supersede again, or mark the predecessor Superseded with the exact row in data.repair). |
+| `interrupted` | Interrupted (Ctrl+C) after the successor was created but before the predecessor was marked Superseded -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). An interrupt before the first write is reported without data. |
 | `supersede-successor-write-failed` | Preparing either file, or creating the successor (the FIRST of the two commits), failed -- nothing was written (data.intended_successor names the file that would have been created). |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme. |
-| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into that folder, or run migrate if it predates the tool. |
+| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
@@ -96,7 +98,8 @@ Marks an Accepted decision Superseded and creates its successor, status Proposed
 ## Example
 
 ```bash
-adrpy supersede --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md --refdate 2026-09-18
+# The successor is dated today; --refdate YYYY-MM-DD gives another date (not in the future)
+adrpy supersede --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

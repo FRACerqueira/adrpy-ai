@@ -39,7 +39,8 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import reject_aliased_repo_folders, reject_embedded_delimiter, resolve_within
-from adrpy.core.warnings import attach_warnings, retry_warning
+from adrpy.core.fs import cleanup_orphaned_temp_files
+from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 _STRUCTURED_FIELDS = ("front", "severity", "resolution")
 
@@ -50,7 +51,7 @@ def describe():
         "summary": "Writes a decision-log entry -- the lighter-weight sibling of a formal ADR.",
         "description": (
             "Writes a decision-log entry under folderlog -- the lighter-weight sibling of an ADR, for an "
-            "event worth recording that is not an architectural decision (see doc/decision-log-workflow.md) "
+            "event worth recording that is not an architectural decision (see https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md) "
             "-- and regenerates the log's INDEX.md. It owns only the mechanics: every value is an argument, "
             "checked before the write, and the result is {created, round, warnings}, `round` being allocated "
             "for audit-finding/doc-drift. An entry already written stays on disk when the index regeneration "
@@ -191,6 +192,7 @@ def describe():
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under folderlog could not be scanned.",
                 FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails).",
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED: "The entry itself was written, but regenerating INDEX.md afterward failed.",
+                FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the entry was written but before INDEX.md was regenerated; data.file names the entry. An interrupt before the entry is written is reported without data.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
                 FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
@@ -275,6 +277,14 @@ def run(args):
         # actually used.
         reject_aliased_repo_folders(target, config)
         log_dir = decision_log_dir_for(target, config)
+        # folderlog is this tool's own folder: every temp an interrupted
+        # write left there (INDEX.md's, an entry's) is swept, as in folderadr.
+        if log_dir.is_dir():
+            warning = orphan_cleanup_warning(
+                cleanup_orphaned_temp_files(log_dir, warnings=warnings), relative_to=log_dir
+            )
+            if warning:
+                warnings.append(warning)
 
         round_ = None
         if classification in STRUCTURED_CLASSIFICATIONS:
@@ -360,6 +370,16 @@ def run(args):
             raise CommandError(
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED,
                 f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",
+                data={"file": str(file_path)},
+                warnings=warnings,
+            ) from error
+        except BaseException as error:
+            # Ctrl+C (or anything unexpected) here: the entry is on disk
+            # all the same, so the answer names it too.
+            raise CommandError(
+                FailureCodes.INTERRUPTED,
+                f"{file_path}: entry written, but interrupted ({explain(error)}) before INDEX.md was regenerated; "
+                "the next log call that succeeds regenerates it.",
                 data={"file": str(file_path)},
                 warnings=warnings,
             ) from error

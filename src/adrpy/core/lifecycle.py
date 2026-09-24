@@ -35,6 +35,7 @@ from adrpy.core.fs import (
     scan_tree,
 )
 from adrpy.core.naming import parse_any_filename
+from adrpy.core.output import explain
 from adrpy.core.text import ascii_digits_int
 from adrpy.core.security import (
     is_within,
@@ -91,8 +92,15 @@ def validate_refdate_not_before(refdate, not_before):
 # current-scheme, under a different number/title. `migrationpattern`
 # has no mirror risk -- parse_filename never reads it, so a
 # current-scheme file can never be reclassified legacy by a
-# migrationpattern change.
-_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator",)
+# migrationpattern change. `prefix` is blanket for the same reason as
+# separator: every current-scheme name starts with it.
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator", "prefix")
+# The naming fields whose change alone can make an unrecognized file
+# parse as a decision, each with its own refusal code.
+_ADOPTION_CODES = {
+    "separator": FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
+    "prefix": FailureCodes.PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
+}
 _LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
 # Every config field whose change validate_config_change guards.
 GUARDED_CONFIG_FIELDS = ("folderadr", "folderlog") + _BLANKET_GUARD_FIELDS + _LEGACY_SCHEME_GUARD_FIELDS
@@ -135,14 +143,15 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
       already exists must hold nothing that `new_config` would recognize
       (folderadr-change-would-adopt-unrelated-files). A new folder that
       does not exist yet is not scanned.
-    - status labels and separator: only while no decision (any scheme)
-      is recognized; migrationpattern: only while no LEGACY-scheme one
-      is (status-or-separator-change-blocked-by-existing-decisions,
+    - status labels, separator and prefix: only while no decision (any
+      scheme) is recognized; migrationpattern: only while no LEGACY-scheme
+      one is (status-or-separator-change-blocked-by-existing-decisions,
       data.existing_decisions counting only what the blocking fields
-      affect). A separator change must also not newly recognize a file
-      (separator-change-would-adopt-unrelated-files) -- checked with a
-      config where only separator changed, so migrationpattern's own
-      intended adoption (ADR002V01) is never blamed on it.
+      affect). A separator or prefix change must also not newly recognize
+      a file (separator-/prefix-change-would-adopt-unrelated-files) --
+      checked with a config where only that field changed, so
+      migrationpattern's own intended adoption (ADR002V01) is never
+      blamed on it.
     - folderlog: core/decision_log.reject_folderlog_change_if_entries_exist.
 
     Each group keeps its own scan-incomplete code."""
@@ -254,22 +263,29 @@ def _check_status_or_separator_change(
             warnings=warnings,
         )
 
-    if "separator" in blanket_fields_changed:
-        # Only separator changed in this config -- see the docstring.
-        old_recognized_paths = {path for _, _, path in existing}
-        separator_only_config = replace_fields(old_config, separator=new_config.separator)
+    old_recognized_paths = {path for _, _, path in existing}
+    naming_changed = [field for field in _ADOPTION_CODES if field in blanket_fields_changed]
+    # Each naming field alone, then all of them together: a name can need
+    # both a new prefix and a new separator to parse (e.g. a re-seed that
+    # changes both). migrationpattern stays at its old value throughout.
+    candidates = [(field, [field]) for field in naming_changed]
+    if len(naming_changed) > 1:
+        candidates.append((naming_changed[0], naming_changed))
+    for field, fields in candidates:
+        code = _ADOPTION_CODES[field]
+        field_only_config = replace_fields(old_config, **{name: getattr(new_config, name) for name in fields})
         adopted = sorted(
             (
                 path
-                for _, _, path in _recognized(scan, separator_only_config, None)
+                for _, _, path in _recognized(scan, field_only_config, None)
                 if path not in old_recognized_paths
             ),
             key=str,
         )
         if adopted:
             raise CommandError(
-                FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
-                f"Cannot change separator: {len(adopted)} file(s) not currently recognized as a decision "
+                code,
+                f"Cannot change {' and '.join(fields)}: {len(adopted)} file(s) not currently recognized as a decision "
                 "would silently become one.",
                 data={"adopted_files": [str(path) for path in adopted]},
                 warnings=warnings,
@@ -425,7 +441,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
     FailureCodes.FILENAME_NOT_RECOGNIZED: "--file's own name matches neither naming scheme.",
-    FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into that folder, or run migrate if it predates the tool.",
+    FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header).",
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -613,15 +629,15 @@ class Transition:
     """One row of TRANSITIONS: what prepare() checks for one command, in
     this order -- the eligibility of the target's own status (`reasons`
     lists every code `eligibility` can return), the family guards, the
-    refdate bounds and the fields read for the write (a flag value or a
-    filename segment validated). Every row
+    refdate bounds, the fields read for the write (a flag value or a
+    filename segment validated) and, last, the new number. Every row
     runs after the repository was validated (core/consistency).
 
     - `revision_required`: revision-not-configured when lenrevision is 0,
       checked once the repository is validated and the target found.
     - `numbering`: "version" or "revision" when the row works out a new
       number (family-not-found and the lenversion/lenrevision bound),
-      right after the target's own eligibility.
+      after the fields.
     - `guards`: family-guard failure codes, in the order they are checked.
     - `pending_consequence`: appended to family-member-pending's detail.
     - `refdate_anchor`: None (no --refdate at all), "create" (not before
@@ -773,11 +789,11 @@ class Context:
     warnings: list
 
 
-def _widening_hint(field, needed, maximum):
+def widening_hint(field, needed, maximum, no_room="this family has no room for another one"):
     """The way out when a new number does not fit its field's width:
     `config` widens it, up to that field's maximum."""
     if needed > maximum:
-        return f" {field}'s maximum ({maximum}) is too narrow for it: this family has no room for another one."
+        return f" {field}'s maximum ({maximum}) is too narrow for it: {no_room}."
     return f" Widen it with `adrpy config --path <repository> --{field} {needed}`, then run this command again."
 
 
@@ -792,7 +808,7 @@ def _new_version(config, members, warnings):
         raise CommandError(
             FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION,
             f"New version {new_version} does not fit in lenversion={config.lenversion}."
-            + _widening_hint("lenversion", len(str(new_version)), LENVERSION_MAX),
+            + widening_hint("lenversion", len(str(new_version)), LENVERSION_MAX),
             data={"new_version": new_version, "lenversion": config.lenversion},
             warnings=warnings,
         )
@@ -819,7 +835,7 @@ def _new_revision(config, filename_info, members, warnings):
         raise CommandError(
             FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
             f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}."
-            + _widening_hint("lenrevision", len(str(new_revision)), LENREVISION_MAX),
+            + widening_hint("lenrevision", len(str(new_revision)), LENREVISION_MAX),
             data={"new_revision": new_revision, "lenrevision": config.lenrevision},
             warnings=warnings,
         )
@@ -914,7 +930,7 @@ def prepare(command, fileadr, flags):
             raise CommandError(
                 FailureCodes.TARGET_OUTSIDE_FOLDERADR,
                 f"{path} is not inside the decisions folder ({config.folderadr}). Only a decision there is acted "
-                "on: move it into that folder, or run migrate if it predates the tool.",
+                "on: move it into folderadr (then run migrate if it has no header).",
                 data={"file": str(path), "folderadr": config.folderadr},
             )
         # One walk of the folder feeds the orphan sweep and the validator.
@@ -946,13 +962,6 @@ def prepare(command, fileadr, flags):
         members = family_members(snapshot, filename_info.number)
         for code in row.guards:
             _check_guard(code, row, filename_info, members, warnings)
-        # The new number last: a width refusal is only ever the real
-        # blocker, never one that widening would trade for another refusal.
-        new_version = new_revision = None
-        if row.numbering == "version":
-            new_version = _new_version(config, members, warnings)
-        elif row.numbering == "revision":
-            new_revision = _new_revision(config, filename_info, members, warnings)
 
         refdate = None
         if row.refdate_anchor is not None:
@@ -968,6 +977,14 @@ def prepare(command, fileadr, flags):
         values = {
             name: _validated_field(name, source, flags, header, filename_info) for name, source in row.fields
         }
+
+        # The new number last: a width refusal is only ever the real
+        # blocker, never one that widening would trade for another refusal.
+        new_version = new_revision = None
+        if row.numbering == "version":
+            new_version = _new_version(config, members, warnings)
+        elif row.numbering == "revision":
+            new_revision = _new_revision(config, filename_info, members, warnings)
 
     return Context(
         config=config,
@@ -1081,36 +1098,42 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
     A failure before any file of the operation is on disk (none committed
     here) propagates unchanged, for the
     caller to map to its own nothing-written code. A failure after that
-    raises multi-file-write-partially-applied, with data.applied and
-    data.pending naming the files, and `hint` telling how to finish.
-    `repair`, when given ({file, row}), is the exact header row to put
-    in `file` by hand to make the repository consistent again; it goes
-    into data.repair and the detail."""
+    raises multi-file-write-partially-applied (an OSError) or
+    interrupted (anything else: Ctrl+C, an unexpected error), with
+    data.applied and data.pending naming the files, and `hint` telling
+    how to finish. `repair`, when given ({file, row}), is the exact
+    header row to put in `file` by hand to make the repository
+    consistent again; it goes into data.repair and the detail."""
     applied = []
-    for index, (prepared, exclusive, applied_warnings) in enumerate(steps):
-        try:
+    try:
+        for prepared, exclusive, applied_warnings in steps:
             attempts = prepared.attempts + commit_write(prepared, exclusive=exclusive) - 1
-        except BaseException as error:
-            # This one's own temp too: already gone when commit_write
-            # itself failed, and discarding is idempotent.
-            for unwritten, _exclusive, _warnings in steps[index:]:
-                discard_write(unwritten)
-            if not applied or not isinstance(error, OSError):
-                raise
-            pending = [str(step[0].path) for step in steps[index:]]
-            raise CommandError(
-                FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED,
-                f"{prepared.path}: {error}. Already written: {', '.join(applied)}; not written: "
-                f"{', '.join(pending)}. {hint}"
-                + (f" In {repair['file']}, replace the row starting '|{repair['row'].split('|')[1]}|' with: {repair['row']}" if repair else ""),
-                data={"applied": applied, "pending": pending, **({"repair": repair} if repair else {})},
-                warnings=warnings,
-            ) from error
-        applied.append(str(prepared.path))
-        warnings.extend(applied_warnings)
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+            applied.append(str(prepared.path))
+            warnings.extend(applied_warnings)
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
+    except BaseException as error:
+        # The failing one's own temp too: already gone when commit_write
+        # itself failed, and discarding is idempotent.
+        unwritten = steps[len(applied) :]
+        for step in unwritten:
+            discard_write(step[0])
+        if not applied:
+            raise
+        pending = [str(step[0].path) for step in unwritten]
+        if isinstance(error, OSError):
+            code, cause = FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED, f"{unwritten[0][0].path}: {error}"
+        else:
+            code, cause = FailureCodes.INTERRUPTED, f"Interrupted ({explain(error)})"
+        raise CommandError(
+            code,
+            f"{cause}. Already written: {', '.join(applied)}; not written: "
+            f"{', '.join(pending) or 'nothing'}. {hint}"
+            + (f" In {repair['file']}, replace the row starting '|{repair['row'].split('|')[1]}|' with: {repair['row']}" if repair else ""),
+            data={"applied": applied, "pending": pending, **({"repair": repair} if repair else {})},
+            warnings=warnings,
+        ) from error
 
 
 def discard_prepared(prepared):

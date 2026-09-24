@@ -8,7 +8,7 @@ accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
+from adrpy.core.config import LENSEQ_MAX, SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header
@@ -18,6 +18,7 @@ from adrpy.core.lifecycle import (
     parse_refdate,
     resolve_target_and_config,
     validate_refdate_not_in_future,
+    widening_hint,
 )
 from adrpy.core.naming import build_filename
 from adrpy.core.security import (
@@ -98,6 +99,7 @@ def describe():
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this title, once both are normalized by the configured case transform.",
+                FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER: "The next number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
@@ -158,8 +160,17 @@ def run(args):
                 warnings=warnings,
             )
 
+        number = next_number(decisions)
+        if len(str(number)) > config.lenseq:
+            raise CommandError(
+                FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER,
+                f"New number {number} does not fit in lenseq={config.lenseq}."
+                + widening_hint("lenseq", len(str(number)), LENSEQ_MAX, "this repository has no room for another decision"),
+                data={"new_number": number, "lenseq": config.lenseq},
+                warnings=warnings,
+            )
         record = DecisionRecord(
-            number=next_number(decisions),
+            number=number,
             title=title,
             version=1,
             revision=1 if config.lenrevision > 0 else None,

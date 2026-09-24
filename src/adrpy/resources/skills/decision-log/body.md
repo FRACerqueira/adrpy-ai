@@ -59,9 +59,10 @@ decision-record directory's own, and the two must never overlap** —
 neither the same directory nor one nested inside the other, compared as
 real paths, for the reason above.
 
-**File naming**: `{classification}--{ISO date}--{scope}--{short-slug}.md`
-— e.g. `audit-finding--2026-09-14--sequence-lock--stale-lock-cleanup.md`,
-`doc-drift--2026-09-11--explore--folder-column.md`. No sequential
+**File naming**: `{ISO date}--{classification}--{scope}--{short-slug}.md`
+— e.g. `2026-09-14--audit-finding--config--stale-default-value.md`,
+`2026-09-11--doc-drift--explore--folder-column.md`. Date first, so a
+plain directory listing is already chronological. No sequential
 numbering: a sequential number is exactly the mechanism that turns a
 gap, or an entry filed out of order, into something that reads as its
 own finding — the same lesson ADR numbering itself already teaches.
@@ -117,27 +118,16 @@ free prose.** A reasonable starting set:
   project's own standing process or guardrail, scoped to this instance
   only, not a change to the guardrail itself.
 
-Add a new classification only when an entry genuinely doesn't fit any
-existing one — grep the existing set first. A category invented for
-one single entry is a sign that entry might actually be an ADR in
-disguise.
-
-**Extending the vocabulary**: a project may need classifications this
-list doesn't anticipate. Add them via a delimiter-separated list in the
-project's own side config (never the shared/interop one) — e.g. a
-single string value, pipe-delimited (`|`), holding only the
-**additions**: `"spike|vendor-update|hotfix"`. This list only extends
-the base vocabulary above, never replaces or removes from it — keeps
-the closed-vocabulary discipline intact even as the project grows its
-own categories, and a misconfigured/empty extension list degrades to
-just the base set, never to an unconstrained free-text field.
+This set is closed: `adrpy log` refuses any other classification. When
+an entry doesn't seem to fit, pick the closest one in the set — a
+category that would exist for one single entry is a sign that entry
+might actually be an ADR in disguise.
 
 **Scope** reuses whatever module/command/component vocabulary the
 project already has — never a fresh, one-off name invented for the
-entry. The same side config may hold a delimiter-separated extension
-list for scopes that aren't literal command names (a cross-cutting
-concern like security or observability, say), following the same
-additive rule as the classification extension above.
+entry. A scope that isn't a literal command name (a cross-cutting
+concern like security or observability, say) is still one short,
+reusable kebab-case name, not a new one per entry.
 
 **One entry, one event, written once.** An entry is not a section that
 grows: no entry is ever edited to add a later correction or retraction

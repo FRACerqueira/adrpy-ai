@@ -11,7 +11,8 @@ returns the snapshot with every broken invariant it finds;
 The invariants, one error code each (HINTS has a repair hint per code):
 
 - header: merge-conflict markers in the 12 header lines are reported
-  first, and alone; then no-header (nothing like this tool's header) or
+  first, and alone (a supersede link to or from such a file is not also
+  reported broken while the conflict exists); then no-header (nothing like this tool's header) or
   invalid-header (it does not parse, the reason in `detail`), and
   invalid-status-combination (it parses, but the status cells are not
   in the closed set);
@@ -71,13 +72,13 @@ _CONFLICT_MARKERS = ("<<<<<<< ", ">>>>>>> ")
 
 HINTS = {
     FailureCodes.MERGE_CONFLICT_MARKERS: (
-        "The header holds git merge-conflict markers (<<<<<<<, =======, >>>>>>>). Resolve the conflict "
+        "The header holds git merge-conflict markers (a line starting '<<<<<<< ' or '>>>>>>> '). Resolve the conflict "
         "by hand, keeping one version of each of the 12 header lines, then run adrpy check again."
     ),
     FailureCodes.NO_HEADER: (
         "The file has an ADR name but no header. If it is a decision written before adopting the tool and "
         "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
-        "new; set migrationpattern with adrpy config first if the names need it). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
+        "new; set migrationpattern with adrpy config first: migrate always needs one). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
         "created), rename it so its name is not an ADR name, or remove it."
     ),
     FailureCodes.INVALID_HEADER: (
@@ -94,7 +95,8 @@ HINTS = {
         "from merging two branches that each created one. Keep the number on one of them and give the "
         "other a free number: rename its file and move the references to it along -- the Superseded cell "
         "(': NNN') of the predecessor it supersedes, and the '<sep><sep>NNN' suffix in the filename of "
-        "any successor that supersedes it."
+        "any successor that supersedes it -- and set the renamed file's header Version/Revision cells to "
+        "match its new name."
     ),
     FailureCodes.PENDING_DUPLICATE: (
         "The family has more than one open Proposed decision (a migrated placeholder does not count). Keep "
@@ -114,7 +116,8 @@ HINTS = {
     FailureCodes.SUPERSEDED_NOT_LIVE: (
         "A Superseded decision is not the live member of its family: a newer member that is not Rejected "
         "(related_files) locks it. By hand (commands refuse this repository): move the Superseded cell to "
-        "the live member, or set the newer member's Changed cell to Rejected."
+        "the live member (only an Accepted one can carry it: its Changed cell must be Accepted), or set the "
+        "newer member's Changed cell to Rejected."
     ),
     FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR: (
         "The Superseded cell (': NNN') points at no successor that exists, is not Rejected and names this "
@@ -206,6 +209,14 @@ def _has_conflict_markers(lines):
     return any(line.startswith(_CONFLICT_MARKERS) for line in lines)
 
 
+def _status_cells(header):
+    """The three status cells as read, for invalid-status-combination."""
+    created, changed, superseded = (
+        status or "blank" for status in (header.status_create, header.status_update, header.status_change)
+    )
+    return f"Created: {created}; Changed: {changed}; Superseded: {superseded}."
+
+
 def _error(code, path, related=(), detail=None):
     return {
         "code": code,
@@ -244,7 +255,9 @@ def _read_decisions(scan, config, errors):
             else:
                 state = derive_state(header)
                 if state is None:
-                    errors.append(_error(FailureCodes.INVALID_STATUS_COMBINATION, path))
+                    errors.append(
+                        _error(FailureCodes.INVALID_STATUS_COMBINATION, path, detail=_status_cells(header))
+                    )
         decisions.append(
             Decision(path, scheme, parsed, header, state, _successor_ref(header, state), encoding_repaired)
         )
@@ -291,6 +304,10 @@ def _check_family(family, errors):
 
 
 def _check_supersede(decisions, by_number, errors):
+    # A file with merge-conflict markers keeps its name (and number) but
+    # has no known state; the supersede links it may complete are not
+    # reported as broken while the conflict exists (the conflict is).
+    conflicted = [d for d in decisions if d.header is None]
     live_successors = {}
     for decision in decisions:
         if decision.state is not None and decision.state != REJECTED and is_successor(decision.name):
@@ -305,6 +322,8 @@ def _check_supersede(decisions, by_number, errors):
             for d in live_successors.get(decision.number, ())
             if ref is not None and d.number == ref
         ]
+        if not named and any(d.number == ref and d.name.superseded_from == decision.number for d in conflicted):
+            continue
         if not named:
             related = [d.path for d in by_number.get(ref, ())] if ref is not None else []
             errors.append(_error(FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR, decision.path, related))
@@ -319,6 +338,8 @@ def _check_supersede(decisions, by_number, errors):
                 for d in by_number.get(predecessor, ())
                 if d.state == SUPERSEDED and d.successor_ref == successor.number
             ]
+            if not pointing and any(d.number == predecessor for d in conflicted):
+                continue
             if not pointing:
                 related = [d.path for d in by_number.get(predecessor, ())]
                 errors.append(_error(FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR, successor.path, related))

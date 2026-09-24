@@ -591,3 +591,27 @@ def test_version_scope_and_domain_default_to_the_target_even_with_a_later_refdat
     text = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-20"])["created"]).read_text(encoding="utf-8")
 
     assert "|Scope|Data|" in text and "|Domain|Backend|" in text
+
+
+def test_version_checks_the_new_version_width_after_refdate(tmp_path):
+    # Owner rule: the new number is checked last in every command (as
+    # new/supersede do with lenseq), so a bad --refdate is reported
+    # before a lenversion that widening would only trade for it.
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=99,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V99-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2025-12-31"])
+
+    assert excinfo.value.code == "refdate-before-history"

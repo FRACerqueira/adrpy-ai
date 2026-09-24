@@ -49,12 +49,14 @@ this table is the quick lookup.
 | `investigation` | A hypothesis was checked and did **not** hold (the narrative twin of a regression test for a fear that didn't materialize). |
 | `process-exception` | A one-off, justified deviation from standing process -- scoped to this instance only. |
 
-The set is closed and enforced by `adrpy log` (and by every scan of the
-directory: a file with an unknown classification blocks every later
-`log`). Adding one is a code change to `CLASSIFICATIONS` in
-`core/decision_log.py` -- itself an ADR-worthy decision. A category
-invented for one entry is often a sign that entry is actually an ADR in
-disguise.
+The set is closed and enforced by `adrpy log` (an unknown value fails
+with `log-classification-invalid`) and by every scan of the directory (a
+file with an unknown classification blocks every later `log`). When an
+entry seems to fit none of these, pick the closest one inside the set --
+or go back to step 1: a category invented for one entry is often a sign
+that entry is actually an ADR in disguise. Adding a classification is a
+code change to `CLASSIFICATIONS` in `core/decision_log.py` -- itself an
+ADR-worthy decision.
 
 ## Step 3: write and register the entry
 
@@ -66,6 +68,10 @@ formatting the classification-specific structured line, writing the
 entry, and regenerating `INDEX.md` -- and refuses outright
 (`log-entry-already-exists`) instead of silently overwriting if the
 exact same date/classification/scope/slug already exists.
+
+Run one `adrpy` command at a time: don't run `adrpy` commands in
+parallel on the same working copy -- nothing locks it, and the last
+command to write a file wins.
 
 `--round` (audit-finding/doc-drift only) is optional: **omit it to start
 a new round** (highest existing `Round` plus one -- the safe default),
@@ -82,12 +88,12 @@ than the highest one already recorded is rejected (`log-round-too-low`)
 
 ```bash
 # Most classifications: no structured line
-adrpy log --path . --classification scope-note --scope lock --slug clarify-timeout-behavior \
+adrpy log --path . --classification scope-note --scope cli --slug clarify-timeout-behavior \
   --summary "Clarify what happens on timeout" --body "The full explanation goes here."
 
 # audit-finding / doc-drift: --front/--severity/--resolution required together;
 # --round omitted here starts a new round (and warns with the number it picked)
-adrpy log --path . --classification audit-finding --scope lock --slug retry-loop-off-by-one \
+adrpy log --path . --classification audit-finding --scope io --slug retry-loop-off-by-one \
   --summary "Retry loop stopped one attempt short" --body "Details of the fix." \
   --front "test-adequacy audit" --severity Medium --resolution Direct
 
@@ -116,7 +122,7 @@ Passing a structured-line flag for a classification that doesn't use it
   a later correction -- that correction is a **new** entry, classification
   `retraction`, referencing the original entry's filename by name.
 - **`scope`** reuses whatever module/command vocabulary the project
-  already has (`lock`, `config`, `cli`, ...) -- never a fresh, one-off
+  already has (`io`, `config`, `cli`, ...) -- never a fresh, one-off
   name invented for a single entry.
 - **A cluster of entries around the same scope and concern is a signal,
   not yet a decision**, that there may be a real architectural gap
@@ -125,5 +131,5 @@ Passing a structured-line flag for a classification that doesn't use it
   what may be the same unresolved design question.
 - **Cycles** -- a human-friendly name for a range of related entries,
   assigned only in hindsight once the span is over -- are recorded
-  separately in [`doc/decision-log/CYCLES.md`](decision-log/CYCLES.md),
-  never as a field on individual entries.
+  separately in the folder's [`CYCLES.md`](decision-log/CYCLES.md), if
+  present, never as a field on individual entries.

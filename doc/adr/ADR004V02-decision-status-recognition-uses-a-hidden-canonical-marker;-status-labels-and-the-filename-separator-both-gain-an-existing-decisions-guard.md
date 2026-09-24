@@ -96,6 +96,8 @@ The fully structural option (separate Accepted/Rejected rows) is not chosen: it 
 * **Files that are not decisions.** A `.md` file whose name matches neither naming scheme is not a decision and is ignored, by every command and by the validator. The adoption checks above still apply: a config change must not turn such a file into a decision.
 * **Where the guard lives now.** The guards this ADR decided are one function, `core/lifecycle.validate_config_change` (called by `config` and `init --seed`), with the same semantics: status labels and `separator` blanket over any recognized decision, `migrationpattern` scoped to legacy-scheme decisions, and the separator-only adoption check. It reads one scan of the decisions folder (`core/fs.scan_tree`); `scan_decisions` and `reject_folderadr_change_if_decisions_exist`, named above as the mechanism at the time, no longer exist. Changing a guarded field also validates the repository first.
 
+**Round 43 note (2026-09-24), owner decision.** The current naming scheme now requires the configured `prefix` (compared ASCII case-insensitively) and a `V` version; a name without them is not a decision (see "ADR names" in `doc/lifecycle.md`). Because every decision name now depends on it, `prefix` joins the blanket guard with status labels and `separator`, with its own adoption check (`prefix-change-would-adopt-unrelated-files`).
+
 ### Positive Consequences
 
 * Every decision written after this change is adopted is permanently immune to a later status-label/language change, with zero migration needed for it specifically.

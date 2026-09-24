@@ -359,10 +359,15 @@ exact condition that triggers it. On success, `data.warnings` is always
 present, even when empty. On a failure the command reports (a documented
 `code`), `warnings` is present once the command has started collecting
 them; it is absent for `usage-error`, `unknown-command`, `internal-error`,
-an `interrupted` caught at the entry point (`migrate`'s own `interrupted`
-carries them), and failures raised before that point (a missing file,
-no repository found) -- see the `adrpy-skills` subsystem section
-above for how that entry point's own envelope differs.
+an `io-error` or `interrupted` caught at the entry point, and failures
+raised before that point (a missing file, no repository found) -- see the
+`adrpy-skills` subsystem section above for how that entry point's own
+envelope differs. An `interrupted` the command raises itself, once it
+has written something, carries them, with `data` naming what was
+written: `migrate` once it has persisted a fallback migrationpattern or
+started migrating (`data.migrationpattern_persisted`, `data.results`), `supersede` and `reject` after their
+first file (`data.applied`, `data.pending`, `data.repair`), and `log`
+after the entry, before `INDEX.md` (`data.file`).
 `warnings` carries non-fatal information about automatic actions a
 command's own dependencies performed silently (a retried write,
 orphaned temp-file cleanup, an encoding repair, a file excluded for

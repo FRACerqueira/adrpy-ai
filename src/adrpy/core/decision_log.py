@@ -384,7 +384,7 @@ def regenerate_index(decision_log_dir, *, warnings=None):
     lines = [
         "# Decision log index",
         "",
-        "Generated -- do not edit by hand (see `doc/decision-log-workflow.md`).",
+        "Generated -- do not edit by hand (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).",
         "",
         "## How entries are named",
         "",
@@ -405,7 +405,7 @@ def regenerate_index(decision_log_dir, *, warnings=None):
         "`investigation` (a suspicion checked and found not to hold), or "
         "`process-exception` (a one-off deviation from standing process).",
         "- **scope** -- the module/command/concern the entry is about, reusing the "
-        "project's own vocabulary (e.g. `lock`, `config`, `cli`).",
+        "project's own vocabulary (e.g. `io`, `config`, `cli`).",
         "- **slug** -- a few kebab-case words identifying this specific entry; what "
         "actually guarantees the filename is unique, since classification+date+scope "
         "alone commonly repeat.",
@@ -429,7 +429,7 @@ def regenerate_index(decision_log_dir, *, warnings=None):
         "same Round across several entries in the same round is normal and expected "
         "(`adrpy log --round N`); omitting `--round` always starts a new one. A "
         "human-friendly **Cycle** name grouping a range of rounds, when one is "
-        "warranted, lives separately in [`doc/decision-log/CYCLES.md`](CYCLES.md) -- "
+        "warranted, lives separately in this folder's `CYCLES.md`, if present -- "
         "never repeated on individual entries, and only ever assigned in hindsight "
         "once a cycle's own boundary is visible (see that file for the naming rule).",
         "",
