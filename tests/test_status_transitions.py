@@ -1134,6 +1134,33 @@ def test_a_rejected_successor_is_final(tmp_path, command):
     assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name])
 
 
+@pytest.mark.parametrize("command", ["approve", "supersede"])
+def test_a_hand_made_member_in_a_rejected_successors_family_refuses_the_repository(tmp_path, command):
+    # A Proposed V02 written by hand next to the rejected successor: approve
+    # would bring the family back to life, and a new supersede of the
+    # predecessor would then leave it two live lines. The validator refuses
+    # the whole repository first.
+    adr, pred, succ = _rejected_successor(tmp_path)
+    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    v02 = adr / "ADR002V02-first.md"
+    _write_raw(v02, cfg, number=2, title="First", version=2, status_create="Proposed", date_create=date(2026, 1, 4))
+    target = {"approve": v02, "supersede": pred}[command]
+    from adrpy.cli import check
+
+    with pytest.raises(CommandError) as checked:
+        check.run(["--path", str(tmp_path)])
+    assert [e["code"] for e in checked.value.data["errors"]] == ["rejected-successor-family-not-final"]
+
+    with pytest.raises(CommandError) as excinfo:
+        {"approve": approve, "supersede": supersede}[command].run(["--file", str(target), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
+        ("rejected-successor-family-not-final", str(v02.resolve()))
+    ]
+    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name, v02.name])
+
+
 def test_a_rejected_decision_that_is_not_a_successor_can_still_be_undone(tmp_path):
     # Positive control: only a successor (name carrying --NNN) is final.
     init.run(["--path", str(tmp_path)])

@@ -297,11 +297,14 @@ def run(args):
         # chain ever enters from outside.
         successor_files = [str(path) for parsed, path, _header in entries if _carries_supersede_suffix(parsed, config)]
         if successor_files:
+            suffix = config.separator * 2
             raise CommandError(
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST,
-                f"{len(successor_files)} file(s) already carry a supersede suffix (--NNN): "
+                f"{len(successor_files)} file(s) already carry a supersede suffix ({suffix}NNN): "
                 f"{', '.join(successor_files)}. A supersede chain is created by this tool only; rename them "
-                "without the suffix, then migrate, and record the chain with supersede.",
+                "without the suffix, then migrate, and record the chain with supersede. If a title only looks "
+                f"like a suffix (e.g. 'Release{suffix}2026'), rename the file so its title does not end in "
+                f"{suffix}<digits>.",
                 data={"files": successor_files},
                 warnings=warnings,
             )

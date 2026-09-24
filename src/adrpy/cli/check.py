@@ -21,6 +21,7 @@ _ERROR_CODES = {
     FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR: "data.errors[].code: a Superseded cell points at no existing, non-Rejected successor whose filename suffix names this decision.",
     FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR: "data.errors[].code: a non-Rejected successor has no predecessor whose Superseded cell points back at it.",
     FailureCodes.MULTIPLE_LIVE_SUCCESSORS: "data.errors[].code: more than one non-Rejected successor names the same predecessor.",
+    FailureCodes.REJECTED_SUCCESSOR_FAMILY_NOT_FINAL: "data.errors[].code: a member of a Rejected successor's family is not Rejected.",
     FailureCodes.SCAN_INCOMPLETE: "data.errors[].code: a directory or decision file under the decisions folder could not be read.",
 }
 

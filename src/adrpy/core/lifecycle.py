@@ -654,10 +654,9 @@ class Transition:
 
     - `revision_required`: revision-not-configured when lenrevision is 0,
       checked once the repository is validated and the target found.
-    - `scan_first`: the new number is worked out (`numbering`: "version"
-      or "revision", family-not-found and the lenversion/lenrevision
-      bound) BEFORE the target's own eligibility; otherwise right after
-      it.
+    - `numbering`: "version" or "revision" when the row works out a new
+      number (family-not-found and the lenversion/lenrevision bound),
+      right after the target's own eligibility.
     - `guards`: family-guard failure codes, in the order they are checked.
     - `pending_consequence`: appended to family-member-pending's detail.
     - `refdate_anchor`: None (no --refdate at all), "create" (not before
@@ -675,7 +674,6 @@ class Transition:
     guards: tuple
     refdate_anchor: object
     fields: tuple
-    scan_first: bool = False
     numbering: object = None
     revision_required: bool = False
     pending_consequence: str = ""
@@ -699,8 +697,7 @@ _VERSION_OR_REVISE_GUARDS = (
 )
 
 # The asymmetries between rows are deliberate current behavior, not
-# oversights: approve/reject have no family-member-pending; only
-# version/revise work out the new number before eligibility; version
+# oversights: approve/reject have no family-member-pending; version
 # validates scope/domain before title, the others title first.
 TRANSITIONS = {
     "approve": Transition(
@@ -733,7 +730,6 @@ TRANSITIONS = {
     "version": Transition(
         eligibility=ineligibility_reason_for_version_or_revise,
         reasons=_VERSION_OR_REVISE_REASONS,
-        scan_first=True,
         numbering="version",
         guards=_VERSION_OR_REVISE_GUARDS,
         refdate_anchor="update-or-create",
@@ -743,7 +739,6 @@ TRANSITIONS = {
         eligibility=ineligibility_reason_for_version_or_revise,
         reasons=_VERSION_OR_REVISE_REASONS,
         revision_required=True,
-        scan_first=True,
         numbering="revision",
         guards=_VERSION_OR_REVISE_GUARDS,
         refdate_anchor="update-or-create",
@@ -980,25 +975,21 @@ def prepare(command, fileadr, flags):
         if row.revision_required and config.lenrevision == 0:
             raise CommandError(FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0.")
 
-        def check_eligibility():
-            # A specific reason code, not one collapsed not-eligible-for-*,
-            # so the caller knows which recovery action applies.
-            reason = row.eligibility(header)
-            if reason is not None:
-                raise CommandError(reason, SHARED_FAILURE_CODES[reason], warnings=warnings)
-
-        if not row.scan_first:
-            check_eligibility()
+        # A specific reason code, not one collapsed not-eligible-for-*,
+        # so the caller knows which recovery action applies.
+        reason = row.eligibility(header)
+        if reason is not None:
+            raise CommandError(reason, SHARED_FAILURE_CODES[reason], warnings=warnings)
         members = family_members(snapshot, filename_info.number)
+        for code in row.guards:
+            _check_guard(code, row, filename_info, members, warnings)
+        # The new number last: a width refusal is only ever the real
+        # blocker, never one that widening would trade for another refusal.
         new_version = new_revision = None
         if row.numbering == "version":
             new_version = _new_version(config, members, warnings)
         elif row.numbering == "revision":
             new_revision = _new_revision(config, filename_info, members, warnings)
-        if row.scan_first:
-            check_eligibility()
-        for code in row.guards:
-            _check_guard(code, row, filename_info, members, warnings)
 
         refdate = None
         if row.refdate_anchor is not None:

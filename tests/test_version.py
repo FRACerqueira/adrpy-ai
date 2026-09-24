@@ -88,6 +88,74 @@ def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
     assert version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"].endswith("ADR001V100-existing.md")
 
 
+def test_version_checks_the_targets_status_before_the_new_number_fits(tmp_path):
+    # Like every other command, the target's own status comes first: a
+    # Proposed V99 is refused as still-proposed, not as a width problem
+    # the owner could "fix" by widening lenversion.
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    record = DecisionRecord(number=1, title="Existing", version=99, status_create="Proposed", date_create=date(2026, 1, 1))
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V99-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "still-proposed"
+
+
+def test_version_checks_the_family_rules_before_the_new_number_fits(tmp_path):
+    # The numbering comes last: V98 locked by an Accepted V99 is refused
+    # as not-latest-version, not as a width problem that widening
+    # lenversion would only trade for this same refusal.
+    init.run(["--path", str(tmp_path)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    folder = tmp_path / "doc" / "adr"
+    for number in (98, 99):
+        record = DecisionRecord(
+            number=1, title="Existing", version=number, status_create="Proposed", date_create=date(2026, 1, 1),
+            status_update="Accepted", date_update=date(2026, 1, 2),
+        )
+        atomic_write_text(folder / f"ADR001V{number}-existing.md", build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(folder / "ADR001V98-existing.md"), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "not-latest-version"
+
+
+def test_lenversion_one_below_the_maximum_offers_config_up_to_the_maximum(tmp_path):
+    # The boundary of the widening hint: the width needed equals the
+    # maximum, which config accepts -- so the hint offers config.
+    from adrpy.cli import config as config_cmd
+    from adrpy.core.config import LENVERSION_MAX
+
+    init.run(["--path", str(tmp_path)])
+    config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX - 1)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    last = 10 ** (LENVERSION_MAX - 1) - 1
+    record = DecisionRecord(
+        number=1,
+        title="Existing",
+        version=last,
+        status_create="Proposed",
+        date_create=date(2026, 1, 1),
+        status_update="Accepted",
+        date_update=date(2026, 1, 2),
+    )
+    adr_path = tmp_path / "doc" / "adr" / f"ADR001V{last}-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "lenversion-too-small-for-new-version"
+    assert f"`adrpy config --path <repository> --lenversion {LENVERSION_MAX}`" in excinfo.value.detail
+    config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX)])
+    created = version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])["created"]
+    assert created.endswith(f"ADR001V{last + 1}-existing.md")
+
+
 def test_lenversion_too_small_at_the_maximum_width_offers_no_config_way_out(tmp_path):
     # At lenversion's maximum, config would refuse a wider value
     # (config-lenversion-too-large): the detail must not suggest it.

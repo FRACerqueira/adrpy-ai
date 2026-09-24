@@ -285,6 +285,26 @@ def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
     assert excinfo.value.data == {"new_revision": 10, "lenrevision": 1}
 
 
+def test_revise_checks_the_targets_status_before_the_new_number_fits(tmp_path):
+    # The target's own status comes first, as for every other command.
+    data = _config_with_revisions()
+    data["lenrevision"] = 1
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    record = DecisionRecord(
+        number=1, title="Existing", version=1, revision=9, status_create="Proposed", date_create=date(2026, 1, 1)
+    )
+    adr_path = tmp_path / "doc" / "adr" / "ADR001V01R9-existing.md"
+    atomic_write_text(adr_path, build_header(config, record) + "# body")
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "still-proposed"
+
+
 def test_revise_rejects_refdate_before_latest_date(tmp_path):
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
 

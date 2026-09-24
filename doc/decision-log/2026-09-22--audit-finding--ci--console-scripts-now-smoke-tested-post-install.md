@@ -17,7 +17,7 @@ Building wheels for collected packages: adrpy-ai
   Building editable for adrpy-ai (pyproject.toml): started
   Building editable for adrpy-ai (pyproject.toml): finished with status 'done'
   Created wheel for adrpy-ai: filename=adrpy_ai-0.1.dev226+g6b997e1cd.d20260922-py3-none-any.whl size=8055 sha256=a686f03a23fe987a3b59b0beee1d77125074f77f3f6e798584b72b5bbcc7318c
-  Stored in directory: C:\Users\Samsung\AppData\Local\Temp\pip-ephem-wheel-cache-_e922caz\wheels\ae\ea\57\0b8f500fd92670e0dcbbb3d3cf584538ee398e5416a2e1ce2d
+  Stored in directory: <pip ephemeral wheel cache>
 Successfully built adrpy-ai
 Installing collected packages: adrpy-ai
   Attempting uninstall: adrpy-ai

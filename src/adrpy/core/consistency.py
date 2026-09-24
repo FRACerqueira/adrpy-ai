@@ -19,7 +19,8 @@ The invariants, one error code each (HINTS has a repair hint per code):
   revision counting as 0;
 - family (same number): at most one open Proposed (a migrated
   placeholder is not one), and it is the live member; at most one
-  Superseded, and it is the live member;
+  Superseded, and it is the live member; in the family of a Rejected
+  successor, every member is Rejected;
 - supersede: a Superseded decision points at a successor that exists,
   is not Rejected, and whose filename suffix names this decision; a
   successor that is not Rejected (suffix `<sep><sep>NNN` naming a lower
@@ -131,6 +132,11 @@ HINTS = {
         "More than one successor that is not Rejected names the same predecessor. By hand (commands "
         "refuse this repository): keep the one the predecessor's Superseded cell points at, and set the "
         "others' Changed cell to Rejected or remove them."
+    ),
+    FailureCodes.REJECTED_SUCCESSOR_FAMILY_NOT_FINAL: (
+        "A member of a Rejected successor's family (related_files) is not Rejected. A rejected successor "
+        "ends its whole family. By hand (commands refuse this repository): set this member's Changed cell "
+        "to Rejected, or remove it. The line continues by superseding the predecessor again."
     ),
     FailureCodes.SCAN_INCOMPLETE: (
         "A directory or decision file under the decisions folder could not be read (permission denied or "
@@ -278,6 +284,11 @@ def _check_family(family, errors):
             blocker = _live_blocker(member, family)
             if blocker is not None:
                 errors.append(_error(not_live_code, member.path, [blocker]))
+    rejected_successors = [d.path for d in family if d.state == REJECTED and is_successor(d.name)]
+    if rejected_successors:
+        for member in family:
+            if member.state is not None and member.state != REJECTED:
+                errors.append(_error(FailureCodes.REJECTED_SUCCESSOR_FAMILY_NOT_FINAL, member.path, rejected_successors))
 
 
 def _check_supersede(decisions, by_number, errors):

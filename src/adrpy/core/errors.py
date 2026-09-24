@@ -232,6 +232,7 @@ class FailureCodes:
     SUPERSEDED_WITHOUT_SUCCESSOR = "superseded-without-successor"
     SUCCESSOR_WITHOUT_PREDECESSOR = "successor-without-predecessor"
     MULTIPLE_LIVE_SUCCESSORS = "multiple-live-successors"
+    REJECTED_SUCCESSOR_FAMILY_NOT_FINAL = "rejected-successor-family-not-final"
     SCAN_INCOMPLETE = "scan-incomplete"
 
 

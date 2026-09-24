@@ -23,6 +23,7 @@ _INVARIANT_CODES = {
     FailureCodes.SUPERSEDED_WITHOUT_SUCCESSOR,
     FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR,
     FailureCodes.MULTIPLE_LIVE_SUCCESSORS,
+    FailureCodes.REJECTED_SUCCESSOR_FAMILY_NOT_FINAL,
     FailureCodes.SCAN_INCOMPLETE,
 }
 
@@ -172,6 +173,32 @@ def test_a_rejected_successor_needs_no_back_pointer(tmp_path):
     repo = make_repo(tmp_path, files=[D(1, state="accepted"), D(2, state="rejected", suffix=1)])
 
     assert _codes(repo) == []
+
+
+def test_a_rejected_successors_family_rejected_throughout_passes(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        files=[D(1, state="accepted"), D(2, state="rejected", suffix=1), D(2, version=2, state="rejected")],
+    )
+
+    assert _codes(repo) == []
+
+
+@pytest.mark.parametrize("state", ["proposed", "accepted"])
+def test_every_member_of_a_rejected_successors_family_is_rejected(tmp_path, state):
+    """A rejected successor ends its whole family: a member that is not
+    Rejected (only a hand edit makes one) would give the predecessor a
+    second live line after a new supersede."""
+    repo = make_repo(
+        tmp_path, files=[D(1, state="accepted"), D(2, state="rejected", suffix=1), D(2, version=2, state=state)]
+    )
+
+    errors = _raised(repo)
+
+    assert [(error["code"], error["file"]) for error in errors] == [
+        ("rejected-successor-family-not-final", str(repo.paths[2]))
+    ]
+    assert errors[0]["related_files"] == [str(repo.paths[1])]
 
 
 # ---------------------------------------------------------------- header --

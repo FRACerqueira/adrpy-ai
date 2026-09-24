@@ -89,6 +89,7 @@ The rules, one error code each:
 | A `Superseded` cell points at a successor that exists, is not `Rejected`, and names this decision in its `--NNN` filename suffix | `superseded-without-successor` |
 | A successor that is not `Rejected` has a predecessor whose `Superseded` cell points back at it | `successor-without-predecessor` |
 | A predecessor has at most one successor that is not `Rejected` | `multiple-live-successors` |
+| In the family of a `Rejected` successor, every member is `Rejected` (a rejected successor ends its whole family) | `rejected-successor-family-not-final` |
 | Every directory and decision file under the decisions folder can be read | `scan-incomplete` |
 
 "Live" is the first family rule below: the family's latest member, newer

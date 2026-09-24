@@ -36,6 +36,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `superseded-without-successor` | data.errors[].code: a Superseded cell points at no existing, non-Rejected successor whose filename suffix names this decision. |
 | `successor-without-predecessor` | data.errors[].code: a non-Rejected successor has no predecessor whose Superseded cell points back at it. |
 | `multiple-live-successors` | data.errors[].code: more than one non-Rejected successor names the same predecessor. |
+| `rejected-successor-family-not-final` | data.errors[].code: a member of a Rejected successor's family is not Rejected. |
 | `scan-incomplete` | data.errors[].code: a directory or decision file under the decisions folder could not be read. |
 | `header-invalid` | data.errors[].detail of an invalid-header entry starts with this code: the header failed structural validation, for a reason not covered by a more specific code below. |
 | `adr-file-empty` | data.errors[].detail of an invalid-header entry starts with this code: the file has no content at all. |

@@ -916,6 +916,26 @@ def test_migrate_refuses_a_supersede_suffix_whatever_the_naming_scheme(tmp_path,
     assert {p.name: p.read_bytes() for p in (tmp_path / "doc" / "adr").glob("*.md")} == before
 
 
+def test_the_successor_refusal_names_the_configured_separator(tmp_path):
+    # The suffix is the configured separator doubled, not a fixed '--';
+    # a title that only looks like a suffix is renamed away from it.
+    data = _seed_config_with_pattern("N00:04T04")
+    data["separator"] = "_"
+    config_file = tmp_path / "seed-config.json"
+    config_file.write_text(json.dumps(data), encoding="utf-8")
+    init.run(["--path", str(tmp_path), "--seed", str(config_file)])
+    _write_legacy_file(tmp_path, "0005Epsilon__004.md", "# Epsilon\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "migration-successor-files-exist"
+    detail = excinfo.value.detail
+    assert "(__NNN)" in detail and "(--NNN)" not in detail
+    assert "'Release__2026'" in detail
+    assert "does not end in __<digits>" in detail
+
+
 def test_a_legacy_title_with_a_doubled_separator_but_no_number_after_it_is_migrated(tmp_path):
     # Only the doubled separator followed by nothing but digits is a
     # suffix; anything else is title text.

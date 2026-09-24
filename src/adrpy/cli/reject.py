@@ -5,11 +5,10 @@ status is undone too -- the attempted supersession failed along with the
 successor.
 
 The predecessor is reverted FIRST, before this decision's own status is
-written (round-36 retraction of the original order: writing this
-decision's own status first left a real, permanently unrecoverable stuck
-state if the predecessor's own revert then failed -- status_change is
-treated as a terminal state by every one of this project's lifecycle
-commands, with no "unsupersede" verb, so a predecessor stuck Superseded
+written (writing this decision's own status first would leave a
+permanently unrecoverable stuck state if the predecessor's own revert
+then failed -- status_change is treated as a terminal state by every one
+of this project's lifecycle commands, with no "unsupersede" verb, so a predecessor stuck Superseded
 could never be touched again). With the predecessor reverted first, every
 failure up to and including that write leaves nothing committed at all,
 safely retryable from scratch.
@@ -82,11 +81,10 @@ def run(args):
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
     refdate, warnings = ctx.refdate, ctx.warnings
     with attach_warnings(warnings):
-        # Round-36 retraction of the original order (this decision's own
-        # write, then the predecessor's): reverting the predecessor
-        # FIRST means every failure up to and including that write
-        # leaves nothing committed at all -- always safely retryable
-        # from scratch, instead of risking a predecessor stuck
+        # Reverting the predecessor FIRST (not this decision's own write
+        # first, then the predecessor's) means every failure up to and
+        # including that write leaves nothing committed at all -- always
+        # safely retryable from scratch, instead of risking a predecessor stuck
         # Superseded forever with no command able to touch it again
         # (status_change is a terminal state everywhere else in this
         # codebase; there is no "unsupersede" verb).
