@@ -55,7 +55,7 @@ Title for the successor; defaults to the predecessor's own filename-segment titl
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
-| `field-contains-forbidden-character` | A free-text field contains '\|', a line-break-like character, or (for title) a filesystem-unsafe character. |
+| `field-contains-forbidden-character` | --title/--scope/--domain, or the title taken from the predecessor's own filename, contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |

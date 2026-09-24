@@ -27,14 +27,10 @@ def describe():
             "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
             "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
             "made either way. "
-            "The target's own title (re-read "
-            "from its header cell, not a flag) is re-validated before use -- may fail with "
-            "field-contains-forbidden-character if a hand-edited or migrated source file's title carries "
-            "'|', a line-break-like character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control "
-            "character; title lands inside an actual filename component, not just a header-table cell), or "
-            "consists entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls "
-            "back to echoing such a value raw, which can collide with the filename's own separator and "
-            "produce a successor file the tool can never recognize again. Fails with family-not-found if "
+            "A title, scope or domain in the target's header that breaks the free-text rules ('|', a "
+            "line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:\"/\\|?*` or a "
+            "control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of "
+            "repository-inconsistent's data.errors (invalid-header). Fails with family-not-found if "
             "this decision's own family can't be resolved, or lenversion-too-small-for-new-version "
             "(data.new_version/data.lenversion) if the next version number doesn't fit the configured "
             "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
@@ -107,6 +103,7 @@ def describe():
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own last update date (or creation date, if never updated).",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "--scope or --domain contains '|' or a line-break-like character.",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new version's number is already held by a file of this family (any title), or its resulting filename already exists -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",

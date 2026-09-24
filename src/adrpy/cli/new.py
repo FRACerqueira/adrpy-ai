@@ -9,7 +9,7 @@ accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
-from adrpy.core.fs import cleanup_orphaned_temp_files
+from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
@@ -132,13 +132,15 @@ def run(args):
     folder = resolve_within(target, config.folderadr)
     warnings = []
     with attach_warnings(warnings):
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
+        # One walk of the folder feeds the orphan sweep and the validator.
+        scan = scan_tree(folder) if folder.is_dir() else None
+        if scan is not None:
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings, scan=scan))
             if warning:
                 warnings.append(warning)
         # Before any other rule: title-uniqueness and next-number
         # allocation below read this one validated snapshot.
-        snapshot = validate_repository(folder, config)
+        snapshot = validate_repository(folder, config, scan=scan)
         warning = excluded_candidate_warning(list(snapshot.excluded))
         if warning:
             warnings.append(warning)

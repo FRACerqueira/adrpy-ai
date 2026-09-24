@@ -314,12 +314,17 @@ def _check_supersede(decisions, by_number, errors):
                 errors.append(_error(FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR, successor.path, related))
 
 
-def check_repository(folder, config):
+def check_repository(folder, config, scan=None):
     """(Snapshot, errors) for the decisions under `folder`, read with
     `config`. `errors` is sorted by file, then code; empty when every
-    invariant holds. A missing folder is an empty, consistent repository."""
+    invariant holds. A missing folder is an empty, consistent repository.
+    `scan`: the folder's scan_tree when the caller already walked it
+    (nothing is walked twice)."""
     errors = []
-    scan = scan_tree(folder) if folder.is_dir() else None
+    if not folder.is_dir():
+        scan = None
+    elif scan is None:
+        scan = scan_tree(folder)
     decisions = _read_decisions(scan, config, errors) if scan is not None else []
     by_number = {}
     for decision in decisions:
@@ -335,11 +340,12 @@ def check_repository(folder, config):
     return Snapshot(tuple(decisions), by_number, scan.excluded if scan is not None else ()), errors
 
 
-def validate_repository(folder, config):
+def validate_repository(folder, config, scan=None):
     """The Snapshot of a consistent repository; raises
     repository-inconsistent, with every broken invariant in
-    data.errors ({code, file, related_files, detail, hint}), otherwise."""
-    snapshot, errors = check_repository(folder, config)
+    data.errors ({code, file, related_files, detail, hint}), otherwise.
+    `scan` as in check_repository."""
+    snapshot, errors = check_repository(folder, config, scan)
     if errors:
         raise CommandError(
             FailureCodes.REPOSITORY_INCONSISTENT,

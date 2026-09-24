@@ -119,9 +119,10 @@ def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(t
 
 def test_revise_scans_the_directory_only_once(tmp_path, monkeypatch):
     """The repository is read once per call: one scan of the decisions
-    folder (core/consistency), whose snapshot feeds the target, its family
-    and every guard -- no second scan."""
-    from adrpy.core import consistency
+    folder (taken in prepare()), which feeds the orphan sweep and the
+    validator (core/consistency), whose snapshot feeds the target, its
+    family and every guard -- no second scan."""
+    from adrpy.core import consistency, lifecycle
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
 
@@ -133,6 +134,7 @@ def test_revise_scans_the_directory_only_once(tmp_path, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
+    monkeypatch.setattr(lifecycle, "scan_tree", counting_scan_tree)
 
     revise.run(["--file", str(adr_path)])
 

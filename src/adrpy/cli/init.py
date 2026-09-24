@@ -21,21 +21,12 @@ from adrpy.core.config import (
     parse_repo_config,
     read_config_text,
 )
-from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
+from adrpy.core.fs import scan_tree
 from adrpy.core.install_config import read_install_config_text
-from adrpy.core.lifecycle import (
-    reject_folderadr_change_if_decisions_exist,
-    reject_status_or_separator_change_if_decisions_exist,
-    resolve_target_and_config,
-)
+from adrpy.core.lifecycle import resolve_target_and_config, validate_config_change
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import (
-    find_unreadable_subdirectories,
-    is_within,
-    reject_aliased_repo_folders,
-    resolve_within,
-)
+from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, no_install_level_config_warning, retry_warning
 
 
@@ -270,39 +261,14 @@ def run(args):
 
 def _validate_and_write(target, config_path, config_text, config, warnings, old_config=None):
     if old_config is not None:
-        # Same class as config.py's own --folderadr guard -- --seed
-        # changing folderadr on an already-existing repository is exactly
-        # as capable of orphaning existing decisions as `config` is.
-        # `old_config` is None on the genuinely-fresh-bootstrap path
-        # (nothing existing to orphan there, and no "old" repo to compare
-        # against).
+        # --seed replacing an ALREADY-existing repository's config is
+        # exactly as capable of orphaning or unrecognizing existing
+        # decisions and decision-log entries as `config` is -- the same
+        # guard, over the pre-edit folder and config. `old_config` is None
+        # on the genuinely-fresh-bootstrap path (nothing existing to
+        # orphan there). init is exempt from repository validation.
         old_folder = resolve_within(target, old_config.folderadr)
-        reject_folderadr_change_if_decisions_exist(
-            old_folder,
-            old_config.folderadr,
-            config.folderadr,
-            old_config,
-            target=target,
-            new_config=config,
-            warnings=warnings,
-        )
-        # ADR004V01: --seed replacing an ALREADY-existing repository's
-        # config is exactly as capable of breaking status-label/separator
-        # recognition of existing decisions as `config` is -- same guard,
-        # same pre-edit `old_folder`/`old_config`.
-        reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, config, warnings=warnings)
-
-        # ADR007V01: the folderlog counterpart to the folderadr guard
-        # above -- --seed replacing folderlog on an already-existing
-        # repository is exactly as capable of orphaning existing
-        # decision-log entries as `config --folderlog` is.
-        reject_folderlog_change_if_entries_exist(
-            decision_log_dir_for(target, old_config),
-            old_config.folderlog,
-            config.folderlog,
-            target=target,
-            warnings=warnings,
-        )
+        validate_config_change(old_config, config, old_folder, target=target, warnings=warnings)
 
     # Same as scan_decisions/explore/migrate -- an is_within-excluded
     # candidate is reported, not dropped with zero signal, since these are
@@ -403,16 +369,9 @@ def _max_existing_numbers(target, config, warnings=None):
         return 0, 0, 0
 
     max_number = max_version = max_revision = 0
-    excluded = []
-    # Resolved once, not once per candidate -- see is_within's own note.
-    try:
-        resolved_folder = folder.resolve()
-    except (OSError, ValueError):
-        resolved_folder = None
-    for candidate in folder.rglob("*.md"):
-        if not is_within(folder, candidate, resolved_base=resolved_folder):
-            excluded.append(candidate)
-            continue
+    scan = scan_tree(folder)
+    excluded = list(scan.excluded)
+    for candidate in scan.markdown:
         found = parse_any_filename(candidate.name, config)
         if found is None:
             continue
@@ -420,13 +379,12 @@ def _max_existing_numbers(target, config, warnings=None):
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)
-    # rglob above silently swallows an OSError from an unreadable
-    # subdirectory -- see find_unreadable_subdirectories' own note.
-    # Fails closed instead of warning -- this feeds a real safety decision
-    # (lenseq/lenversion/lenrevision must fit every EXISTING number), so an
-    # under-reported max must never be silently trusted the way explore's
-    # own best-effort listing can.
-    unreadable = find_unreadable_subdirectories(folder)
+    # Fails closed on a subdirectory the scan could not list, instead of
+    # warning -- this feeds a real safety decision (lenseq/lenversion/
+    # lenrevision must fit every EXISTING number), so an under-reported
+    # max must never be silently trusted the way explore's own
+    # best-effort listing can.
+    unreadable = list(scan.unreadable)
     if unreadable:
         raise CommandError(
             FailureCodes.INIT_EXISTING_NUMBERS_SCAN_INCOMPLETE,

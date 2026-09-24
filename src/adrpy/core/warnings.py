@@ -122,7 +122,7 @@ def excluded_candidate_warning(paths):
         return None
     names = ", ".join(str(path) for path in paths)
     return (
-        f"{len(paths)} candidate file(s) were excluded from this scan because their real path "
+        f"{len(paths)} candidate file(s) or folder(s) were excluded from this scan because their real path "
         f"escapes the repository boundary (e.g. a symlink/junction): {names}."
     )
 

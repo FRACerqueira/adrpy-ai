@@ -5,6 +5,8 @@ import sys
 from adrpy.cli import config, init, new
 from adrpy.core.config import load_repo_config
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.naming import parse_any_filename
 
 import pytest
 
@@ -16,9 +18,18 @@ def _init_repo(tmp_path):
 
 def _write_legacy_file(tmp_path, filename, content="Legacy content\n"):
     # Raw bytes, not new.run -- legacy-scheme files predate the tool and
-    # are never created by it; mirrors test_migrate.py's own helper.
+    # are never created by it; mirrors test_migrate.py's own helper. A
+    # name the current config already recognizes gets the migrated header
+    # migrate itself would write (the filename is never renamed), so the
+    # repository stays consistent: `config` validates it before changing
+    # a guarded field.
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
+    repo_config = load_repo_config(tmp_path / "adr-config.adrplus")
+    found = parse_any_filename(filename, repo_config)
+    if found is not None:
+        record = DecisionRecord(number=found[1].number, title=found[1].title, version=0)
+        content = build_header(repo_config, record, migrated=True) + content
     (adr_dir / filename).write_bytes(content.encode("utf-8"))
     return adr_dir / filename
 
@@ -46,7 +57,7 @@ def test_config_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
 
 def test_config_changes_folderadr_when_the_old_folder_is_missing(tmp_path):
     """The folderadr/status/separator guards scan the OLD folder, and
-    find_unreadable_subdirectories treats a missing folder as
+    scan_tree treats a missing folder as
     unreadable -- config creates the old folder first, so a deleted one
     doesn't turn a legitimate change into folderadr-change-scan-incomplete."""
     tmp_path = _init_repo(tmp_path)
@@ -142,10 +153,9 @@ def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path
 
 
 def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Folderadr-change-scan-
-    incomplete (reject_folderadr_change_if_decisions_exist's own fail-
-    closed path) was only ever tested at the core/lifecycle level, never
-    through this real CLI command."""
+    """An unlistable subdirectory under the OLD folder fails closed through
+    this real CLI command -- as the validator's scan-incomplete, since
+    config validates the repository before a guarded change."""
     tmp_path = _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -164,7 +174,10 @@ def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
 
-    assert excinfo.value.code == "folderadr-change-scan-incomplete"
+    # config validates the repository before changing a guarded field: the
+    # unlistable subdirectory is the validator's scan-incomplete.
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
     after = load_repo_config(tmp_path / "adr-config.adrplus")
     assert after.folderadr == before.folderadr  # nothing was written
 
@@ -584,26 +597,27 @@ def test_config_allows_a_separator_change_that_adopts_nothing(tmp_path, monkeypa
     still left that version green, since an empty folder has nothing to
     adopt either way. A file guaranteed to stay unrecognized under both
     separators has the exact same problem for the same reason. Proven
-    instead via a call-count spy on scan_decisions -- the guard scans
-    twice for a successful separator change (once for `existing` under
-    old_config, once for the adoption check under the separator-only
-    config); a disabled adoption check would only scan once."""
+    instead via a call-count spy on the guard's filename recognition over
+    the scan -- it runs twice for a successful separator change (once
+    for `existing` under old_config, once for the adoption check under
+    the separator-only config); a disabled adoption check would only run
+    it once."""
     tmp_path = _init_repo(tmp_path)
     from adrpy.core import lifecycle as lifecycle_module
 
-    real_scan_decisions = lifecycle_module.scan_decisions
+    real_recognized = lifecycle_module._recognized
     calls = []
 
-    def counting_scan_decisions(*args, **kwargs):
-        calls.append((args, kwargs))
-        return real_scan_decisions(*args, **kwargs)
+    def counting_recognized(scan, config_used, warnings):
+        calls.append(config_used.separator)
+        return real_recognized(scan, config_used, warnings)
 
-    monkeypatch.setattr(lifecycle_module, "scan_decisions", counting_scan_decisions)
+    monkeypatch.setattr(lifecycle_module, "_recognized", counting_recognized)
 
     result = config.run(["--path", str(tmp_path), "--separator", "_"])
 
     assert result["updated_fields"] == ["separator"]
-    assert len(calls) == 2  # existing (old_config) + the adoption check (separator-only config)
+    assert calls == ["-", "_"]  # existing (old_config) + the adoption check (separator-only config)
 
 
 def test_config_separator_and_migrationpattern_change_together_does_not_cross_attribute_adoption(tmp_path):
@@ -682,7 +696,9 @@ def test_config_status_or_separator_change_fails_closed_when_a_subdirectory_is_u
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
 
-    assert excinfo.value.code == "status-or-separator-change-scan-incomplete"
+    # As above: the validator's scan-incomplete, before the guard's own.
+    assert excinfo.value.code == "repository-inconsistent"
+    assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
 
 
 def test_config_allows_a_status_label_change_when_no_decisions_exist_yet(tmp_path):

@@ -16,6 +16,7 @@ import errno
 import glob
 import os
 import re
+import stat
 import time
 import uuid
 from dataclasses import dataclass
@@ -35,6 +36,10 @@ ORPHAN_MAX_AGE_SECONDS = 30
 # Which exclusive-create branch commit_write takes. A module constant so a
 # test can run the other OS's branch.
 _IS_WINDOWS = os.name == "nt"
+# Whether scan_tree checks an entry's reparse-point attribute (Windows
+# only) -- its own constant, so flipping the one above never turns off
+# junction detection.
+_HAS_REPARSE_POINTS = os.name == "nt"
 
 # prepare_write names its temp file `<target name>.<uuid4 hex>.tmp`; the
 # orphan sweeps below match only that exact shape, so no other *.tmp a
@@ -232,14 +237,51 @@ class TreeScan:
     unreadable: tuple
 
 
+def _is_link(entry):
+    """A symlink, a junction or (Windows) any other reparse point: an entry
+    whose real path may not be its parent's real path plus its name. On
+    Windows the attributes come with the directory listing (no extra
+    call); an entry that cannot be inspected counts as a link."""
+    try:
+        if entry.is_symlink():
+            return True
+        if _HAS_REPARSE_POINTS:
+            return bool(entry.stat(follow_symlinks=False).st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        return False
+    except OSError:
+        return True
+
+
+def _real_path(path, known_parent, entry):
+    """`path`'s real path: its parent's already-known real path plus its
+    name, unless the parent's is unknown (reached through a link) or the
+    entry is itself a link -- then resolved. None when it cannot be."""
+    if known_parent is not None and not _is_link(entry):
+        return known_parent / entry.name
+    try:
+        return path.resolve()
+    except (OSError, ValueError):
+        return None
+
+
 def scan_tree(folder):
-    """The one traversal of a folder: an os.walk whose `onerror` records
-    every directory it could not list (rglob would skip it silently).
-    Like rglob, it descends into junctions; every file found is kept only
-    if its real path stays inside `folder` (the is_within rule), and a
-    file reached twice through a junction is kept once. The extension
-    match follows the OS's own case rule (os.path.normcase), as rglob's
-    does. A missing `folder` is reported as unreadable."""
+    """The one traversal of a folder, os.walk's order (top-down, a
+    directory's files before its subdirectories), recording every
+    directory it could not list (rglob would skip it silently). Like
+    rglob and os.walk, it descends into junctions but not into directory
+    symlinks; every file found is kept only if its real path stays inside
+    `folder` (the is_within rule), and a file reached twice through a
+    junction is kept once; a directory reached again through a junction
+    cycle is not listed twice, and a link to a directory outside `folder`
+    is excluded as a whole, not entered. The extension match follows the OS's own case
+    rule (os.path.normcase), as rglob's does. A missing `folder` is
+    reported as unreadable.
+
+    Only a link is resolved: a file or directory reached from the
+    resolved folder through plain directories has the real path of its
+    parent plus its own name, so it is inside by construction; a symlink,
+    a junction or another reparse point -- and everything reached through
+    one -- is resolved and checked."""
     folder = Path(folder)
     try:
         resolved = folder.resolve()
@@ -250,20 +292,46 @@ def scan_tree(folder):
     # inside the folder) is kept once, under the path that needs no link.
     found = {".md": {}, ".tmp": {}}
 
-    def _on_error(error):
-        unreadable.append(getattr(error, "filename", None) or str(error))
-
-    for dirpath, _dirnames, filenames in os.walk(folder, onerror=_on_error):
-        for name in filenames:
-            extension = os.path.normcase(name)[-4:]
+    # (directory, its real path when known without resolving, else None)
+    pending = [(folder, resolved)]
+    # Real paths already listed: a junction back to a listed directory
+    # (a cycle) is not entered again.
+    listed = set()
+    # Directories entered through a link wait until every plain directory
+    # is listed, so a file reachable both ways is kept under its plain path.
+    through_links = []
+    while pending or through_links:
+        directory, real_directory = pending.pop() if pending else through_links.pop(0)
+        if real_directory is not None:
+            if real_directory in listed:
+                continue
+            listed.add(real_directory)
+        try:
+            with os.scandir(os.fspath(directory)) as listing:
+                entries = list(listing)
+        except OSError as error:
+            unreadable.append(getattr(error, "filename", None) or str(error))
+            continue
+        subdirectories = []
+        for entry in entries:
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                is_dir = False
+            if is_dir:
+                # os.walk does not descend into a directory symlink.
+                if not entry.is_symlink():
+                    subdirectories.append(entry)
+                continue
+            extension = os.path.normcase(entry.name)[-4:]
             kind = ".md" if extension.endswith(".md") else ".tmp" if extension == ".tmp" else None
             if kind is None:
                 continue
-            candidate = Path(dirpath) / name
+            candidate = directory / entry.name
+            real = _real_path(candidate, real_directory, entry)
             try:
-                real = candidate.resolve()
-                inside = resolved is not None and real.is_relative_to(resolved)
-            except (OSError, ValueError):
+                inside = resolved is not None and real is not None and real.is_relative_to(resolved)
+            except ValueError:
                 inside = False
             if not inside:
                 excluded.append(candidate)
@@ -273,10 +341,28 @@ def scan_tree(folder):
                 str(real.relative_to(resolved))
             ):
                 found[kind][real] = candidate
+        # Depth-first, in listing order, as os.walk.
+        for entry in reversed(subdirectories):
+            path = directory / entry.name
+            real_sub = _real_path(path, real_directory, entry)
+            try:
+                inside = resolved is not None and real_sub is not None and real_sub.is_relative_to(resolved)
+            except ValueError:
+                inside = False
+            if not inside:
+                # A link out of the folder is excluded without being
+                # entered (a junction to an ancestor would otherwise walk
+                # the whole disk).
+                excluded.append(path)
+                continue
+            if _is_link(entry) or real_directory is None:
+                through_links.append((path, real_sub))
+            else:
+                pending.append((path, real_sub))
     return TreeScan(tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable))
 
 
-def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
+def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):
     """Removes leftover temp files (from a write interrupted by something
     other than the transient permission failure retried above -- a killed
     process, a full disk) once older than `max_age_seconds`. Returns the
@@ -303,12 +389,17 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     per-file failure in migrate's migration-write-failed, where re-running
     migrates what is left.
 
-    Uses rglob, not glob -- every other scan in this codebase
-    (scan_decisions, migrate, explore, init's own numbering) already
-    covers subfolders under folderadr; a non-recursive scan here would
+    Recursive, not glob -- every other scan in this codebase (scan_tree)
+    already covers subfolders under folderadr; a non-recursive scan here would
     leave an orphan inside a subfolder unfound and unreported (a
     housekeeping leak, not a correctness issue -- temp files never
     collide by name and are never read by anything)."""
+    # `scan`: the folder's scan_tree when the caller already walked it
+    # (its `.tmp` files are already inside the folder's real boundary);
+    # otherwise the folder is walked here.
+    if scan is not None:
+        candidates = (candidate for candidate in scan.temp if _OWN_TEMP_NAME.fullmatch(candidate.name))
+        return _remove_orphans(candidates, max_age_seconds, warnings)
     # is_within: rglob descends into a junction/symlink planted inside
     # the folder, which every other rglob consumer in this codebase
     # already guards against (core/security.py).

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -20,12 +21,11 @@ from adrpy.core.lifecycle import (
     prepare,
     next_number,
     read_body,
-    reject_folderadr_change_if_decisions_exist,
     resolve_target_and_config,
     rewrite_status_field,
-    scan_decisions,
     stream_normalized_body_chunks,
     validate_refdate_not_before,
+    validate_config_change,
     validate_refdate_not_in_future,
 )
 
@@ -61,9 +61,18 @@ def test_validate_refdate_not_before_rejects_earlier_date():
     assert excinfo.value.code == "refdate-before-history"
 
 
+def _recognized(folder, config):
+    """(scheme, ParsedFileName, path) for every decision in the validated
+    snapshot -- the shape next_number and find_by_unique_title read."""
+    from adrpy.core.consistency import check_repository
+
+    snapshot = check_repository(folder, config)[0]
+    return [(d.scheme, d.name, d.path) for d in snapshot.decisions]
+
+
 def test_next_number_is_one_when_no_decisions_exist(tmp_path):
     config = load_repo_config(FIXTURE_PATH)
-    assert next_number(scan_decisions(tmp_path, config)) == 1
+    assert next_number(_recognized(tmp_path, config)) == 1
 
 
 def test_next_number_and_unique_title_with_real_decisions(tmp_path):
@@ -76,7 +85,7 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
     with open(adr_dir / "ADR003V01-existing-decision.md", "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body")
 
-    decisions = scan_decisions(adr_dir, config)
+    decisions = _recognized(adr_dir, config)
 
     assert next_number(decisions) == 4
     assert find_by_unique_title("Existing Decision", config, decisions) is not None
@@ -719,7 +728,7 @@ def test_a_sibling_whose_lossy_decode_still_parses_stays_a_member(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_path):
+def test_the_snapshot_ignores_files_reached_through_a_windows_junction(tmp_path):
     """resolve_within only validates the repository
     root; rglob("*.md") happily descends into a Windows junction planted
     inside the decisions folder (no admin privilege required to create
@@ -746,77 +755,13 @@ def test_scan_decisions_ignores_files_reached_through_a_windows_junction(tmp_pat
     assert result.returncode == 0, result.stderr
     assert not junction.is_symlink()  # confirms the audit's premise: junctions aren't symlinks
 
-    decisions = scan_decisions(adr_dir, config)
+    decisions = _recognized(adr_dir, config)
 
     assert decisions == []
     assert next_number(decisions) == 1
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
-def test_scan_decisions_reports_an_excluded_candidate_when_given_a_warnings_list(tmp_path):
-    """is_within deliberately never
-    RAISES over an escaped candidate (a scan should keep going, not fail
-    over one), but that's a decision about raising, not about reporting --
-    a call site must not drop the exclusion with zero signal, or an agent
-    seeing an unexpected next_number, or an inventory that doesn't match
-    what's physically listable in the folder, has no way to learn why."""
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / "repo" / config.folderadr
-    adr_dir.mkdir(parents=True)
-    outside_dir = tmp_path / "outside"
-    outside_dir.mkdir()
-    record = DecisionRecord(number=9, title="Victim outside the repo", version=1)
-    with open(outside_dir / "ADR009V01-victim-outside-the-repo.md", "w", encoding="utf-8", newline="") as handle:
-        handle.write(build_header(config, record) + "# body")
-    junction = adr_dir / "linked"
-    result = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_dir)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-
-    warnings = []
-    scan_decisions(adr_dir, config, warnings=warnings)
-
-    assert len(warnings) == 1
-    assert "escapes the repository boundary" in warnings[0]
-    assert str(junction) in warnings[0]
-
-    # Backward compatible: no warnings= at all (the default) never raises.
-    assert scan_decisions(adr_dir, config) == []
-
-
-def test_scan_decisions_warns_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Path.rglob
-    (which scan_decisions uses) silently swallows an OSError raised
-    while walking a subtree -- a subfolder that becomes unreadable
-    mid-scan must not just make the result set smaller with zero
-    signal; every caller that passes warnings= must find out."""
-    config = load_repo_config(FIXTURE_PATH)
-    adr_dir = tmp_path / config.folderadr
-    adr_dir.mkdir(parents=True)
-    blocked = adr_dir / "restricted"
-    blocked.mkdir()
-
-    real_scandir = os.scandir
-
-    def flaky_scandir(path="."):
-        if os.path.abspath(path) == os.path.abspath(blocked):
-            raise PermissionError(13, "Access is denied", str(blocked))
-        return real_scandir(path)
-
-    monkeypatch.setattr(os, "scandir", flaky_scandir)
-
-    warnings = []
-    scan_decisions(adr_dir, config, warnings=warnings)
-
-    assert len(warnings) == 1
-    assert "could not be scanned" in warnings[0]
-    assert str(blocked) in warnings[0]
-
-
-def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
+def test_validate_config_change_folderadr_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
     """Unlike scan_decisions'
     own generic callers (a warning is enough there -- nothing unsafe
     happens from an under-reported inventory), this specific guard
@@ -842,8 +787,8 @@ def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incom
     monkeypatch.setattr(os, "scandir", flaky_scandir)
 
     with pytest.raises(CommandError) as excinfo:
-        reject_folderadr_change_if_decisions_exist(
-            old_folder, config.folderadr, "doc/adrB", config, target=tmp_path, new_config=config
+        validate_config_change(
+            config, replace(config, folderadr="doc/adrB"), old_folder, target=tmp_path
         )
 
     assert excinfo.value.code == "folderadr-change-scan-incomplete"
@@ -851,7 +796,7 @@ def test_reject_folderadr_change_if_decisions_exist_fails_closed_when_scan_incom
     assert str(blocked) in excinfo.value.data["unreadable"][0]
 
 
-def test_reject_folderadr_change_if_decisions_exist_rejects_a_new_folder_that_would_adopt_an_unrelated_file(
+def test_validate_config_change_folderadr_rejects_a_new_folder_that_would_adopt_an_unrelated_file(
     tmp_path,
 ):
     """Every check above is keyed on the OLD
@@ -871,8 +816,8 @@ def test_reject_folderadr_change_if_decisions_exist_rejects_a_new_folder_that_wo
     (new_folder / "ADR001V01-unrelated.md").write_bytes(b"hand written, never a real decision\n")
 
     with pytest.raises(CommandError) as excinfo:
-        reject_folderadr_change_if_decisions_exist(
-            old_folder, config.folderadr, "unrelated-docs", config, target=tmp_path, new_config=config
+        validate_config_change(
+            config, replace(config, folderadr="unrelated-docs"), old_folder, target=tmp_path
         )
 
     assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
@@ -880,11 +825,11 @@ def test_reject_folderadr_change_if_decisions_exist_rejects_a_new_folder_that_wo
     assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
 
 
-def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_that_does_not_exist_yet(tmp_path):
+def test_validate_config_change_folderadr_allows_a_new_folder_that_does_not_exist_yet(tmp_path):
     """Companion to the rejection test above: the overwhelmingly common
     case -- pointing folderadr at a brand-new directory nothing has ever
-    written to -- must still go through. `find_unreadable_subdirectories`
-    treats a nonexistent path as unreadable (confirmed directly), so the
+    written to -- must still go through. `scan_tree` treats a
+    nonexistent path as unreadable (confirmed directly), so the
     new-folder check must skip entirely when the new folder does not
     exist yet, the same way `scan_decisions` itself already treats a
     missing folder as empty rather than an error."""
@@ -892,12 +837,12 @@ def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_that_doe
     old_folder = tmp_path / config.folderadr
     old_folder.mkdir(parents=True)
 
-    reject_folderadr_change_if_decisions_exist(
-        old_folder, config.folderadr, "brand-new-folder", config, target=tmp_path, new_config=config
+    validate_config_change(
+        config, replace(config, folderadr="brand-new-folder"), old_folder, target=tmp_path
     )  # must not raise
 
 
-def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_with_unrecognized_content(tmp_path):
+def test_validate_config_change_folderadr_allows_a_new_folder_with_unrecognized_content(tmp_path):
     """Companion to the rejection test above: a new folder that already
     exists but has nothing that would newly parse as a decision must
     still go through -- this guard must not become a blanket refusal to
@@ -910,8 +855,8 @@ def test_reject_folderadr_change_if_decisions_exist_allows_a_new_folder_with_unr
     new_folder.mkdir(parents=True)
     (new_folder / "readme.md").write_bytes(b"not decision-shaped at all\n")
 
-    reject_folderadr_change_if_decisions_exist(
-        old_folder, config.folderadr, "existing-notes", config, target=tmp_path, new_config=config
+    validate_config_change(
+        config, replace(config, folderadr="existing-notes"), old_folder, target=tmp_path
     )  # must not raise
 
 
@@ -1007,3 +952,40 @@ def test_a_filename_numbered_with_non_ascii_digits_is_not_a_decision(name):
     from adrpy.core.naming import parse_filename
 
     assert parse_filename(name, load_repo_config(FIXTURE_PATH)) is None
+
+
+def _count_free_text_checks(monkeypatch):
+    from adrpy.core import lifecycle as lifecycle_module
+
+    checked = []
+    real = lifecycle_module.reject_embedded_delimiter
+
+    def spy(value, name):
+        checked.append(name)
+        return real(value, name)
+
+    monkeypatch.setattr(lifecycle_module, "reject_embedded_delimiter", spy)
+    return checked
+
+
+def test_prepare_does_not_recheck_header_cells_parse_header_already_checked(tmp_path, monkeypatch):
+    """A header cell breaking a free-text rule does not parse, and the
+    validator refuses the repository before prepare() reads it: approve's
+    title/scope/domain (all from the header) are not checked again."""
+    repo = make_repo(tmp_path, files=[D(1)])
+    checked = _count_free_text_checks(monkeypatch)
+
+    prepare("approve", str(repo.paths[0]), {})
+
+    assert checked == []
+
+
+def test_prepare_still_checks_a_flag_value_and_a_filename_segment(tmp_path, monkeypatch):
+    """supersede's title comes from the predecessor's filename unless
+    --title gives it; its --scope flag is a raw value too."""
+    repo = make_repo(tmp_path, files=[D(1, state="accepted")])
+    checked = _count_free_text_checks(monkeypatch)
+
+    prepare("supersede", str(repo.paths[0]), {"scope": "Data"})
+
+    assert checked == ["scope", "title"]

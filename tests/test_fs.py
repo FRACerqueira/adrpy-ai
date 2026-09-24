@@ -1,6 +1,8 @@
 import ast
 import errno
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -337,3 +339,144 @@ def test_scan_tree_excludes_a_file_whose_real_path_escapes_the_folder(tmp_path):
     scan = fs.scan_tree(inside)
 
     assert (scan.markdown, [p.name for p in scan.excluded]) == ((), ["link.md"])
+
+
+def _junction(link, target):
+    result = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def _resolve_everything(folder):
+    """The reference rule scan_tree must keep: os.walk, then every .md
+    resolved and kept only inside the resolved folder, once per real
+    path (the path that needs no link wins)."""
+    resolved = Path(folder).resolve()
+    found, excluded = {}, []
+    for dirpath, _dirnames, filenames in os.walk(folder):
+        for name in filenames:
+            if not name.endswith(".md"):
+                continue
+            candidate = Path(dirpath) / name
+            real = candidate.resolve()
+            if not real.is_relative_to(resolved):
+                excluded.append(candidate)
+                continue
+            if real not in found or str(candidate.relative_to(folder)) == str(real.relative_to(resolved)):
+                found[real] = candidate
+    return sorted(found.values()), sorted(excluded)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_scan_tree_matches_the_resolve_everything_rule_through_junctions(tmp_path):
+    """A junction to outside the folder: excluded, not entered. A
+    junction to a directory inside it: each file is kept once, under the
+    path with no link. Plain directories around them: kept as they are."""
+    folder, outside = tmp_path / "adr", tmp_path / "outside"
+    (folder / "team" / "deep").mkdir(parents=True)
+    outside.mkdir()
+    for name in ("a.md", "team/b.md", "team/deep/c.md"):
+        (folder / name).write_bytes(b"x")
+    (outside / "victim.md").write_bytes(b"x")
+    _junction(folder / "escape", outside)
+    _junction(folder / "alias", folder / "team")
+
+    scan = fs.scan_tree(folder)
+
+    assert sorted(scan.markdown) == _resolve_everything(folder)[0]
+    assert sorted(p.relative_to(folder).as_posix() for p in scan.markdown) == ["a.md", "team/b.md", "team/deep/c.md"]
+    # The junction out of the folder is excluded as a whole, not entered.
+    assert [p.relative_to(folder).as_posix() for p in scan.excluded] == ["escape"]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+@pytest.mark.parametrize("target", ["folder-itself", "outside-ancestor"])
+def test_scan_tree_never_loops_through_a_junction_cycle(tmp_path, monkeypatch, target):
+    """A junction back to the folder itself, or to an ancestor outside it,
+    used to make the walk exponential (seconds to minutes): a directory
+    whose real path was already listed is not listed again, and one whose
+    real path is outside the folder is excluded without being entered."""
+    folder = tmp_path / "repo" / "adr"
+    (folder / "team").mkdir(parents=True)
+    (folder / "a.md").write_bytes(b"x")
+    (folder / "team" / "b.md").write_bytes(b"x")
+    _junction(folder / "team" / "loop", folder if target == "folder-itself" else tmp_path)
+    real_scandir = os.scandir
+    calls = []
+
+    def capped_scandir(path):
+        calls.append(path)
+        if len(calls) > 50:
+            raise RuntimeError("the walk is looping")
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", capped_scandir)
+
+    scan = fs.scan_tree(folder)
+
+    assert sorted(p.relative_to(folder).as_posix() for p in scan.markdown) == ["a.md", "team/b.md"]
+    assert len(calls) <= 3
+
+
+def test_scan_tree_keeps_a_symlinked_file_inside_the_folder_once(tmp_path):
+    (tmp_path / "a.md").write_bytes(b"x")
+    try:
+        (tmp_path / "link.md").symlink_to(tmp_path / "a.md")
+    except OSError:
+        pytest.skip("creating a symlink needs a privilege this host does not grant")
+
+    scan = fs.scan_tree(tmp_path)
+
+    assert ([p.name for p in scan.markdown], scan.excluded) == (["a.md"], ())
+
+
+def test_scan_tree_resolves_only_the_folder_when_nothing_is_a_link(tmp_path, monkeypatch):
+    """The per-file resolve() was ~96% of the scan's cost: a file reached
+    through plain directories is inside by construction, so only the
+    folder itself is resolved."""
+    for index in range(20):
+        (tmp_path / f"sub{index % 3}").mkdir(exist_ok=True)
+        (tmp_path / f"sub{index % 3}" / f"d{index}.md").write_bytes(b"x")
+    real_resolve = Path.resolve
+    calls = []
+
+    def counting_resolve(self, *args, **kwargs):
+        calls.append(self)
+        return real_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", counting_resolve)
+
+    scan = fs.scan_tree(tmp_path)
+
+    assert len(scan.markdown) == 20
+    assert calls == [tmp_path]
+
+
+def _count_rglob(monkeypatch):
+    calls = []
+    real_rglob = Path.rglob
+
+    def counting_rglob(self, *args, **kwargs):
+        calls.append(self)
+        return real_rglob(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "rglob", counting_rglob)
+    return calls
+
+
+def test_the_orphan_sweep_reuses_the_command_scan_instead_of_walking_again(tmp_path, monkeypatch):
+    """approve (through prepare()), new and migrate sweep orphaned temp
+    files from the scan they already took -- no second walk (rglob)."""
+    from adrpy.cli import approve, migrate, new
+
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path / "a", files=[D(1)])
+    legacy = make_repo(tmp_path / "m", config={"migrationpattern": "N00:04T04"})
+    (legacy.folder / "0001T01.md").write_bytes(b"Legacy content\n")
+    calls = _count_rglob(monkeypatch)
+
+    approve.run(["--file", str(repo.paths[0])])
+    new.run(["--path", str(repo.root), "--title", "Second"])
+    migrate.run(["--path", str(legacy.root)])
+
+    assert calls == []

@@ -884,7 +884,7 @@ def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):
     """The repository is read once per call: one scan of the decisions
     folder (core/consistency), whose snapshot feeds the target, its family
     and every guard -- no second scan."""
-    from adrpy.core import consistency
+    from adrpy.core import consistency, lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
@@ -897,6 +897,7 @@ def test_undo_scans_the_directory_only_once(tmp_path, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
+    monkeypatch.setattr(lifecycle, "scan_tree", counting_scan_tree)
 
     undo.run(["--file", str(adr_path)])
 

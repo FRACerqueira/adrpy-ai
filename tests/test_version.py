@@ -92,8 +92,8 @@ def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(t
     colliding_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
     real_validate = lifecycle_module.validate_repository
 
-    def validate_then_collide(folder, config):
-        snapshot = real_validate(folder, config)
+    def validate_then_collide(folder, config, scan=None):
+        snapshot = real_validate(folder, config, scan)
         colliding_path.write_text("already here", encoding="utf-8")
         return snapshot
 
@@ -166,9 +166,10 @@ def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 def test_version_scans_the_directory_only_once(tmp_path, monkeypatch):
     """The repository is read once per call: one scan of the decisions
-    folder (core/consistency), whose snapshot feeds the target, its family
+    folder (taken in prepare(), feeding the orphan sweep and core/consistency),
+    whose snapshot feeds the target, its family
     and every guard -- no second scan."""
-    from adrpy.core import consistency
+    from adrpy.core import consistency, lifecycle
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
@@ -180,6 +181,7 @@ def test_version_scans_the_directory_only_once(tmp_path, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
+    monkeypatch.setattr(lifecycle, "scan_tree", counting_scan_tree)
 
     version.run(["--file", str(adr_path)])
 

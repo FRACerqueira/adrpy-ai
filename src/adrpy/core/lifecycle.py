@@ -22,6 +22,7 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, _STA
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.family import is_successor, locking_member
 from adrpy.core.consistency import validate_repository
+from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
 from adrpy.core.header import _REAL_NEWLINE_BYTES, HEADER_LINE_COUNT, DecisionRecord, _read_header_bytes, build_header
 from adrpy.core.fs import (
     cleanup_orphaned_temp_files,
@@ -34,7 +35,6 @@ from adrpy.core.fs import (
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.text import is_ascii_digits, strip_leading_boms
 from adrpy.core.security import (
-    find_unreadable_subdirectories,
     is_within,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
@@ -74,81 +74,106 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-def scan_decisions(folder, config, warnings=None):
-    """Recognizes BOTH naming schemes. Returns a list of (scheme,
-    ParsedFileName, path) for every recognized file under `folder` -- by
-    filename only, no header read.
+# ADR004V02: two groups, not one flat list -- `migrationpattern` only
+# affects recognition of LEGACY-scheme files (naming.py's
+# parse_legacy_filename is its only reader); every other guarded field
+# is blanket (blocks on any recognized decision, any scheme).
+#
+# `separator` looks like it should be current-scheme-scoped the same
+# way (naming.py's parse_filename, the CURRENT scheme, is its only
+# direct reader), but parse_any_filename tries the CURRENT scheme
+# FIRST, falling back to legacy only if it doesn't match: a separator
+# value that already appears in a legacy-scheme filename can make
+# parse_filename newly match a file that previously only matched
+# parse_legacy_filename -- silently RECLASSIFYING a legacy decision as
+# current-scheme, under a different number/title. `migrationpattern`
+# has no mirror risk -- parse_filename never reads it, so a
+# current-scheme file can never be reclassified legacy by a
+# migrationpattern change.
+_STATUS_LABEL_GUARD_FIELDS = _STATUS_LABEL_FIELDS
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_GUARD_FIELDS + ("separator",)
+_LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
+# Every config field whose change validate_config_change guards.
+GUARDED_CONFIG_FIELDS = ("folderadr", "folderlog") + _BLANKET_GUARD_FIELDS + _LEGACY_SCHEME_GUARD_FIELDS
 
-    When `warnings` is given, reports any candidate is_within excluded
-    because its real path escapes `folder`'s boundary -- otherwise
-    silent, indistinguishable from "no such file" to every caller -- and
-    any subdirectory that could not be scanned. The commands that act on
-    decisions read the repository through core/consistency instead,
-    where an unreadable subdirectory is an error (scan-incomplete)."""
-    if not folder.is_dir():
-        return []
-    scan = scan_tree(folder)
-    excluded = list(scan.excluded)
+
+def guarded_fields_changed(old_config, new_config):
+    """The GUARDED_CONFIG_FIELDS whose value differs between the two."""
+    return [field for field in GUARDED_CONFIG_FIELDS if getattr(old_config, field) != getattr(new_config, field)]
+
+
+def _recognized(scan, config, warnings):
+    """(scheme, ParsedFileName, path) for every `.md` of `scan` whose name
+    matches a naming scheme under `config`; reports the candidates the
+    scan excluded for escaping the folder, when `warnings` is given."""
+    if warnings is not None:
+        warning = excluded_candidate_warning(list(scan.excluded))
+        if warning:
+            warnings.append(warning)
     found = []
     for candidate in scan.markdown:
         result = parse_any_filename(candidate.name, config)
         if result is not None:
-            scheme, parsed = result
-            found.append((scheme, parsed, candidate))
-    # scan_tree reports a subdirectory it could not list (rglob would
-    # skip it silently).
-    unreadable = list(scan.unreadable)
-    if warnings is not None:
-        warning = excluded_candidate_warning(excluded)
-        if warning:
-            warnings.append(warning)
-        if unreadable:
-            names = ", ".join(unreadable)
-            warnings.append(
-                f"{len(unreadable)} subdirectory/subdirectories under {folder} could not be scanned "
-                f"(permission denied or similar) -- this scan may be missing decision files inside them: {names}."
-            )
+            found.append((result[0], result[1], candidate))
     return found
 
 
-def reject_folderadr_change_if_decisions_exist(
-    old_folder, old_folderadr, new_folderadr, old_config, *, target, new_config, warnings=None
-):
-    """Changing `folderadr` on a repository that already has recognized
-    decisions makes every one of them invisible at its old, still-real
-    path -- an orphaned-data risk no amount of "also create the new
-    folder" can fix on its own. A folderadr
-    change is only ever valid when the OLD folder has no recognized
-    decisions yet -- otherwise this raises a structured, mappable error
-    instead of silent data loss.
+def validate_config_change(old_config, new_config, old_folder, *, target, scan=None, warnings=None):
+    """The one guard over a config change (`config` and `init --seed`):
+    refuses a change of a guarded field that would make existing
+    decisions or decision-log entries invisible, unrecognized or
+    reclassified, or silently adopt unrelated files. Every check reads
+    the decisions folder through one scan (`scan`, the caller's
+    scan_tree of `old_folder`, or one taken here); the existing files are
+    always read with `old_config`, the rules they were written under.
+    Fails closed when that scan is incomplete: `existing == []` is only
+    trustworthy from a complete scan.
 
-    Scans against `old_config` (never the new one): the existing files
-    were written under the OLD naming rules, not the new ones.
+    - folderadr: only while the OLD folder has no recognized decision
+      (folderadr-change-blocked-by-existing-decisions); a NEW folder that
+      already exists must hold nothing that `new_config` would recognize
+      (folderadr-change-would-adopt-unrelated-files). A new folder that
+      does not exist yet is not scanned.
+    - status labels and separator: only while no decision (any scheme)
+      is recognized; migrationpattern: only while no LEGACY-scheme one
+      is (status-or-separator-change-blocked-by-existing-decisions,
+      data.existing_decisions counting only what the blocking fields
+      affect). A separator change must also not newly recognize a file
+      (separator-change-would-adopt-unrelated-files) -- checked with a
+      config where only separator changed, so migrationpattern's own
+      intended adoption (ADR002V01) is never blamed on it.
+    - folderlog: core/decision_log.reject_folderlog_change_if_entries_exist.
 
-    Unlike scan_decisions' other callers (a warning is enough there --
-    nothing unsafe happens from an under-reported inventory), this guard
-    gates a real safety decision --
-    `existing == []` here is only trustworthy if the scan that produced
-    it was actually complete. Fails closed instead of allowing an
-    orphaning it could not actually rule out.
+    Each group keeps its own scan-incomplete code."""
+    changed = guarded_fields_changed(old_config, new_config)
+    blanket_fields_changed = [field for field in _BLANKET_GUARD_FIELDS if field in changed]
+    legacy_scheme_fields_changed = [field for field in _LEGACY_SCHEME_GUARD_FIELDS if field in changed]
+    status_fields_changed = blanket_fields_changed + legacy_scheme_fields_changed
+    if scan is None and ("folderadr" in changed or status_fields_changed):
+        # A missing folder is reported unreadable, as before (config
+        # creates it first; init --seed does not).
+        scan = scan_tree(old_folder)
 
-    Also guards the opposite direction (confirmed live): `new_folderadr`
-    may already point at a directory
-    holding unrelated pre-existing content. Any of it that would be newly
-    recognized as a decision under `new_config` -- the rules that govern
-    every future scan of that directory -- gets silently adopted with no
-    warning at all, corrupting next-number allocation (confirmed live: a
-    single unrelated file matching the naming scheme made the next `new`
-    allocate ADR008V01 instead of ADR001V01). Same shape hazard as
-    --separator's own adoption-check (ADR004V02), just triggered by a
-    folder move instead of a naming-rule change. Skipped entirely when
-    the new folder does not exist yet -- the overwhelmingly common case,
-    and `find_unreadable_subdirectories` treats a missing path as
-    unreadable, which would otherwise block it."""
-    if new_folderadr == old_folderadr:
-        return
-    unreadable = find_unreadable_subdirectories(old_folder)
-    if unreadable:
+    if "folderadr" in changed:
+        _check_folderadr_change(old_config, new_config, scan, target, warnings)
+    if status_fields_changed:
+        _check_status_or_separator_change(
+            old_config, new_config, scan, blanket_fields_changed, legacy_scheme_fields_changed, warnings
+        )
+    if "folderlog" in changed:
+        reject_folderlog_change_if_entries_exist(
+            decision_log_dir_for(target, old_config),
+            old_config.folderlog,
+            new_config.folderlog,
+            target=target,
+            warnings=warnings,
+        )
+
+
+def _check_folderadr_change(old_config, new_config, scan, target, warnings):
+    old_folderadr, new_folderadr = old_config.folderadr, new_config.folderadr
+    if scan.unreadable:
+        unreadable = list(scan.unreadable)
         raise CommandError(
             FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE,
             f"Cannot safely determine whether '{old_folderadr}' still has decisions: "
@@ -156,7 +181,7 @@ def reject_folderadr_change_if_decisions_exist(
             data={"folderadr": old_folderadr, "unreadable": unreadable},
             warnings=warnings,
         )
-    existing = scan_decisions(old_folder, old_config, warnings=warnings)
+    existing = _recognized(scan, old_config, warnings)
     if existing:
         raise CommandError(
             FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS,
@@ -167,129 +192,37 @@ def reject_folderadr_change_if_decisions_exist(
         )
 
     new_folder = resolve_within(target, new_folderadr)
-    if new_folder.is_dir():
-        new_unreadable = find_unreadable_subdirectories(new_folder)
-        if new_unreadable:
-            raise CommandError(
-                FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE,
-                f"Cannot safely determine whether '{new_folderadr}' already has unrelated content: "
-                f"{len(new_unreadable)} subdirectory/subdirectories could not be scanned.",
-                data={"folderadr": new_folderadr, "unreadable": new_unreadable},
-                warnings=warnings,
-            )
-        adopted = sorted((str(path) for _, _, path in scan_decisions(new_folder, new_config, warnings=warnings)))
-        if adopted:
-            raise CommandError(
-                FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
-                f"Cannot change folderadr to '{new_folderadr}': {len(adopted)} file(s) already there would "
-                "silently become recognized decisions.",
-                data={"folderadr": new_folderadr, "adopted_files": adopted},
-                warnings=warnings,
-            )
-
-
-# ADR004V02: two groups, not one flat list -- `migrationpattern` only
-# affects recognition of LEGACY-scheme files (naming.py's
-# parse_legacy_filename is its only reader); every other guarded field
-# is blanket (blocks on any recognized decision, any scheme).
-#
-# `separator` looks like it should be current-scheme-scoped the same
-# way (naming.py's parse_filename, the CURRENT scheme, is its only
-# direct reader) -- an earlier version of this fix scoped it that way,
-# and that was wrong: parse_any_filename tries the CURRENT scheme
-# FIRST, falling back to legacy only if it doesn't match. A separator
-# value that happens to already appear in a legacy-scheme filename can
-# make parse_filename newly match a file that previously only matched
-# parse_legacy_filename -- silently RECLASSIFYING a legacy decision as
-# current-scheme, under a different number/title, with zero warning.
-# Confirmed live: a legacy-only repository's `separator` change was
-# incorrectly ALLOWED by the scoped version, and the file's own scheme
-# flipped on the next scan. `migrationpattern` has no mirror risk --
-# parse_filename never reads it, so a current-scheme file can never be
-# reclassified legacy by a migrationpattern change, confirmed by
-# reading naming.py directly. `separator` is blanket again as a result;
-# only `migrationpattern` is genuinely safe to scope.
-_STATUS_LABEL_GUARD_FIELDS = _STATUS_LABEL_FIELDS
-_BLANKET_GUARD_FIELDS = _STATUS_LABEL_GUARD_FIELDS + ("separator",)
-# `migrationpattern` is only ever read by naming.py's
-# parse_legacy_filename (the LEGACY scheme) -- parse_filename never
-# references it, and (unlike separator) there is no reverse
-# reclassification risk (see the note above). ADR004V01 originally
-# dismissed this field on a write-dependency argument ("not a value
-# this tool's own writes depend on staying stable") that never
-# addressed its READ/recognition dependency -- confirmed live and in
-# naming.py's own source; corrected in ADR004V02.
-_LEGACY_SCHEME_GUARD_FIELDS = ("migrationpattern",)
-
-
-def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config, new_config, warnings=None):
-    """ADR004V01/V02: a status label, `separator`, or `migrationpattern`
-    change on a repository that already has recognized decisions can
-    make some or all of them unrecognized -- confirmed live for status
-    labels and `separator` (a changed statusnew/statusacc/statusrej/
-    statussup label stops core/header.py's own label-text match from
-    recognizing an existing, marker-less status cell; a changed
-    separator can stop core/naming.py's own current-scheme filename
-    parse from recognizing an existing file at all, OR silently
-    reclassify a legacy-scheme file as current-scheme -- see the note
-    on _BLANKET_GUARD_FIELDS above for why `separator` is blanket, not
-    scoped, despite only being read by one scheme's own parser), and by
-    direct code reading for `migrationpattern` (core/naming.py's own
-    parse_legacy_filename re-derives every legacy-scheme file's number/
-    version/revision/prefix by POSITION and LENGTH from
-    `config.migrationpattern`, read fresh on every call -- nothing
-    stored in the file itself pins its own identity).
-
-    `migrationpattern` blocks only if a LEGACY-scheme decision exists;
-    every other guarded field blocks on ANY recognized decision, any
-    scheme. Still unconditional WITHIN the scheme(s) it actually
-    affects -- unlike the ADR004V01 marker itself, this does not check
-    whether a given file is already marker-protected against a
-    status-label change specifically (no marker-based equivalent exists
-    for `separator`/`migrationpattern` at all). Same blanket-within-
-    scope shape reject_folderadr_change_if_decisions_exist above
-    already uses, not a per-file analysis.
-
-    Scans against `old_config` (never `new_config`): the existing files
-    were written/named under the OLD rules, not the new ones -- same
-    reasoning as reject_folderadr_change_if_decisions_exist.
-
-    The scan-incomplete fail-closed check below is NOT scheme-scoped --
-    an unreadable subdirectory's own contents (and therefore scheme) are
-    unknowable, so any guarded field change fails closed regardless of
-    which scheme it would otherwise only need to protect. `existing_
-    decisions` in the blocked-error's own data is scoped to exactly what
-    the blocking field(s) actually affect: every recognized decision
-    (any scheme) when a blanket field is blocking, or only the legacy-
-    scheme subset when migrationpattern is the sole blocking field --
-    never an inflated total that includes decisions the blocking
-    field(s) have no bearing on.
-
-    A second, independent check (ADR004V0x): every check above is keyed
-    on decisions already recognized under `old_config` -- none of them
-    catch the opposite direction, a file NOT currently recognized by
-    either scheme becoming newly recognized. Confirmed live: an
-    unrelated, hand-written file with no relationship to the decision
-    lifecycle could otherwise be silently adopted as a genuine decision
-    the moment `separator` changes to a value its own name happens to
-    contain, corrupting next-number allocation and title-uniqueness for
-    every decision created afterward, with zero warning. Scoped to
-    `separator` only -- `migrationpattern` deliberately keeps its
-    existing "may newly recognize pre-existing legacy files" behavior,
-    since that is its own documented, intentional purpose (ADR002V01),
-    not an accident."""
-    blanket_fields_changed = [
-        field for field in _BLANKET_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
-    ]
-    legacy_scheme_fields_changed = [
-        field for field in _LEGACY_SCHEME_GUARD_FIELDS if getattr(old_config, field) != getattr(new_config, field)
-    ]
-    changed_fields = blanket_fields_changed + legacy_scheme_fields_changed
-    if not changed_fields:
+    if not new_folder.is_dir():
         return
+    new_scan = scan_tree(new_folder)
+    if new_scan.unreadable:
+        new_unreadable = list(new_scan.unreadable)
+        raise CommandError(
+            FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE,
+            f"Cannot safely determine whether '{new_folderadr}' already has unrelated content: "
+            f"{len(new_unreadable)} subdirectory/subdirectories could not be scanned.",
+            data={"folderadr": new_folderadr, "unreadable": new_unreadable},
+            warnings=warnings,
+        )
+    adopted = sorted(str(path) for _, _, path in _recognized(new_scan, new_config, warnings))
+    if adopted:
+        raise CommandError(
+            FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES,
+            f"Cannot change folderadr to '{new_folderadr}': {len(adopted)} file(s) already there would "
+            "silently become recognized decisions.",
+            data={"folderadr": new_folderadr, "adopted_files": adopted},
+            warnings=warnings,
+        )
 
-    unreadable = find_unreadable_subdirectories(old_folder)
-    if unreadable:
+
+def _check_status_or_separator_change(
+    old_config, new_config, scan, blanket_fields_changed, legacy_scheme_fields_changed, warnings
+):
+    changed_fields = blanket_fields_changed + legacy_scheme_fields_changed
+    if scan.unreadable:
+        # Not scheme-scoped: an unreadable subdirectory's own contents
+        # (and therefore scheme) are unknowable.
+        unreadable = list(scan.unreadable)
         raise CommandError(
             FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE,
             f"Cannot safely determine whether existing decisions would be affected by changing "
@@ -299,7 +232,7 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             warnings=warnings,
         )
 
-    existing = scan_decisions(old_folder, old_config, warnings=warnings)
+    existing = _recognized(scan, old_config, warnings)
     legacy_existing_count = sum(1 for scheme, _, _ in existing if scheme == "legacy")
 
     blocking_fields = []
@@ -309,11 +242,8 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
         blocking_fields += legacy_scheme_fields_changed
 
     if blocking_fields:
-        # A blanket field blocking means every recognized decision (any
-        # scheme) is genuinely at risk -- len(existing) is correct even
-        # when migrationpattern is ALSO blocking, since that set is
-        # always a subset. Only when migrationpattern is the SOLE
-        # blocking field does the narrower legacy-only count apply.
+        # A blanket field blocking puts every recognized decision at risk;
+        # only migrationpattern blocking alone narrows it to the legacy ones.
         affected_count = len(existing) if blanket_fields_changed and existing else legacy_existing_count
         raise CommandError(
             FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS,
@@ -323,34 +253,14 @@ def reject_status_or_separator_change_if_decisions_exist(old_folder, old_config,
             warnings=warnings,
         )
 
-    # Every check above is keyed on decisions already recognized under
-    # OLD_config -- none of them catch the opposite direction, a file
-    # NOT currently recognized (by either scheme) becoming newly
-    # recognized. `separator` has no legitimate reason to ever do this
-    # (unlike `migrationpattern`, whose whole documented purpose IS to
-    # newly recognize pre-existing legacy files -- see ADR002V01 -- so
-    # this check is deliberately NOT applied to it). Reuses `existing`
-    # (already scanned, no need to rescan with old_config again) -- only
-    # one more scan is needed.
-    #
-    # Scans with a config that has ONLY separator changed, every other
-    # field (migrationpattern in particular) still at its OLD value --
-    # NOT the full `new_config`: the full-new_config version cross-
-    # attributes -- parse_filename reads only separator,
-    # parse_legacy_filename reads only migrationpattern (naming.py), so
-    # scanning with new_config's migrationpattern too would also pick up
-    # files ONLY newly recognized because of that field's own,
-    # separately-evaluated, intentionally-allowed adoption -- and blame
-    # the block on separator, wrongly refusing a call that changes both
-    # fields at once even when separator itself adopts nothing at all
-    # (confirmed live).
     if "separator" in blanket_fields_changed:
+        # Only separator changed in this config -- see the docstring.
         old_recognized_paths = {path for _, _, path in existing}
         separator_only_config = replace_fields(old_config, separator=new_config.separator)
         adopted = sorted(
             (
                 path
-                for _, _, path in scan_decisions(old_folder, separator_only_config)
+                for _, _, path in _recognized(scan, separator_only_config, None)
                 if path not in old_recognized_paths
             ),
             key=str,
@@ -531,17 +441,12 @@ def stream_normalized_body_chunks(source_path, report):
 # (refdate bounds, its own write failures) on top. The ineligibility
 # texts are also the error detail raised at run time, so each one must
 # hold for every command that can raise it. Deliberately excludes
-# field-is-blank: unlike
-# field-contains-forbidden-character (still reachable regardless of
-# stripping -- a '|' or embedded line break survives even after leading/
-# trailing whitespace is removed), field-is-blank can only fire on a
-# value that is non-empty but blank AFTER stripping -- reachable only
-# where reject_embedded_delimiter is called on a RAW, unstripped value
-# (supersede/version's own --scope/--domain flags), never where it's
-# called on an already-`.strip()`-ed one (every one of these 6 commands'
-# own title/scope/domain, sourced from core/header.py's _extract_cell,
-# which always strips). Each command that can genuinely reach it lists
-# it in its own inline dict instead.
+# field-contains-forbidden-character and field-is-blank: only a flag
+# value or a filename segment is validated in prepare() (supersede's
+# --title/--scope/--domain and filename title, version's --scope/
+# --domain) -- a header cell breaking the same rules makes the header
+# invalid, one of repository-inconsistent's data.errors. The two
+# commands that can reach them list them in their own inline dict.
 SHARED_FAILURE_CODES = {
     FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
@@ -550,7 +455,6 @@ SHARED_FAILURE_CODES = {
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
-    FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A free-text field contains '|', a line-break-like character, or (for title) a filesystem-unsafe character.",
     FailureCodes.STILL_PROPOSED: "This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise).",
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
     FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again.",
@@ -739,7 +643,8 @@ class Transition:
     """One row of TRANSITIONS: what prepare() checks for one command, in
     this order -- the eligibility of the target's own status (`reasons`
     lists every code `eligibility` can return), the family guards, the
-    refdate bounds and the fields re-validated before a write. Every row
+    refdate bounds and the fields read for the write (a flag value or a
+    filename segment validated). Every row
     runs after the repository was validated (core/consistency).
 
     - `revision_required`: revision-not-configured when lenrevision is 0,
@@ -756,7 +661,9 @@ class Transition:
     - `fields`: (field, source) in validation order. Source "header" is
       the target's own header cell, "flag-or-header" the flag when given
       else the header cell (or ""), "flag-or-filename" the flag when given
-      else the target's own filename segment."""
+      else the target's own filename segment. Only a flag value or a
+      filename segment is validated (field-contains-forbidden-character);
+      parse_header already applied the same rules to a header cell."""
 
     eligibility: object
     reasons: tuple
@@ -881,8 +788,8 @@ class Context:
     its header read needed a lossy decode), its decisions folder, the
     validated repository (`snapshot`, core/consistency) and the target's
     family in it, the new version or revision number when the row numbers
-    one, the checked refdate (None without an anchor), the re-validated
-    title/scope/domain, and the warnings accumulated so far -- the same
+    one, the checked refdate (None without an anchor), the title/scope/
+    domain the write uses, and the warnings accumulated so far -- the same
     list the command keeps appending to."""
 
     config: object
@@ -959,17 +866,19 @@ def _check_guard(code, row, filename_info, members, warnings):
 
 
 def _validated_field(name, source, flags, header, filename_info):
-    """title/scope/domain are re-read from the SOURCE file (header cell or
-    filename segment) unless a flag gives them -- a hand-edited or
-    migrated file could carry a filesystem-unsafe character (e.g. ':', an
-    NTFS Alternate-Data-Stream separator) never validated until this
-    rewrite, and a title lands inside a filename component."""
+    """title/scope/domain, from their SOURCE: a flag when the row allows
+    one and it is given, else the target's header cell or filename
+    segment. A header cell is used as it is: parse_header applies the
+    free-text rules to it, and a header that breaks one does not parse
+    (the repository was refused before this point). A flag value or a
+    filename segment is validated here -- a title lands inside a filename
+    component, where e.g. ':' (an NTFS Alternate-Data-Stream separator)
+    breaks the rename."""
     if source == "header":
-        value = getattr(header, name)
-    elif source == "flag-or-header":
-        value = flags[name] if name in flags else (getattr(header, name) or "")
-    else:
-        value = flags[name] if name in flags else getattr(filename_info, name)
+        return getattr(header, name)
+    if source == "flag-or-header" and name not in flags:
+        return getattr(header, name) or ""
+    value = flags[name] if name in flags else getattr(filename_info, name)
     reject_embedded_delimiter(value, name)
     if name == "title":
         reject_filesystem_unsafe_title(value, name)
@@ -1036,10 +945,12 @@ def prepare(command, fileadr, flags):
                 "on: move it into that folder, or run migrate if it predates the tool.",
                 data={"file": str(path), "folderadr": config.folderadr},
             )
-        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
+        # One walk of the folder feeds the orphan sweep and the validator.
+        scan = scan_tree(folder)
+        warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings, scan=scan))
         if warning:
             warnings.append(warning)
-        snapshot = validate_repository(folder, config)
+        snapshot = validate_repository(folder, config, scan=scan)
         warning = excluded_candidate_warning(list(snapshot.excluded))
         if warning:
             warnings.append(warning)

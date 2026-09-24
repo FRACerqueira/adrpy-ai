@@ -22,12 +22,13 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config
-from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
+from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.fs import scan_tree
 from adrpy.core.lifecycle import (
-    reject_folderadr_change_if_decisions_exist,
-    reject_status_or_separator_change_if_decisions_exist,
+    guarded_fields_changed,
     resolve_target_and_config,
+    validate_config_change,
 )
 from adrpy.core.text import parse_ascii_int
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
@@ -162,16 +163,21 @@ def describe():
             "current field values); a write's result never has that key at all, only `updated_fields` -- a "
             "generic wrapper that reads `data.config` unconditionally after any `config` call will KeyError "
             "on a write. "
+            "Before changing a guarded field (--folderadr, --folderlog, --statusnew/--statusacc/--statusrej/"
+            "--statussup, --separator, --migrationpattern), the repository is validated with the current "
+            "config: if it breaks a consistency rule (the ones `adrpy check` reports, a subdirectory of the "
+            "decisions folder that could not be scanned included), fails with repository-inconsistent, "
+            "every broken rule listed in data.errors with a repair hint, and nothing is written. A read, or "
+            "a change of any other field, does not validate. "
             "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
             "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
-            "names the count) rather than silently orphaning them at their old, still-real path; if that "
-            "check itself can't be completed (a subdirectory couldn't be scanned), fails closed instead with "
-            "folderadr-change-scan-incomplete rather than assuming nothing was there. The NEW folder is "
+            "names the count) rather than silently orphaning them at their old, still-real path. The NEW folder is "
             "checked too: if it already exists and holds a file that would newly parse as a decision under "
             "the resulting config, fails with folderadr-change-would-adopt-unrelated-files "
             "(data.adopted_files lists the file paths) instead of silently absorbing it and corrupting "
-            "next-number allocation -- the same scan-incomplete code above covers an unreadable subdirectory "
-            "under the new folder too. Skipped entirely when the new folder does not exist yet. "
+            "next-number allocation; if a subdirectory under the new folder can't be scanned, fails closed with "
+            "folderadr-change-scan-incomplete rather than assuming nothing was there. Skipped entirely when "
+            "the new folder does not exist yet. "
             "--folderlog (ADR007V01, deliberately not byte-compatible with the reference tool's own schema) "
             "is validated and change-guarded the same way -- cannot overlap with (equal, or be nested inside "
             "or around) folderadr, fails with config-folderadr-folderlog-overlap otherwise; can only be "
@@ -205,11 +211,7 @@ def describe():
             "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already carry "
             "it against a later label change, but does not exempt THIS GUARD from refusing the config change "
             "itself -- the two are independent, and a marker-protected repository is blocked exactly the same "
-            "as one with none); for --migrationpattern it means a LEGACY-scheme decision specifically. Same "
-            "scan-incomplete fail-closed shape as folderadr's "
-            "own guard: status-or-separator-change-scan-incomplete, whose own data.changed_fields DOES list "
-            "every guarded field the call touched (not just the blocking ones) -- an unreadable subdirectory's "
-            "own contents can't be ruled out for any guarded field, so this one fails closed unconditionally. "
+            "as one with none); for --migrationpattern it means a LEGACY-scheme decision specifically. "
             "--separator may also fail with separator-change-would-adopt-unrelated-files (data.adopted_files "
             "lists the file paths) if changing it would make a file NOT currently recognized as a decision "
             "(by either naming scheme) newly parse as one -- unlike --migrationpattern, which is deliberately "
@@ -238,8 +240,9 @@ def describe():
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
                 FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
+                FailureCodes.REPOSITORY_INCONSISTENT: "A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--folderadr can only be changed while the OLD folder has no recognized decisions yet.",
-                FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderadr could not be scanned while checking a --folderadr change.",
+                FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the NEW folderadr could not be scanned while checking a --folderadr change.",
                 FailureCodes.FOLDERADR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderadr already holds a file that would newly parse as a decision.",
                 FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY: "folderadr and folderlog resolve to the same real directory (or one nested inside the other), typically via a symlink or junction.",
                 FailureCodes.FOLDERLOG_CHANGE_BLOCKED_BY_EXISTING_ENTRIES: "--folderlog can only be changed while the OLD directory has no decision-log entries yet.",
@@ -247,7 +250,6 @@ def describe():
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change.",
                 FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "A status-label/--separator/--migrationpattern change would break recognition of an existing decision.",
-                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD folderadr could not be scanned while checking a guarded field change.",
                 FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--separator would make a file NOT currently recognized as a decision newly parse as one.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -278,9 +280,8 @@ def run(args):
     folder = resolve_within(target, current.folderadr)
     # Nothing requires this directory to exist before `config` runs --
     # ensure it does, matching init's own precedent: the folderadr/
-    # status/separator guards below scan it, and
-    # find_unreadable_subdirectories treats a missing folder as
-    # unreadable.
+    # status/separator guards below scan it, and scan_tree treats a
+    # missing folder as unreadable.
     folder.mkdir(parents=True, exist_ok=True)
 
     warnings = []
@@ -323,50 +324,23 @@ def run(args):
         # would refuse with path-outside-repository until hand-fixed).
         resolve_within(target, new_config.folderadr)
 
-        # A folderadr change is only valid when the OLD folder has no
-        # recognized decisions yet -- otherwise every existing
-        # decision becomes invisible at its old, still-real path.
-        # Checked against `current` and `folder` -- both are the
-        # pre-edit state.
-        reject_folderadr_change_if_decisions_exist(
-            folder,
-            current.folderadr,
-            new_config.folderadr,
-            current,
-            target=target,
-            new_config=new_config,
-            warnings=warnings,
-        )
-
-        # ADR007V01: the folderlog counterpart to the folderadr guard
-        # just above -- same reasoning (an existing decision-log
-        # entry becoming invisible at its old, still-real path), same
-        # pre-edit `current` state. Also
-        # validates the new folderlog value can't escape the
-        # repository, the same order as folderadr's own check above.
+        # The new folderlog can't escape the repository either, and the
+        # schema-time guard in core/config.py's own parse_repo_config can
+        # never see a junction/symlink planted inside the repo tree --
+        # re-checked here, against the real, resolved directories, before
+        # anything is created.
         resolve_within(target, new_config.folderlog)
-        # The schema-time guard in core/config.py's own
-        # parse_repo_config can never see a junction/symlink planted
-        # inside the repo tree -- re-checked here, against the real,
-        # resolved directories, before either the folderlog-change
-        # guard below or the folderadr directory gets created.
         reject_aliased_repo_folders(target, new_config)
-        reject_folderlog_change_if_entries_exist(
-            decision_log_dir_for(target, current),
-            current.folderlog,
-            new_config.folderlog,
-            target=target,
-            warnings=warnings,
-        )
 
-        # ADR004V01: a statusnew/statusacc/statusrej/statussup or
-        # separator change is only valid when the OLD folder has no
-        # recognized decisions yet -- otherwise some or all of them
-        # stop being recognized (a label change breaks a marker-less
-        # status cell's text match; a separator change breaks
-        # filename recognition entirely). Same `folder`/`current`
-        # pre-edit state as the folderadr guard above.
-        reject_status_or_separator_change_if_decisions_exist(folder, current, new_config, warnings=warnings)
+        # A guarded field (folderadr, folderlog, a status label,
+        # separator, migrationpattern) changes only on a consistent
+        # repository, and only when no existing decision or log entry
+        # would be orphaned, unrecognized or silently adopted -- one scan
+        # of the pre-edit folder feeds both checks.
+        if guarded_fields_changed(current, new_config):
+            scan = scan_tree(folder)
+            validate_repository(folder, current, scan=scan)
+            validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
 
         # Creating the new folder here, BEFORE the config commits,
         # means a failure creating it aborts cleanly with nothing yet

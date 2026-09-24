@@ -8,6 +8,8 @@ from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError
 from adrpy.core.header import DecisionRecord, build_header
 
+from conftest import D, make_repo
+
 import pytest
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
@@ -362,9 +364,9 @@ def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_fi
     filenames = {entry["filename"] for entry in payload["decisions"]}
     assert filenames == {"ADR001V01-flaky.md"}
     assert payload["warnings"] == []
-    # Two failures, the successful retry, then the consistency pass's own
-    # read (payload["consistency"]).
-    assert calls["count"] == 4
+    # Two failures and the successful retry -- one read serves both the
+    # inventory and payload["consistency"].
+    assert calls["count"] == 3
 
 
 def test_explore_does_not_read_the_whole_file(tmp_path, monkeypatch):
@@ -469,3 +471,47 @@ def test_explore_gives_the_reason_for_a_file_with_no_header(tmp_path):
 
     assert decision["header"]["state"] == "no-header"
     assert decision["header"]["invalid_reason"] == "adr-file-too-short"
+
+
+def test_explore_walks_the_folder_once(tmp_path, monkeypatch):
+    """One traversal feeds both the inventory and consistency.errors."""
+    from adrpy.core import consistency
+
+    repo = make_repo(tmp_path, files=[D(1), D(2, state="accepted")])
+    calls = []
+    real_scan_tree = explore.scan_tree
+
+    def counting_scan_tree(*args, **kwargs):
+        calls.append(1)
+        return real_scan_tree(*args, **kwargs)
+
+    monkeypatch.setattr(explore, "scan_tree", counting_scan_tree)
+    monkeypatch.setattr(consistency, "scan_tree", counting_scan_tree)
+
+    payload = explore.run(["--path", str(repo.root)])
+
+    assert len(payload["decisions"]) == 2
+    assert len(calls) == 1
+
+
+def test_explore_header_state_of_every_kind_of_file(tmp_path):
+    """valid, adulterated and no-header, for decision files read by the
+    consistency check, and for a merge-conflicted decision and a file
+    whose name matches no scheme, read by explore itself."""
+    repo = make_repo(
+        tmp_path,
+        files=[
+            D(1),
+            D(2, content="|Adr-Plus | broken\n# body\n"),
+            D(3, content="# just a body\n"),
+            D(4, content="<<<<<<< ours\n# body\n"),
+        ],
+    )
+    (repo.folder / "README.md").write_bytes(b"# not a decision\n")
+
+    payload = explore.run(["--path", str(repo.root)])
+
+    states = {entry["number"]: entry["header"]["state"] for entry in payload["decisions"]}
+    assert states == {1: "valid", 2: "adulterated", 3: "no-header", 4: "no-header", 0: "no-header"}
+    codes = sorted(error["code"] for error in payload["consistency"]["errors"])
+    assert codes == ["invalid-header", "merge-conflict-markers", "no-header"]

@@ -127,6 +127,7 @@ def describe():
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the predecessor's own last update date (or creation date, if never updated).",
+                FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "--title/--scope/--domain, or the title taken from the predecessor's own filename, contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",

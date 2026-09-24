@@ -285,8 +285,8 @@ def _existing_entries(decision_log_dir, *, warnings=None):
 
 
 def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_folderlog, *, target, warnings=None):
-    """The folderlog counterpart to core/lifecycle.py's
-    reject_folderadr_change_if_decisions_exist (ADR007V01) -- changing
+    """The folderlog counterpart to the folderadr check of core/lifecycle.py's
+    validate_config_change (ADR007V01), which calls it -- changing
     folderlog on a repository that already has decision-log entries makes
     every one of them invisible at their old, still-real path. Unlike the
     folderadr guard, no separate scan-incomplete code is needed here:

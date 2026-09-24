@@ -68,18 +68,43 @@ def run(args):
     excluded = []
     unreadable_files = []
     unreadable = []
-    if folder.is_dir():
-        scan = scan_tree(folder)
+    # One traversal and one read per file: the consistency check's own
+    # snapshot (core/consistency) gives both the inventory and
+    # consistency.errors.
+    scan = scan_tree(folder) if folder.is_dir() else None
+    snapshot, errors = check_repository(folder, config, scan)
+    if scan is not None:
         excluded = list(scan.excluded)
         # scan_tree reports a subdirectory it could not list instead of
         # skipping it silently.
         unreadable = list(scan.unreadable)
+        decisions = {decision.path: decision for decision in snapshot.decisions}
+        # A decision file whose read failed (after the read retries) is
+        # one of the check's scan-incomplete errors.
+        failed = {error["file"] for error in errors if error["code"] == FailureCodes.SCAN_INCOMPLETE}
+        no_header = {error["file"] for error in errors if error["code"] == FailureCodes.NO_HEADER}
         for candidate in scan.markdown:
             # Best-effort: a single persistently unreadable file (locked by
             # an editor, backup tool, or antivirus -- ordinary in a folder
             # of Markdown files people also open by hand) is reported here
             # rather than killing this entire inventory, matching the
             # unreadable-subdirectory handling just below.
+            decision = decisions.get(candidate)
+            if decision is not None and decision.header is not None:
+                header_state = (
+                    "valid"
+                    if decision.header.is_valid
+                    else ("no-header" if str(candidate) in no_header else "adulterated")
+                )
+                entries.append(
+                    _entry(candidate, decision.scheme, decision.name, decision.header, header_state, decision.encoding_repaired)
+                )
+                continue
+            if str(candidate) in failed:
+                unreadable_files.append(candidate)
+                continue
+            # Not a decision (its name matches no scheme), or one whose
+            # header lines hold merge-conflict markers: read here.
             try:
                 entries.append(_build_entry(candidate, config))
             except OSError:
@@ -120,7 +145,6 @@ def run(args):
         )
     # The repository's consistency errors (core/consistency.py), listed
     # without failing: explore stays an inventory.
-    errors = check_repository(folder, config)[1]
     return {"decisions": entries, "consistency": {"errors": errors}, "warnings": warnings}
 
 
@@ -141,7 +165,12 @@ def _build_entry(path, config):
     # detection, just never loading the body.
     header_lines, encoding_repaired = read_header_lines_with_report(path)
     header = parse_header(header_lines, config)
+    # "adulterated": this tool's header, damaged; "no-header": none.
+    header_state = "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines) else "no-header")
+    return _entry(path, scheme, parsed, header, header_state, encoding_repaired)
 
+
+def _entry(path, scheme, parsed, header, header_state, encoding_repaired):
     return {
         "filename": path.name,
         "path": str(path),
@@ -154,8 +183,7 @@ def _build_entry(path, config):
             "is_valid": header.is_valid,
             # Only a header that parses gives a status; an invalid file is
             # left out of every family rule (see doc/lifecycle.md).
-            # "adulterated": this tool's header, damaged; "no-header": none.
-            "state": "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines) else "no-header"),
+            "state": header_state,
             "invalid_reason": None if header.is_valid else header.error,
             "is_migrated": header.is_migrated,
             "scope": header.scope,

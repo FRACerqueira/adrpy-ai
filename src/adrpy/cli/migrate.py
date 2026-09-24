@@ -23,7 +23,7 @@ from pathlib import Path
 
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text
-from adrpy.core.fs import cleanup_orphaned_temp_files
+from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import (
@@ -38,8 +38,6 @@ from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
 from adrpy.core.security import (
-    find_unreadable_subdirectories,
-    is_within,
     reject_embedded_delimiter,
     reject_filesystem_unsafe_title,
     reject_title_with_no_case_transform_content,
@@ -196,8 +194,11 @@ def run(args):
     persisted = {"pattern": None}
     # Outside attach_warnings, so even an io-error it converts is covered.
     with _report_persisted_pattern(persisted, warnings), attach_warnings(warnings):
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
+        # One walk of the folder feeds both the orphan sweep and the
+        # candidate scan below.
+        scan = scan_tree(folder) if folder.is_dir() else None
+        if scan is not None:
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings, scan=scan))
             if warning:
                 warnings.append(warning)
 
@@ -232,18 +233,11 @@ def run(args):
 
         entries = []  # (ParsedFileName, Path, HeaderParseResult)
         adulterated_files = []
-        if folder.is_dir():
-            # Resolved once, not once per candidate -- see is_within's
-            # own note.
-            try:
-                resolved_folder = folder.resolve()
-            except (OSError, ValueError):
-                resolved_folder = None
-            excluded = []
-            for candidate in folder.rglob("*.md"):
-                if not is_within(folder, candidate, resolved_base=resolved_folder):
-                    excluded.append(candidate)
-                    continue
+        if scan is not None:
+            # scan_tree keeps only files inside the folder's real
+            # boundary (a junction or symlink escaping it is excluded).
+            excluded = list(scan.excluded)
+            for candidate in scan.markdown:
                 found = parse_any_filename(candidate.name, config)
                 if found is None:
                     continue
@@ -289,9 +283,7 @@ def run(args):
             warning = excluded_candidate_warning(excluded)
             if warning:
                 warnings.append(warning)
-            # rglob above silently swallows an OSError from an
-            # unreadable subdirectory -- see
-            # find_unreadable_subdirectories' own note. Fails closed
+            # A subdirectory the scan could not list fails closed
             # instead of warning -- unlike explore's own best-effort
             # listing, this scan feeds already-tool-created-adrs-exist
             # below, a real safety decision (a hidden already-migrated
@@ -300,7 +292,7 @@ def run(args):
             # command already gives an unreadable FILE
             # (migration-scan-failed) -- a directory it can't enter is
             # the identical risk, just one level up.
-            unreadable_dirs = find_unreadable_subdirectories(folder)
+            unreadable_dirs = list(scan.unreadable)
             if unreadable_dirs:
                 raise CommandError(
                     FailureCodes.MIGRATION_SCAN_INCOMPLETE,

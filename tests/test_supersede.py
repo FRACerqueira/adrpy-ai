@@ -125,8 +125,8 @@ def test_supersede_reports_the_colliding_filename_as_data_when_it_already_exists
 
     real_validate = lifecycle_module.validate_repository
 
-    def validate_then_collide(folder, config):
-        snapshot = real_validate(folder, config)
+    def validate_then_collide(folder, config, scan=None):
+        snapshot = real_validate(folder, config, scan)
         colliding_path.write_text("already here", encoding="utf-8")
         return snapshot
 
