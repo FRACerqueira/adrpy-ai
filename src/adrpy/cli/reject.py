@@ -16,38 +16,15 @@ safely retryable from scratch.
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import cleanup_orphaned_temp_files
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
+from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.lifecycle import (
-    is_successor,
-    raise_if_superseded_sibling,
-    raise_if_not_latest,
-    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
+    failure_codes,
     family_members,
-    ineligibility_reason_for_approve_or_reject,
-    parse_refdate,
-    load_target,
+    is_successor,
+    prepare,
     rewrite_status_field,
-    validate_refdate_not_before,
-    validate_refdate_not_in_future,
 )
-from adrpy.core.security import (
-    reject_embedded_delimiter,
-    reject_filesystem_unsafe_title,
-    reject_title_with_no_case_transform_content,
-    resolve_within,
-)
-from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
-
-_INELIGIBILITY_DETAILS = {
-    FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
-    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected.",
-    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
-}
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
 
 
 def describe():
@@ -115,10 +92,9 @@ def describe():
                 ),
             },
         ],
-        "failure_codes": build_failure_codes(
-            _INELIGIBILITY_DETAILS,
+        "failure_codes": failure_codes(
+            "reject",
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
@@ -126,55 +102,16 @@ def describe():
                 FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Reverting the predecessor's Superseded status failed with a real OSError -- no write was made.",
                 FailureCodes.REJECT_OWN_WRITE_FAILED_AFTER_PREDECESSOR_REVERTED: "The predecessor's Superseded status was already reverted for real, but writing this decision's own Rejected status then failed -- data.predecessor_file names the file already reverted; retry is safe.",
             },
-            LIFECYCLE_FAILURE_CODES,
-            HEADER_FAILURE_CODES,
-            CONFIG_FAILURE_CODES,
         ),
     }
 
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    warnings = []
-    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
-    folder = resolve_within(root, config.folderadr)
+    ctx = prepare("reject", flags["file"], flags)
+    config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
+    folder, refdate, warnings = ctx.folder, ctx.refdate, ctx.warnings
     with attach_warnings(warnings):
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
-            if warning:
-                warnings.append(warning)
-
-        # A specific reason code, not one collapsed not-eligible-for-
-        # rejection, so the caller knows which recovery action applies.
-        reason = ineligibility_reason_for_approve_or_reject(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-
-        # Pre-fetching members here is also how the scan's own warnings
-        # (an excluded is_within candidate) reach this command.
-        members = family_members(
-            folder, config, filename_info.number, warnings=warnings
-        )
-        raise_if_superseded_sibling(members, warnings)
-        raise_if_not_latest(filename_info, members, warnings)
-
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        if header.date_create is not None:
-            validate_refdate_not_before(refdate, header.date_create)
-
-        # title/scope/domain are re-read from the SOURCE
-        # file's own header cells, not flags -- a hand-edited or
-        # migrated file could carry a filesystem-unsafe character
-        # (e.g. ':', an NTFS Alternate-Data-Stream separator) never
-        # validated until this rewrite. Same defensive re-validation
-        # version/revise/supersede/migrate already apply.
-        reject_embedded_delimiter(header.title, "title")
-        reject_filesystem_unsafe_title(header.title, "title")
-        reject_title_with_no_case_transform_content(header.title, "title")
-        reject_embedded_delimiter(header.scope, "scope")
-        reject_embedded_delimiter(header.domain, "domain")
-
         # Round-36 retraction of the original order (this decision's own
         # write, then the predecessor's): reverting the predecessor
         # FIRST means every failure up to and including that write
@@ -328,7 +265,7 @@ def run(args):
         # combines the header's own flag (known since load_target)
         # with the body's own (only known now, from the streamed
         # write).
-        if encoding_repaired or body_encoding_repaired:
+        if ctx.encoding_repaired or body_encoding_repaired:
             warnings.append(encoding_repaired_warning(path))
         warning = retry_warning(attempts)
         if warning:

@@ -20,10 +20,10 @@ Path to the decision file. A bare name with no extension gets '.md' appended.
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision has never been approved or rejected; there is nothing to undo. |
+| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
 | `already-superseded` | This decision has already been superseded. |
 | `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
-| `family-member-pending` | Another member of the same family is still unresolved (Proposed) -- undo would leave two. |
+| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme. |

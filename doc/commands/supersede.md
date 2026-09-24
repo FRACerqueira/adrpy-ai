@@ -40,8 +40,8 @@ Finish an earlier supersede of this decision onto the successor it already creat
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision must be Accepted before it can be superseded; it is still Proposed. |
-| `already-rejected` | This decision was Rejected, not Accepted; only Accepted decisions can be superseded. |
+| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
+| `already-rejected` | This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again. |
 | `already-superseded` | This decision has already been superseded. |
 | `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
 | `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell. |

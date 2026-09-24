@@ -254,9 +254,9 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
     failure, not a silent forgery."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
-    from adrpy.cli import supersede as supersede_module
+    from adrpy.core import lifecycle as lifecycle_module
 
-    real_load_target = supersede_module.load_target
+    real_load_target = lifecycle_module.load_target
 
     def flaky_load_target(fileadr, warnings=None):
         config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
@@ -264,7 +264,7 @@ def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_characte
 
         return config, root, path, replace_fields(filename_info, title="evil:hidden"), header, encoding_repaired
 
-    monkeypatch.setattr(supersede_module, "load_target", flaky_load_target)
+    monkeypatch.setattr(lifecycle_module, "load_target", flaky_load_target)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
@@ -281,9 +281,9 @@ def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters
     character test above."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
-    from adrpy.cli import supersede as supersede_module
+    from adrpy.core import lifecycle as lifecycle_module
 
-    real_load_target = supersede_module.load_target
+    real_load_target = lifecycle_module.load_target
 
     def flaky_load_target(fileadr, warnings=None):
         config, root, path, filename_info, header, encoding_repaired = real_load_target(fileadr, warnings=warnings)
@@ -291,7 +291,7 @@ def test_supersede_rejects_a_predecessor_title_made_only_of_separator_characters
 
         return config, root, path, replace_fields(filename_info, title="---"), header, encoding_repaired
 
-    monkeypatch.setattr(supersede_module, "load_target", flaky_load_target)
+    monkeypatch.setattr(lifecycle_module, "load_target", flaky_load_target)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path)])
@@ -592,10 +592,10 @@ def _approve_as_a_pre_round_41_repository_could_have(path, refdate, monkeypatch)
     supersede; repositories from before that rule -- or hand edits -- can
     still hold one, and the recovery advice below must work for them. The
     setup approves it with that one check switched off."""
-    from adrpy.cli import approve as approve_module
+    from adrpy.core import lifecycle as lifecycle_module
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(approve_module, "raise_if_supersede_not_finished", lambda *args, **kwargs: None)
+        scoped.setattr(lifecycle_module, "raise_if_supersede_not_finished", lambda *args, **kwargs: None)
         approve.run(["--file", str(path), "--refdate", refdate])
 
 

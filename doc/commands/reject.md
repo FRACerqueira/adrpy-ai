@@ -25,7 +25,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | Code | Condition |
 |---|---|
 | `already-accepted` | This decision is already Accepted; run undo first to reconsider it. |
-| `already-rejected` | This decision is already Rejected. |
+| `already-rejected` | This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again. |
 | `already-superseded` | This decision has already been superseded. |
 | `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
 | `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell. |

@@ -36,7 +36,7 @@ Start from the default template instead of carrying the source's content forward
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision must be Accepted or Rejected before a new version can be created. |
+| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
 | `already-superseded` | This decision has already been superseded. |
 | `not-proposed` | This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand. |
 | `unexpected-status` | This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell. |

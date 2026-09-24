@@ -6,7 +6,7 @@ concern, not copies."""
 
 import codecs
 import re
-from dataclasses import replace as replace_fields
+from dataclasses import dataclass, replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -15,17 +15,37 @@ from adrpy.core.atomic_write import (
     STREAM_CHUNK_SIZE,
     atomic_write_chunks,
     atomic_write_text,
+    cleanup_orphaned_temp_files,
     join_lines_with_trailing_terminator,
     split_real_lines,
 )
 from adrpy.core.casing import unique_title_key
-from adrpy.core.config import _STATUS_LABEL_FIELDS, load_repo_config
-from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.header import HEADER_LINE_COUNT, DecisionRecord, build_header, parse_header
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, _STATUS_LABEL_FIELDS, load_repo_config
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.header import (
+    HEADER_LINE_COUNT,
+    SHARED_FAILURE_CODES as HEADER_FAILURE_CODES,
+    DecisionRecord,
+    build_header,
+    parse_header,
+)
 from adrpy.core.io_retry import read_with_permission_retry
 from adrpy.core.naming import parse_any_filename
-from adrpy.core.security import find_unreadable_subdirectories, is_within, resolve_within
-from adrpy.core.warnings import excluded_candidate_warning, ignored_file_warning, marker_label_mismatch_warning
+from adrpy.core.security import (
+    find_unreadable_subdirectories,
+    is_within,
+    reject_embedded_delimiter,
+    reject_filesystem_unsafe_title,
+    reject_title_with_no_case_transform_content,
+    resolve_within,
+)
+from adrpy.core.warnings import (
+    attach_warnings,
+    excluded_candidate_warning,
+    ignored_file_warning,
+    marker_label_mismatch_warning,
+    orphan_cleanup_warning,
+)
 
 
 def parse_refdate(text):
@@ -624,12 +644,16 @@ def stream_normalized_body_chunks(source_path, report):
         yield LINESEP_BYTES
 
 
-# ADR008V01: the codes every one of the 6 per-file lifecycle commands
-# (approve/reject/undo/supersede/version/revise) reaches identically,
-# via load_target/family_members -- each
-# command's own describe() merges this in on top of its own specific
-# entries (eligibility-specific codes, refdate bounds, its own write
-# failures). Deliberately excludes field-is-blank: unlike
+# ADR008V01: the one text for every code the 6 per-file lifecycle
+# commands (approve/reject/undo/supersede/version/revise) reach through
+# prepare() -- the ones all of them reach via load_target/family_members,
+# plus the ineligibility and family-guard codes, of which each command
+# lists only those its own TRANSITIONS row can raise (failure_codes
+# below). Each command's own describe() adds its specific entries
+# (refdate bounds, its own write failures) on top. The ineligibility
+# texts are also the error detail raised at run time, so each one must
+# hold for every command that can raise it. Deliberately excludes
+# field-is-blank: unlike
 # field-contains-forbidden-character (still reachable regardless of
 # stripping -- a '|' or embedded line break survives even after leading/
 # trailing whitespace is removed), field-is-blank can only fire on a
@@ -647,9 +671,17 @@ SHARED_FAILURE_CODES = {
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
     FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A free-text field contains '|', a line-break-like character, or (for title) a filesystem-unsafe character.",
-    FailureCodes.NOT_PROPOSED: "The target's own status_create is not Proposed (and it is not a migrated placeholder either).",
-    FailureCodes.ALREADY_SUPERSEDED: "The target has already been superseded.",
+    FailureCodes.STILL_PROPOSED: "This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise).",
+    FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
+    FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again.",
+    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
+    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
+    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
     FailureCodes.FAMILY_MEMBER_SUPERSEDED: "Another member of the same family has already been superseded.",
+    FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
+    FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
+    FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
+    FailureCodes.SUPERSEDE_NOT_FINISHED: "This decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it (data.successor_file, data.predecessor_number).",
     FailureCodes.FAMILY_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- family membership can't be trusted from an incomplete scan.",
     FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
 }
@@ -1046,6 +1078,338 @@ def ineligibility_reason_for_version_or_revise(header):
     if header.status_update is None:
         return FailureCodes.STILL_PROPOSED
     return FailureCodes.UNEXPECTED_STATUS
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One row of TRANSITIONS: what prepare() checks for one command, in
+    this order -- the eligibility of the target's own status (`reasons`
+    lists every code `eligibility` can return), the family guards, the
+    refdate bounds and the fields re-validated before a write.
+
+    - `revision_required`: revision-not-configured when lenrevision is 0,
+      checked before the decisions folder is even resolved.
+    - `scan_first`: the family is scanned, and the new number worked out
+      (`numbering`: "version" or "revision", family-not-found and the
+      lenversion/lenrevision bound), BEFORE the target's own eligibility;
+      otherwise the family is scanned right after it.
+    - `guards`: family-guard failure codes, in the order they are checked.
+    - `pending_consequence`: appended to family-member-pending's detail.
+    - `refdate_anchor`: None (no --refdate at all), "create" (not before
+      the creation date) or "update-or-create" (not before the last
+      update date, else the creation date).
+    - `fields`: (field, source) in validation order. Source "header" is
+      the target's own header cell, "flag-or-header" the flag when given
+      else the header cell (or ""), "flag-or-filename" the flag when given
+      else the target's own filename segment."""
+
+    eligibility: object
+    reasons: tuple
+    guards: tuple
+    refdate_anchor: object
+    fields: tuple
+    scan_first: bool = False
+    numbering: object = None
+    revision_required: bool = False
+    pending_consequence: str = ""
+
+
+_HEADER_FIELDS = (("title", "header"), ("scope", "header"), ("domain", "header"))
+_APPROVE_OR_REJECT_REASONS = (
+    FailureCodes.ALREADY_ACCEPTED,
+    FailureCodes.ALREADY_REJECTED,
+    FailureCodes.ALREADY_SUPERSEDED,
+    FailureCodes.NOT_PROPOSED,
+    FailureCodes.UNEXPECTED_STATUS,
+)
+_VERSION_OR_REVISE_REASONS = (
+    FailureCodes.STILL_PROPOSED,
+    FailureCodes.ALREADY_SUPERSEDED,
+    FailureCodes.NOT_PROPOSED,
+    FailureCodes.UNEXPECTED_STATUS,
+)
+_VERSION_OR_REVISE_GUARDS = (
+    FailureCodes.FAMILY_MEMBER_SUPERSEDED,
+    FailureCodes.FAMILY_MEMBER_PENDING,
+    FailureCodes.NOT_LATEST_VERSION,
+    FailureCodes.REJECTED_SUCCESSOR_IS_FINAL,
+    FailureCodes.SUPERSEDE_NOT_FINISHED,
+)
+
+# The asymmetries between rows are deliberate current behavior, not
+# oversights: reject has no supersede-not-finished and approve/reject no
+# family-member-pending; only version/revise scan before eligibility;
+# version validates scope/domain before title, the others title first.
+TRANSITIONS = {
+    "approve": Transition(
+        eligibility=ineligibility_reason_for_approve_or_reject,
+        reasons=_APPROVE_OR_REJECT_REASONS,
+        guards=(
+            FailureCodes.FAMILY_MEMBER_SUPERSEDED,
+            FailureCodes.NOT_LATEST_VERSION,
+            FailureCodes.SUPERSEDE_NOT_FINISHED,
+        ),
+        refdate_anchor="create",
+        fields=_HEADER_FIELDS,
+    ),
+    "reject": Transition(
+        eligibility=ineligibility_reason_for_approve_or_reject,
+        reasons=_APPROVE_OR_REJECT_REASONS,
+        guards=(FailureCodes.FAMILY_MEMBER_SUPERSEDED, FailureCodes.NOT_LATEST_VERSION),
+        refdate_anchor="create",
+        fields=_HEADER_FIELDS,
+    ),
+    "undo": Transition(
+        eligibility=ineligibility_reason_for_undo,
+        reasons=(FailureCodes.STILL_PROPOSED, FailureCodes.ALREADY_SUPERSEDED, FailureCodes.NOT_PROPOSED),
+        guards=(
+            FailureCodes.FAMILY_MEMBER_SUPERSEDED,
+            FailureCodes.FAMILY_MEMBER_PENDING,
+            FailureCodes.NOT_LATEST_VERSION,
+            FailureCodes.REJECTED_SUCCESSOR_IS_FINAL,
+        ),
+        pending_consequence=" -- undo would leave two",
+        refdate_anchor=None,
+        fields=_HEADER_FIELDS,
+    ),
+    "version": Transition(
+        eligibility=ineligibility_reason_for_version_or_revise,
+        reasons=_VERSION_OR_REVISE_REASONS,
+        scan_first=True,
+        numbering="version",
+        guards=_VERSION_OR_REVISE_GUARDS,
+        refdate_anchor="update-or-create",
+        fields=(("scope", "flag-or-header"), ("domain", "flag-or-header"), ("title", "header")),
+    ),
+    "revise": Transition(
+        eligibility=ineligibility_reason_for_version_or_revise,
+        reasons=_VERSION_OR_REVISE_REASONS,
+        revision_required=True,
+        scan_first=True,
+        numbering="revision",
+        guards=_VERSION_OR_REVISE_GUARDS,
+        refdate_anchor="update-or-create",
+        fields=_HEADER_FIELDS,
+    ),
+    "supersede": Transition(
+        eligibility=ineligibility_reason_for_supersede,
+        reasons=(
+            FailureCodes.STILL_PROPOSED,
+            FailureCodes.ALREADY_REJECTED,
+            FailureCodes.ALREADY_SUPERSEDED,
+            FailureCodes.NOT_PROPOSED,
+            FailureCodes.UNEXPECTED_STATUS,
+        ),
+        guards=(
+            FailureCodes.FAMILY_MEMBER_SUPERSEDED,
+            FailureCodes.FAMILY_MEMBER_PENDING,
+            FailureCodes.NOT_LATEST_VERSION,
+        ),
+        refdate_anchor="update-or-create",
+        fields=(("scope", "flag-or-header"), ("domain", "flag-or-header"), ("title", "flag-or-filename")),
+    ),
+}
+
+_ROW_SPECIFIC_CODES = {code for row in TRANSITIONS.values() for code in row.reasons + row.guards}
+
+
+def failure_codes(command, own):
+    """describe()'s failure_codes for one of the 6 commands: the
+    ineligibility codes its row can raise, then its `own` entries, then
+    its row's family guards and the codes all 6 share (in
+    SHARED_FAILURE_CODES order), then the header and config codes."""
+    row = TRANSITIONS[command]
+    head = {code: text for code, text in SHARED_FAILURE_CODES.items() if code in row.reasons}
+    tail = {
+        code: text
+        for code, text in SHARED_FAILURE_CODES.items()
+        if code in row.guards or code not in _ROW_SPECIFIC_CODES
+    }
+    return build_failure_codes(head, own, tail, HEADER_FAILURE_CODES, CONFIG_FAILURE_CODES)
+
+
+@dataclass(frozen=True)
+class Context:
+    """What prepare() hands back: the loaded target (load_target's
+    values), its decisions folder, its family (`ignored`: the members
+    whose header does not parse, see family_members), the new version or
+    revision number when the row numbers one, the checked refdate (None
+    without an anchor), the re-validated title/scope/domain, and the
+    warnings accumulated so far -- the same list the command keeps
+    appending to."""
+
+    config: object
+    root: object
+    path: object
+    filename_info: object
+    header: object
+    encoding_repaired: bool
+    folder: object
+    members: list
+    ignored: list
+    new_version: object
+    new_revision: object
+    refdate: object
+    title: object
+    scope: object
+    domain: object
+    warnings: list
+
+
+def _new_version(config, number, members, warnings):
+    latest = latest_in_family(None, config, number, members=members)
+    if latest is None:
+        raise CommandError(
+            FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
+        )
+    new_version = latest[0].version + 1
+    if len(str(new_version)) > config.lenversion:
+        raise CommandError(
+            FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION,
+            f"New version {new_version} does not fit in lenversion={config.lenversion}.",
+            data={"new_version": new_version, "lenversion": config.lenversion},
+            warnings=warnings,
+        )
+    return new_version
+
+
+def _new_revision(config, filename_info, members, ignored, warnings):
+    latest = latest_in_family(None, config, filename_info.number, members=members)
+    if latest is None:
+        raise CommandError(
+            FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
+        )
+    # The filename decides numbering, counting every file: the next
+    # revision after the highest one this version already holds
+    # (Round 40, a deliberate divergence from AdrPlus, whose
+    # target-revision+1 collided when branching off an older
+    # revision). A migrated placeholder's blank cells play no part.
+    new_revision = (
+        max(
+            ((entry[0].revision or 0) for entry in members + ignored if entry[0].version == filename_info.version),
+            default=filename_info.revision or 0,
+        )
+        + 1
+    )
+    if len(str(new_revision)) > config.lenrevision:
+        raise CommandError(
+            FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
+            f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
+            data={"new_revision": new_revision, "lenrevision": config.lenrevision},
+            warnings=warnings,
+        )
+    return new_revision
+
+
+def _check_guard(code, row, folder, config, filename_info, members, warnings):
+    if code == FailureCodes.FAMILY_MEMBER_SUPERSEDED:
+        raise_if_superseded_sibling(members, warnings)
+    elif code == FailureCodes.FAMILY_MEMBER_PENDING:
+        raise_if_pending_sibling(members, warnings, row.pending_consequence)
+    elif code == FailureCodes.NOT_LATEST_VERSION:
+        raise_if_not_latest(filename_info, members, warnings)
+    elif code == FailureCodes.REJECTED_SUCCESSOR_IS_FINAL:
+        raise_if_rejected_successor(members, warnings)
+    elif code == FailureCodes.SUPERSEDE_NOT_FINISHED:
+        raise_if_supersede_not_finished(folder, config, members, warnings)
+
+
+def _validated_field(name, source, flags, header, filename_info):
+    """title/scope/domain are re-read from the SOURCE file (header cell or
+    filename segment) unless a flag gives them -- a hand-edited or
+    migrated file could carry a filesystem-unsafe character (e.g. ':', an
+    NTFS Alternate-Data-Stream separator) never validated until this
+    rewrite, and a title lands inside a filename component."""
+    if source == "header":
+        value = getattr(header, name)
+    elif source == "flag-or-header":
+        value = flags[name] if name in flags else (getattr(header, name) or "")
+    else:
+        value = flags[name] if name in flags else getattr(filename_info, name)
+    reject_embedded_delimiter(value, name)
+    if name == "title":
+        reject_filesystem_unsafe_title(value, name)
+        reject_title_with_no_case_transform_content(value, name)
+    return value
+
+
+def prepare(command, fileadr, flags):
+    """The preamble the 6 file-targeted lifecycle commands share, driven by
+    their TRANSITIONS row: load the target, clean up orphaned temp files,
+    then the checks of the row, in its order. Writes nothing to a decision
+    (only removes orphaned temp files); each command does its own writes
+    afterward. Every failure after load_target carries the warnings
+    accumulated so far."""
+    row = TRANSITIONS[command]
+    warnings = []
+    config, root, path, filename_info, header, encoding_repaired = load_target(fileadr, warnings=warnings)
+    with attach_warnings(warnings):
+        if row.revision_required and config.lenrevision == 0:
+            raise CommandError(FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0.")
+        folder = resolve_within(root, config.folderadr)
+        if folder.is_dir():
+            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
+            if warning:
+                warnings.append(warning)
+
+        def check_eligibility():
+            # A specific reason code, not one collapsed not-eligible-for-*,
+            # so the caller knows which recovery action applies.
+            reason = row.eligibility(header)
+            if reason is not None:
+                raise CommandError(reason, SHARED_FAILURE_CODES[reason], warnings=warnings)
+
+        if not row.scan_first:
+            check_eligibility()
+        # One scan shared by every check below. Pre-fetching members here
+        # is also how the scan's own warnings (an excluded is_within
+        # candidate, a member whose header does not parse) reach the
+        # command.
+        ignored = []
+        members = family_members(folder, config, filename_info.number, warnings=warnings, ignored=ignored)
+        new_version = new_revision = None
+        if row.numbering == "version":
+            new_version = _new_version(config, filename_info.number, members, warnings)
+        elif row.numbering == "revision":
+            new_revision = _new_revision(config, filename_info, members, ignored, warnings)
+        if row.scan_first:
+            check_eligibility()
+        for code in row.guards:
+            _check_guard(code, row, folder, config, filename_info, members, warnings)
+
+        refdate = None
+        if row.refdate_anchor is not None:
+            refdate = parse_refdate(flags.get("refdate"))
+            validate_refdate_not_in_future(refdate)
+            if row.refdate_anchor == "create":
+                not_before = header.date_create
+            else:
+                not_before = header.date_update or header.date_create
+            if not_before is not None:
+                validate_refdate_not_before(refdate, not_before)
+
+        values = {
+            name: _validated_field(name, source, flags, header, filename_info) for name, source in row.fields
+        }
+
+    return Context(
+        config=config,
+        root=root,
+        path=path,
+        filename_info=filename_info,
+        header=header,
+        encoding_repaired=encoding_repaired,
+        folder=folder,
+        members=members,
+        ignored=ignored,
+        new_version=new_version,
+        new_revision=new_revision,
+        refdate=refdate,
+        title=values["title"],
+        scope=values["scope"],
+        domain=values["domain"],
+        warnings=warnings,
+    )
 
 
 def _record_from_header(config, filename_info, header):

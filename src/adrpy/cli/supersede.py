@@ -6,42 +6,21 @@ never a collision-disambiguator. `--open` is permanently not implemented
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
-from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_text, cleanup_orphaned_temp_files
+from adrpy.core.errors import CommandError, FailureCodes, UsageError
+from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.lifecycle import (
-    raise_if_superseded_sibling,
-    raise_if_pending_sibling,
-    raise_if_not_latest,
-    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
-    family_members,
-    ineligibility_reason_for_supersede,
+    failure_codes,
     mark_superseded,
     next_number,
-    parse_refdate,
-    load_target,
+    prepare,
     read_target,
     scan_decisions,
     validate_refdate_not_before,
-    validate_refdate_not_in_future,
 )
 from adrpy.core.naming import build_filename
-from adrpy.core.security import (
-    reject_embedded_delimiter,
-    reject_filesystem_unsafe_title,
-    reject_title_with_no_case_transform_content,
-    resolve_within,
-)
-from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, orphan_cleanup_warning, retry_warning
-
-_INELIGIBILITY_DETAILS = {
-    FailureCodes.STILL_PROPOSED: "This decision must be Accepted before it can be superseded; it is still Proposed.",
-    FailureCodes.ALREADY_REJECTED: "This decision was Rejected, not Accepted; only Accepted decisions can be superseded.",
-    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
-}
+from adrpy.core.security import resolve_within
+from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
 
 
 def _not_resumable_reason(orphans):
@@ -189,11 +168,9 @@ def describe():
                 ),
             },
         ],
-        "failure_codes": build_failure_codes(
-            _INELIGIBILITY_DETAILS,
+        "failure_codes": failure_codes(
+            "supersede",
             {
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
-                FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the predecessor's own last update date (or creation date, if never updated).",
@@ -206,9 +183,6 @@ def describe():
                 FailureCodes.SUPERSEDE_ORPHANED_SUCCESSOR_NOT_RESUMABLE: "--resume was given, but there is not exactly one non-Rejected successor of this decision still Proposed with its own Created status and date (data.files names what was found) -- no write was made.",
                 FailureCodes.SUPERSEDE_SUCCESSOR_ALREADY_EXISTS: "A non-Rejected successor already points back at this decision (data.file/data.files name it) and --resume was not given -- no write was made; reject it to create a new successor, or re-run with --resume.",
             },
-            LIFECYCLE_FAILURE_CODES,
-            HEADER_FAILURE_CODES,
-            CONFIG_FAILURE_CODES,
         ),
     }
 
@@ -227,62 +201,10 @@ def run(args):
         # would otherwise be accepted and silently ignored.
         raise UsageError("--resume cannot be combined with --title, --scope or --domain: the existing "
                          "successor is kept exactly as it was created.")
-    warnings = []
-    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
-    folder = resolve_within(root, config.folderadr)
+    ctx = prepare("supersede", flags["file"], flags)
+    config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
+    folder, refdate, warnings = ctx.folder, ctx.refdate, ctx.warnings
     with attach_warnings(warnings):
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
-            if warning:
-                warnings.append(warning)
-
-        # A specific reason code, not one collapsed not-eligible-for-
-        # supersede, so the caller knows which recovery action applies.
-        reason = ineligibility_reason_for_supersede(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-
-        # Without this, two different members of the same family could
-        # each be independently superseded, producing two live
-        # successors. Same guard version.py/revise.py already use.
-        members = family_members(
-            folder, config, filename_info.number, warnings=warnings
-        )
-        raise_if_superseded_sibling(members, warnings)
-        raise_if_pending_sibling(members, warnings)
-        raise_if_not_latest(filename_info, members, warnings)
-
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        not_before = header.date_update or header.date_create
-        if not_before is not None:
-            validate_refdate_not_before(refdate, not_before)
-
-        # Unlike `new`, an omitted --scope/--domain defaults to the
-        # predecessor's own current value, not empty.
-        scope = flags["scope"] if "scope" in flags else (header.scope or "")
-        domain = flags["domain"] if "domain" in flags else (header.domain or "")
-        reject_embedded_delimiter(scope, "scope")
-        reject_embedded_delimiter(domain, "domain")
-        if "title" in flags:
-            # An explicit --title overrides the predecessor's own
-            # filename-segment title -- validated exactly like `new
-            # --title` (same 3 checks, same order).
-            title = flags["title"]
-            reject_embedded_delimiter(title, "title")
-            reject_filesystem_unsafe_title(title, "title")
-            reject_title_with_no_case_transform_content(title, "title")
-        else:
-            # `title` is re-read from the PREDECESSOR's own filename
-            # segment, not a live flag -- a hand-edited or migrated file
-            # could already carry a filesystem-unsafe character (e.g. ':',
-            # an NTFS Alternate-Data-Stream separator), which build_filename
-            # below would otherwise propagate into a real write attempt.
-            reject_embedded_delimiter(filename_info.title, "title")
-            reject_filesystem_unsafe_title(filename_info.title, "title")
-            reject_title_with_no_case_transform_content(filename_info.title, "title")
-            title = filename_info.title
-
         # strict=True: an unreadable subdirectory hiding a
         # higher-numbered decision must never be silently treated as
         # "not found" here, or the allocated successor number could
@@ -375,11 +297,11 @@ def run(args):
                 # (already case-transformed), not its header's prose title --
                 # confirmed via live comparison against the reference tool.
                 # Overridden by --title when given (see above).
-                title=title,
+                title=ctx.title,
                 version=1,
                 revision=1 if config.lenrevision > 0 else None,
-                scope=scope,
-                domain=domain,
+                scope=ctx.scope,
+                domain=ctx.domain,
                 status_create="Proposed",
                 date_create=refdate,
                 superseded=filename_info.number,
@@ -417,7 +339,7 @@ def run(args):
             # ADR006V01: combines the header's own flag (known since
             # load_target) with the body's own (only known now, from
             # the streamed write).
-            if encoding_repaired or body_encoding_repaired:
+            if ctx.encoding_repaired or body_encoding_repaired:
                 warnings.append(encoding_repaired_warning(path))
         except OSError as error:
             # The successor already exists on disk (written above, or

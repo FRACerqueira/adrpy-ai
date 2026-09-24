@@ -1035,6 +1035,10 @@ def test_reject_family_scan_incomplete_makes_no_write_at_all(tmp_path, monkeypat
         )
 
     monkeypatch.setattr(reject_module, "family_members", flaky_family_members)
+    # The first (own-family) scan runs in lifecycle.prepare.
+    from adrpy.core import lifecycle as lifecycle_module
+
+    monkeypatch.setattr(lifecycle_module, "family_members", flaky_family_members)
 
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-04"])

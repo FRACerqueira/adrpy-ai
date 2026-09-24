@@ -676,9 +676,9 @@ def test_revise_refuses_the_successor_of_an_unfinished_supersede(tmp_path, monke
             supersede_module.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
     orphan = next(p for p in adr_path.parent.glob("ADR002*--001.md"))
     with monkeypatch.context() as scoped:
-        from adrpy.cli import approve as approve_module
+        from adrpy.core import lifecycle as lifecycle_module
 
-        scoped.setattr(approve_module, "raise_if_supersede_not_finished", lambda *a, **k: None)
+        scoped.setattr(lifecycle_module, "raise_if_supersede_not_finished", lambda *a, **k: None)
         approve.run(["--file", str(orphan), "--refdate", "2026-01-04"])
 
     with pytest.raises(CommandError) as excinfo:

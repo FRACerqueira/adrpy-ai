@@ -7,41 +7,13 @@ not the latest member's. --open is permanently not implemented (see
 """
 
 from adrpy.core.args import parse_flags
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
-from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
-from adrpy.core.lifecycle import (
-    raise_if_supersede_not_finished,
-    raise_if_superseded_sibling,
-    raise_if_pending_sibling,
-    raise_if_not_latest,
-    raise_if_rejected_successor,
-    SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
-    family_members,
-    ineligibility_reason_for_version_or_revise,
-    latest_in_family,
-    parse_refdate,
-    load_target,
-    stream_normalized_body_chunks,
-    validate_refdate_not_before,
-    validate_refdate_not_in_future,
-)
+from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.header import DecisionRecord, build_header
+from adrpy.core.atomic_write import atomic_write_chunks
+from adrpy.core.lifecycle import failure_codes, prepare, stream_normalized_body_chunks
 from adrpy.core.naming import build_filename
-from adrpy.core.security import (
-    reject_embedded_delimiter,
-    reject_filesystem_unsafe_title,
-    reject_title_with_no_case_transform_content,
-    resolve_within,
-)
-from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, orphan_cleanup_warning, retry_warning
-
-_INELIGIBILITY_DETAILS = {
-    FailureCodes.STILL_PROPOSED: "This decision must be Accepted or Rejected before a new revision can be created.",
-    FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
-    FailureCodes.NOT_PROPOSED: "This decision's own Created status is not Proposed -- no command writes that; repair its Created cell by hand.",
-    FailureCodes.UNEXPECTED_STATUS: "This decision's own update status is not a recognized value (Proposed/Accepted/Rejected/Superseded in the wrong cell); undo clears the Changed cell.",
-}
+from adrpy.core.security import resolve_within
+from adrpy.core.warnings import attach_warnings, encoding_repaired_source_warning, retry_warning
 
 
 def describe():
@@ -98,127 +70,39 @@ def describe():
                 ),
             },
         ],
-        "failure_codes": build_failure_codes(
-            _INELIGIBILITY_DETAILS,
+        "failure_codes": failure_codes(
+            "revise",
             {
-                FailureCodes.FAMILY_MEMBER_PENDING: "Another member of the same family is still unresolved (Proposed).",
                 FailureCodes.FAMILY_NOT_FOUND: "This decision's own family could not be resolved.",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own last update date (or creation date, if never updated).",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new revision's own resulting filename already exists on disk (data.file names it).",
                 FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION: "The next revision number does not fit in the configured lenrevision width.",
-                FailureCodes.SUPERSEDE_NOT_FINISHED: "This decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it (data.successor_file, data.predecessor_number).",
-                FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
-                FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
                 FailureCodes.REVISION_NOT_CONFIGURED: "This repository's config has lenrevision == 0.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
-            LIFECYCLE_FAILURE_CODES,
-            HEADER_FAILURE_CODES,
-            CONFIG_FAILURE_CODES,
         ),
     }
 
 
 def run(args):
     flags = parse_flags(args, required=("file",), optional=("refdate",), aliases={"f": "file", "r": "refdate"})
-    warnings = []
-    config, root, path, filename_info, header, encoding_repaired = load_target(flags["file"], warnings=warnings)
-
-    if config.lenrevision == 0:
-        raise CommandError(
-            FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0."
-        )
-
-    folder = resolve_within(root, config.folderadr)
+    ctx = prepare("revise", flags["file"], flags)
+    config, path, folder, header, warnings = ctx.config, ctx.path, ctx.folder, ctx.header, ctx.warnings
     with attach_warnings(warnings):
-        if folder.is_dir():
-            warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings))
-            if warning:
-                warnings.append(warning)
-
         # revise never rewrites its own source either -- see version.py's
         # own comment: ADR006V01 defers this warning until after the
         # write below, since the body is no longer read until then.
-
-        # One scan shared by all three checks below, avoiding a
-        # duplicate scan_decisions call each.
-        ignored = []
-        members = family_members(
-            folder, config, filename_info.number, warnings=warnings, ignored=ignored
-        )
-        latest = latest_in_family(folder, config, filename_info.number, members=members)
-        if latest is None:
-            raise CommandError(
-                FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
-            )
-        # The filename decides numbering, counting every file: the next
-        # revision after the highest one this version already holds
-        # (Round 40, a deliberate divergence from AdrPlus, whose
-        # target-revision+1 collided when branching off an older
-        # revision). A migrated placeholder's blank cells play no part.
-        new_revision = (
-            max(
-                (
-                    (entry[0].revision or 0)
-                    for entry in members + ignored
-                    if entry[0].version == filename_info.version
-                ),
-                default=filename_info.revision or 0,
-            )
-            + 1
-        )
-
-        if len(str(new_revision)) > config.lenrevision:
-            raise CommandError(
-                FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION,
-                f"New revision {new_revision} does not fit in lenrevision={config.lenrevision}.",
-                data={"new_revision": new_revision, "lenrevision": config.lenrevision},
-                warnings=warnings,
-            )
-
-        # A specific reason code, not one collapsed not-eligible-for-
-        # revision, so the caller knows which recovery action applies.
-        reason = ineligibility_reason_for_version_or_revise(header)
-        if reason is not None:
-            raise CommandError(reason, _INELIGIBILITY_DETAILS[reason], warnings=warnings)
-        raise_if_superseded_sibling(members, warnings)
-        raise_if_pending_sibling(members, warnings)
-        raise_if_not_latest(filename_info, members, warnings)
-        raise_if_rejected_successor(members, warnings)
-        raise_if_supersede_not_finished(folder, config, members, warnings)
-
-        refdate = parse_refdate(flags.get("refdate"))
-        validate_refdate_not_in_future(refdate)
-        not_before = header.date_update or header.date_create
-        if not_before is not None:
-            validate_refdate_not_before(refdate, not_before)
-
-        # title/scope/domain are all re-read from the SOURCE file's own
-        # header cells, not live flags -- unlike `version`, which
-        # re-validates scope/domain even when they fall back to the
-        # target's own value, this command never did, so a
-        # hand-edited or migrated file's control character (e.g. VT,
-        # confirmed live to survive an unrelated revise unchanged) would
-        # otherwise propagate silently into every future revision's own
-        # header, plus title's own filesystem-unsafe risk (e.g. ':', an
-        # NTFS Alternate-Data-Stream separator) at build_filename below.
-        reject_embedded_delimiter(header.title, "title")
-        reject_filesystem_unsafe_title(header.title, "title")
-        reject_title_with_no_case_transform_content(header.title, "title")
-        reject_embedded_delimiter(header.scope, "scope")
-        reject_embedded_delimiter(header.domain, "domain")
-
         record = DecisionRecord(
-            number=filename_info.number,
+            number=ctx.filename_info.number,
             title=header.title,
-            version=filename_info.version,
-            revision=new_revision,
+            version=ctx.filename_info.version,
+            revision=ctx.new_revision,
             scope=header.scope,
             domain=header.domain,
             status_create="Proposed",
-            date_create=refdate,
+            date_create=ctx.refdate,
         )
 
         filename = build_filename(config, record)
@@ -241,7 +125,7 @@ def run(args):
             yield from stream_normalized_body_chunks(path, body_report)
 
         attempts = atomic_write_chunks(new_path, _chunks)
-        if encoding_repaired or body_report["encoding_repaired"]:
+        if ctx.encoding_repaired or body_report["encoding_repaired"]:
             warnings.append(encoding_repaired_source_warning(path))
         warning = retry_warning(attempts)
         if warning:
