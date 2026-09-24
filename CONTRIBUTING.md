@@ -38,7 +38,9 @@ adrpy help
 pytest
 ```
 
-At the time of writing this suite has 650+ tests. A handful are platform-specific and will `skip` (not fail) on the wrong host — for example, tests exercising real POSIX symlinks skip on Windows, and vice versa for Windows junctions. That's expected; a skip is not a failure.
+At the time of writing this suite has about 1,500 tests. A handful are platform-specific and will `skip` (not fail) on the wrong host — for example, tests exercising real POSIX symlinks skip on Windows, and vice versa for Windows junctions. That's expected; a skip is not a failure.
+
+The command reference pages under `doc/commands/` and `doc/skills/` are generated from each command's `describe()`: after changing a command's description, arguments or failure codes, run `python scripts/generate_command_docs.py`, or `tests/test_command_docs.py` fails.
 
 ## The Project's Own Verification Discipline
 
@@ -62,15 +64,15 @@ Pull requests that add behavior with no corresponding test, or that fix a bug wi
 This project records two different kinds of durable record, and dogfoods its own tool to write the first kind:
 
 - **[`doc/adr/`](doc/adr/)** — formal Architecture Decision Records for genuinely architectural choices (a new dependency, a structural or cross-cutting design decision). Written using `adrpy` itself.
-- **[`doc/decision-log/`](doc/decision-log/INDEX.md)** — a lighter-weight log for audit findings, confirmed divergences from the reference tool's behavior, deferred work with a named reopening condition, and accepted trade-offs. Write an entry with [`adrpy log`](doc/commands/log.md), which also regenerates `INDEX.md` as part of the same write ([ADR003V01](doc/adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)) — `scripts/generate_decision_log_index.py` remains for regenerating the index alone, e.g. after an entry written by hand. `INDEX.md` itself is always generated, never hand-edited; individual entries are also never edited after being written — a correction is a new entry, not an edit to the old one.
+- **[`doc/decision-log/`](doc/decision-log/INDEX.md)** — a lighter-weight log for audit findings, documentation corrections, deferred work with a named reopening condition, and accepted trade-offs. Write an entry with [`adrpy log`](doc/commands/log.md), which also regenerates `INDEX.md` as part of the same write ([ADR003V01](doc/adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)) — `scripts/generate_decision_log_index.py` remains for regenerating the index alone, e.g. after an entry written by hand. `INDEX.md` itself is always generated, never hand-edited; individual entries are also never edited after being written — a correction is a new entry, not an edit to the old one.
 
 See **[Writing a decision-log entry](doc/decision-log-workflow.md)** for the full step-by-step workflow, including which of the two this is for a given change and a diagram of the classification decision tree.
 
-If your pull request makes a real architectural choice or a deliberate divergence from the reference tool's own confirmed behavior, please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
+If your pull request makes a real architectural choice or changes a rule adrpy shares with AdrPlus (adrpy is the reference AdrPlus follows), please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
 
 ## Commit Messages
 
-Focus on *why*, not just *what*. "Fix lock ordering in migrate" says less than a message explaining what could go wrong without the fix. Reference the specific behavior or finding being addressed.
+Focus on *why*, not just *what*. "Fix revise numbering" says less than a message explaining what could go wrong without the fix. Reference the specific behavior or finding being addressed.
 
 ## Submitting a Pull Request
 
@@ -86,4 +88,4 @@ Open an issue with: what you ran, what you expected, what actually happened (inc
 
 ## Requesting Features
 
-Open an issue describing the use case, not just the feature — this project ports the reference tool's own behavior deliberately and selectively (see [Relationship to AdrPlus](README.md#relationship-to-adrplus)), so understanding *why* you need something helps decide whether it belongs here or is better left out.
+Open an issue describing the use case, not just the feature — this project keeps its scope deliberately small (see [Relationship to AdrPlus](README.md#relationship-to-adrplus)), so understanding *why* you need something helps decide whether it belongs here or is better left out.

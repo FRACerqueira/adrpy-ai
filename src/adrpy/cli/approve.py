@@ -11,24 +11,10 @@ def describe():
         "name": "approve",
         "summary": "Marks a Proposed decision Accepted.",
         "description": (
-            "Marks a Proposed decision as Accepted. "
-            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
-            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
-            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
-            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
-            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
-            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
-            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
-            "made either way. "
-            "A title, scope or domain in the target's header that breaks the free-text rules ('|', a "
-            "line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:\"/\\|?*` or a "
-            "control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of "
-            "repository-inconsistent's data.errors (invalid-header). Fails with one of "
-            "already-accepted, already-rejected, or already-superseded "
-            "(the target's own current status makes Accepted unreachable from here) if the target isn't "
-            "eligible, or family-member-superseded if another member of the same family has already been "
-            "superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). "
+            "Marks a Proposed decision (or a migrated placeholder) Accepted. The whole repository is "
+            "validated first (see `adrpy check`), then the target's status and its family rules "
+            "(doc/lifecycle.md: only the latest member is alive, a superseded family is frozen); nothing is "
+            "written when a rule fails."
         ),
         "arguments": [
             {
@@ -73,7 +59,7 @@ def run(args):
         # ... bytes are now lost" -- only true once the write above has
         # actually happened, not at read time (an eligibility check
         # could still have failed first). ADR006V01: combines the
-        # header's own flag (known since load_target, above) with the
+        # header's own flag (known since prepare, above) with the
         # body's own (only known now, once the streamed write has
         # actually read it) -- either half being lossy loses bytes on
         # this rewrite.

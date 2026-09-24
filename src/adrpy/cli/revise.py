@@ -21,32 +21,11 @@ def describe():
         "name": "revise",
         "summary": "Creates a new revision (wording fix) of an Accepted/Rejected decision.",
         "description": (
-            "Creates a new revision (wording fix) of an Accepted/Rejected decision. "
-            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
-            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
-            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "Requires the repository's lenrevision to be > 0 (see the `config` command); "
-            "fails with revision-not-configured otherwise -- true for any freshly-init'd repository. "
-            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
-            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
-            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
-            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
-            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
-            "made either way. "
-            "A title, scope or domain in the target's header that breaks the free-text rules ('|', a "
-            "line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:\"/\\|?*` or a "
-            "control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of "
-            "repository-inconsistent's data.errors (invalid-header). Fails with family-not-found if this "
-            "decision's own family can't be resolved, or lenrevision-too-small-for-new-revision "
-            "(data.new_revision/data.lenrevision) if the next revision number -- the one after the highest "
-            "revision this version already holds, whatever file holds it -- doesn't fit the configured "
-            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
-            "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
-            "already-superseded if the target isn't eligible, or "
-            "family-member-superseded/family-member-pending if another member of the same family has "
-            "already been superseded or is still unresolved (Proposed). Fails with file-already-exists "
-            "(data.file names it) if the resulting filename already exists on disk. No write is made in "
-            "any of these cases."
+            "Creates a new revision (a wording fix) of an Accepted or Rejected decision, status Proposed, "
+            "numbered after the highest revision its version holds. Needs the repository's lenrevision to be "
+            "greater than 0 (see config), which a freshly initialized repository's is not. The whole "
+            "repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a"
+            " rule fails."
         ),
         "arguments": [
             {

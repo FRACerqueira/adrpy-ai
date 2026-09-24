@@ -1,9 +1,7 @@
-"""`new` command: creates a new decision with status Proposed. `--open`
-(would launch an external editor via an app-level setting) is permanently
-not implemented --
-a deliberate divergence, not a gap to fill later: adrpy-ai is
-args-in/JSON-out for a non-interactive caller, with no session to hand
-an opened editor back to (decision-log:
+"""`new` command: creates a new decision with status Proposed. There is
+no `--open` (launching an external editor), by design, not as a gap to
+fill later: adrpy-ai is args-in/JSON-out for a non-interactive caller,
+with no session to hand an opened editor back to (decision-log:
 accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
 """
 
@@ -36,17 +34,10 @@ def describe():
         "name": "new",
         "summary": "Creates a new decision, status Proposed.",
         "description": (
-            "Creates a new decision with status Proposed. "
-            "May fail with target-directory-not-found if --path does not point to an existing directory, "
-            "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
-            "either way. "
-            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
-            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
-            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
-            "repository-inconsistent, every broken rule listed in data.errors with a repair hint; no write "
-            "is made. Fails with title-already-exists (data.existing_file names it) if "
-            "another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) "
-            "if the resulting filename happens to already exist on disk -- neither write is made."
+            "Creates a new decision, status Proposed, in a new family under the number after the highest one "
+            "held (gaps are not reused). The whole repository is validated first (see `adrpy check`), and the"
+            " title must be unique in it once case-transform normalized; nothing is written when a rule "
+            "fails."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -103,6 +94,8 @@ def describe():
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
+                FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
+                FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.TITLE_ALREADY_EXISTS: "Another decision already has this title, once both are normalized by the configured case transform.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The resulting filename already exists on disk.",

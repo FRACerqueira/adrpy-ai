@@ -6,19 +6,19 @@
 
 Marks a `Proposed` decision `Accepted`.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Marks a Proposed decision as Accepted. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. A title, scope or domain in the target's header that breaks the free-text rules ('|', a line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:"/\|?*` or a control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of repository-inconsistent's data.errors (invalid-header). Fails with one of already-accepted, already-rejected, or already-superseded (the target's own current status makes Accepted unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). 
+Marks a Proposed decision (or a migrated placeholder) Accepted. The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: only the latest member is alive, a superseded family is frozen); nothing is written when a rule fails.
 
 ## Arguments
 
-### `--file` / `-f` *(required, string)*
-
-Path to the decision file. A bare name with no extension gets '.md' appended.
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own creation date (refdate-invalid-format/refdate-in-future/refdate-before-history).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own creation date (refdate-invalid-format/refdate-in-future/refdate-before-history). |
 
 ## Failure codes
 
@@ -81,6 +81,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -90,4 +91,4 @@ adrpy approve --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help approve` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help approve` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

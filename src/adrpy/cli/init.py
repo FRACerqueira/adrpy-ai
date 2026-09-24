@@ -35,30 +35,12 @@ def describe():
         "name": "init",
         "summary": "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder.",
         "description": (
-            "Initializes an ADR repository: writes adr-config.adrplus and creates the ADR folder. "
-            "May fail with target-directory-not-found if --path does not point to an existing directory "
-            "-- no write is attempted. Fails with config-already-exists if adr-config.adrplus is already "
-            "there and no --seed was given, or if one appears while init runs -- use `config` to edit an "
-            "existing repository's settings instead, or pass --seed to overwrite it outright. "
-            "With no --seed and no --language, seeds from the install-level config (see the "
-            "installconfig command; ADR002V01) if one has been set up on this machine, or from the "
-            "built-in default otherwise -- the install-level config not existing is the normal state "
-            "for any installation that has never run installconfig, not an error; the result's own "
-            "`warnings` names this and points at `installconfig` when it happens, since it is the one "
-            "case where nothing informed this repository's own settings at all. "
-            "May fail with "
-            "init-existing-numbers-scan-incomplete if a subdirectory under the decisions folder could not "
-            "be scanned (permission denied or similar) -- the existing max number/version/revision, which "
-            "lenseq/lenversion/lenrevision must fit, can't be trusted from an incomplete scan. Unlike "
-            "every other failure documented on the --seed argument below, this one is NOT scoped to the "
-            "already-existing-repository path -- it can also fire on a genuinely fresh `init` if a "
-            "decisions folder with an unreadable subdirectory already exists under the target path. "
-            "Once that scan itself succeeds, may also fail with lenseq-too-small-for-existing-decisions/"
-            "lenversion-too-small-for-existing-decisions/lenrevision-too-small-for-existing-decisions "
-            "(each names the offending existing number and the configured length in `data`) if the "
-            "resulting lenseq/lenversion/lenrevision is too narrow for a decision that already exists on "
-            "disk -- same scoping as the scan-incomplete check above (can fire on a genuinely fresh "
-            "`init` too, not just --seed on an existing repository)."
+            "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder, "
+            "refusing to replace an existing config unless --seed is given. With no --seed and no --language,"
+            " seeds from this machine's install-level config (see installconfig) or, when there is none, from"
+            " the built-in default, and then says so in `warnings`. A decisions folder that already exists is"
+            " scanned first: every number already on disk must fit the configured "
+            "lenseq/lenversion/lenrevision."
         ),
         "arguments": [
             {
@@ -77,8 +59,7 @@ def describe():
                 # `--file` means "the decision file to mutate"; this alone
                 # meant "a config JSON to seed the repo with", a naming
                 # collision an agent generalizing across commands could
-                # reasonably get wrong. Deliberate divergence from the real
-                # tool's own `-f/--file` naming (decision-log: accepted-
+                # reasonably get wrong (decision-log: accepted-
                 # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the install-level "
@@ -202,8 +183,7 @@ def run(args):
     config_already_existed = config_path.exists()
 
     # Non-interactive by design (no wizard, no prompt to fall back on) --
-    # refuse cleanly instead of the reference tool's confirm-or-refuse prompt
-    # when no --seed is given to bypass it.
+    # refuse cleanly when no --seed is given to replace the config.
     if config_already_existed and seed_arg is None:
         raise CommandError(FailureCodes.CONFIG_ALREADY_EXISTS, f"Configuration file already exists at: {config_path}")
 
@@ -270,7 +250,7 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
         old_folder = resolve_within(target, old_config.folderadr)
         validate_config_change(old_config, config, old_folder, target=target, warnings=warnings)
 
-    # Same as scan_decisions/explore/migrate -- an is_within-excluded
+    # Same as explore/migrate and the repository scan -- an excluded
     # candidate is reported, not dropped with zero signal, since these are
     # the very numbers these three checks are about to gate a fresh init on.
     max_number, max_version, max_revision = _max_existing_numbers(target, config, warnings=warnings)
@@ -362,8 +342,8 @@ def _max_existing_numbers(target, config, warnings=None):
     too, or a shrunk lenseq could silently stop fitting it without this
     check ever noticing.
 
-    `warnings`, when given, reports any candidate is_within excluded --
-    same convention as scan_decisions/explore/migrate."""
+    `warnings`, when given, reports any candidate excluded for escaping
+    the folder -- same convention as explore/migrate."""
     folder = resolve_within(target, config.folderadr)
     if not folder.is_dir():
         return 0, 0, 0

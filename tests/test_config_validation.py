@@ -75,16 +75,32 @@ def test_config_read_does_not_validate(tmp_path):
     assert json.dumps(result["config"])
 
 
-def test_config_refuses_a_guarded_change_over_a_legacy_file_not_yet_migrated(tmp_path):
-    """A recognized legacy-scheme file with no header (not migrated yet)
-    breaks the no-header rule: a guarded change is refused as
-    repository-inconsistent (hint: run migrate), before the guard that
-    used to answer status-or-separator-change-blocked-by-existing-decisions."""
+def test_config_prepares_migrate_on_a_repository_not_yet_migrated(tmp_path):
+    """Files with no header are what a repository looks like before its
+    one migrate: config must not refuse over them, or migrate's own
+    prerequisite (a migrationpattern) could never be set -- the no-header
+    hint points at migrate. Any other inconsistency still blocks."""
+    from adrpy.cli import migrate
+
+    repo = make_repo(tmp_path)
+    (repo.folder / "ADR001V01-first.md").write_bytes(b"# First\n\nLegacy content\n")
+    (repo.folder / "ADR002V01-second.md").write_bytes(b"# Second\n\nLegacy content\n")
+
+    config.run(["--path", str(repo.root), "--migrationpattern", "N00:04T04"])
+    result = migrate.run(["--path", str(repo.root)])
+
+    assert len(result["migrated"]) == 2
+
+
+def test_config_still_runs_its_own_guard_over_a_legacy_file_not_yet_migrated(tmp_path):
+    """no-header does not block config, but the guard itself still does:
+    changing migrationpattern would make the recognized legacy file
+    unrecognized."""
     repo = make_repo(tmp_path, config={"migrationpattern": "N00:04T04"})
     (repo.folder / "0001T01.md").write_bytes(b"Legacy content\n")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(repo.root), "--migrationpattern", "N00:05T05"])
 
-    assert excinfo.value.code == "repository-inconsistent"
-    assert [error["code"] for error in excinfo.value.data["errors"]] == ["no-header"]
+    assert excinfo.value.code != "repository-inconsistent"
+    assert "blocked-by-existing-decisions" in excinfo.value.code

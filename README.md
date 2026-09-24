@@ -7,9 +7,9 @@
 
 **ADR lifecycle CLI for humans and AI agents alike — JSON-only, no wizard, zero dependencies.**
 
-adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, plus migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool.
+adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, check that a repository is consistent, and migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool.
 
-A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
+adrpy-ai is the reference implementation of the ADR lifecycle it shares with [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), also by Fernando Cerqueira: AdrPlus follows adrpy's rules, and adrpy reads AdrPlus 1.0.0 repositories as they are. See [Relationship to AdrPlus](#relationship-to-adrplus) below.
 
 ## Table of Contents
 
@@ -17,10 +17,13 @@ A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueir
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
+- [Checking a repository (`adrpy check`)](#checking-a-repository-adrpy-check)
+- [One owner per working copy](#one-owner-per-working-copy)
 - [Using adrpy-ai with AI Coding Agents](#using-adrpy-ai-with-ai-coding-agents)
 - [Installing the judgment layer (`adrpy-skills`)](#installing-the-judgment-layer-adrpy-skills)
 - [Configuration](#configuration)
 - [Relationship to AdrPlus](#relationship-to-adrplus)
+- [Adopting adrpy on an AdrPlus 1.0.0 repository](#adopting-adrpy-on-an-adrplus-100-repository)
 - [Architecture and Design Decisions](#architecture-and-design-decisions)
 - [Contributing](#contributing)
 - [License](#license)
@@ -31,8 +34,9 @@ A Python companion to a reference tool, [AdrPlus](https://github.com/FRACerqueir
 - **JSON in, JSON out.** Every response is a single JSON object on stdout (`{"success": true/false, "data"/"code": ...}`), with a fixed, documented set of failure codes per command — no output your own tooling has to guess the shape of. A failure also carries `detail`, a human-readable explanation to show a person; decide on `code`/`data`, not on `detail`'s wording. The same text is copied to stderr for terminal use, outside the contract.
 - **Self-documenting.** `adrpy help <command>` returns the exact same structured contract (arguments, types, failure codes) this README describes — the documentation and the code can't silently drift apart, because they're the same artifact.
 - **Zero runtime dependencies.** `pip install adrpy-ai` (or install from source) pulls in nothing else.
-- **A full lifecycle, not just file creation.** `init`, `new`, `approve`, `reject`, `undo`, `supersede`, `version`, `revise`, `migrate`, `config`, `installconfig` — the whole decision lifecycle, not a one-shot generator.
-- **Concurrency-safe by design.** A repository-wide lock covers every command that reads-then-writes shared repository state, with an explicit, documented failure boundary instead of an unstated hope that two callers never collide. See [ADR001](doc/adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md).
+- **A full lifecycle, not just file creation.** `init`, `new`, `approve`, `reject`, `undo`, `supersede`, `version`, `revise`, `migrate`, `check`, `config`, `installconfig` — the whole decision lifecycle, not a one-shot generator.
+- **Validates before acting.** Every lifecycle command (`new`, `approve`, `reject`, `undo`, `supersede`, `version`, `revise`) first validates the whole repository — headers, numbering, family and supersede rules — and, if anything is broken, lists every problem with a repair hint and changes nothing. `adrpy check` runs the same validation on its own, for a pre-commit hook or CI. See [`doc/lifecycle.md`](doc/lifecycle.md).
+- **One owner per working copy.** adrpy does no locking: git coordinates people, and one person (or agent) at a time runs adrpy on a given working copy. Each file write is atomic and a new file is never created over an existing one; beyond that, the tool detects an inconsistent repository and reports it, it does not prevent one. See [One owner per working copy](#one-owner-per-working-copy).
 
 ## Installation
 
@@ -87,11 +91,13 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
           "is_valid": true,
           "scope": "backend",
           "domain": "data",
+          "state": "valid",
           "status_create": "Proposed",
           "status_update": "Accepted"
         }
       }
     ],
+    "consistency": {"errors": []},
     "warnings": []
   }
 }
@@ -113,25 +119,73 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 | [`revise`](doc/commands/revise.md) | Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision. |
 | [`migrate`](doc/commands/migrate.md) | Adds an adrpy-compliant header to existing, hand-written decision files. |
 | [`explore`](doc/commands/explore.md) | Lists every decision file in the repository, on a best-effort basis. |
+| [`check`](doc/commands/check.md) | Validates every decision in the repository and lists every inconsistency found. |
 | [`config`](doc/commands/config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
 | [`installconfig`](doc/commands/installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
 | [`log`](doc/commands/log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 | [`help`](doc/commands/help.md) | Lists every command, or describes one of them in full. |
 
-Bare `adrpy help` (or running `adrpy` with no arguments at all) lists every command's name and a one-line summary only, plus a curated preview of the config values a fresh `init` on this machine would actually produce (`defaults`, sourced from this machine's own `installconfig` when one is set up, or the built-in default otherwise — not every field; `template`, `migrationpattern`, `headerdisclaimer`, the 11 header-row labels, and the plugin fields are all left out of this quick-glance preview on purpose, `adrpy installconfig`/`adrpy config` return every field including those) -- kept short on purpose, since the full contract of all 14 commands at once is a lot to read. A specific command's full argument list, types, and every failure code it can return is available at any time via:
+Bare `adrpy help` (or running `adrpy` with no arguments at all) lists every command's name and a one-line summary only, plus a curated preview of the config values a fresh `init` on this machine would actually produce (`defaults`, sourced from this machine's own `installconfig` when one is set up, or the built-in default otherwise — not every field; `template`, `migrationpattern`, `headerdisclaimer`, `folderlog`, the 11 header-row labels, and the plugin fields are all left out of this quick-glance preview on purpose, `adrpy installconfig`/`adrpy config` return every field including those) -- kept short on purpose, since the full contract of all 15 commands at once is a lot to read. A specific command's full argument list, types, and every failure code it can return is available at any time via:
 
 ```bash
 adrpy help <command>
 ```
 
-`adrpy help --full` returns every command's full contract in one call, if that's genuinely what's needed. All three shapes are also available as prose reference pages under [`doc/commands/`](doc/commands/INDEX.md), one per command, kept in step with the same `describe()` contract. Which status each command can move a decision to, and what stops it, is on one page: [`doc/lifecycle.md`](doc/lifecycle.md).
+`adrpy help --full` returns every command's full contract in one call, if that's genuinely what's needed. The same contract is also available as reference pages under [`doc/commands/`](doc/commands/INDEX.md), one per command, generated from `describe()` (a test fails when a page drifts from it). Which status each command can move a decision to, and what stops it, is on one page: [`doc/lifecycle.md`](doc/lifecycle.md).
+
+## Checking a repository (`adrpy check`)
+
+```bash
+adrpy check --path .
+```
+
+`check` validates the whole repository and writes nothing. It exits `0` with `{"success": true, "data": {"decisions": <count>, ...}}` when every rule holds, and `1` with `repository-inconsistent` otherwise; `data.errors` lists every broken rule, each with its `code`, `file`, `related_files`, `detail` and a repair `hint`. The rules are listed in [`doc/lifecycle.md`](doc/lifecycle.md). Every lifecycle command runs the same validation first and refuses the same way, so a repository `check` accepts is one every command can act on.
+
+As a git pre-commit hook (`.git/hooks/pre-commit`, made executable) — the JSON goes to `/dev/null`, the human-readable `detail` still reaches the terminal on stderr:
+
+```sh
+#!/bin/sh
+adrpy check --path . > /dev/null || {
+  echo "adrpy check failed; run 'adrpy check --path .' to see every error and its hint." >&2
+  exit 1
+}
+```
+
+As a GitHub Actions workflow (`.github/workflows/adr-check.yml`):
+
+```yaml
+name: ADR check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install adrpy-ai
+      - run: adrpy check --path .
+```
+
+## One owner per working copy
+
+adrpy has no concurrency control, by design:
+
+- **Git coordinates people.** Each person or agent works on their own clone or branch; adrpy never calls git. A merge that breaks a rule — two branches that each created `ADR005`, say — is exactly what `adrpy check` reports, with the hint for the repair.
+- **One adrpy command at a time on a working copy.** Don't run adrpy (or `adrpy-skills`) commands in parallel on the same working copy: nothing locks it, and the last command to write a file wins.
+- **What is still guaranteed.** Every file write is atomic (a reader sees the old file or the new one, never a partial one), a new decision is never created over an existing file (`file-already-exists`), and temp files left behind by an interrupted write are cleaned up later.
+- **Detects, does not prevent.** A repository left inconsistent — by a hand edit, a merge, parallel commands, or a multi-file write that stopped halfway — is refused by every lifecycle command until it is repaired, and reported by `adrpy check`.
+
+Earlier development versions of adrpy created a `.adrpy.lock` file in the decisions and decision-log folders. It is no longer used: a leftover one is harmless and can be deleted.
 
 ## Using adrpy-ai with AI Coding Agents
 
 adrpy-ai was designed for this from the start, not adapted to it afterward:
 
 - Every response is a single, well-formed JSON object — safe to parse without scraping human-readable text.
-- Failure codes are stable, documented strings (e.g. `repository-locked`, `config-already-exists`), not free-text messages an agent has to pattern-match.
+- Failure codes are stable, documented strings (e.g. `repository-inconsistent`, `config-already-exists`), not free-text messages an agent has to pattern-match.
+- Don't let two agents (or an agent and a person) run `adrpy` commands in parallel on the same working copy — see [One owner per working copy](#one-owner-per-working-copy).
 - `adrpy help <command>` is the same machine-readable contract an agent can fetch at runtime, instead of relying on documentation baked into its own training data (which can drift out of date).
 - No command ever blocks on a prompt. An agent driving `adrpy` through a shell tool never has to detect and answer an interactive question.
 
@@ -157,15 +211,34 @@ A repository's own settings (ADR numbering, naming scheme, header labels, status
 
 ## Relationship to AdrPlus
 
-adrpy-ai is a Python re-implementation of [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), by the same author. It is not a fork and does not share a codebase with it — command behavior was verified directly against the reference tool's own source where fidelity mattered, and every deliberate difference (a missing feature, a changed default, a divergent error shape) is recorded in this repository's own [decision log](doc/decision-log/INDEX.md), not left undocumented. Two concrete, intentional differences worth knowing up front: adrpy-ai has no interactive wizard (everything is flag-driven), and AdrPlus's plugin system is not ported (out of scope for this project; see the decision log for why).
+adrpy-ai started as a Python re-implementation of [AdrPlus](https://github.com/FRACerqueira/AdrPlus) (C#/.NET), by the same author, and is now the reference for the rules both tools share: AdrPlus follows adrpy, not the other way round. It is not a fork and shares no code with it. adrpy reads AdrPlus 1.0.0 repositories as they are — the same `adr-config.adrplus`, the same 12-line header, files AdrPlus migrated. On top of that shared format, adrpy validates the whole repository before acting, enforcing rules AdrPlus 1.0.0 does not (see [below](#adopting-adrpy-on-an-adrplus-100-repository)), and adds the `folderlog` config field ([ADR007](doc/adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--003.md)). It has no interactive wizard (everything is flag-driven) and no plugin system (AdrPlus's is not ported).
+
+## Adopting adrpy on an AdrPlus 1.0.0 repository
+
+No conversion step is needed: point adrpy at the repository and run
+
+```bash
+adrpy check --path .
+```
+
+AdrPlus 1.0.0 can leave a few states that adrpy's rules do not allow. Every lifecycle command refuses the repository while one of them is there, so repair them by hand once, commit, and adrpy keeps the repository consistent from then on. Each error in `data.errors` names the file, the related files and the repair in its `hint`:
+
+| State AdrPlus 1.0.0 can leave | Reported as | Repair (by hand) |
+|---|---|---|
+| An older version still `Superseded` next to a newer version that is not `Rejected` | `superseded-not-live` | Move the Superseded cell to the live (latest) member, or set the newer member's Changed cell to `Rejected`. |
+| Two `Superseded` members in one family | `superseded-duplicate` | Keep the Superseded cell on the live member and clear it on the others (their successors then need their suffix or status repaired too). |
+| Two successors that are not `Rejected` naming the same predecessor | `multiple-live-successors` | Keep the one the predecessor's Superseded cell points at; set the others' Changed cell to `Rejected`, or remove them. |
+| A `Superseded` cell pointing at a successor that was rejected | `superseded-without-successor` | Clear the Superseded cell, or fix its number. |
+
+A file with an ADR name but no header gets `no-header`; if no decision in the repository has a header yet (none was created with AdrPlus or adrpy), `adrpy migrate` gives every such file a header in one run -- set `migrationpattern` first if the file names need it (`adrpy config --migrationpattern ...`; config tolerates the `no-header` files for exactly this). A `.md` whose name is not an ADR name (a README, an index) is ignored.
 
 ## Architecture and Design Decisions
 
 This project records its own architectural decisions as it makes them:
 
-- [`doc/architecture.md`](doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the concurrency model, configuration layering, and the decision lifecycle, with diagrams.
+- [`doc/architecture.md`](doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the single-owner model, configuration layering, and the decision lifecycle, with diagrams.
 - [`doc/adr/`](doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
-- [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, confirmed divergences from the reference tool, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
+- [`doc/decision-log/`](doc/decision-log/INDEX.md) — a running log of audit findings, documentation corrections, and deferred/accepted trade-offs, generated from individual entries and never hand-edited.
 - [`doc/decision-log-workflow.md`](doc/decision-log-workflow.md) — the step-by-step workflow (with a diagram) for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
 - [`doc/skills/`](doc/skills/README.md) — how `adrpy-skills` installs that same judgment layer for AI coding agents, and how it decides what to write, per provider.
 

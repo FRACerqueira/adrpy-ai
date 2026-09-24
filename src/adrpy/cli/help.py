@@ -23,22 +23,11 @@ def describe():
         "name": "help",
         "summary": "Lists every command, or describes one of them in full.",
         "description": (
-            "Lists available commands, or describes one command. With no `command` and no --full, "
-            "lists every command's name and one-line `summary` only, plus `defaults` (a CURATED SUBSET "
-            "of the config fields a fresh `init` on this machine would actually produce -- not every "
-            "field RepoConfig has; `template`, `migrationpattern`, `headerdisclaimer`, the 11 header-row "
-            "labels, and the plugin fields are all omitted here on purpose, kept short since this is a "
-            "quick-glance preview, not the full config -- `adrpy installconfig`/`adrpy config` return "
-            "every field. `source` names whether `defaults` comes from this machine's own install-level "
-            "config or the built-in default) and a `hint` pointing at `--full`/a specific command name "
-            "for the complete contract. --full "
-            "returns every command's full description and argument list in one call, the same shape "
-            "this command always returned before summaries existed. Naming a specific `command` "
-            "always returns its full description and argument list, regardless of --full. Fails with "
-            "unknown-command if the named `command` doesn't match any registered command. The bare "
-            "listing (no command, no --full) also reads this machine's install-level config for its "
-            "defaults preview, so it may fail with a config-* code, or io-error, if that file exists but is "
-            "invalid or unreadable -- `help <command>` and `help --full` never read it."
+            "Lists every command with its one-line summary, plus `defaults` (a short preview of the config a "
+            "fresh `init` on this machine would produce, with its `source`) and a `hint`. Naming a `command`,"
+            " or passing --full, returns the full contract (description, arguments, failure_codes) instead. "
+            "Only the bare listing reads this machine's install-level config, so only it can fail on an "
+            "invalid or unreadable one."
         ),
         "arguments": [
             {
@@ -47,8 +36,8 @@ def describe():
                 "required": False,
                 # Every other command's arguments are `--flag value`,
                 # parsed by parse_flags -- this one alone is positional
-                # (`help <command>`, no `--`), a deliberate choice matching
-                # the reference tool's own equivalent command. Without this
+                # (`help <command>`, no `--`), the same shape as AdrPlus's
+                # equivalent command. Without this
                 # note an agent generalizing from the other commands would
                 # reasonably (and wrongly) try `help --command X`.
                 "positional": True,

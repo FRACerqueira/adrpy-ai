@@ -6,19 +6,19 @@
 
 Marks a `Proposed` decision `Rejected`.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Marks a Proposed decision as Rejected. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. If this decision is itself a successor (created by `supersede`), the predecessor's Superseded status is reverted FIRST, before this decision's own status is written -- the result's `undone_predecessor` names that file when this happens, or is null otherwise. In a consistent repository that predecessor always exists: a successor that is not Rejected with no predecessor pointing back at it is itself a broken rule (successor-without-predecessor). This is two writes, not one: both files are prepared first, then committed predecessor first, and every failure up to and including the predecessor's own commit leaves NOTHING committed at all: reject-predecessor-write-failed (a real OSError preparing either file or committing the predecessor) means no write was made and the call is safely retryable from scratch. Only multi-file-write-partially-applied is a genuine partial success: the predecessor was already reverted for real when committing THIS decision's own Rejected status then failed -- `data.applied` names the file already reverted, `data.pending` this decision. The repository is then inconsistent (successor-without-predecessor), so every command refuses it until it is repaired by hand: mark this decision Rejected in its Changed cell. A title, scope or domain in the target's header that breaks the free-text rules ('|', a line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:"/\|?*` or a control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of repository-inconsistent's data.errors (invalid-header). BEFORE any write, fails with one of already-accepted, already-rejected, or already-superseded (the target's own current status makes Rejected unreachable from here) if the target isn't eligible, or family-member-superseded if another member of the same family has already been superseded -- no write is made in any of these cases. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). 
+Marks a Proposed decision (or a migrated placeholder) Rejected, after the same repository validation and family rules as approve (doc/lifecycle.md). When the target is a successor created by supersede, its predecessor's Superseded cell is reverted first and named in `undone_predecessor`. Both files are prepared before either is written; if only the predecessor could be written, the failure names what was and was not written and the Rejected row to put in this decision by hand (data.applied, data.pending, data.repair).
 
 ## Arguments
 
-### `--file` / `-f` *(required, string)*
-
-Path to the decision file. A bare name with no extension gets '.md' appended.
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own creation date (refdate-invalid-format/refdate-in-future/refdate-before-history).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own creation date (refdate-invalid-format/refdate-in-future/refdate-before-history). |
 
 ## Failure codes
 
@@ -83,6 +83,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -92,4 +93,4 @@ adrpy reject --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help reject` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help reject` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

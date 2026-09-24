@@ -6,59 +6,29 @@
 
 Writes a decision-log entry -- the lighter-weight sibling of a formal ADR.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Writes a decision-log entry: the lighter-weight sibling of a formal ADR, for an event worth recording that is not itself an architectural decision (see doc/decision-log-workflow.md for when to use this instead of an ADR). Owns only the mechanical part of the record -- classification, scope, slug, summary, and body are all required arguments, since this command never decides what to log, only how to write it down once that's already been decided. Result shape: {"created": <path written>, "round": <int for audit-finding/doc-drift, else null>, "warnings": [...]}. May also fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- no write is attempted either way. May fail with log-classification-invalid if --classification is not one of the closed set named on that argument below, log-slug-invalid if --slug is not valid kebab-case, or log-scope-invalid if --scope is not valid kebab-case (scope becomes a literal segment of the entry's own filename, so '/', '\', and an embedded '--' are rejected, not just cosmetically discouraged). May also fail with log-entry-already-exists (data.file: the bare filename) if an entry with the same date/classification/scope/slug already exists -- no entry was written (INDEX.md is still regenerated, so an identical retry after log-index-regeneration-failed brings the index up to date); this is a signal the new entry is a likely duplicate or should be a retraction of the existing one, not an accident to silently rename around. An existing file in the decision-log directory that doesn't match the expected naming shape refuses to be guessed past, but WHEN this surfaces depends on --classification: for audit-finding/doc-drift, the directory is scanned for Round allocation before any write, so this fails cleanly as log-directory-contains-unrecognized-file with nothing written; for every other classification, the directory is only scanned during index regeneration, AFTER the entry write already committed, so this surfaces as log-index-regeneration-failed instead (same as any other index-regeneration failure, e.g. a permission error) -- data.file (the full path, unlike log-entry-already-exists' bare filename above) names the entry that was already committed to disk despite the overall failure; the offending file's own name is in the detail text. The decision-log directory (config.folderlog, ADR007V01) is scanned recursively -- an unreadable subdirectory under it fails closed the same way, as log-scan-incomplete (before any write, or wrapped into log-index-regeneration-failed after, following the exact same before/after split as log-directory-contains-unrecognized-file above).
+Writes a decision-log entry under folderlog -- the lighter-weight sibling of an ADR, for an event worth recording that is not an architectural decision (see doc/decision-log-workflow.md) -- and regenerates the log's INDEX.md. It owns only the mechanics: every value is an argument, checked before the write, and the result is {created, round, warnings}, `round` being allocated for audit-finding/doc-drift. An entry already written stays on disk when the index regeneration after it fails; data.file then names it.
 
 ## Arguments
 
-### `--path` / `-p` *(required, string)*
-
-Repository root directory.
-
-### `--classification` / `-c` *(required, string)*
-
-One of: audit-finding, retraction, doc-drift, accepted-divergence, scope-note, deferred, risk-accepted, investigation, process-exception. audit-finding/doc-drift additionally require --front/--severity/--resolution (and accept optional --round); deferred additionally requires --reopenwhen; every other value accepts none of those five flags (usage-error if any are passed).
-
-### `--scope` / `-s` *(required, string)*
-
-The module/command/concern this entry is about, reusing the project's own vocabulary. Valid kebab-case only -- lowercase letters/digits, single hyphens, no '/', '\', or embedded '--' (log-scope-invalid); becomes a literal segment of the entry's own filename.
-
-### `--slug` *(required, string)*
-
-A few kebab-case words identifying this specific entry -- lowercase letters/digits only, single hyphens between words, no leading/trailing/double hyphens (log-slug-invalid). What actually guarantees the filename is unique.
-
-### `--summary` *(required, string)*
-
-One-line summary -- becomes the entry's own '#' heading. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--body` *(required, string)*
-
-Free-form body text, written below the heading (and the structured line, if any).
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD) used as the entry's own filename date; defaults to today. Must not be in the future (refdate-invalid-format/refdate-in-future).
-
-### `--front` *(optional, string)*
-
-Required together with --severity/--resolution, only when --classification is audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--severity` *(optional, string)*
-
-One of: Low, Medium, High (log-severity-invalid otherwise). Required together with --front/--resolution for audit-finding/doc-drift.
-
-### `--resolution` *(optional, string)*
-
-One of: Direct, Escalated, Retraction (log-resolution-invalid otherwise). Required together with --front/--severity for audit-finding/doc-drift.
-
-### `--round` *(optional, integer)*
-
-Only valid when --classification is audit-finding or doc-drift; usage-error otherwise. Optional even then: omit it to auto-assign the next round (highest existing Round across audit-finding/doc-drift entries, plus one) -- the safe default when starting a new round. Pass it explicitly to REUSE a round already in progress (the common case: a second finding in the same round), which auto-assignment can never do on its own. Must be a positive integer (log-round-invalid) not lower than the highest Round already recorded (log-round-too-low) -- Round never decreases. When omitted, the result's own `warnings` names the round that was auto-assigned, so an accidental new-round-instead-of-reuse is visible immediately instead of discovered later.
-
-### `--reopenwhen` *(optional, string)*
-
-Required, and only valid, when --classification is deferred; usage-error otherwise. The concrete, checkable condition that reopens this deferred item. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--path` | `-p` | yes | string | Repository root directory. |
+| `--classification` | `-c` | yes | string | One of: audit-finding, retraction, doc-drift, accepted-divergence, scope-note, deferred, risk-accepted, investigation, process-exception. audit-finding/doc-drift additionally require --front/--severity/--resolution (and accept optional --round); deferred additionally requires --reopenwhen; every other value accepts none of those five flags (usage-error if any are passed). |
+| `--scope` | `-s` | yes | string | The module/command/concern this entry is about, reusing the project's own vocabulary. Valid kebab-case only -- lowercase letters/digits, single hyphens, no '/', '\', or embedded '--' (log-scope-invalid); becomes a literal segment of the entry's own filename. |
+| `--slug` | -- | yes | string | A few kebab-case words identifying this specific entry -- lowercase letters/digits only, single hyphens between words, no leading/trailing/double hyphens (log-slug-invalid). What actually guarantees the filename is unique. |
+| `--summary` | -- | yes | string | One-line summary -- becomes the entry's own '#' heading. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--body` | -- | yes | string | Free-form body text, written below the heading (and the structured line, if any). |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD) used as the entry's own filename date; defaults to today. Must not be in the future (refdate-invalid-format/refdate-in-future). |
+| `--front` | -- | no | string | Required together with --severity/--resolution, only when --classification is audit-finding or doc-drift; usage-error otherwise. Which review angle found this. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--severity` | -- | no | string | One of: Low, Medium, High (log-severity-invalid otherwise). Required together with --front/--resolution for audit-finding/doc-drift. |
+| `--resolution` | -- | no | string | One of: Direct, Escalated, Retraction (log-resolution-invalid otherwise). Required together with --front/--severity for audit-finding/doc-drift. |
+| `--round` | -- | no | integer | Only valid when --classification is audit-finding or doc-drift; usage-error otherwise. Optional even then: omit it to auto-assign the next round (highest existing Round across audit-finding/doc-drift entries, plus one) -- the safe default when starting a new round. Pass it explicitly to REUSE a round already in progress (the common case: a second finding in the same round), which auto-assignment can never do on its own. Must be a positive integer (log-round-invalid) not lower than the highest Round already recorded (log-round-too-low) -- Round never decreases. When omitted, the result's own `warnings` names the round that was auto-assigned, so an accidental new-round-instead-of-reuse is visible immediately instead of discovered later. |
+| `--reopenwhen` | -- | no | string | Required, and only valid, when --classification is deferred; usage-error otherwise. The concrete, checkable condition that reopens this deferred item. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
 
 ## Failure codes
 
@@ -73,6 +43,8 @@ Required, and only valid, when --classification is deferred; usage-error otherwi
 | `log-severity-invalid` | --severity is not one of Low/Medium/High. |
 | `log-resolution-invalid` | --resolution is not one of Direct/Escalated/Retraction. |
 | `log-round-invalid` | --round is not a positive integer. |
+| `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
+| `refdate-in-future` | --refdate is after today. |
 | `log-round-too-low` | --round is lower than the highest Round already recorded. |
 | `field-contains-forbidden-character` | summary/front/reopenwhen contains '\|' or a line-break-like character. |
 | `field-is-blank` | summary/front/reopenwhen is non-empty but blank after stripping whitespace. |
@@ -124,17 +96,16 @@ Required, and only valid, when --classification is deferred; usage-error otherwi
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
-| `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
-| `refdate-in-future` | --refdate is after today. |
+<!-- generated:end -->
 
 ## Example
 
 ```bash
 # A plain entry, no structured line
-adrpy log --path . --classification scope-note --scope lock --slug clarify-timeout-behavior --summary "Clarify what happens on timeout" --body "The lock wait ceiling and the abandon window are independent settings."
+adrpy log --path . --classification scope-note --scope config --slug clarify-folderlog-default --summary "Clarify the folderlog default" --body "Omitted, folderlog is the decision-log sibling of folderadr."
 
 # audit-finding/doc-drift: --front/--severity/--resolution required, --round computed automatically
-adrpy log --path . --classification audit-finding --scope lock --slug retry-loop-off-by-one --summary "Retry loop stopped one attempt short" --body "Details of the fix." --front "test-adequacy audit" --severity Medium --resolution Direct
+adrpy log --path . --classification audit-finding --scope fs --slug retry-loop-off-by-one --summary "Retry loop stopped one attempt short" --body "Details of the fix." --front "test-adequacy audit" --severity Medium --resolution Direct
 
 # deferred: --reopenwhen required
 adrpy log --path . --classification deferred --scope security --slug posix-symlink-coverage --summary "POSIX symlink-escape coverage deferred" --body "Windows-only today." --reopenwhen "the test-adequacy audit front runs again"
@@ -142,4 +113,4 @@ adrpy log --path . --classification deferred --scope security --slug posix-symli
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help log` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help log` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

@@ -51,23 +51,13 @@ name `decision-log`.** Any directory a project's own tooling scans
 recursively when looking for decision files will treat anything found
 inside it as a candidate for one of its recognized naming schemes, and
 a report that lists "every file found, including unrecognized ones"
-would mix this log's entries into that same listing. This is the same
-structural reasoning that requires excluding an infrastructure marker
-(a concurrency lock file, say) from those same scans — the safest
+would mix this log's entries into that same listing — the safest
 exclusion is not being inside the scanned tree at all.
 
-**If this location is configurable, keep the setting out of any config
-file the project shares with a prior/reference tool for interop.** A
-shared config schema that mirrors a reference implementation's own
-format is typically validated strictly against that exact field set —
-adding a field for this log's path there risks breaking round-trip
-compatibility with that reference tool the moment it writes or reads
-the file again. Keep this setting in the project's own, tool-specific
-config layer instead (whatever mechanism already holds preferences the
-reference tool has no concept of) — and only that tool-specific layer,
-never the shared one, is a reasonable place to tolerate unmapped/
-unrecognized fields for forward compatibility, since the reference tool
-never reads it.
+**If this location is configurable, it is one setting next to the
+decision-record directory's own, and the two must never overlap** —
+neither the same directory nor one nested inside the other, compared as
+real paths, for the reason above.
 
 **File naming**: `{classification}--{ISO date}--{scope}--{short-slug}.md`
 — e.g. `audit-finding--2026-09-14--sequence-lock--stale-lock-cleanup.md`,

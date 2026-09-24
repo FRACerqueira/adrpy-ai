@@ -6,123 +6,45 @@
 
 Reads or updates an existing repository's own `adr-config.adrplus`.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Reads or updates fields of an existing repository's adr-config.adrplus. May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- no write is attempted either way. With no field flags, reads the current config back (read-only, no write). `activeplugins` is never included in that read result or accepted as a field to update -- the plugin system is out of scope for now (see the `init` command's own note) -- so this is a subset of the raw file, not its full contents; do not round-trip it as `init --seed` input without adding `activeplugins` back. Omitted fields keep their current value; only the fields passed are updated. The result's own JSON shape differs by mode: a pure read's result has a `config` key (the current field values); a write's result never has that key at all, only `updated_fields` -- a generic wrapper that reads `data.config` unconditionally after any `config` call will KeyError on a write. Before changing a guarded field (--folderadr, --folderlog, --statusnew/--statusacc/--statusrej/--statussup, --separator, --migrationpattern), the repository is validated with the current config: if it breaks a consistency rule (the ones `adrpy check` reports, a subdirectory of the decisions folder that could not be scanned included), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint, and nothing is written. A read, or a change of any other field, does not validate. --folderadr can only be changed while the OLD folder has no recognized decisions yet -- otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions names the count) rather than silently orphaning them at their old, still-real path. The NEW folder is checked too: if it already exists and holds a file that would newly parse as a decision under the resulting config, fails with folderadr-change-would-adopt-unrelated-files (data.adopted_files lists the file paths) instead of silently absorbing it and corrupting next-number allocation; if a subdirectory under the new folder can't be scanned, fails closed with folderadr-change-scan-incomplete rather than assuming nothing was there. Skipped entirely when the new folder does not exist yet. --folderlog (ADR007V01, deliberately not byte-compatible with the reference tool's own schema) is validated and change-guarded the same way -- cannot overlap with (equal, or be nested inside or around) folderadr, fails with config-folderadr-folderlog-overlap otherwise; can only be changed while the OLD directory has no decision-log entries yet, otherwise fails with folderlog-change-blocked-by-existing-entries (data.existing_entries names the count); the NEW directory is checked too, failing with folderlog-change-would-adopt-unrelated-files (data.adopted_files: bare filenames, not paths) if it already holds a file that would newly parse as an entry -- unlike folderadr's own scan, decision-log's own scan additionally fails LOUDLY (log-directory-contains-unrecognized-file) on any .md file there that does NOT parse as a valid entry, rather than silently ignoring it, since that scan can never tell 'unrelated' apart from 'malformed' the way folderadr's naming-scheme recognition can. Both directions fail closed with log-scan-incomplete if a subdirectory can't be scanned. Omitted from a hand-edited config written before this field existed, folderlog defaults to folderadr's own parent sibling 'decision-log' -- this command's own read/write both honor that default transparently. --statusnew/--statusacc/--statusrej/--statussup/--separator/--migrationpattern can likewise only be changed while doing so would not break recognition of an existing decision (ADR004V01/V02) -- otherwise fails with status-or-separator-change-blocked-by-existing-decisions (data.changed_fields names only the guarded field(s) actually blocking this call -- a field this call also touched, but whose own scope has no existing decisions at risk, is NOT listed there even though the call's atomic write still fails to apply it either; data.existing_decisions is the decision count actually at risk from those blocking field(s), not necessarily the repository's total). Status labels and --separator block if ANY recognized decision exists (current-scheme or legacy-scheme -- --separator's own recognition dependency is CURRENT-scheme-only, but a value that already appears inside a legacy filename can make that file newly match the current-scheme parser too, silently reclassifying it, so --separator cannot be scoped to current-scheme decisions the way --migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision exists (parse_filename, the current-scheme parser, never reads migrationpattern, so no equivalent reclassification risk exists in that direction). This is a PERMANENT block once the decisions it actually protects exist, with no migration path -- for --statusnew/--statusacc/--statusrej/--statussup and --separator that means ANY recognized decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already carry it against a later label change, but does not exempt THIS GUARD from refusing the config change itself -- the two are independent, and a marker-protected repository is blocked exactly the same as one with none); for --migrationpattern it means a LEGACY-scheme decision specifically. --separator may also fail with separator-change-would-adopt-unrelated-files (data.adopted_files lists the file paths) if changing it would make a file NOT currently recognized as a decision (by either naming scheme) newly parse as one -- unlike --migrationpattern, which is deliberately allowed to newly recognize pre-existing legacy files (that is its own documented purpose), --separator has no such intentional-adoption use case, so any file it would newly sweep in is treated as an unintended side effect and blocked. This check only ever runs once the blocked-by-existing-decisions check above has already passed, so it only ever fires when zero existing decisions are at risk from this call -- not an edge case alongside a more common one where both could coexist, since those two outcomes are mutually exclusive by construction.
+With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or written.
 
 ## Arguments
 
-### `--path` *(required, string)*
-
-Repository root directory.
-
-### `--folderadr` *(optional, string)*
-
-Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself.
-
-### `--folderlog` *(optional, string)*
-
-Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed.
-
-### `--migrationpattern` *(optional, string)*
-
-Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that.
-
-### `--template` *(optional, string)*
-
-Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that.
-
-### `--prefix` *(optional, string)*
-
-ASCII letters only, max 5 characters; the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that.
-
-### `--separator` *(optional, string)*
-
-One of ('-', '_', '.').
-
-### `--casetransform` *(optional, string)*
-
-One of ('CamelCase', 'PascalCase', 'SnakeCase', 'KebabCase').
-
-### `--statusnew` *(optional, string)*
-
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
-
-### `--statusacc` *(optional, string)*
-
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
-
-### `--statusrej` *(optional, string)*
-
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
-
-### `--statussup` *(optional, string)*
-
-Status label shown in the header table, max 25 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to.
-
-### `--headerdisclaimer` *(optional, string)*
-
-Header disclaimer text, max 100 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headertitlefile` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headerversion` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headerrevision` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headerscope` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headerdomain` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headertitlestatuscreated` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headertitlestatuschanged` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headertitlestatussuperseded` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--headertablefields` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker.
-
-### `--headertablevalues` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker.
-
-### `--headermigrated` *(optional, string)*
-
-Header row label, max 40 characters; cannot be empty, contain '|', or contain a line-break-like character.
-
-### `--lenseq` *(optional, integer)*
-
-Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer.
-
-### `--lenversion` *(optional, integer)*
-
-Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer.
-
-### `--lenrevision` *(optional, integer)*
-
-Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer.
-
-### `--disableplugins` *(optional, boolean)*
-
-'true' or 'false'; anything else fails with field-not-a-boolean.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--path` | -- | yes | string | Repository root directory. |
+| `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
+| `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
+| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
+| `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
+| `--prefix` | -- | no | string | ASCII letters only, max 5 characters; the stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
+| `--separator` | -- | no | string | One of ('-', '_', '.'). |
+| `--casetransform` | -- | no | string | One of ('CamelCase', 'PascalCase', 'SnakeCase', 'KebabCase'). |
+| `--statusnew` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statusacc` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statusrej` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statussup` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--headerdisclaimer` | -- | no | string | Header disclaimer text, max 100 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headertitlefile` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headerversion` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headerrevision` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headerscope` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headerdomain` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headertitlestatuscreated` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headertitlestatuschanged` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headertitlestatussuperseded` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--headertablefields` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker. |
+| `--headertablevalues` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '<!--' or '-->' -- these two build the header's table row, where an HTML comment is the migrated-header marker. |
+| `--headermigrated` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
+| `--lenseq` | -- | no | integer | Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer. |
+| `--lenversion` | -- | no | integer | Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer. |
+| `--lenrevision` | -- | no | integer | Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer. |
+| `--disableplugins` | -- | no | boolean | 'true' or 'false'; anything else fails with field-not-a-boolean. |
 
 ## Failure codes
 
@@ -187,6 +109,7 @@ Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -200,4 +123,4 @@ adrpy config --path . --lenrevision 2
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help config` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help config` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

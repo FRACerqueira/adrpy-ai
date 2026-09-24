@@ -28,41 +28,12 @@ def describe():
         "name": "supersede",
         "summary": "Marks an Accepted decision Superseded and creates its successor.",
         "description": (
-            "Marks an Accepted decision as Superseded and creates its successor. "
-            "May fail with file-not-found if --file does not point to an existing file (a bare name with "
-            "no extension gets '.md' appended before this check), or cannot-determine-root-path if no "
-            "adr-config.adrplus is found by walking up from it -- no write is attempted either way. "
-            "Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). "
-            "Then, before any other rule, the whole repository is validated: if it breaks a consistency rule "
-            "(the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede "
-            "link that does not point both ways, a subdirectory that could not be scanned, ...), fails with "
-            "repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is "
-            "made either way. "
-            "Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has "
-            "already been superseded, or family-member-pending if another member is still "
-            "unresolved (Proposed) -- no write is made either way. "
-            "This is two writes, not one: both files are prepared first, then committed successor "
-            "first: a failure preparing either file or creating the successor "
-            "(supersede-successor-write-failed) means nothing was written. A failure "
-            "marking the predecessor Superseded afterward (multi-file-write-partially-applied) means "
-            "success=false even though the successor already exists -- that code's own `data.applied` "
-            "names it, and `data.pending` the predecessor, still Accepted. The repository is then "
-            "inconsistent (successor-without-predecessor), so every command refuses it until it is repaired "
-            "by hand: remove the successor (just created from the template) and run supersede again, or mark "
-            "the predecessor Superseded in its Superseded cell. "
-            "The successor's own title -- the predecessor's own filename segment, "
-            "re-validated before use, unless --title overrides it (see its own argument description) -- "
-            "may fail with field-contains-forbidden-character if it carries '|', a line-break-like "
-            "character, a filesystem-unsafe character (`<>:\"/\\|?*` or a control character; the successor's "
-            "title lands inside an actual filename component, not just a header-table cell), or consists "
-            "entirely of "
-            "whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a "
-            "value raw, which can collide with the filename's own separator and produce a successor the "
-            "tool can never recognize again; no write is made. Fails with one of still-proposed, "
-            "already-rejected, or already-superseded (the target's own "
-            "current status makes Superseded unreachable from here) if the target isn't eligible -- no "
-            "write is made. Fails with file-already-exists (data.file names it) if the successor's own "
-            "resulting filename already exists on disk when it is created -- no write is made either."
+            "Marks an Accepted decision Superseded and creates its successor, status Proposed, in a new "
+            "family whose filename ends with the predecessor's number (--NNN). The whole repository and the "
+            "family rules in doc/lifecycle.md are checked first, and both files are prepared before either is"
+            " written. The successor is written first; if only it could be written, the failure names what "
+            "was and was not written and the header row to put in the predecessor by hand (data.applied, "
+            "data.pending, data.repair)."
         ),
         "arguments": [
             {
@@ -153,7 +124,7 @@ def run(args):
         # family is Superseded (family-member-superseded), so no successor
         # of it that is not Rejected exists either
         # (successor-without-predecessor otherwise): there is nothing to
-        # resume or collide with. The successor's number comes after every
+        # collide with. The successor's number comes after every
         # decision in the same snapshot.
         successor_number = next_number(
             [(decision.scheme, decision.name, decision.path) for decision in ctx.snapshot.decisions]
@@ -162,8 +133,7 @@ def run(args):
         successor = DecisionRecord(
             number=successor_number,
             # Defaults to the predecessor's own FILENAME segment
-            # (already case-transformed), not its header's prose title --
-            # confirmed via live comparison against the reference tool.
+            # (already case-transformed), not its header's prose title.
             # Overridden by --title when given (see above).
             title=ctx.title,
             version=1,

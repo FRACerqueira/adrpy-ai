@@ -58,6 +58,10 @@ regenerating `INDEX.md` -- and refuses outright
 (`log-entry-already-exists`) instead of silently overwriting if the
 exact same date/classification/scope/slug already exists.
 
+Run one `adrpy` command at a time: don't run `adrpy` commands in
+parallel on the same working copy -- nothing locks it, and the last
+command to write a file wins.
+
 `--round` (audit-finding/doc-drift only) is optional: **omit it to start
 a new round** (highest existing `Round` plus one -- the safe default),
 or **pass it explicitly to reuse a round already in progress** (the

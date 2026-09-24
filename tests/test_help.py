@@ -12,29 +12,24 @@ import pytest
 _PER_FILE_COMMANDS = ("approve", "reject", "undo", "supersede", "version", "revise")
 
 
+def _codes(name):
+    return {entry["code"] for entry in COMMANDS[name].describe()["failure_codes"]}
+
+
 def test_config_and_init_document_folderadr_change_scan_incomplete():
-    """Folderadr-change-scan-
-    incomplete (core.lifecycle.reject_folderadr_change_if_decisions_exist's
-    own fail-closed path) is only reachable from config and init (the
-    only two callers of that guard), and was also undocumented until
-    now."""
+    """folderadr-change-scan-incomplete (the fail-closed path of
+    core.lifecycle's folderadr-change guard) is reachable from config and
+    init, the only two callers of that guard."""
     for name in ("config", "init"):
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "folderadr-change-scan-incomplete" in text, f"{name}'s describe() never mentions it"
+        assert "folderadr-change-scan-incomplete" in _codes(name), f"{name}'s failure_codes never lists it"
 
 
 def test_every_path_based_command_documents_target_directory_not_found():
-    """target-directory-not-found
-    (core.lifecycle.resolve_target_and_config, raised for EVERY --path-
-    taking command, including init with require_config=False) is
-    reachable everywhere -- doc/commands/INDEX.md makes the absolute
-    claim that every failure code a command can return is documented
-    inline, so this must hold for every one of those commands."""
-    for name in ("config", "explore", "init", "log", "migrate", "new"):
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "target-directory-not-found" in text, f"{name}'s describe() never mentions it"
+    """target-directory-not-found (core.lifecycle.resolve_target_and_config,
+    raised for every --path-taking command, init included) is in each of
+    their failure_codes."""
+    for name in ("check", "config", "explore", "init", "log", "migrate", "new"):
+        assert "target-directory-not-found" in _codes(name), f"{name}'s failure_codes never lists it"
 
 
 def test_every_failure_code_is_documented_somewhere():
@@ -122,130 +117,90 @@ def test_installconfig_documents_io_error():
 
 
 def test_every_path_based_command_except_init_documents_config_not_found():
-    """config-not-found (resolve_target_and_config's other failure,
-    raised only when require_config=True -- every --path-taking command
-    except init, which decides for itself whether a missing config is
-    an error) was also undocumented everywhere."""
-    for name in ("config", "explore", "log", "migrate", "new"):
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "config-not-found" in text, f"{name}'s describe() never mentions it"
+    """config-not-found (resolve_target_and_config with require_config=True:
+    every --path-taking command except init, which decides for itself
+    whether a missing config is an error)."""
+    for name in ("check", "config", "explore", "log", "migrate", "new"):
+        assert "config-not-found" in _codes(name), f"{name}'s failure_codes never lists it"
 
 
 def test_every_per_file_command_documents_file_not_found_and_cannot_determine_root_path():
-    """file-not-found/cannot-determine-root-path
-    (core.lifecycle.load_target, the --file-based sibling of
-    resolve_target_and_config above) were also undocumented on every one
-    of the 6 commands that take --file instead of --path."""
+    """file-not-found/cannot-determine-root-path (resolving --file, the
+    sibling of resolve_target_and_config above) on every command that takes
+    --file instead of --path."""
     for name in _PER_FILE_COMMANDS:
-        info = COMMANDS[name].describe()
-        text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-        assert "file-not-found" in text, f"{name}'s describe() never mentions file-not-found"
-        assert "cannot-determine-root-path" in text, f"{name}'s describe() never mentions cannot-determine-root-path"
+        codes = _codes(name)
+        assert "file-not-found" in codes, f"{name}'s failure_codes never lists file-not-found"
+        assert "cannot-determine-root-path" in codes, f"{name}'s failure_codes never lists cannot-determine-root-path"
 
 
 def test_init_documents_config_already_exists_and_config_file_not_found():
-    """config-already-exists was only ever documented as 'NOT raised
-    when --seed is given', never stated positively for the bare-init
-    path it actually protects; config-file-not-found (a bad --seed path
-    itself) was undocumented entirely."""
-    info = COMMANDS["init"].describe()
-    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-    assert "config-already-exists" in text
-    assert "config-file-not-found" in text
+    """config-already-exists (a bare init on an existing repository) and
+    config-file-not-found (a bad --seed path)."""
+    codes = _codes("init")
+    assert "config-already-exists" in codes
+    assert "config-file-not-found" in codes
 
 
 def test_init_documents_the_three_length_too_small_codes():
     """lenseq/lenversion/lenrevision-too-small-for-existing-decisions
-    (init.py, fired once the existing-numbers scan itself succeeds) were
-    reachable but never named in describe(), despite the surrounding
-    text explicitly setting up the reader to expect them ('...which
-    lenseq/lenversion/lenrevision must fit...')."""
-    info = COMMANDS["init"].describe()
-    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-    assert "lenseq-too-small-for-existing-decisions" in text
-    assert "lenversion-too-small-for-existing-decisions" in text
-    assert "lenrevision-too-small-for-existing-decisions" in text
+    (init.py, once the existing-numbers scan itself succeeds)."""
+    codes = _codes("init")
+    assert "lenseq-too-small-for-existing-decisions" in codes
+    assert "lenversion-too-small-for-existing-decisions" in codes
+    assert "lenrevision-too-small-for-existing-decisions" in codes
 
 
 def test_config_documents_field_not_an_integer_and_field_not_a_boolean():
     """field-not-an-integer (lenseq/lenversion/lenrevision) and
-    field-not-a-boolean (disableplugins) were reachable but undocumented."""
-    info = COMMANDS["config"].describe()
-    text = info["description"] + " ".join(arg.get("description", "") for arg in info.get("arguments", []))
-    assert "field-not-an-integer" in text
-    assert "field-not-a-boolean" in text
+    field-not-a-boolean (disableplugins)."""
+    codes = _codes("config")
+    assert "field-not-an-integer" in codes
+    assert "field-not-a-boolean" in codes
 
 
 def test_new_supersede_and_version_document_the_forbidden_character_constraint():
-    """reject_embedded_
-    delimiter (core/security.py) is enforced on title/domain/scope in
-    new, and domain/scope in supersede/version, but only config.py's own
-    field descriptions ever mentioned this constraint -- an asymmetry
-    the codebase's own comments draw the analogy for but never actually
-    documented on the live-command side."""
-    checks = {
-        "new": ("title", "domain", "scope"),
-        "supersede": ("domain", "scope"),
-        "version": ("domain", "scope"),
-        "log": ("summary",),
-    }
-    for name, fields in checks.items():
-        info = COMMANDS[name].describe()
-        by_name = {arg["name"]: arg.get("description", "") for arg in info.get("arguments", [])}
-        for field in fields:
-            assert "field-contains-forbidden-character" in by_name[field], (
-                f"{name}'s '{field}' argument never mentions the forbidden-character constraint"
-            )
+    """reject_embedded_delimiter (core/security.py) is enforced on the
+    free-text flags of new (title/domain/scope), supersede/version
+    (domain/scope) and log (summary)."""
+    for name in ("new", "supersede", "version", "log"):
+        assert "field-contains-forbidden-character" in _codes(name), f"{name}'s failure_codes never lists it"
 
 
 def test_refdate_documents_its_own_actual_lower_bound_rule_per_command():
-    """--refdate's
-    description was byte-identical across 6 commands even though the
-    actual lower-bound rule differs -- new has none at all (a brand new
-    decision has no prior history), approve/reject/supersede bound
-    against the TARGET's own history, version/revise bound against the
-    LATEST family member's history instead (which can be a different
-    file than the one named in --file, when branching off an older
-    Rejected sibling)."""
-    with_lower_bound = ("approve", "reject", "supersede", "version", "revise")
-    for name in with_lower_bound:
-        refdate_arg = next(arg for arg in COMMANDS[name].describe()["arguments"] if arg["name"] == "refdate")
+    """Every command taking --refdate lists its format and future-date
+    codes; only the ones that bound it by an earlier date of the target
+    (approve/reject by its creation date, supersede/version/revise by its
+    Changed or creation date) list refdate-before-history -- new has no
+    lower bound at all (a brand new decision has no prior history)."""
+    for name in ("approve", "reject", "supersede", "version", "revise"):
+        codes = _codes(name)
         for code in ("refdate-invalid-format", "refdate-in-future", "refdate-before-history"):
-            assert code in refdate_arg["description"], f"{name}'s refdate description never mentions {code}"
+            assert code in codes, f"{name}'s failure_codes never lists {code}"
 
-    new_refdate_arg = next(arg for arg in COMMANDS["new"].describe()["arguments"] if arg["name"] == "refdate")
-    assert "refdate-invalid-format" in new_refdate_arg["description"]
-    assert "refdate-in-future" in new_refdate_arg["description"]
-    # new has no lower-bound check at all -- the description must not
-    # claim a constraint it doesn't actually enforce.
-    assert "refdate-before-history" not in new_refdate_arg["description"]
+    codes = _codes("new")
+    assert "refdate-invalid-format" in codes
+    assert "refdate-in-future" in codes
+    # new must not claim a constraint it doesn't enforce.
+    assert "refdate-before-history" not in codes
 
 
-def test_init_documents_existing_numbers_scan_incomplete_as_not_seed_scoped():
-    """init-existing-numbers-
-    scan-incomplete belongs in the top-level description, which every
-    path shares -- not only inside the --seed argument's own
-    description, in the same breath as codes that really are scoped to
-    the already-existing-repository path, since this one fires on a
-    genuinely fresh `init` too (no --seed needed) if a decisions folder
-    with an unreadable subdirectory already exists."""
-    info = COMMANDS["init"].describe()
-    assert "init-existing-numbers-scan-incomplete" in info["description"]
+def test_init_documents_existing_numbers_scan_incomplete():
+    """init-existing-numbers-scan-incomplete fires on a fresh init too (no
+    --seed needed) when a decisions folder with an unreadable subdirectory
+    already exists."""
+    assert "init-existing-numbers-scan-incomplete" in _codes("init")
 
 
 def test_every_file_command_documents_the_repository_validation():
     """Every one of the 6 per-file commands validates the whole
     repository before any other rule (repository-inconsistent) and
     refuses a target outside the decisions folder
-    (target-outside-folderadr) -- both in its failure_codes and its
-    description."""
+    (target-outside-folderadr)."""
     for name in _PER_FILE_COMMANDS:
-        info = COMMANDS[name].describe()
-        codes = {entry["code"] for entry in info["failure_codes"]}
+        codes = _codes(name)
         for code in ("repository-inconsistent", "target-outside-folderadr"):
             assert code in codes, f"{name}'s failure_codes never lists {code}"
-            assert code in info["description"], f"{name}'s describe() never mentions {code}"
 
 
 def test_short_flag_aliases_are_documented_in_describe():
@@ -276,13 +231,9 @@ def test_short_flag_aliases_are_documented_in_describe():
 
 
 def test_migrate_documents_its_scan_failed_error_code():
-    """Migrate's describe()
-    documented migration-scan-unreliable-encoding at length but never
-    its structurally identical sibling migration-scan-failed (same scan
-    loop, same phase, same all-or-nothing semantics for an OSError
-    instead of a lossy decode)."""
-    text = COMMANDS["migrate"].describe()["description"]
-    assert "migration-scan-failed" in text
+    """migration-scan-failed: a scanned file whose header cannot be read
+    refuses the whole run."""
+    assert "migration-scan-failed" in _codes("migrate")
 
 
 def test_every_per_file_command_documents_the_md_auto_suffix():

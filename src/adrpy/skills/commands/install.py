@@ -13,29 +13,12 @@ def describe():
         "name": "install",
         "summary": "Installs one or more bundled skills for one or more AI-coding-agent providers.",
         "description": (
-            "Writes the requested (provider, skill) pairs to disk, wrapped in the shape each "
-            "provider expects (full skill body for claude/cursor, a short stub pointing at one "
-            "shared doc for copilot/agentsmd). Every write is protected by a content-hash marker: "
-            "a file that already exists with no marker at all is reported as 'foreign' and left "
-            "untouched; a file whose marker no longer matches its own current content is reported "
-            "as 'drifted' and also left untouched -- in both cases only --force overwrites it. For "
-            "agentsmd, a skill's own start/end block that's truncated (missing its closing tag) or "
-            "duplicated (more than one complete block for the same skill), or that crosses another "
-            "skill's block (nested or overlapping -- only reachable by hand-editing), is reported as "
-            "'malformed' and given the same treatment as 'foreign'. Tags indented four spaces or more (or "
-            "by a tab) count as that skill's block only when its marker hash still matches -- a block an "
-            "editor re-indented, updated in place with its indentation kept; any other indented copy is "
-            "treated as your own text, never touched, and a new block is appended with a warning saying "
-            "why. A new shared doc is written only when some stub-mode provider in the call will be (an existing one is updated as before). "
-            "For copilot/agentsmd, the one shared doc a skill's stub points at is written (and "
-            "reported in `installed` under provider 'shared-doc') before that provider's own file, "
-            "never after -- if the shared doc itself is 'foreign'/'drifted' and blocked (without "
-            "--force), every stub-mode provider that would reference it is also skipped, reported "
-            "with reason 'shared-doc-blocked', rather than writing a stub that points at content "
-            "never actually verified or regenerated. --target global combined with any provider "
-            "other than claude fails with usage-error (cursor/copilot/agentsmd have no global-scope "
-            "concept). Never runs unless explicitly invoked -- adrpy-skills is a separate entry "
-            "point from adrpy and is never called by it."
+            "Writes each requested (provider, skill) pair in the shape that provider expects: the full skill "
+            "body for claude/cursor, a short stub pointing at one shared doc for copilot/agentsmd (for "
+            "agentsmd, only that skill's own marked block in AGENTS.md). A file or block that is foreign (no "
+            "marker), drifted (edited since it was generated) or malformed is left untouched unless --force "
+            "is given, and a stub is never written while its shared doc is blocked (see "
+            "doc/skills/README.md). --target global works with the claude provider only."
         ),
         "arguments": [
             {

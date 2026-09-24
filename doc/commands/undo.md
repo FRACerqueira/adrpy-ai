@@ -6,15 +6,18 @@
 
 Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Reverts a decision's Accepted/Rejected status back to Proposed. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. A title, scope or domain in the target's header that breaks the free-text rules ('|', a line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:"/\|?*` or a control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of repository-inconsistent's data.errors (invalid-header). Fails with one of still-proposed or already-superseded if the target isn't eligible, or family-member-superseded/family-member-pending if another member of the same family has already been superseded or is still unresolved (Proposed). Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the target belongs to the family of a successor that was rejected -- the end of its line. No write is made in any of these cases.
+Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell. The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); nothing is written when a rule fails.
 
 ## Arguments
 
-### `--file` / `-f` *(required, string)*
-
-Path to the decision file. A bare name with no extension gets '.md' appended.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
 
 ## Failure codes
 
@@ -22,7 +25,6 @@ Path to the decision file. A bare name with no extension gets '.md' appended.
 |---|---|
 | `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
 | `already-superseded` | This decision has already been superseded. |
-| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme. |
@@ -31,8 +33,9 @@ Path to the decision file. A bare name with no extension gets '.md' appended.
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
-| `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
+| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
+| `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
@@ -75,6 +78,7 @@ Path to the decision file. A bare name with no extension gets '.md' appended.
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -84,4 +88,4 @@ adrpy undo --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help undo` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help undo` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

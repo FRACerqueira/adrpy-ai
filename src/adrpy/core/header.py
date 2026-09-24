@@ -1,5 +1,5 @@
-"""Decision-file header: byte-for-byte replica of the reference tool's own
-format. The header is always exactly 12 lines, addressed
+"""Decision-file header: the 12-line format adrpy shares with AdrPlus
+1.0.0. The header is always exactly 12 lines, addressed
 positionally -- the row *label* text is never inspected on read, only its
 position and the surrounding pipe characters.
 """
@@ -21,13 +21,11 @@ from adrpy.core.text import is_ascii_digits, strip_leading_boms
 HEADER_LINE_COUNT = 12
 
 # ADR008V01: every code parse_header can produce via its own result.error
-# (never raised here directly -- read_target, core/lifecycle.py, is what
-# actually raises header.error, or FailureCodes.HEADER_INVALID as its own
-# fallback), one static one-line condition each. Reachable only by the 6
-# per-file commands that call read_target (approve/reject/undo/supersede/
-# version/revise) -- new/migrate/explore/config/installconfig/init/log
-# never surface these: migrate and explore both call parse_header
-# directly but only ever read .is_valid/.error, never raise on it.
+# (never raised here directly: the repository validator, core/consistency,
+# reports it as the start of an invalid-header entry's `detail`), one
+# static one-line condition each. Reachable by the commands that validate
+# the repository -- migrate and explore call parse_header directly but
+# only ever read .is_valid/.error, never raise on it.
 SHARED_FAILURE_CODES = {
     FailureCodes.HEADER_INVALID: "The header failed structural validation, for a reason not covered by a more specific code below.",
     FailureCodes.ADR_FILE_EMPTY: "The file has no content at all.",
@@ -57,9 +55,9 @@ _STATUS_CONFIG_FIELD = {
 }
 
 # ADR004V01: a fixed, non-translatable marker written after the status
-# cell's date -- in the trailing space both this parser and the real
-# AdrPlus's own ParseStatusLine already ignore for date purposes (proven
-# in production by the Superseded row's own ": <number>" suffix below).
+# cell's date -- in the trailing space both this parser and AdrPlus
+# 1.0.0's ParseStatusLine ignore for date purposes (as they already do
+# for the Superseded row's own ": <number>" suffix below).
 # Recognizing it takes recognition of a decision written under this
 # scheme off the repository's CURRENT statusnew/statusacc/statusrej/
 # statussup text entirely, so a later label or language change can never
@@ -103,19 +101,12 @@ class DecisionRecord:
 
 
 def build_header(config, record, migrated=False):
-    """NOTE: the reference tool sources the literal
-    "<!-- Migrated -->" marker text from its own UI-language resource string,
-    not from `config.headermigrated` -- this uses the repo config field
-    instead, a simplification adopted when the `migrate` command was
-    first built to write this marker.
-
-    Deliberate divergence from the reference tool: the "Migrated" word in the
-    Values column's own label is now conditional on `migrated`, unlike its
-    literal "Values Migrated" label on every file regardless
-    (decision-log: accepted-divergence--2026-09-16--header--migrated-word-
-    only-when-migrated.md) -- the word is never parsed by either side
-    (parse_header below only looks for the trailing HTML comment), so it
-    carried no information on a non-migrated file, only a misleading one.
+    """The "Migrated" word in the Values column's own label comes from
+    `config.headermigrated`, and appears only when `migrated` (decision-log:
+    accepted-divergence--2026-09-16--header--migrated-word-only-when-
+    migrated.md) -- the word is never parsed (parse_header below only
+    looks for the trailing HTML comment), so on a non-migrated file it
+    would carry no information, only a misleading one.
     """
     values_label = f"{config.headertablevalues} {config.headermigrated}" if migrated else config.headertablevalues
     migrated_marker = f" <!-- {config.headermigrated} -->" if migrated else ""
@@ -417,7 +408,7 @@ def has_header_shape(lines):
     decode never removes them. A NUL byte also counts: it means the file
     was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
     which splits the markers apart -- a damaged header, not a missing one
-    (Round 40, decided by the project owner)."""
+    (decided by the project owner)."""
     return any(
         "|Adr-Plus " in line or line.rstrip() == "|--|--|" or "\x00" in line for line in lines[:HEADER_LINE_COUNT]
     )

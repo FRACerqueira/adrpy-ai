@@ -23,7 +23,7 @@ adrpy-ai is a **local CLI tool** with zero runtime dependencies. It reads and wr
 Concerns that are in scope:
 
 - Path traversal or arbitrary file writes via command arguments or a malicious `adr-config.adrplus`/install-level config (this project's own repository boundary checks, e.g. `resolve_within`/`is_within` in `src/adrpy/core/security.py`, exist specifically to prevent this — a way around them is a real finding).
-- Data corruption or lost updates under concurrent invocations (see [ADR001](doc/adr/ADR001V01-repository-lock-covers-the-full-critical-section-of-every-mutating-command.md) for the concurrency model this project intends to guarantee).
+- Data corruption by a single invocation: a partially written file, a new decision created over an existing file, or a command acting on a repository that breaks a consistency rule instead of refusing it. Lost updates between commands run in parallel on the same working copy are not in scope: adrpy has no concurrency control by design — one owner per git working copy, git coordinates people (see [One owner per working copy](README.md#one-owner-per-working-copy)).
 - Supply-chain issues — there are currently zero runtime dependencies, so this mainly concerns the build/dev toolchain itself (`hatchling`, `pytest`).
 
 ## Security Best Practices for Users

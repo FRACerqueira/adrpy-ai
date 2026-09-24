@@ -11,23 +11,10 @@ def describe():
         "name": "list",
         "summary": "Reports which bundled skills are installed, for which providers, and whether any have drifted.",
         "description": (
-            "Cross-product of every requested skill x every requested provider, each entry "
-            "reporting installed (bool), drifted (null when not installed; otherwise true if the "
-            "file/block is either 'foreign' -- no adrpy-skills marker, meaning install/remove would "
-            "refuse to touch it without --force -- or genuinely hand-edited since it was generated, or (agentsmd) "
-            "a 'malformed' block; "
-            "false only when the content still matches exactly what was last generated -- which, for an "
-            "agentsmd block indented four spaces or more, or by a tab, still needs --force to remove), and the "
-            "resolved file path either way. Always reports both project and global scope for claude "
-            "(the only provider with a global-scope concept); every other provider is project-scope "
-            "only. When any requested provider is stub-mode (copilot, agentsmd), one extra row per "
-            "skill is included under provider 'shared-doc' (project scope only) for the one shared "
-            "doc/ai-skills/<name>.md file its stub points at -- same shared-doc concept install/"
-            "remove already report under that same provider name in their own `installed`/`removed`. "
-            "A file at that path with no adrpy-skills marker that no stub points at is the user's own, "
-            "and is reported as not installed -- the same scope remove uses. "
-            "Read-only in the strict sense: computes a hash to determine drift, but never writes "
-            "anything back, regardless of what it finds."
+            "Reports, for every requested skill and provider, whether it is installed, whether it has drifted"
+            " (null when not installed; true for a foreign, hand-edited or malformed file or block) and the "
+            "resolved path; claude is reported in both project and global scope. A stub-mode provider adds "
+            "one `shared-doc` row per skill. Read-only: it computes hashes but never writes."
         ),
         "arguments": [
             {

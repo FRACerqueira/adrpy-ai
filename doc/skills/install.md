@@ -6,45 +6,34 @@
 
 Installs one or more bundled skills for one or more AI-coding-agent providers.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Writes the requested (provider, skill) pairs to disk, wrapped in the shape each provider expects (full skill body for claude/cursor, a short stub pointing at one shared doc for copilot/agentsmd). Every write is protected by a content-hash marker: a file that already exists with no marker at all is reported as `foreign` and left untouched; a file whose marker no longer matches its own current content is reported as `drifted` and also left untouched -- in both cases only `--force` overwrites it. For agentsmd, a skill's own start/end block that's truncated (missing its closing tag) or duplicated (more than one complete block for the same skill), or that crosses another skill's block (nested or overlapping -- only reachable by hand-editing), is reported as `malformed` and given the same treatment as `foreign`. Tags indented four spaces or more (or by a tab) count as that skill's block only when its marker hash still matches -- a block an editor re-indented, updated in place with its indentation kept; any other indented copy is treated as your own text, never touched, and a new block is appended with a warning saying why. A new shared doc is written only when some stub-mode provider in the call will be (an existing one is updated as before). For copilot/agentsmd, the one shared doc a skill's stub points at is written (and reported in `installed` under provider `shared-doc`) before that provider's own file, never after -- if the shared doc itself is `foreign`/`drifted` and blocked (without `--force`), every stub-mode provider that would reference it is also skipped, reported with reason `shared-doc-blocked`, rather than writing a stub that points at content never actually verified or regenerated. `--target global` combined with any provider other than `claude` fails with `usage-error` (cursor/copilot/agentsmd have no global-scope concept). Never runs unless explicitly invoked -- `adrpy-skills` is a separate entry point from `adrpy` and is never called by it.
+Writes each requested (provider, skill) pair in the shape that provider expects: the full skill body for claude/cursor, a short stub pointing at one shared doc for copilot/agentsmd (for agentsmd, only that skill's own marked block in AGENTS.md). A file or block that is foreign (no marker), drifted (edited since it was generated) or malformed is left untouched unless --force is given, and a stub is never written while its shared doc is blocked (see doc/skills/README.md). --target global works with the claude provider only.
 
 ## Arguments
 
-### `--provider` / `-p` *(optional, string)*
-
-Comma-separated list of providers to install for: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` (every bundled provider) when omitted -- or, with `--target global`, to every provider that has a global scope (`claude`).
-
-### `--skill` / `-s` *(optional, string)*
-
-Comma-separated list of skills to install: `comment-audit`, `decision-log`, `pre-release-audit`. Defaults to `all` (every bundled skill) when omitted.
-
-### `--target` / `-t` *(optional, string)*
-
-`project` (default) writes under `--path`; `global` writes under your own home directory (only meaningful for `claude` -- every other provider fails with `usage-error` under `--target global`).
-
-### `--path` *(optional, string)*
-
-Repository root to install into. Defaults to `.`. Only meaningful for `--target project`.
-
-### `--force` / `-f` *(optional, switch)*
-
-Overwrites a `foreign`, `drifted`, or (`agentsmd`) `malformed` file/block instead of skipping it. Presence-only: pass just `--force`, not `--force true/false`.
-
-### `--allow-external-links` *(optional, switch)*
-
-Allows a file this call writes or removes to resolve, through a junction or symlink, outside the target (`--path`, or the home directory for `--target global`) -- e.g. a dotfiles setup linking `.claude/skills` elsewhere. Without it, such a call fails with `path-outside-repository` before touching anything. Presence-only.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--provider` | `-p` | no | string | Comma-separated list of providers to install for: claude, cursor, copilot, agentsmd. Defaults to 'all' (every bundled provider) when omitted -- or, with --target global, to every provider that has a global scope (claude). |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to install: comment-audit, decision-log, pre-release-audit. Defaults to 'all' (every bundled skill) when omitted. |
+| `--target` | `-t` | no | string | 'project' (default) writes under --path; 'global' writes under the user's own home directory (only meaningful for claude -- every other provider fails with usage-error under --target global). |
+| `--path` | -- | no | string | Repository root to install into. Defaults to '.'. Only meaningful for --target project. |
+| `--force` | `-f` | no | switch | Overwrites a 'foreign', 'drifted', or (agentsmd) 'malformed' file/block instead of skipping it. Presence-only: pass just '--force', not '--force true/false'. |
+| `--allow-external-links` | -- | no | switch | Allows a file this call writes or removes to resolve, through a junction or symlink, outside the target (--path, or the home directory for --target global) -- e.g. a dotfiles setup linking .claude/skills elsewhere. Without it, such a call fails with path-outside-repository before touching anything. Presence-only. |
 
 ## Failure codes
 
 | Code | Condition |
 |---|---|
-| `target-directory-not-found` | `--path` does not point to an existing directory (never created) -- nothing was written. |
-| `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (`data.file`/`data.resolved` name it) and `--allow-external-links` was not given -- nothing was written or removed. |
-| `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
-| `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). `data.installed`/`data.skipped` list what this same call had already written before the failure, and `warnings` carries the `warnings` already collected -- the same shapes as the success result, as far as the call got. |
-| `interrupted` | Interrupted (Ctrl+C) partway through; `data.installed`/`data.skipped` and `warnings` report what was already done, as for `io-error`. |
+| `target-directory-not-found` | --path does not point to an existing directory (never created) -- nothing was written. |
+| `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (data.file/data.resolved name it) and --allow-external-links was not given -- nothing was written or removed. |
+| `usage-error` | An unknown --provider, --skill, or --target value was given (--target accepts only 'project'/'global'), or --target global was combined with a provider that has no global-scope concept (anything but claude). |
+| `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). data.installed/data.skipped list what this same call had already written before the failure, and warnings carries the warnings already collected -- the same shapes as the success result, as far as the call got. |
+| `interrupted` | Interrupted (Ctrl+C) partway through; data.installed/data.skipped and warnings report what was already done, as for io-error. |
+<!-- generated:end -->
 
 ## Example
 
@@ -54,4 +43,4 @@ adrpy-skills install --skill decision-log,pre-release-audit --provider claude,cu
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy-skills help install` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy-skills help install` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

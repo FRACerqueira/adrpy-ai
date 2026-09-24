@@ -1,12 +1,11 @@
 """Repository configuration schema: the single source of
 truth for a repo's `adr-config.adrplus`. Always read live from disk,
-never cached across invocations, so the two tools never see a stale copy
-of each other's writes.
+never cached across invocations, so a command never works from a stale
+copy of the file.
 
 ADR007V01 (superseding ADR003V01's own driver on this point): `folderlog`
-is a deliberate, confirmed divergence from AdrPlus's own schema -- byte-
-compatible round-tripping with the reference tool no longer holds for a
-config carrying this field. It is also this schema's first field with a
+is adrpy's own field, not part of AdrPlus 1.0.0's schema. It is also
+this schema's first field with a
 computed default instead of being strictly required (see the `folderlog`
 handling in `parse_repo_config`), so an `adr-config.adrplus` written
 before this field existed keeps parsing unchanged.
@@ -34,9 +33,8 @@ VALID_SEPARATORS = ("-", "_", ".")
 # tuple of the same 4 names.
 VALID_CASE_TRANSFORMS = tuple(CASE_TRANSFORMS.keys())
 
-# Upper bounds are a deliberate divergence, not fidelity: the reference
-# tool's own non-interactive validator has no maximum at all for
-# these three fields -- only its interactive config wizard's own slider
+# Upper bounds on these three fields: AdrPlus's non-interactive
+# validator has none -- only its interactive config wizard's slider
 # limits them (lenseq 3-5, lenversion 2-3, lenrevision 0-3), and
 # hand-editing the config file bypasses that slider entirely even there.
 # Without a wizard here, nothing else would ever guard these values, so
@@ -64,8 +62,8 @@ PREFIX_MAX_LENGTH = 5
 _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 
 FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
-# ADR007V01: no reference-tool wizard field to cite -- folderlog doesn't
-# exist there. Same bound as folderadr's own for consistency, not fidelity.
+# ADR007V01: folderlog has no AdrPlus wizard field to cite. Same bound
+# as folderadr's own, for consistency.
 FOLDERLOG_MAX_LENGTH = 50
 # headerdisclaimer and status labels: wizard's own real values are 200 and
 # 15 (PromptEditFieldHeaderText(headerdisclaimer, 200, ...); PromptEditFieldStatus's
@@ -73,9 +71,8 @@ FOLDERLOG_MAX_LENGTH = 50
 HEADER_DISCLAIMER_MAX_LENGTH = 100
 HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
 STATUS_LABEL_MAX_LENGTH = 25
-# The reference tool's own wizard has no equivalent bound for this field
-# at all (it's free-form body content, not a single prompt-edit-text
-# field) -- a deliberate divergence, not a fidelity gap, added specifically
+# AdrPlus's wizard has no equivalent bound for this field (it's
+# free-form body content, not a single prompt-edit-text field) -- added
 # so a bounded read of the config file itself (core/config.py's own
 # read_config_text) can trust a fixed byte cap without risking a false
 # rejection of a legitimate, if unusually long, template.
@@ -193,8 +190,8 @@ def _normalized_repo_path_parts(value):
     case-folded) -- used ONLY for the folderadr/folderlog mutual-overlap
     comparison below, never for what actually gets stored in the parsed
     config: the field's own stored/displayed value stays exactly as the
-    config text gave it (this project's own established forward-slash
-    convention, matching the reference tool), and only this transient,
+    config text gave it (this project's own forward-slash convention,
+    the same as AdrPlus's), and only this transient,
     comparison-only view is host-normalized. Without this, a `../`
     traversal, a backslash-separated nesting on Windows, or a bare case
     difference could each resolve to the identical or a genuinely nested
@@ -346,7 +343,7 @@ def default_repo_config_text_for_language(language):
 
 
 # This file is read on EVERY single command invocation
-# (load_target's own initial config load), plus init/
+# (the repository's own config load), plus init/
 # installconfig --seed -- with no size cap, a 150MB config file measures
 # a ~300MB peak-memory read. 64KB is
 # generous relative to the schema's own worst case: every length-bounded
@@ -373,7 +370,7 @@ def read_config_text(path):
     read_lines_with_report, cli/explore.py's _build_entry) -- this read
     goes through the identical atomic_write_text -> os.replace mechanism
     those retries exist to absorb, and it runs for every single command
-    (load_target's own initial config load), most of it
+    (the repository's own config load), most of it
     BEFORE any attach_warnings safety net is entered."""
     try:
         raw_bytes = read_with_permission_retry(
@@ -387,8 +384,8 @@ def read_config_text(path):
         # Path.read_text's own default (universal newlines) silently
         # translates CRLF/lone-CR to '\n' on read -- a plain bytes.decode
         # does not, which would otherwise change this function's own
-        # observable output (confirmed live: broke a CRLF-fixture-comparing
-        # test). Replicated explicitly so every caller (JSON parsing is
+        # observable output (it broke a CRLF-fixture-comparing test).
+        # Replicated explicitly so every caller (JSON parsing is
         # itself newline-agnostic, but read_install_config_text's own
         # pass-through contract is not) sees the exact same text as before.
         return raw_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
@@ -558,9 +555,9 @@ def parse_repo_config(text):
     # cell's parenthesized date) is only trustworthy if a status LABEL can
     # never itself contain the characters that mark a date/marker boundary --
     # otherwise a hostile statusnew/statusacc/statusrej/statussup forges a
-    # marker and date the tool never wrote (confirmed live: a label of
-    # "(20200101)<!--Rejected-->" made a decision created today read back as
-    # Rejected/2020-01-01). Scoped to just these four fields, since no other
+    # marker and date the tool never wrote (e.g. a label of
+    # "(20200101)<!--Rejected-->" makes a decision created today read back
+    # as Rejected/2020-01-01). Scoped to just these four fields, since no other
     # field is read by _parse_status_cell this way.
     for name in _STATUS_LABEL_FIELDS:
         try:
@@ -571,16 +568,15 @@ def parse_repo_config(text):
     # parse_header's own is_migrated detection (core/header.py) is pure
     # substring matching for an HTML-comment-shaped tail on the row these
     # two fields build -- a hostile '<!--'/'-->' in either one forges
-    # is_migrated=True on every ordinary file's header (confirmed live).
+    # is_migrated=True on every ordinary file's header.
     for name in ("headertablefields", "headertablevalues"):
         try:
             reject_marker_comment_syntax(lowered[name], name)
         except CommandError as error:
             raise CommandError(FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER, error.detail) from error
 
-    # The reference tool validates a non-empty migrationpattern the same way,
-    # rejecting anything that doesn't match the
-    # N##:##T##[V##:##][R##:##][P##:##] shape.
+    # A non-empty migrationpattern must match the
+    # N##:##T##[V##:##][R##:##][P##:##] shape (as AdrPlus requires too).
     migrationpattern = lowered["migrationpattern"]
     if migrationpattern and parse_migration_pattern(migrationpattern) is None:
         raise CommandError(

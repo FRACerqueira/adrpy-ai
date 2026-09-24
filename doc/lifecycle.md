@@ -5,8 +5,8 @@
 # Decision lifecycle
 
 Which status a decision can move to, which command moves it, and what
-stops a command. Every rule here is checked by `adrpy` itself, fresh,
-under the repository lock; a command that is not allowed changes no
+stops a command. Every rule here is checked by `adrpy` itself, from the
+files on disk, on every call; a command that is not allowed changes no
 decision file and returns the failure code named below. (Housekeeping can
 still happen first: removing its own orphaned temp files, and `migrate`
 persisting its fallback pattern into `adr-config.adrplus`.)
@@ -28,7 +28,7 @@ is filled. `undo` never touches the Superseded cell.
 ## The one rule behind all the others
 
 > **The filename decides identity and numbering, counting every file.
-> The header decides status, counting only headers that parse.**
+> The header decides status.**
 
 - **Identity and numbering come from the name.** Which family a file
   belongs to, which decision a successor points back to (the `--001`
@@ -39,34 +39,86 @@ is filled. `undo` never touches the Superseded cell.
   one held (gaps are not reused), `revise` the revision after the
   highest one its version holds, and `version` refuses with
   `file-already-exists` when the version it would create is already held.
-- **Status comes from the header, and only a header that parses.** A
-  file whose header does not parse -- damaged by hand, broken by invalid
-  bytes, re-encoded as UTF-16, or never given one -- has no status
-  `adrpy` can read, so it is **invalid**: no command changes it, a
-  command aimed at it refuses and says why, and the family rules below
-  see only the valid members. Every command that left one out says so in
-  `warnings` (`<path>: ignored -- its header does not parse (<reason>);
-  see explore.`), and `explore` lists it with `header.state` and
-  `header.invalid_reason` (its other header fields are then partial and
-  not to be trusted).
-- **What this does not prevent.** A family made inconsistent by an edit
-  outside the tool -- two live decisions after a hand-broken `Superseded`
-  cell -- is not blocked: `adrpy` guarantees consistency only among
-  valid files, and makes the invalid ones visible. Repair or remove an
-  invalid file by hand; a legacy file that never had a header is what
-  `migrate` is for, as long as no decision was created by the tool yet.
-- **Where it refuses instead.** `supersede` refuses when a file pointing
-  back at the decision (by its suffix) is invalid, and `reject` refuses
-  when it cannot find the predecessor by its back-reference and a file of
-  the predecessor's family is invalid -- they depend on a status they
-  cannot read, so they name the file rather than guess.
-- **Not the same as unreadable.** A file or folder the tool cannot read at
-  all (permission denied, and similar) is an OS error, not an invalid
-  file: the command fails and reports it (`explore` alone lists what it
-  can and reports the rest in `warnings`).
-- **Encoding.** A byte that is not valid UTF-8 only makes a file invalid
-  if it breaks the header. One that doesn't is replaced on the next
-  rewrite, with a warning. Leading BOMs are ignored.
+- **Status comes from the header.** Every file with an ADR name must have
+  a header that parses, with a status combination the tool writes (see
+  the next section). A header written by AdrPlus 1.0.0 -- the status read
+  from its label, with no hidden canonical marker -- and a file `migrate`
+  brought in (`<!-- Migrated -->`) both count.
+- **Encoding.** A byte that is not valid UTF-8 only matters if it breaks
+  the header. One that doesn't is replaced on the next rewrite, with a
+  warning. Leading BOMs are ignored.
+
+## Validate the whole repository before acting
+
+Every lifecycle command -- `new`, `approve`, `reject`, `undo`,
+`supersede`, `version` and `revise` -- first validates the whole
+decisions folder, and `config` does the same before changing a guarded
+field (`folderadr`, `folderlog`, a status label, `separator`,
+`migrationpattern`). If any rule below is broken, the command fails with
+`repository-inconsistent` and writes nothing: `data.errors` lists every
+broken rule, sorted by file, each as `{code, file, related_files, detail,
+hint}`, the `hint` saying how to repair it. `adrpy check` runs the same
+validation on its own and changes nothing.
+
+`adrpy` does not repair a repository: every broken rule is fixed by hand
+(or by restoring the file from git), then the command is run again.
+
+What is validated:
+
+- every file with an ADR name (one that matches the naming scheme, or the
+  legacy `migrationpattern`) anywhere under the decisions folder
+  (`folderadr`), subdirectories included. A `.md` whose name is not an ADR
+  name -- a README, an index -- is not a decision and is ignored;
+- a file-targeted command (`--file`) acts only on a decision inside the
+  decisions folder: any other file is refused with
+  `target-outside-folderadr`.
+
+The rules, one error code each:
+
+| Rule | `data.errors[].code` |
+|---|---|
+| No git merge-conflict marker line (starting `<<<<<<< ` or `>>>>>>> `) in the 12 header lines -- checked first, and reported alone for that file | `merge-conflict-markers` |
+| Every file with an ADR name has a header (the hint points at `migrate` for a file that predates the tool) | `no-header` |
+| The header parses, its title, scope and domain included (no `\|`, no line-break-like character; the title also no filesystem-unsafe character and not only whitespace, `_` or `-`); `detail` names the reason | `invalid-header` |
+| The Created/Changed/Superseded cells form a combination the tool writes (below) | `invalid-status-combination` |
+| No two files share number, version and revision (a missing revision counts as 0) | `duplicate-number` |
+| At most one open `Proposed` member per family (a migrated placeholder is not one) | `pending-duplicate` |
+| An open `Proposed` member is the live member of its family | `pending-not-live` |
+| At most one `Superseded` member per family | `superseded-duplicate` |
+| A `Superseded` member is the live member of its family | `superseded-not-live` |
+| A `Superseded` cell points at a successor that exists, is not `Rejected`, and names this decision in its `--NNN` filename suffix | `superseded-without-successor` |
+| A successor that is not `Rejected` has a predecessor whose `Superseded` cell points back at it | `successor-without-predecessor` |
+| A predecessor has at most one successor that is not `Rejected` | `multiple-live-successors` |
+| Every directory and decision file under the decisions folder can be read | `scan-incomplete` |
+
+"Live" is the first family rule below: the family's latest member, newer
+members that are all `Rejected` not counting.
+
+The status combinations the tool writes (Created / Changed / Superseded;
+-- is a blank cell):
+
+| Created | Changed | Superseded | Status |
+|---|---|---|---|
+| Proposed | -- | -- | Proposed |
+| Proposed | Accepted | -- | Accepted |
+| Proposed | Rejected | -- | Rejected |
+| Proposed | Accepted | Superseded | Superseded |
+| -- | -- | -- | migrated placeholder |
+| -- | Accepted | -- | Accepted (migrated) |
+| -- | Rejected | -- | Rejected (migrated) |
+| -- | Accepted | Superseded | Superseded (migrated) |
+| -- | -- | Superseded | Superseded (migrated placeholder) |
+
+A blank Created cell is valid only on a migrated file.
+
+Not every command validates. `explore` is the inventory: it lists every
+file, and reports the same errors in `consistency.errors` while still
+succeeding. `help`, `init`, `installconfig` and `log` do not act on
+existing decisions and do not validate. `config` validates only when it
+changes a guarded field, and tolerates `no-header` (it is how
+`migrationpattern` is set before migrating). `migrate` writes decision files
+but does not validate either: it is what brings a hand-written
+repository to a state that validates (see Migrated decisions below).
 
 ## Families
 
@@ -104,20 +156,18 @@ member of its family (see the family rules).
 | Command | The target must be | The family must not have | Result |
 |---|---|---|---|
 | `new` | -- (takes `--path`) | -- | A new family, `V01`, `Proposed`, under the next number. The title must be unique in the repository after case-transform normalization (`title-already-exists`). |
-| `approve` | `Proposed`, and not in the family of an unfinished supersede's successor | a `Superseded` member | Target `Accepted`. |
-| `reject` | `Proposed` | a `Superseded` member | Target `Rejected`. If the target is a successor, its predecessor goes back first (see below). |
-| `undo` | `Accepted` or `Rejected` (any Changed value), and not in a rejected successor's family | a `Superseded` member; another `Proposed` member | Target back to `Proposed`. |
-| `supersede` | `Accepted` | a `Superseded` member; a `Proposed` member | A successor, `Proposed`, in a new family; then the target `Superseded`. |
-| `version` | `Accepted` or `Rejected`, and not in a rejected or unfinished successor's family | a `Superseded` member; a `Proposed` member | A new major version, `Proposed`, in the same family; scope and domain default to the target's. |
-| `revise` | `Accepted` or `Rejected`, and not in a rejected or unfinished successor's family | a `Superseded` member; a `Proposed` member | A new revision of the target's version, `Proposed`. Needs `lenrevision > 0`. |
+| `approve` | `Proposed` (or a migrated placeholder) | a `Superseded` member | Target `Accepted`. |
+| `reject` | `Proposed` (or a migrated placeholder) | a `Superseded` member | Target `Rejected`. If the target is a successor, its predecessor goes back first (see below). |
+| `undo` | `Accepted` or `Rejected`, and not in a rejected successor's family | a `Superseded` member; another `Proposed` member | Target back to `Proposed`. |
+| `supersede` | `Accepted` (or a migrated placeholder) | a `Superseded` member; a `Proposed` member | A successor, `Proposed`, in a new family; then the target `Superseded`. |
+| `version` | `Accepted` or `Rejected` (or a migrated placeholder), and not in a rejected successor's family | a `Superseded` member; a `Proposed` member | A new major version, `Proposed`, in the same family; scope and domain default to the target's. |
+| `revise` | `Accepted` or `Rejected` (or a migrated placeholder), and not in a rejected successor's family | a `Superseded` member; a `Proposed` member | A new revision of the target's version, `Proposed`. Needs `lenrevision > 0`. |
 
 When the target's own status does not fit, the code says which status it
-has: `not-proposed`, `still-proposed`, `already-accepted`,
-`already-rejected`, `already-superseded`, or `unexpected-status` for a
-cell holding something no command writes. The family rules fail with
+has: `still-proposed`, `already-accepted`, `already-rejected` or
+`already-superseded`. The family rules fail with
 `family-member-superseded`, `family-member-pending`,
-`not-latest-version`, `rejected-successor-is-final` and
-`supersede-not-finished`.
+`not-latest-version` and `rejected-successor-is-final`.
 
 ## Family rules, in short
 
@@ -165,34 +215,47 @@ cell holding something no command writes. The family rules fail with
 
 ## `supersede` and `reject` together
 
-`supersede` writes two files, successor first:
+`supersede` and `reject` of a successor each write two files. Both files
+are prepared first -- the complete new content in a temp file next to
+each -- and only then written, in a fixed order. There is no resume
+step: a write that stops halfway leaves a repository the validator
+refuses, repaired by hand once.
 
-1. It creates the successor, `Proposed`, in a new family.
+`supersede` writes the successor first, then the predecessor:
+
+1. It creates the successor, `Proposed`, in a new family (never over an
+   existing file: `file-already-exists`).
 2. It marks the predecessor `Superseded`, pointing at the successor's
    number.
 
-If step 2 fails, the successor exists and the predecessor is still
-`Accepted` (`supersede-write-failed`). Run `supersede --resume` on the
-predecessor to finish -- until then the successor can't be approved,
-versioned or revised (`supersede-not-finished`), only rejected; without `--resume`, `supersede` refuses
-(`supersede-successor-already-exists`) instead of creating a second
-successor. Only a file with a higher number than the predecessor counts
-as its successor, and a rejected one never does.
+A failure preparing either file, or creating the successor, writes
+nothing (`supersede-successor-write-failed`). If step 2 fails, the
+successor exists and the predecessor is still `Accepted`: the command
+fails with `multi-file-write-partially-applied`, `data.applied` naming
+the successor, `data.pending` the predecessor, and `data.repair`
+(`{file, row}`) the exact header row to put in the predecessor. Until
+then the repository breaks `successor-without-predecessor` and every
+command refuses it. Repair it by hand: put `data.repair`'s row in the
+predecessor, or remove the successor (just created from the template)
+and run `supersede` again.
 
-`reject` on a successor also writes two files, predecessor first:
+`reject` on a successor writes the predecessor first:
 
 1. It reverts the predecessor's `Superseded` cell, putting it back where
    it was.
 2. It marks the successor `Rejected` -- the end of its family's line.
 
-If step 2 fails (`reject-own-write-failed-after-predecessor-reverted`),
-running `reject` again completes it -- unless a file of the predecessor's
-family has a header that does not parse, which makes it refuse until that
-file is repaired or removed. `reject` only reverts a `Superseded` cell
-that names this successor (compared as a number, so a later `lenseq`
-change doesn't matter); if the predecessor's family is marked
-`Superseded` by another successor, it refuses
-(`superseded-predecessor-not-found`).
+A failure before the predecessor is written writes nothing
+(`reject-predecessor-write-failed`), and the call can simply be run
+again. If step 2 fails, the command fails with
+`multi-file-write-partially-applied` (`data.applied`: the predecessor,
+`data.pending` and `data.repair`: the successor and its `Rejected`
+Changed row); the repository then breaks
+`successor-without-predecessor` until that row is put in the successor
+by hand.
+
+`reject` only reverts a `Superseded` cell that names this successor
+(compared as a number, so a later `lenseq` change doesn't matter).
 
 ## Dates
 
@@ -207,8 +270,7 @@ and not before the latest date the decision it builds on already carries
 |---|---|
 | `new` | -- |
 | `approve`, `reject` | the target's creation date |
-| `supersede` | the target's Changed date (or its creation date); with `--resume`, also the existing successor's creation date |
-| `version`, `revise` | the target's Changed date (or its creation date) |
+| `supersede`, `version`, `revise` | the target's Changed date (or its creation date) |
 
 `undo` takes no date: it clears the Changed cell.
 
@@ -222,6 +284,8 @@ without inventing dates. `undo` needs a real Changed status and refuses
 it (`still-proposed`), and a placeholder never counts as the family's
 open `Proposed` member. Placeholders follow the family rules like any
 other member: a migrated `V01` with a migrated `V02` next to it is locked.
+`migrate`, like `init`, does not validate the repository first -- it is
+what brings a repository to a state that validates.
 
 A supersede chain is something only this tool creates. `migrate` refuses
 the whole run when a file already carries a supersede suffix (`--NNN`,

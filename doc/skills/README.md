@@ -164,27 +164,24 @@ repository. If the link is intended (a dotfiles setup linking
 `.claude/skills` or `~/.claude` elsewhere, say), pass
 `--allow-external-links`.
 
-## Known limitation: no cross-process lock on `AGENTS.md`
+## One invocation at a time
 
-Unlike `adrpy`'s own repository-wide lock (ADR001V01), `adrpy-skills`
-does not lock `AGENTS.md` (or any other file it writes) against a second,
-truly concurrent `adrpy-skills` invocation. Two processes racing to
-install different skills into the same `AGENTS.md` at the same instant
-could, in principle, both read the file before either writes it back,
-losing one of the two updates. The same race can also cross files: an
+`adrpy-skills` follows the same single-owner rule as `adrpy`: it does not
+lock `AGENTS.md` (or any other file it writes) against a second
+`adrpy-skills` or `adrpy` invocation running at the same moment on the
+same working copy. Each file is still written atomically -- a reader
+sees the old file or the new one, never a partial one -- but two calls
+racing on the same `AGENTS.md` could both read it before either writes it
+back, and the last one to write wins. The same race can cross files: an
 `install` of a stub-mode provider running while a `remove` of another one
 deletes the shared doc can leave the new stub pointing at a shared doc
 that is gone -- `list` then shows it (`shared-doc` not installed, the stub
-installed), and re-running `install` repairs it. For the same reason, a
-`list` running while another call writes reads each file at a different
-moment, so its rows can mix before-and-after states that never existed
-on disk together -- re-run it once the other call finishes. Measured risk in this tool's actual usage
-pattern (a one-off installer invocation, not a long-running service) is
-very low -- real, staggered process launches did not reproduce the race,
-only an artificially widened window did -- so this is accepted as a known
-limitation rather than fixed with a lock. If you script concurrent
-`adrpy-skills` calls against the same target (e.g. from CI), serialize
-them yourself.
+installed), and re-running `install` repairs it. A `list` running while
+another call writes reads each file at a different moment, so its rows
+can mix before-and-after states -- re-run it once the other call
+finishes. Don't run `adrpy-skills` commands in parallel on the same
+working copy; if you script them (e.g. from CI), run them one after
+another.
 
 ## Commands
 
@@ -197,8 +194,9 @@ them yourself.
 
 Every failure code a command can return is documented on that command's
 own page, in its `## Failure codes` table -- the same structured
-`failure_codes` field `adrpy-skills help <command>` returns at runtime.
-If a page here and the CLI ever disagree, the CLI is right and the page
-has drifted. Two codes can come from any command without being listed
+`failure_codes` field `adrpy-skills help <command>` returns at runtime,
+rendered into the page by `scripts/generate_command_docs.py` (see the
+[Command Reference](../commands/INDEX.md) for how that is kept in step).
+Two codes can come from any command without being listed
 on its page: `unknown-command` (the verb itself isn't recognized) and
 `internal-error` (an unexpected bug in the tool -- please report it).

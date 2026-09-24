@@ -313,8 +313,7 @@ def read_lines_with_report(path):
     caller this happened otherwise.
 
     Same transient-PermissionError tolerance as _read_header_bytes' own
-    note -- this is read_target's own primary read on every per-file
-    command."""
+    note."""
     raw_bytes = read_bytes(path)
     try:
         text = raw_bytes.decode("utf-8")
@@ -391,8 +390,8 @@ def stream_normalized_body_chunks(source_path, report):
 
     header_buffer = _read_header_bytes(source_path, HEADER_LINE_COUNT)
     offset = _body_start_offset(header_buffer, HEADER_LINE_COUNT)
-    # Unreachable in practice: every caller has already validated (via
-    # read_target's own header.is_valid check) that this file's header is
+    # Unreachable in practice: every caller has already validated (the
+    # repository validation in prepare) that this file's header is
     # structurally valid -- a valid header always has >= HEADER_LINE_COUNT
     # real lines, so this can never be None here.
     assert offset is not None, "stream_normalized_body_chunks called against an invalid/too-short header"
@@ -468,8 +467,8 @@ SHARED_FAILURE_CODES = {
 
 
 def resolve_target_and_config(path, *, require_config=True):
-    """The path-rooted counterpart to load_target below:
-    config/explore/log/migrate/new all take a repository --path directly
+    """The path-rooted counterpart to prepare's --file resolution below:
+    check/config/explore/log/migrate/new all take a repository --path directly
     (rather than a decision file to walk up from), and each used to
     hand-roll the identical target-directory-not-found/config-not-found
     checks. `require_config=False` (init's own case) skips the
@@ -570,8 +569,8 @@ def raise_if_rejected_successor(members, warnings):
     Rejected is the end of its line, and so is its whole family: rejecting
     it put its predecessor back, and nothing may bring any of it back to
     life or branch off it -- a version of a successor carries no suffix,
-    but is the successor's family all the same (Round 40, decided by the
-    project owner). `members` is the target's own family."""
+    but is the successor's family all the same (decided by the project
+    owner). `members` is the target's own family."""
     rejected = next(
         (m for m in members if is_successor(m[0]) and m[1].status_update == "Rejected"), None
     )
@@ -586,8 +585,8 @@ def raise_if_rejected_successor(members, warnings):
 
 
 def ineligibility_reason_for_approve_or_reject(header):
-    """Confirmed against the reference tool: eligible requires status_update
-    to be None, full stop -- not merely "not Accepted and not Rejected".
+    """Eligible requires status_update to be None, full stop -- not merely
+    "not Accepted and not Rejected".
     Returns None when eligible, else the SPECIFIC reason (a single
     collapsed not-eligible-for-* code couldn't distinguish "already
     Accepted" from "already Rejected" from "already Superseded" -- each
@@ -834,9 +833,8 @@ def _new_revision(config, filename_info, members, warnings):
             FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
         )
     # The next revision after the highest one this version already holds
-    # (Round 40, a deliberate divergence from AdrPlus, whose
-    # target-revision+1 collided when branching off an older
-    # revision). A migrated placeholder's blank cells play no part.
+    # (the target's revision + 1 would collide when branching off an
+    # older revision). A migrated placeholder's blank cells play no part.
     new_revision = (
         max(
             ((entry[0].revision or 0) for entry in members if entry[0].version == filename_info.version),
@@ -1073,7 +1071,7 @@ def rewrite_status_field(path, config, header, filename_info, *, field, status, 
     verbatim from `path` (ADR006V01), and writes the file. Returns the
     write's own attempt count too -- callers can surface it as a warning
     when it's more than 1 -- and the BODY's own encoding_repaired signal
-    (combine with the header's own, from read_target, via `or`)."""
+    (combine with the header's own, from prepare, via `or`)."""
     record = _status_field_record(config, header, filename_info, field, status, refdate)
     report = {}
     attempts = atomic_write_chunks(path, _streamed_rewrite_chunks(path, config, record, header.is_migrated, report))
@@ -1095,8 +1093,7 @@ def prepare_mark_superseded(path, config, header, filename_info, successor_numbe
     """Like prepare_status_field_rewrite's "change" field, but also stamps
     the successor's own zero-padded sequence number into the Superseded
     row. NOT a filename, despite DecisionRecord's `superseded_by_file`
-    name (kept as-is to match the reference tool's own header row) --
-    confirmed the real value is a bare padded number, not a filename."""
+    name: the value is a bare padded number, as in AdrPlus's header row."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate

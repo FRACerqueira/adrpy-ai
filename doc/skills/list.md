@@ -6,31 +6,29 @@
 
 Reports which bundled skills are installed, for which providers, and whether any have drifted.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Cross-product of every requested skill x every requested provider, each entry reporting `installed` (bool), `drifted` (null when not installed; otherwise true if the file/block is either `foreign` -- no `adrpy-skills` marker, meaning `install`/`remove` would refuse to touch it without `--force` -- or genuinely hand-edited since it was generated, or (`agentsmd`) a `malformed` block; false only when the content still matches exactly what was last generated -- which, for an `agentsmd` block indented four spaces or more, or by a tab, still needs `--force` to remove), and the resolved file path either way. Always reports both project and global scope for `claude` (the only provider with a global-scope concept); every other provider is project-scope only. When any requested provider is stub-mode (`copilot`, `agentsmd`), one extra row per skill is included under provider `shared-doc` (project scope only) for the one shared `doc/ai-skills/<name>.md` file its stub points at -- the same shared-doc concept `install`/`remove` already report under that same provider name in their own `installed`/`removed`. A file at that path with no `adrpy-skills` marker that no stub points at is the user's own, and is reported as not installed -- the same scope `remove` uses. Read-only in the strict sense: computes a hash to determine drift, but never writes anything back, regardless of what it finds.
+Reports, for every requested skill and provider, whether it is installed, whether it has drifted (null when not installed; true for a foreign, hand-edited or malformed file or block) and the resolved path; claude is reported in both project and global scope. A stub-mode provider adds one `shared-doc` row per skill. Read-only: it computes hashes but never writes.
 
 ## Arguments
 
-### `--provider` / `-p` *(optional, string)*
-
-Comma-separated list of providers to report on: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all`.
-
-### `--skill` / `-s` *(optional, string)*
-
-Comma-separated list of skills to report on: `comment-audit`, `decision-log`, `pre-release-audit`. Defaults to `all`.
-
-### `--path` *(optional, string)*
-
-Repository root to inspect for project-scope entries. Defaults to `.`.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--provider` | `-p` | no | string | Comma-separated list of providers to report on: claude, cursor, copilot, agentsmd. Defaults to 'all'. |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to report on: comment-audit, decision-log, pre-release-audit. Defaults to 'all'. |
+| `--path` | -- | no | string | Repository root to inspect for project-scope entries. Defaults to '.'. |
 
 ## Failure codes
 
 | Code | Condition |
 |---|---|
-| `target-directory-not-found` | `--path` does not point to an existing directory (never created) -- nothing was written. |
-| `usage-error` | An unknown `--provider` or `--skill` value was given. |
+| `target-directory-not-found` | --path does not point to an existing directory (never created) -- nothing was written. |
+| `usage-error` | An unknown --provider or --skill value was given. |
 | `io-error` | A read failed (permission denied, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). |
+<!-- generated:end -->
 
 ## Example
 
@@ -40,4 +38,4 @@ adrpy-skills list --path .
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy-skills help list` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy-skills help list` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

@@ -54,8 +54,7 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None):
             raise UsageError(f"--{name} requires a value (got the flag {value})")
         if value == "":
             # An empty string is treated the same as an omitted value,
-            # not as a real (if unusual) one, matching the reference tool's own
-            # confirmed behavior.
+            # not as a real (if unusual) one.
             raise UsageError(f"--{name} requires a non-empty value")
         values[name] = value
         i += 1

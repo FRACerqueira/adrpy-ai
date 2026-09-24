@@ -6,31 +6,22 @@
 
 Marks an `Accepted` decision `Superseded` and creates its successor.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Marks an Accepted decision as Superseded and creates its successor. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Refuses with family-member-superseded if another member of the same family has already been superseded, or family-member-pending if another member is still unresolved (Proposed) -- no write is made either way. This is two writes, not one: both files are prepared first, then committed successor first: a failure preparing either file or creating the successor (supersede-successor-write-failed) means nothing was written. A failure marking the predecessor Superseded afterward (multi-file-write-partially-applied) means success=false even though the successor already exists -- that code's own `data.applied` names it, and `data.pending` the predecessor, still Accepted. The repository is then inconsistent (successor-without-predecessor), so every command refuses it until it is repaired by hand: remove the successor (just created from the template) and run supersede again, or mark the predecessor Superseded in its Superseded cell. The successor's own title -- the predecessor's own filename segment, re-validated before use, unless --title overrides it (see its own argument description) -- may fail with field-contains-forbidden-character if it carries '|', a line-break-like character, a filesystem-unsafe character (`<>:"/\|?*` or a control character; the successor's title lands inside an actual filename component, not just a header-table cell), or consists entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a value raw, which can collide with the filename's own separator and produce a successor the tool can never recognize again; no write is made. Fails with one of still-proposed, already-rejected, or already-superseded (the target's own current status makes Superseded unreachable from here) if the target isn't eligible -- no write is made. Fails with file-already-exists (data.file names it) if the successor's own resulting filename already exists on disk when it is created -- no write is made either.
+Marks an Accepted decision Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair).
 
 ## Arguments
 
-### `--file` / `-f` *(required, string)*
-
-Path to the decision file. A bare name with no extension gets '.md' appended.
-
-### `--domain` / `-d` *(optional, string)*
-
-Domain for the successor; defaults to the predecessor's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--scope` / `-s` *(optional, string)*
-
-Scope for the successor; defaults to the predecessor's own value. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before the predecessor's own last update date (or creation date, if never updated) (refdate-invalid-format/refdate-in-future/refdate-before-history).
-
-### `--title` / `-t` *(optional, string)*
-
-Title for the successor; defaults to the predecessor's own filename-segment title (unlike --scope/--domain, this default is NOT re-editable via the header's prose title -- see the description above). Cannot contain '|' or a line-break-like character, or a filesystem-unsafe character (`<>:"/\|?*` or a control character -- title lands inside an actual filename component, not just a header-table cell); also cannot consist entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a value raw, which can collide with the filename's own separator and produce a successor the tool can never recognize again (field-contains-forbidden-character), or be blank (field-is-blank).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
+| `--domain` | `-d` | no | string | Domain for the successor; defaults to the predecessor's own value. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--scope` | `-s` | no | string | Scope for the successor; defaults to the predecessor's own value. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before the predecessor's own last update date (or creation date, if never updated) (refdate-invalid-format/refdate-in-future/refdate-before-history). |
+| `--title` | `-t` | no | string | Title for the successor; defaults to the predecessor's own filename-segment title (unlike --scope/--domain, this default is NOT re-editable via the header's prose title -- see the description above). Cannot contain '\|' or a line-break-like character, or a filesystem-unsafe character (`<>:"/\|?*` or a control character -- title lands inside an actual filename component, not just a header-table cell); also cannot consist entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a value raw, which can collide with the filename's own separator and produce a successor the tool can never recognize again (field-contains-forbidden-character), or be blank (field-is-blank). |
 
 ## Failure codes
 
@@ -39,10 +30,10 @@ Title for the successor; defaults to the predecessor's own filename-segment titl
 | `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
 | `already-rejected` | This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again. |
 | `already-superseded` | This decision has already been superseded. |
-| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
 | `refdate-in-future` | --refdate is after today. |
 | `refdate-before-history` | --refdate is before the predecessor's own last update date (or creation date, if never updated). |
+| `field-contains-forbidden-character` | --title/--scope/--domain, or the title taken from the predecessor's own filename, contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'. |
 | `field-is-blank` | --scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace. |
 | `file-already-exists` | The successor's own resulting filename already exists on disk. |
 | `title-produces-unrecognizable-filename` | The successor's own title, once case-transformed, would produce a filename this tool could never recognize again. |
@@ -55,8 +46,8 @@ Title for the successor; defaults to the predecessor's own filename-segment titl
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
-| `field-contains-forbidden-character` | --title/--scope/--domain, or the title taken from the predecessor's own filename, contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or the title consists entirely of whitespace/'_'/'-'. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
+| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
@@ -100,6 +91,7 @@ Title for the successor; defaults to the predecessor's own filename-segment titl
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -109,4 +101,4 @@ adrpy supersede --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datasto
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help supersede` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help supersede` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

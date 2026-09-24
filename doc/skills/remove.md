@@ -6,45 +6,34 @@
 
 Removes one or more bundled skills for one or more AI-coding-agent providers.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Deletes the requested (provider, skill) pairs, or -- for `agentsmd` -- strips only that skill's own marked block from `AGENTS.md`, leaving the rest of the file (your own content, other skills' blocks) untouched; `AGENTS.md` itself is never deleted, even if this empties it. A `foreign` file/block (no `adrpy-skills` marker at all -- a naming collision, or hand-written content), a `drifted` one (marker present but the content no longer matches it), or (`agentsmd` only) a `malformed` one (the skill's own start/end block is truncated, duplicated, or crosses another skill's block) is skipped, not deleted, unless `--force` is given -- reported in `skipped`, not as a failure. So is an `agentsmd` block indented four spaces or more (or by a tab) whose marker hash still matches, with reason `indented`: it is byte for byte what a verbatim copy you quoted would be, so deleting it takes `--force`; any other indented copy (no valid marker, edited, or repeated/unpaired tags) is your own text and never touched, even with `--force`. Asking to remove something not currently installed is reported in `warnings`, also not a failure. The one shared doc a stub-mode provider (`copilot`, `agentsmd`) points at is considered whenever a stub-mode provider is requested (even if none of its files was installed, e.g. after an interrupted install) and removed only once nothing in this same target still references it -- no remaining stub-mode provider, and no leftover text in `AGENTS.md` naming it (such as the body a `--force` cleanup of a malformed block leaves in place) -- reported in `removed`/`skipped` under provider `shared-doc` (symmetric with install's own `shared-doc` row) and itself subject to the same foreign/drifted protection; removing a full-mode provider (`claude`, `cursor`) never touches it. Unlike install, a stub-mode provider's own file/block removal never waits on the shared doc's own removability -- there is no `shared-doc-blocked` skip reason here, since removing a provider's own pointer to the shared doc is safe regardless of whether the doc itself can also be cleaned up. `--target global` combined with any provider other than `claude` fails with `usage-error`, checked before any write for the whole call, not per-provider.
+Deletes each requested (provider, skill) pair -- for agentsmd, only that skill's own marked block, never AGENTS.md itself -- and the shared doc once nothing in the target still references it. A foreign, drifted or malformed file or block, or an indented block whose marker still matches, is skipped unless --force is given; any other indented copy is your own text and never touched (see doc/skills/README.md). --target global works with the claude provider only.
 
 ## Arguments
 
-### `--provider` / `-p` *(optional, string)*
-
-Comma-separated list of providers to remove from: `claude`, `cursor`, `copilot`, `agentsmd`. Defaults to `all` -- or, with `--target global`, to every provider that has a global scope (`claude`).
-
-### `--skill` / `-s` *(optional, string)*
-
-Comma-separated list of skills to remove: `comment-audit`, `decision-log`, `pre-release-audit`. Defaults to `all`.
-
-### `--target` / `-t` *(optional, string)*
-
-`project` (default) or `global` (`claude` only -- every other provider fails with `usage-error`).
-
-### `--path` *(optional, string)*
-
-Repository root to remove from. Defaults to `.`. Only meaningful for `--target project`.
-
-### `--force` / `-f` *(optional, switch)*
-
-Removes a `drifted`, `foreign`, or (`agentsmd`) `malformed` or `indented` file/block instead of skipping it. Presence-only.
-
-### `--allow-external-links` *(optional, switch)*
-
-Allows a file this call writes or removes to resolve, through a junction or symlink, outside the target (`--path`, or the home directory for `--target global`) -- e.g. a dotfiles setup linking `.claude/skills` elsewhere. Without it, such a call fails with `path-outside-repository` before touching anything. Presence-only.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--provider` | `-p` | no | string | Comma-separated list of providers to remove from: claude, cursor, copilot, agentsmd. Defaults to 'all' -- or, with --target global, to every provider that has a global scope (claude). |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to remove: comment-audit, decision-log, pre-release-audit. Defaults to 'all'. |
+| `--target` | `-t` | no | string | 'project' (default) or 'global' (claude only -- every other provider fails with usage-error). |
+| `--path` | -- | no | string | Repository root to remove from. Defaults to '.'. Only meaningful for --target project. |
+| `--force` | `-f` | no | switch | Removes a 'drifted', 'foreign', or (agentsmd) 'malformed' or 'indented' file/block instead of skipping it. Presence-only. |
+| `--allow-external-links` | -- | no | switch | Allows a file this call writes or removes to resolve, through a junction or symlink, outside the target (--path, or the home directory for --target global) -- e.g. a dotfiles setup linking .claude/skills elsewhere. Without it, such a call fails with path-outside-repository before touching anything. Presence-only. |
 
 ## Failure codes
 
 | Code | Condition |
 |---|---|
-| `target-directory-not-found` | `--path` does not point to an existing directory (never created) -- nothing was written. |
-| `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (`data.file`/`data.resolved` name it) and `--allow-external-links` was not given -- nothing was written or removed. |
-| `usage-error` | An unknown `--provider`, `--skill`, or `--target` value was given (`--target` accepts only `project`/`global`), or `--target global` was combined with a provider that has no global-scope concept (anything but `claude`). |
-| `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). `data.removed`/`data.skipped` list what this same call had already deleted before the failure, and `warnings` carries the `warnings` already collected -- the same shapes as the success result, as far as the call got. |
-| `interrupted` | Interrupted (Ctrl+C) partway through; `data.removed`/`data.skipped` and `warnings` report what was already done, as for `io-error`. |
+| `target-directory-not-found` | --path does not point to an existing directory (never created) -- nothing was written. |
+| `path-outside-repository` | A file this call would write or remove resolves, through a junction or symlink, outside the target (data.file/data.resolved name it) and --allow-external-links was not given -- nothing was written or removed. |
+| `usage-error` | An unknown --provider, --skill, or --target value was given (--target accepts only 'project'/'global'), or --target global was combined with a provider that has no global-scope concept (anything but claude). |
+| `io-error` | A read, write or delete failed (permission denied, full disk, a file over the 10MB read limit, or a file that is not valid UTF-8 -- the detail names it). data.removed/data.skipped list what this same call had already deleted before the failure, and warnings carries the warnings already collected -- the same shapes as the success result, as far as the call got. |
+| `interrupted` | Interrupted (Ctrl+C) partway through; data.removed/data.skipped and warnings report what was already done, as for io-error. |
+<!-- generated:end -->
 
 ## Example
 
@@ -54,4 +43,4 @@ adrpy-skills remove --skill comment-audit --provider copilot
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy-skills help remove` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy-skills help remove` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

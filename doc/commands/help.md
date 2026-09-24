@@ -6,19 +6,19 @@
 
 Lists every command, or describes one of them in full.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Lists available commands, or describes one command. With no `command` and no --full, lists every command's name and one-line `summary` only, plus `defaults` (a CURATED SUBSET of the config fields a fresh `init` on this machine would actually produce -- not every field RepoConfig has; `template`, `migrationpattern`, `headerdisclaimer`, the 11 header-row labels, and the plugin fields are all omitted here on purpose, kept short since this is a quick-glance preview, not the full config -- `adrpy installconfig`/`adrpy config` return every field. `source` names whether `defaults` comes from this machine's own install-level config or the built-in default) and a `hint` pointing at `--full`/a specific command name for the complete contract. --full returns every command's full description and argument list in one call, the same shape this command always returned before summaries existed. Naming a specific `command` always returns its full description and argument list, regardless of --full. Fails with unknown-command if the named `command` doesn't match any registered command. The bare listing (no command, no --full) also reads this machine's install-level config for its defaults preview, so it may fail with a config-* code, or io-error, if that file exists but is invalid or unreadable -- `help <command>` and `help --full` never read it.
+Lists every command with its one-line summary, plus `defaults` (a short preview of the config a fresh `init` on this machine would produce, with its `source`) and a `hint`. Naming a `command`, or passing --full, returns the full contract (description, arguments, failure_codes) instead. Only the bare listing reads this machine's install-level config, so only it can fail on an invalid or unreadable one.
 
 ## Arguments
 
-### `command` *(optional, string, positional -- NOT `--command`)*
-
-Name of the command to describe. Positional, unlike every other command's flags: `adrpy help new`, never `adrpy help --command new` (which fails).
-
-### `--full` *(optional, switch)*
-
-Return every command's full description and argument list at once, instead of the default summarized listing. Ignored when `command` is also given -- a single named command is already returned in full either way.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `command` (positional) | -- | no | string | Name of the command to describe. Positional, unlike every other command's flags: `adrpy help new`, never `adrpy help --command new` (which fails). |
+| `--full` | -- | no | switch | Return every command's full description and argument list at once, instead of the default summarized listing. Ignored when `command` is also given -- a single named command is already returned in full either way. |
 
 ## Failure codes
 
@@ -67,6 +67,7 @@ Return every command's full description and argument list at once, instead of th
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -83,4 +84,4 @@ adrpy help --full
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help help` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help help` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

@@ -43,11 +43,11 @@ def reject_aliased_repo_folders(target, config):
     see a Windows junction or symlink planted inside the
     repository tree that makes two strings sharing no path-component
     prefix at all (e.g. 'doc/adr' and 'doc/other') alias the identical
-    real directory. Confirmed live: a hostile repo can ship both such a
-    config and such a junction; `init` accepted it silently, and a
-    later `new` + `log` call collided on one physical directory, the
-    exact corruption class the schema-time guard exists to prevent, via
-    a vector it's structurally unable to see (it never touches the
+    real directory. A hostile repo can ship both such a config and such a
+    junction; without this check `init` accepts it silently, and a later
+    `new` + `log` call collides on one physical directory, the exact
+    corruption class the schema-time guard exists to prevent, via a
+    vector it's structurally unable to see (it never touches the
     filesystem).
 
     This is the real-filesystem-resolution counterpart to that check --
@@ -79,20 +79,18 @@ def is_within(base_dir, candidate, *, resolved_base=None):
     (rglob) after the fact, unlike resolve_within, which builds a path and
     raises. `Path.rglob` happily descends into a Windows junction planted
     inside the scanned folder even though `Path.is_symlink()` does NOT
-    detect one (confirmed live: this let `migrate` write a real header
-    into a file outside the repository, and poisoned `next_number` with
-    an unrelated file's own sequence number) -- so every rglob result must
+    detect one (unchecked, this let `migrate` write a real header into a
+    file outside the repository, and poisoned `next_number` with an
+    unrelated file's own sequence number) -- so every rglob result must
     be re-checked against the real, resolved boundary, not just the root
     that was originally passed to resolve_within. Never raises: a scan
     should silently treat an escaped candidate as outside the repository's
     boundary, not fail the whole scan over it.
 
     `resolved_base`, when given, is used instead of re-resolving
-    `base_dir` (measured re-resolving the
-    same, unchanging base directory on every candidate as 91% of
-    scan_decisions's own total time in a loop scanning N candidates
-    against the same folder). Optional and backward compatible -- omit
-    it and this resolves `base_dir` itself, exactly as before."""
+    `base_dir` (re-resolving the same, unchanging base directory on every
+    candidate was measured at 91% of a scan's total time). Omit it and
+    this resolves `base_dir` itself."""
     try:
         base = resolved_base if resolved_base is not None else Path(base_dir).resolve()
         return Path(candidate).resolve().is_relative_to(base)
@@ -102,21 +100,19 @@ def is_within(base_dir, candidate, *, resolved_base=None):
 
 def find_unreadable_subdirectories(folder):
     """`Path.rglob` (CPython's own pathlib implementation) silently swallows any
-    `OSError` raised while walking a subtree -- a subfolder that becomes
-    unreadable mid-scan (an ordinary ACL choice for a team-restricted
-    area in a repo organized into per-team/per-domain
-    subfolders) makes every `rglob("*.md")` call in this project
-    (`scan_decisions`, `explore`, `migrate`'s own scan, `init`'s
-    `_max_existing_numbers`) silently return fewer results, or none,
-    with no exception and no signal at all.
+    `OSError` raised while walking a subtree -- a subfolder that is
+    unreadable (an ordinary ACL choice for a team-restricted area in a
+    repo organized into per-team/per-domain subfolders) makes an
+    `rglob("*.md")` silently return fewer results, or none, with no
+    exception and no signal at all. Used by core/decision_log.py's scan
+    of the decision-log folder (the decisions folder goes through
+    core/fs.scan_tree, which reports unreadable directories itself).
 
     `os.walk`'s own `onerror` hook is the one stdlib mechanism that
     surfaces this instead of swallowing it -- used here PURELY for error
-    detection; its own file/directory listing is discarded, so every
+    detection; its own file/directory listing is discarded, so the
     caller keeps using `folder.rglob()` unchanged for the actual scan,
-    preserving its own junction-following behavior exactly (already
-    covered by other tests) rather than risking a traversal-mechanism
-    swap changing what gets found.
+    preserving its junction-following behavior exactly.
 
     Returns a list of the directory paths (as strings) that could not be
     scanned -- empty when nothing was unreadable."""
@@ -138,8 +134,8 @@ def reject_embedded_delimiter(value, field_name):
     break the table -- rejected outright, never silently stripped or
     escaped. Uses str.splitlines()'s own (deliberately broad) definition of
     a line boundary as the blacklist -- not because those characters are
-    real line terminators to the file format (confirmed live they are not,
-    see atomic_write.split_real_lines), but because any one of them left
+    real line terminators to the file format (they are not, see
+    atomic_write.split_real_lines), but because any one of them left
     inside a single-line cell is exactly the same data-hygiene defect as an
     embedded literal '|', '\\n', or '\\r'.
 
@@ -169,10 +165,9 @@ def reject_status_marker_forgery_characters(value, field_name):
     canonical marker. That parser trusts the FIRST '(' and first ')' in the
     cell to bound the date, then searches after it for a marker -- so a
     label containing a well-formed '(date)<!--Status-->' substring forges a
-    marker and date the tool never wrote (confirmed live: a repository
-    seeded with `statusnew = "(20200101)<!--Rejected-->"` had a decision
-    created today read back as Rejected/2020-01-01 instead of
-    Proposed/today). Rejected outright, same shape as
+    marker and date the tool never wrote (e.g. a repository seeded with
+    `statusnew = "(20200101)<!--Rejected-->"` has a decision created today
+    read back as Rejected/2020-01-01 instead of Proposed/today). Rejected outright, same shape as
     reject_embedded_delimiter's own blacklist -- scoped to just these four
     fields, since no other field is read by this parsing path.
 
@@ -181,10 +176,8 @@ def reject_status_marker_forgery_characters(value, field_name):
     core/header.py) finds the FIRST colon anywhere in the cell, not
     necessarily the real one the tool itself writes after the marker --
     a statussup label containing its own ':' wins instead, corrupting
-    `superseded_by_file` into the whole cell remainder (confirmed live:
-    a statussup of 'Status: Superseded' made
-    reject fail to find the predecessor of a successor whose primary write
-    had already committed)."""
+    `superseded_by_file` into the whole cell remainder (e.g. with a
+    statussup of 'Status: Superseded')."""
     for forbidden in ("(", ")", "<!--", "-->", ":"):
         if forbidden in value:
             raise CommandError(
@@ -206,9 +199,9 @@ def reject_filesystem_unsafe_title(value, field_name):
     final rename to the real (also colon-containing) name fails, and the
     error-path cleanup only removes the named stream it just wrote,
     leaving the base file NTFS auto-created as a permanent, 0-byte,
-    un-cleanable orphan (confirmed live: cleanup_orphaned_temp_files only
-    globs '*.tmp', which this leftover's name never matches, and it lacks
-    '.md' too, so scan_decisions/explore never see it either -- silent,
+    un-cleanable orphan (cleanup_orphaned_temp_files only removes this
+    tool's own '*.tmp' names, which this leftover's name never matches,
+    and it lacks '.md' too, so no scan ever sees it either -- silent,
     unbounded repository pollution across repeated calls). The other
     Windows-reserved characters (`<>"*?`) fail atomically with no
     leftover, but are rejected here anyway for the same reason `/`/`\\`
@@ -236,11 +229,11 @@ def reject_title_with_no_case_transform_content(value, field_name):
     exactly when the value consists entirely of those same
     whitespace/'_'/'-' characters. That raw echo lands in
     naming.build_filename verbatim and can collide with the filename's
-    own separator -- confirmed live: a title of '-' with the default '-'
-    separator produced 'ADR001V01--.md', which naming.parse_filename can
-    no longer recognize at all (permanently unreachable by every other
-    command: approve/reject/undo/supersede/version/revise all fail
-    filename-not-recognized), and its own sequence number was silently
+    own separator -- e.g. a title of '-' with the default '-' separator
+    produces 'ADR001V01--.md', which naming.parse_filename can no longer
+    recognize at all (permanently unreachable by every other command:
+    approve/reject/undo/supersede/version/revise all fail
+    filename-not-recognized), and its own sequence number would be
     reallocated to the very next decision created, duplicating it across
     two different files. Rejected outright -- the same class of problem
     as a blank title (reject_embedded_delimiter's own check). Unlike
@@ -248,12 +241,11 @@ def reject_title_with_no_case_transform_content(value, field_name):
     is never an optional/sentinel field anywhere this function is
     called (new/version/revise/supersede/migrate all require a real
     title), and `to_case("")` degenerates the exact same way as a
-    whitespace/'_'/'-'-only title does -- confirmed live: migrate's own
-    title (parse_legacy_filename can genuinely
-    return "" for a legacy filename with no title segment) slipped
-    through the old `if value and ...` guard, then a later `supersede`
-    on that migrated file produced an unrecognizable filename with no
-    error and no warning."""
+    whitespace/'_'/'-'-only title does -- migrate's own title
+    (parse_legacy_filename can genuinely return "" for a legacy filename
+    with no title segment) would otherwise pass, and a later `supersede`
+    on that migrated file would produce an unrecognizable filename with
+    no error and no warning."""
     if not _NO_WORD_CONTENT_PATTERN.sub("", value):
         raise CommandError(
             FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER,
@@ -266,8 +258,8 @@ def reject_marker_comment_syntax(value, field_name):
     is_migrated detection (core/header.py) is pure substring matching
     for an HTML-comment-shaped tail on the table-fields row this pair of
     fields builds (`lines[1].rstrip().endswith(' -->|') and '<!-- ' in
-    lines[1]`). Confirmed live: a hostile config
-    setting headertablevalues to e.g. 'Values <!-- x -->' made
+    lines[1]`). A hostile config
+    setting headertablevalues to e.g. 'Values <!-- x -->' makes
     is_migrated=True on the header of every ordinary, non-migrated file
     ever written under that config -- that flag feeds several lifecycle
     eligibility exceptions. Rejected outright -- narrower than

@@ -261,10 +261,9 @@ def _existing_entries(decision_log_dir, *, warnings=None):
     longer guaranteed flat by construction. Fails closed on an unreadable
     subdirectory instead of silently under-reporting -- every real caller
     of this function makes a safety decision from the result (Round
-    allocation, index correctness, the change guard below), the same
-    reasoning core/lifecycle.py's scan_decisions applies with
-    strict=True; unlike that function, this one has no read-only/warn-
-    only caller to also support, so it always fails closed."""
+    allocation, index correctness, the change guard below), so it always
+    fails closed. It keeps its own rglob walk rather than core/fs.scan_tree
+    (the decisions-folder scan), whose junction semantics differ."""
     decision_log_dir = Path(decision_log_dir)
     if not decision_log_dir.is_dir():
         return []

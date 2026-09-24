@@ -76,7 +76,7 @@ HINTS = {
     FailureCodes.NO_HEADER: (
         "The file has an ADR name but no header. If it is a decision written before adopting the tool and "
         "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
-        "new). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
+        "new; set migrationpattern with adrpy config first if the names need it). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
         "created), rename it so its name is not an ADR name, or remove it."
     ),
     FailureCodes.INVALID_HEADER: (
@@ -340,12 +340,15 @@ def check_repository(folder, config, scan=None):
     return Snapshot(tuple(decisions), by_number, scan.excluded if scan is not None else ()), errors
 
 
-def validate_repository(folder, config, scan=None):
+def validate_repository(folder, config, scan=None, tolerate=()):
     """The Snapshot of a consistent repository; raises
     repository-inconsistent, with every broken invariant in
     data.errors ({code, file, related_files, detail, hint}), otherwise.
-    `scan` as in check_repository."""
+    `scan` as in check_repository. Errors whose code is in `tolerate` do
+    not count (config tolerates no-header: a repository not yet migrated
+    has it by definition, and config sets migrate's migrationpattern)."""
     snapshot, errors = check_repository(folder, config, scan)
+    errors = [error for error in errors if error["code"] not in tolerate]
     if errors:
         raise CommandError(
             FailureCodes.REPOSITORY_INCONSISTENT,

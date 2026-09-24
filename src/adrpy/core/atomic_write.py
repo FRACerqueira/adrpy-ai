@@ -45,9 +45,8 @@ def split_real_lines(text):
 def normalize_newlines(text):
     """Splits `text` on ANY real newline convention already present (bare
     "\\n", "\\r\\n", lone "\\r" -- including a different OS's own
-    convention) and rejoins using THIS host's `os.linesep`, matching how
-    the reference tool carries body content forward between operations
-    (discarding whatever terminator the source had). Makes every write's newline
+    convention) and rejoins using THIS host's `os.linesep`, discarding
+    whatever terminator the source had. Makes every write's newline
     handling the same single call, regardless of whether the content came
     in already terminated, with bare "\\n", or mixed -- the exact ambiguity
     that caused a real doubled-CR bug in the `new` command."""

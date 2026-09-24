@@ -29,8 +29,8 @@ def test_every_command_documents_usage_error():
 def test_install_and_remove_document_target_global_restriction():
     for name in ("install", "remove"):
         info = COMMANDS[name].describe()
-        text = info["description"]
-        assert "global" in text and "usage-error" in text
+        assert "global" in info["description"]
+        assert "usage-error" in {entry["code"] for entry in info["failure_codes"]}
 
 
 def test_short_flag_aliases_are_documented_in_describe():

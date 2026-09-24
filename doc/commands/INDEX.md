@@ -4,10 +4,13 @@
 
 # Command Reference
 
-One page per `adrpy` command, each kept in step with that command's own
-`describe()` contract -- the same JSON `adrpy help <command>` returns at
-runtime. If a page here and the CLI ever disagree, the CLI is right and the
-page has drifted; regenerate it instead of hand-editing around the gap.
+One page per `adrpy` command. The Description, Arguments and Failure codes
+sections of every page are generated from that command's own `describe()`
+contract -- the same JSON `adrpy help <command>` returns at runtime -- by
+`scripts/generate_command_docs.py`; only the summary line and the Example
+section are written by hand. `tests/test_command_docs.py` fails when a page
+differs from what `describe()` renders, or when a command has no page: after
+changing a command's contract, run the script instead of editing the page.
 
 | Command | Purpose |
 |---|---|
@@ -22,24 +25,20 @@ page has drifted; regenerate it instead of hand-editing around the gap.
 | [`revise`](revise.md) | Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision. |
 | [`migrate`](migrate.md) | Adds an adrpy-compliant header to existing, hand-written decision files. |
 | [`explore`](explore.md) | Lists every decision file in the repository, on a best-effort basis. |
+| [`check`](check.md) | Validates every decision in the repository and lists every inconsistency found. |
 | [`config`](config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
 | [`installconfig`](installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
 | [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
-Every failure code specific to a command is documented on that command's
-own page, in its `## Failure codes` table (ADR008V01) -- the same
-structured `failure_codes` field `adrpy help <command>` returns at
-runtime, not free-form prose. There is still no separate GLOBAL
-error-code index: codes genuinely specific to one command's own
-operation are only ever listed there, since a code's meaning is only
-complete together with the specific write it guards. Codes with
-identical meaning everywhere they're reachable (config-schema
-validation, header parsing) are authored once, in a shared source next
-to the code that raises them, and merged into every command's own table
-that can actually return them -- still delivered on that command's own
-page, never referenced from outside it. An automated test
-(`tests/test_help.py::test_every_failure_code_is_documented_somewhere`)
+Every failure code a command can return is listed on that command's own
+page, in its `## Failure codes` table (ADR008V01) -- the structured
+`failure_codes` field of `describe()`, not prose. There is no separate
+global error-code index: codes with the same meaning everywhere they are
+reachable (config-schema validation, header parsing, the repository
+validation) are authored once, next to the code that raises them, and
+merged into the table of every command that can return them.
+`tests/test_help.py::test_every_failure_code_is_documented_somewhere`
 checks that every code appears in at least one command's table; whether
-each page lists every code its own command can return is kept by review.
+each table lists every code its own command can return is kept by review.
 
 Four codes any command can return are not repeated on every page: `usage-error` (a malformed invocation, exit code 2), `unknown-command`, `interrupted` (Ctrl+C; `migrate` adds `data` when it already wrote something) and `internal-error` (a genuinely unexpected exception).

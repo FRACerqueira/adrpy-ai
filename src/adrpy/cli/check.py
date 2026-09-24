@@ -37,14 +37,11 @@ def describe():
         "name": "check",
         "summary": "Validates every decision in the repository and lists every inconsistency found.",
         "description": (
-            "Reads every file with an ADR name under the decisions folder (a .md whose name is not an ADR name "
-            "is ignored) and checks the repository's consistency rules: a valid header with a status "
-            "combination the tool writes, unique numbering, one open Proposed and one Superseded at most per "
-            "family, each the live member, and supersede links that point both ways. Succeeds with the number "
-            "of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken "
-            "rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. Writes "
-            "nothing. May fail with target-directory-not-found or config-not-found when --path is not a "
-            "repository."
+            "Validates the whole repository, read-only: every file with an ADR name under the decisions "
+            "folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. "
+            "Succeeds with the number of decisions when every rule holds; otherwise fails with "
+            "repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, "
+            "detail, hint), sorted by file."
         ),
         "arguments": [
             {

@@ -9,11 +9,8 @@ def describe():
         "name": "help",
         "summary": "Lists every adrpy-skills command, or describes one of them in full.",
         "description": (
-            "Lists available commands, or describes one command. With no `command` and no --full, "
-            "lists every command's name and one-line `summary` only. --full returns every command's "
-            "full description and argument list in one call. Naming a specific `command` always "
-            "returns its full description and argument list, regardless of --full. Fails with "
-            "unknown-command if the named `command` doesn't match any registered command."
+            "Lists every adrpy-skills command with its one-line summary. Naming a `command`, or passing "
+            "--full, returns the full contract (description, arguments, failure_codes) instead."
         ),
         "arguments": [
             {

@@ -6,31 +6,22 @@
 
 Creates a new decision, status `Proposed`.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Creates a new decision with status Proposed. May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- no write is attempted either way. Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint; no write is made. Fails with title-already-exists (data.existing_file names it) if another decision already has this title once case-transform normalized, or file-already-exists (data.file names it) if the resulting filename happens to already exist on disk -- neither write is made.
+Creates a new decision, status Proposed, in a new family under the number after the highest one held (gaps are not reused). The whole repository is validated first (see `adrpy check`), and the title must be unique in it once case-transform normalized; nothing is written when a rule fails.
 
 ## Arguments
 
-### `--path` / `-p` *(required, string)*
-
-Repository root directory.
-
-### `--title` / `-t` *(required, string)*
-
-Title of the new decision. Cannot contain '|' or a line-break-like character, or a filesystem-unsafe character (`<>:"/\|?*` or a control character -- unlike every other free-text field, title lands inside an actual filename component, not just a header-table cell); also cannot consist entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a value raw, which can collide with the filename's own separator and produce a file the tool can never recognize again (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--domain` / `-d` *(optional, string)*
-
-Optional domain header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--scope` / `-s` *(optional, string)*
-
-Optional scope header field. Cannot contain '|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank).
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a brand new decision has no prior history to be before (refdate-invalid-format/refdate-in-future).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--path` | `-p` | yes | string | Repository root directory. |
+| `--title` | `-t` | yes | string | Title of the new decision. Cannot contain '\|' or a line-break-like character, or a filesystem-unsafe character (`<>:"/\|?*` or a control character -- unlike every other free-text field, title lands inside an actual filename component, not just a header-table cell); also cannot consist entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls back to echoing such a value raw, which can collide with the filename's own separator and produce a file the tool can never recognize again (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--domain` | `-d` | no | string | Optional domain header field. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--scope` | `-s` | no | string | Optional scope header field. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a brand new decision has no prior history to be before (refdate-invalid-format/refdate-in-future). |
 
 ## Failure codes
 
@@ -40,6 +31,8 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a b
 | `config-not-found` | --path's own directory has no adr-config.adrplus. |
 | `field-contains-forbidden-character` | title/domain/scope contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'. |
 | `field-is-blank` | domain or scope is non-empty but blank after stripping whitespace. |
+| `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
+| `refdate-in-future` | --refdate is after today. |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `title-already-exists` | Another decision already has this title, once both are normalized by the configured case transform. |
 | `file-already-exists` | The resulting filename already exists on disk. |
@@ -88,6 +81,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future -- a b
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -97,4 +91,4 @@ adrpy new --path . --title "Use PostgreSQL for the primary datastore" --domain d
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help new` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help new` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

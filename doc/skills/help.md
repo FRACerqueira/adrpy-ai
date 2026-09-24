@@ -6,19 +6,19 @@
 
 Lists every `adrpy-skills` command, or describes one of them in full.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Lists available commands, or describes one command. With no `command` and no `--full`, lists every command's name and one-line `summary` only. `--full` returns every command's full description and argument list in one call. Naming a specific `command` always returns its full description and argument list, regardless of `--full`. Fails with `unknown-command` if the named `command` doesn't match any registered command.
+Lists every adrpy-skills command with its one-line summary. Naming a `command`, or passing --full, returns the full contract (description, arguments, failure_codes) instead.
 
 ## Arguments
 
-### `command` *(optional, string, positional)*
-
-Name of the command to describe (`help <command>`, no `--`).
-
-### `--full` *(optional, switch)*
-
-Return every command's full description and argument list at once, instead of the default summarized listing. Ignored when `command` is also given.
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `command` (positional) | -- | no | string | Name of the command to describe. |
+| `--full` | -- | no | switch | Return every command's full description and argument list at once, instead of the default summarized listing. Ignored when `command` is also given. |
 
 ## Failure codes
 
@@ -26,6 +26,7 @@ Return every command's full description and argument list at once, instead of th
 |---|---|
 | `usage-error` | An unrecognized argument, or more than one command name, was given. |
 | `unknown-command` | The named `command` doesn't match any registered command. |
+<!-- generated:end -->
 
 ## Example
 
@@ -35,4 +36,4 @@ adrpy-skills help install
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy-skills help help` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy-skills help help` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

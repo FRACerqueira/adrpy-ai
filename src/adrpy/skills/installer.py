@@ -24,9 +24,8 @@ _FRONTMATTER_RE = re.compile(r"\A(---\n.*?\n---\n)", re.DOTALL)
 # Deliberately much larger than core/config.py's own CONFIG_READ_MAX_BYTES
 # (64KB) -- that cap bounds a schema-fixed JSON file, this one bounds
 # free-form AGENTS.md/SKILL.md content a project owner can legitimately
-# grow well past that. Still bounded, not unlimited: a Round 37
-# test-adequacy front measured an unbounded read of a planted 100MB file
-# peaking process memory near 200MB -- every other full-content reader in
+# grow well past that. Still bounded, not unlimited: an unbounded read
+# of a planted 100MB file was measured peaking process memory near 200MB -- every other full-content reader in
 # the project already caps for the same reason (see
 # CONFIG_READ_MAX_BYTES); this was the one that didn't.
 _READ_TEXT_MAX_BYTES = 10 * 1024 * 1024
@@ -79,7 +78,7 @@ def _read_text(path):
     step below restores it by hand (`\\r\\n`/`\\r` -> `\\n`) -- on
     Windows, `atomic_write_text` writes `os.linesep` (CRLF) to disk.
     This, paired with `core/hashing.py`'s own `compute_hash` (which
-    canonicalizes newlines to bare `\\n` before hashing, Class P6),
+    canonicalizes newlines to bare `\\n` before hashing),
     keeps hash-time and read-time content in agreement regardless of
     host OS: both sides always compare LF-canonical text."""
 
@@ -125,8 +124,7 @@ def _validate_scope(provider_names, scope):
     --provider/--skill both reject an unrecognized value via _expand_all();
     --target never did -- a typo (e.g. "golbal") silently fell through
     to the "project" branch in _resolve_path, writing into the current
-    directory instead of failing loudly. Found by a Round 37 usability
-    re-audit."""
+    directory instead of failing loudly."""
     if scope not in ("project", "global"):
         raise UsageError(f"Unknown --target value: {scope!r}. Valid values: global, project.")
     if scope != "global":
@@ -190,7 +188,7 @@ _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy
 # start of the file (skipped by offset, so a rewrite preserves them).
 #
 # Indentation is captured, not limited, because the shape of a line can't
-# say who owns it (Round 39, S1): a block an editor re-indented and the
+# say who owns it: a block an editor re-indented and the
 # user's quoted example look alike. Tags at 0-3 spaces are this tool's
 # syntax, whatever surrounds them. Past that -- where CommonMark starts an
 # indented code block -- only the block's own marker hash proves it is the

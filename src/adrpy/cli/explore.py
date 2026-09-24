@@ -24,19 +24,11 @@ def describe():
         "name": "explore",
         "summary": "Lists every decision file in the repository, on a best-effort basis.",
         "description": (
-            "Lists every decision file in the repository, recognized or not, on a best-effort basis: "
-            "a file excluded for escaping the repository boundary, a subdirectory that could not be "
-            "scanned, or a single file that could not be read are all reported via `warnings` instead "
-            "of silently missing from `decisions` or failing the whole command. Each entry's "
-            "`header.state` is `valid`, `adulterated` (it looks like this tool's header -- a `|Adr-Plus ` row, an "
-            "exact `|--|--|` line or a NUL byte within the first 12 lines -- but it does not parse) or "
-            "`no-header`, with `header.invalid_reason` naming the parse failure for the last two -- a file "
-            "that is not `valid` has no status the other commands can read, so they leave it out of every "
-            "family rule (see doc/lifecycle.md). "
-            "May fail with target-directory-not-found if --path does not point to an existing directory, "
-            "or config-not-found if that directory has no adr-config.adrplus -- these two are hard "
-            "failures, not part of the best-effort reporting above, since there is no repository to scan "
-            "at all yet."
+            "Lists every file under the decisions folder, recognized or not, and never refuses an "
+            "inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and "
+            "every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's "
+            "`header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) "
+            "or `no-header`, with `header.invalid_reason` naming the parse failure for the last two."
         ),
         "arguments": [
             {
@@ -157,12 +149,11 @@ def _build_entry(path, config):
     # lines, and for a large or hostile file (explore is the natural
     # "safe first look" an agent runs against an unfamiliar repository,
     # with no size warning), that's an unbounded memory read for zero
-    # benefit. Confirmed live: an 800MB
-    # matching file drove peak traced memory to ~2.5GB for this single
-    # candidate. Uses the same bounded header read every other bulk scan
-    # in this codebase already relies on (family_members, migrate's scan
-    # phase) -- same PermissionError-retry tolerance, same lossy-decode
-    # detection, just never loading the body.
+    # benefit (an 800MB matching file once drove peak memory to ~2.5GB
+    # for this single candidate). Uses the same bounded header read as
+    # the repository scan (core/consistency) and migrate's scan -- same
+    # PermissionError-retry tolerance, same lossy-decode detection, just
+    # never loading the body.
     header_lines, encoding_repaired = read_header_lines_with_report(path)
     header = parse_header(header_lines, config)
     # "adulterated": this tool's header, damaged; "no-header": none.
@@ -181,8 +172,8 @@ def _entry(path, scheme, parsed, header, header_state, encoding_repaired):
         "title": parsed.title if parsed else None,
         "header": {
             "is_valid": header.is_valid,
-            # Only a header that parses gives a status; an invalid file is
-            # left out of every family rule (see doc/lifecycle.md).
+            # Only a header that parses gives a status; a file with an ADR
+            # name that is not `valid` is also one of consistency.errors.
             "state": header_state,
             "invalid_reason": None if header.is_valid else header.error,
             "is_migrated": header.is_migrated,

@@ -6,15 +6,18 @@
 
 Lists every decision file in the repository, on a best-effort basis.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Lists every decision file in the repository, recognized or not, on a best-effort basis: a file excluded for escaping the repository boundary, a subdirectory that could not be scanned, or a single file that could not be read are all reported via `warnings` instead of silently missing from `decisions` or failing the whole command. Each entry's `header.state` is `valid`, `adulterated` (it looks like this tool's header -- a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte within the first 12 lines -- but it does not parse) or `no-header`, with `header.invalid_reason` naming the parse failure for the last two -- a file that is not `valid` has no status the other commands can read, so they leave it out of every family rule (see doc/lifecycle.md). May fail with target-directory-not-found if --path does not point to an existing directory, or config-not-found if that directory has no adr-config.adrplus -- these two are hard failures, not part of the best-effort reporting above, since there is no repository to scan at all yet.
+Lists every file under the decisions folder, recognized or not, and never refuses an inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's `header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) or `no-header`, with `header.invalid_reason` naming the parse failure for the last two.
 
 ## Arguments
 
-### `--path` / `-p` *(required, string)*
-
-Repository root directory (must contain adr-config.adrplus).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--path` | `-p` | yes | string | Repository root directory (must contain adr-config.adrplus). |
 
 ## Failure codes
 
@@ -65,6 +68,7 @@ Repository root directory (must contain adr-config.adrplus).
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -75,4 +79,4 @@ adrpy explore --path .
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help explore` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help explore` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

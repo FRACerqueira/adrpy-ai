@@ -6,19 +6,19 @@
 
 Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision.
 
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
 ## Description
 
-Creates a new revision (wording fix) of an Accepted/Rejected decision. May fail with file-not-found if --file does not point to an existing file (a bare name with no extension gets '.md' appended before this check), or cannot-determine-root-path if no adr-config.adrplus is found by walking up from it -- no write is attempted either way. Requires the repository's lenrevision to be > 0 (see the `config` command); fails with revision-not-configured otherwise -- true for any freshly-init'd repository. Fails with target-outside-folderadr if --file is not inside the decisions folder (folderadr). Then, before any other rule, the whole repository is validated: if it breaks a consistency rule (the ones `adrpy check` reports -- a header that does not parse, a duplicate number, a supersede link that does not point both ways, a subdirectory that could not be scanned, ...), fails with repository-inconsistent, every broken rule listed in data.errors with a repair hint. No write is made either way. A title, scope or domain in the target's header that breaks the free-text rules ('|', a line-break-like character, or -- title only -- a filesystem-unsafe character (`<>:"/\|?*` or a control character) or nothing but whitespace/'_'/'-') makes the header invalid: one of repository-inconsistent's data.errors (invalid-header). Fails with family-not-found if this decision's own family can't be resolved, or lenrevision-too-small-for-new-revision (data.new_revision/data.lenrevision) if the next revision number -- the one after the highest revision this version already holds, whatever file holds it -- doesn't fit the configured width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the target belongs to the family of a successor that was rejected. Fails with one of still-proposed, already-superseded if the target isn't eligible, or family-member-superseded/family-member-pending if another member of the same family has already been superseded or is still unresolved (Proposed). Fails with file-already-exists (data.file names it) if the resulting filename already exists on disk. No write is made in any of these cases.
+Creates a new revision (a wording fix) of an Accepted or Rejected decision, status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails.
 
 ## Arguments
 
-### `--file` / `-f` *(required, string)*
-
-Path to the decision file. A bare name with no extension gets '.md' appended.
-
-### `--refdate` / `-r` *(optional, string)*
-
-Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own last update date (or creation date, if never updated) (refdate-invalid-format/refdate-in-future/refdate-before-history).
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own last update date (or creation date, if never updated) (refdate-invalid-format/refdate-in-future/refdate-before-history). |
 
 ## Failure codes
 
@@ -26,14 +26,12 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 |---|---|
 | `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
 | `already-superseded` | This decision has already been superseded. |
-| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
 | `family-not-found` | This decision's own family could not be resolved. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
 | `refdate-in-future` | --refdate is after today. |
 | `refdate-before-history` | --refdate is before this decision's own last update date (or creation date, if never updated). |
 | `file-already-exists` | The new revision's own resulting filename already exists on disk (data.file names it). |
 | `lenrevision-too-small-for-new-revision` | The next revision number does not fit in the configured lenrevision width. |
-| `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `revision-not-configured` | This repository's config has lenrevision == 0. |
 | `title-produces-unrecognizable-filename` | The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
@@ -44,6 +42,8 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
+| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
+| `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
@@ -87,6 +87,7 @@ Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or bef
 | `config-statusacc-too-long` | statusacc exceeds 25 characters. |
 | `config-statusrej-too-long` | statusrej exceeds 25 characters. |
 | `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
 
 ## Example
 
@@ -96,4 +97,4 @@ adrpy revise --file doc/adr/ADR001V01R01-use-postgre-sql-for-the-primary-datasto
 
 ---
 
-This page mirrors the command's own `describe()` contract (the same JSON `adrpy help revise` returns at runtime) -- if this page and the CLI ever disagree, the CLI is right and this page has drifted.
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help revise` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

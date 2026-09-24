@@ -1,8 +1,6 @@
 """`installconfig` command: reads or updates the per-user install-level
-config (ADR002V01 -- not a port of anything in the reference tool,
-which stores its own equivalent relative to its own install directory
-instead; see the ADR for why that storage location was not mirrored
-here).
+config (ADR002V01; see the ADR for why it is a per-user file, not one
+relative to the install directory).
 
 Unlike every other command, this one takes no `--path` -- it always
 operates on the one, fixed, per-user location `core/install_config.py`
@@ -14,10 +12,9 @@ convention to locate it). One flag per schema field (mirroring
 `config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
 schema is byte-compatible with a repository's own adr-config.adrplus
-(ADR002V01), `--seed` pointed directly at a real installation of the
-reference tool's own template file already covers importing from it; no separate
-cross-tool flag, and no knowledge of the reference tool's own install-
-directory layout, is added for that.
+(ADR002V01), `--seed` pointed directly at AdrPlus's own template file
+already covers importing from it; no separate cross-tool flag, and no
+knowledge of AdrPlus's install-directory layout, is added for that.
 
 `--language` is a second, narrower wholesale-replace source, mirroring
 `init --language`'s own built-in language packs -- unlike `init`, never
@@ -179,27 +176,11 @@ def describe():
             "supplies a migrate fallback)."
         ),
         "description": (
-            "Reads or updates the per-user install-level config (ADR002V01) -- used by `init` as its "
-            "default seed when no --seed/--language is given, and by `migrate` as a migrationpattern "
-            "fallback when a repository's own is empty. Unlike every other command except `help`, targets no repository at all (neither --path nor --file), and so takes no --path: "
-            "always operates on the one, fixed, per-user location this machine resolves to. "
-            "With no field flags and no --seed, reads the current config back (read-only, no write); "
-            "the result's `configured` key is false with no `config` key at all if the file doesn't "
-            "exist yet -- the normal state for any installation that has never run this command, not an "
-            "error -- or true with a `config` key otherwise. `updated_fields` is present as an empty "
-            "list on every read too, same as `config`'s own bare-read shape -- a generic wrapper that "
-            "reads `data.updated_fields` unconditionally works the same after any call, read or write. "
-            "`activeplugins` is never included in that read result or accepted as a field to update -- "
-            "same as the `config` command, the plugin system is out of scope for now -- but is still "
-            "carried through unchanged from whatever base a write merges onto. "
-            "Omitted fields keep their current value (or the built-in default's, on first write); only "
-            "the fields passed are updated. A write call's result never has the `config`/`configured` "
-            "keys. "
-            "--seed replaces the file wholesale, same as `init --seed`, and reports every editable field "
-            "in `updated_fields` since a full replace makes every one of them this call's own -- not a "
-            "diff against whatever was there before. --language replaces the file wholesale too, with the "
-            "built-in default's header/status labels and template swapped for that language's own -- same "
-            "reporting rule as --seed applies to it."
+            "Reads or updates the per-user install-level config (ADR002V01), which seeds `init` and supplies "
+            "migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field"
+            " flags and no --seed/--language it reads the file back (`configured` is false, with no `config` "
+            "key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the "
+            "file with --seed or --language. `activeplugins` is never read or written, but a write keeps it."
         ),
         "arguments": [
             {
@@ -212,7 +193,7 @@ def describe():
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "The install-level "
                     "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
-                    "this also covers importing one from a real installation of the reference tool's own "
+                    "this also covers importing AdrPlus's own "
                     "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
                     "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "
                     "combination (--seed with --language)."

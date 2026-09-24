@@ -1,15 +1,13 @@
 """`config` command: updates fields of an existing repository's own
 `adr-config.adrplus` directly.
 
-Deliberate, confirmed divergence from the reference tool: its own `config
---repository/--application/--template/--migrate` never edit an existing
-repo's own file -- only the interactive wizard (or `init --file`, which
-overwrites everything) does. adrpy-ai has no wizard, so this command
-exists instead: one flag per config field, merge/update semantics -- an
-omitted flag preserves the repo's current value, never resets it.
+adrpy-ai has no interactive wizard, so this command is how an existing
+repository's settings change: one flag per config field, merge/update
+semantics -- an omitted flag preserves the repo's current value, never
+resets it.
 
 `activeplugins` is deliberately not exposed here -- the plugin system is
-out of scope for now (confirmed decision). `disableplugins` IS exposed
+out of scope. `disableplugins` IS exposed
 (it's a meaningful kill-switch field even with no plugins implemented,
 harmless either way) but needs an explicit true/false value, not a
 presence-only switch, since either direction is a real edit.
@@ -149,78 +147,12 @@ def describe():
         "name": "config",
         "summary": "Reads or updates an existing repository's own adr-config.adrplus.",
         "description": (
-            "Reads or updates fields of an existing repository's adr-config.adrplus. "
-            "May fail with target-directory-not-found if --path does not point to an existing directory, "
-            "or config-not-found if that directory has no adr-config.adrplus -- no write is attempted "
-            "either way. "
-            "With no field flags, reads the current config back (read-only, no write). "
-            "`activeplugins` is never included in that read result or accepted as a field to update -- "
-            "the plugin system is out of scope for now (see the `init` command's own note) -- "
-            "so this is a subset of the raw file, not its full contents; do not round-trip it as "
-            "`init --seed` input without adding `activeplugins` back. "
-            "Omitted fields keep their current value; only the fields passed are updated. "
-            "The result's own JSON shape differs by mode: a pure read's result has a `config` key (the "
-            "current field values); a write's result never has that key at all, only `updated_fields` -- a "
-            "generic wrapper that reads `data.config` unconditionally after any `config` call will KeyError "
-            "on a write. "
-            "Before changing a guarded field (--folderadr, --folderlog, --statusnew/--statusacc/--statusrej/"
-            "--statussup, --separator, --migrationpattern), the repository is validated with the current "
-            "config: if it breaks a consistency rule (the ones `adrpy check` reports, a subdirectory of the "
-            "decisions folder that could not be scanned included), fails with repository-inconsistent, "
-            "every broken rule listed in data.errors with a repair hint, and nothing is written. A read, or "
-            "a change of any other field, does not validate. "
-            "--folderadr can only be changed while the OLD folder has no recognized decisions yet -- "
-            "otherwise fails with folderadr-change-blocked-by-existing-decisions (data.existing_decisions "
-            "names the count) rather than silently orphaning them at their old, still-real path. The NEW folder is "
-            "checked too: if it already exists and holds a file that would newly parse as a decision under "
-            "the resulting config, fails with folderadr-change-would-adopt-unrelated-files "
-            "(data.adopted_files lists the file paths) instead of silently absorbing it and corrupting "
-            "next-number allocation; if a subdirectory under the new folder can't be scanned, fails closed with "
-            "folderadr-change-scan-incomplete rather than assuming nothing was there. Skipped entirely when "
-            "the new folder does not exist yet. "
-            "--folderlog (ADR007V01, deliberately not byte-compatible with the reference tool's own schema) "
-            "is validated and change-guarded the same way -- cannot overlap with (equal, or be nested inside "
-            "or around) folderadr, fails with config-folderadr-folderlog-overlap otherwise; can only be "
-            "changed while the OLD directory has no decision-log entries yet, otherwise fails with "
-            "folderlog-change-blocked-by-existing-entries (data.existing_entries names the count); the NEW "
-            "directory is checked too, failing with folderlog-change-would-adopt-unrelated-files "
-            "(data.adopted_files: bare filenames, not paths) if it already holds a file that would newly parse as an entry -- unlike "
-            "folderadr's own scan, decision-log's own scan additionally fails LOUDLY "
-            "(log-directory-contains-unrecognized-file) on any .md file there that does NOT parse as a valid "
-            "entry, rather than silently ignoring it, since that scan can never tell 'unrelated' apart from "
-            "'malformed' the way folderadr's naming-scheme recognition can. Both directions fail closed with "
-            "log-scan-incomplete if a subdirectory can't be scanned. Omitted from a hand-edited config "
-            "written before this field existed, folderlog defaults to folderadr's own parent sibling "
-            "'decision-log' -- this command's own read/write both honor that default transparently. "
-            "--statusnew/--statusacc/--statusrej/--statussup/--separator/--migrationpattern can likewise only "
-            "be changed while doing so would not break recognition of an existing decision (ADR004V01/V02) -- "
-            "otherwise fails with status-or-separator-change-blocked-by-existing-decisions "
-            "(data.changed_fields names only the guarded field(s) actually blocking this call -- a field this "
-            "call also touched, but whose own scope has no existing decisions at risk, is NOT listed there "
-            "even though the call's atomic write still fails to apply it either; data.existing_decisions is "
-            "the decision count actually at risk from those blocking field(s), not necessarily the "
-            "repository's total). Status labels and --separator block if ANY recognized decision exists "
-            "(current-scheme or legacy-scheme -- --separator's own recognition dependency is CURRENT-scheme-"
-            "only, but a value that already appears inside a legacy filename can make that file newly match "
-            "the current-scheme parser too, silently reclassifying it, so --separator cannot be scoped to "
-            "current-scheme decisions the way --migrationpattern safely can); --migrationpattern blocks only "
-            "if a LEGACY-scheme decision exists (parse_filename, the current-scheme parser, never reads "
-            "migrationpattern, so no equivalent reclassification risk exists in that direction). This is a "
-            "PERMANENT block once the decisions it actually protects exist, with no migration path -- for "
-            "--statusnew/--statusacc/--statusrej/--statussup and --separator that means ANY recognized "
-            "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already carry "
-            "it against a later label change, but does not exempt THIS GUARD from refusing the config change "
-            "itself -- the two are independent, and a marker-protected repository is blocked exactly the same "
-            "as one with none); for --migrationpattern it means a LEGACY-scheme decision specifically. "
-            "--separator may also fail with separator-change-would-adopt-unrelated-files (data.adopted_files "
-            "lists the file paths) if changing it would make a file NOT currently recognized as a decision "
-            "(by either naming scheme) newly parse as one -- unlike --migrationpattern, which is deliberately "
-            "allowed to newly recognize pre-existing legacy files (that is its own documented purpose), "
-            "--separator has no such intentional-adoption use case, so any file it would newly sweep in is "
-            "treated as an unintended side effect and blocked. This check only ever runs once the "
-            "blocked-by-existing-decisions check above has already passed, so it only ever fires when zero "
-            "existing decisions are at risk from this call -- not an edge case alongside a more common one "
-            "where both could coexist, since those two outcomes are mutually exclusive by construction."
+            "With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` "
+            "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
+            "key). Changing a guarded field -- folderadr, folderlog, a status label, separator or "
+            "migrationpattern -- validates the repository first and is refused while it would orphan, "
+            "reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or "
+            "written."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -334,12 +266,14 @@ def run(args):
 
         # A guarded field (folderadr, folderlog, a status label,
         # separator, migrationpattern) changes only on a consistent
-        # repository, and only when no existing decision or log entry
+        # repository (files with no header aside), and only when no existing decision or log entry
         # would be orphaned, unrecognized or silently adopted -- one scan
         # of the pre-edit folder feeds both checks.
         if guarded_fields_changed(current, new_config):
             scan = scan_tree(folder)
-            validate_repository(folder, current, scan=scan)
+            # no-header is tolerated: before its one migrate a repository
+            # is made of such files, and migrate needs config first.
+            validate_repository(folder, current, scan=scan, tolerate=(FailureCodes.NO_HEADER,))
             validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
 
         # Creating the new folder here, BEFORE the config commits,

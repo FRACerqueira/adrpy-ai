@@ -1,4 +1,4 @@
-"""`migrate` command: adds an AdrPlus-compliant header to existing,
+"""`migrate` command: adds an adrpy header to existing,
 hand-written decision files. Refuses outright if ANY file already has a
 valid, non-migrated header (current-scheme, tool-created) -- migration is
 a one-time operation for repositories with only manually-created
@@ -12,8 +12,7 @@ endings and bytes otherwise, not literally its every byte.
 If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
 command; ADR002V01) when one is set there, and persists the found value
-back into this repository's own `adr-config.adrplus` -- matching the
-reference tool's own confirmed behavior.
+back into this repository's own `adr-config.adrplus`.
 """
 
 import contextlib
@@ -54,8 +53,7 @@ def _stream_migrated_candidate(candidate_path, header_text):
     the source file into the destination temp file (via
     atomic_write_chunks), never assembled as one in-memory bytes object
     -- except any run of leading UTF-8 BOMs, stripped from the very first chunk
-    only, matching the reference tool's own confirmed behavior (see this
-    module's own docstring)."""
+    only (see this module's own docstring)."""
     yield header_text.encode("utf-8")
     with Path(candidate_path).open("rb") as source:
         first_chunk = True
@@ -75,63 +73,14 @@ def describe():
         "name": "migrate",
         "summary": "Adds an adrpy-compliant header to existing, hand-written decision files.",
         "description": (
-            "Adds an AdrPlus-compliant header to existing, hand-written decision files. "
-            "May fail with target-directory-not-found if --path does not point to an existing directory, "
-            "or config-not-found if that directory has no adr-config.adrplus -- no file is touched either "
-            "way. "
-            "Requires the repository's migrationpattern to be set, either directly (see the `config` "
-            "command) or via the install-level config's own fallback (see the `installconfig` command); "
-            "fails with migration-pattern-not-configured only when both are empty -- true for any "
-            "freshly-init'd repository with no install-level config set up either. "
-            "When the fallback supplies the value, it is also persisted back into this repository's own "
-            "adr-config.adrplus -- as an "
-            "earlier, independent write, not atomically bundled with the migration itself: it commits "
-            "before the scan/eligibility checks below run, and survives even if this same call goes on "
-            "to fail one of them (migration-scan-failed/-incomplete, migration-invalid-headers-exist, "
-            "migration-successor-files-exist, migration-duplicate-numbers-exist, "
-            "no-decisions-found, already-tool-created-adrs-exist, no-eligible-files-to-migrate) -- those "
-            "refusals mean no DECISION file was touched, not that adr-config.adrplus itself wasn't. "
-            "Whenever that persist-back happened, the result -- success, any failure code this command "
-            "reports, or interrupted -- carries migrationpattern_persisted with the pattern written (in "
-            "data, on a failure); an unexpected internal-error does not. An interrupt once files are being "
-            "migrated also names, in data.results, the ones already migrated. "
-            "Subsequent commands see the persisted value directly, without consulting the install-level "
-            "config again, regardless of whether this particular run went on to succeed. "
-            "Best-effort per file: one file failing to write (e.g. a permission error) does not block the "
-            "others. If any file fails, the whole command fails with migration-write-failed, whose `data.results` "
-            "names every candidate file's own outcome (`migrated` or `failed`, with the error for the latter). "
-            "A candidate whose title -- sourced from the raw legacy filename itself, unlike every other "
-            "command's own title -- carries '|', a line-break-like character, a filesystem-unsafe "
-            "character (`<>:\"/\\|?*` or a control character; the new header this write is about to build "
-            "would otherwise embed it verbatim, or -- for the filesystem-unsafe set -- this file's own "
-            "existing name already avoided them, since none of them survive as a real filename component "
-            "on this platform), or consists entirely of whitespace/'_'/'-' (e.g. a legacy title segment of "
-            "'---') -- the case-transform step falls back to echoing such a value raw, which can collide "
-            "with the filename's own separator and produce a file the tool can never recognize again -- is "
-            "one such per-file failure (field-contains-forbidden-character), never a silent write. "
-            "This is a one-time, largely irreversible operation for repositories with only manually-created "
-            "decisions: refuses the ENTIRE run with already-tool-created-adrs-exist -- no decision file is "
-            "touched -- if "
-            "even ONE scanned file already has a valid, non-migrated header (i.e. this repository has decisions "
-            "this tool itself already created). Refuses the whole run the same way with "
-            "migration-successor-files-exist (`data.files`) if a scanned file's name already carries a "
-            "supersede suffix (--NNN): a supersede chain is created by this tool only -- rename the file "
-            "without it, migrate, then record the chain with supersede. The same way with "
-            "migration-duplicate-numbers-exist (`data.files`) if two scanned files would share a number, "
-            "version and revision (a missing revision counting as 0) -- a repository every other command "
-            "refuses; rename them so each has its own. And with "
-            "migration-invalid-headers-exist (`data.files` names them) if a scanned file carries this tool's "
-            "header but it does not parse -- a damaged header is never mistaken for no header, so migrate "
-            "never writes a second header on top of one. "
-"A byte that isn't valid UTF-8 only matters if it breaks a header: a tool header that still "
-            "parses counts for the already-tool-created check, one that no longer parses is refused as "
-            "damaged (migration-invalid-headers-exist), and a legacy file with no header is migrated with "
-            "its content copied byte for byte after the new header (any leading BOM dropped). migration-scan-"
-            "failed (`data.unreadable_file` names the one file) refuses the whole run if a scanned file's "
-            "header can't even be read (permission denied or similar). Also refuses with migration-scan-incomplete "
-            "(`data.unreadable` names the subdirectories) if a subdirectory under the decisions folder "
-            "couldn't be scanned at all -- a hidden already-migrated file inside it could make the "
-            "already-tool-created-adrs-exist check above silently answer 'no' when the true answer is 'yes'."
+            "Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written "
+            "decision file matching the repository's migrationpattern, which must be set in this repository's"
+            " config or come from the install-level config's fallback; a fallback value is persisted into "
+            "adr-config.adrplus first (reported as migrationpattern_persisted) and survives a later refusal, "
+            "in which case no decision file is touched. It is a one-time step, refused as a whole when the "
+            "tool already created a decision here, or when a scanned file has a damaged header, carries a "
+            "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
+            " one; if any fails, data.results names every file's outcome."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -271,14 +220,14 @@ def run(args):
                 # Deliberately does not surface header.marker_label_
                 # mismatches (ADR004V01) here -- this scan is a bulk
                 # eligibility pass over every candidate, not a report
-                # on one specific target file the way read_target's
+                # on one specific target file the way prepare's
                 # own warning already covers.
                 header = parse_header(lines, config)
                 if not header.is_valid and has_header_shape(lines):
                     adulterated_files.append(str(candidate))
                 entries.append((parsed, candidate, header))
 
-            # Same as scan_decisions/explore -- an is_within-excluded
+            # Same as explore and the repository scan -- an excluded
             # candidate is reported, not dropped with zero signal.
             warning = excluded_candidate_warning(excluded)
             if warning:
@@ -330,8 +279,8 @@ def run(args):
                 warnings=warnings,
             )
 
-        # A supersede chain is a concept this tool creates (Round 41,
-        # decided by the project owner): a file already claiming to be a
+        # A supersede chain is a concept this tool creates (decided by
+        # the project owner): a file already claiming to be a
         # successor before migration (a --NNN suffix) is refused, so no
         # chain ever enters from outside.
         successor_files = [str(path) for parsed, path, _header in entries if parsed.superseded_from is not None]
@@ -376,11 +325,6 @@ def run(args):
         # and the eventual failure response must carry a deterministic
         # per-candidate result (every file, migrated or failed) rather
         # than forcing the caller to infer what was never attempted.
-        # Deliberate hardening beyond the reference tool, whose own
-        # per-file loop has no try/catch either -- an exception there
-        # propagates and loses even the partial `result` list it had
-        # already built, so this isn't a fidelity requirement to
-        # preserve.
         results = []
         persisted["results"] = results
         for parsed, candidate_path in candidates:

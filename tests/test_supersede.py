@@ -284,10 +284,8 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
     has_superseded_sibling/has_pending_sibling before writing. Two
     different members of the SAME family could each be independently
     superseded, producing two live successors and two Superseded
-    predecessors: exactly the corruption shape ADR001's own Decision
-    Drivers name as HIGH-severity reproduced corruption, and the
-    freshness fix does not close it -- freshness only protects
-    the same-file race, not a second, different family member."""
+    predecessors -- two different members, so no per-file check
+    catches it; only the family-wide guard does."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     # A second Accepted family member is a normal shape (version bumps
     # never retroactively touch the earlier member's own status text).

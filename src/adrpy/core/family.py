@@ -18,8 +18,7 @@ def locking_member(filename_info, members):
     Only the family's latest member is alive. A newer version locks every
     member of an older version, and a newer revision locks the older
     revisions of the same version -- unless every newer one is Rejected:
-    rejected attempts never lock what came before them (Round 40; widened
-    from "a single Rejected member" in Round 41, both decided by the
+    rejected attempts never lock what came before them (decided by the
     project owner). Membership and
     status come from `members` (headers that parse); version and revision
     from the filename."""
