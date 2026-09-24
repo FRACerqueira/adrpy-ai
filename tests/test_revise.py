@@ -701,3 +701,29 @@ def test_revise_numbers_a_migrated_placeholder_by_its_filename_version(tmp_path)
     result = revise.run(["--file", str(r01), "--refdate", "2026-01-06"])
 
     assert os.path.basename(result["created"]) == "ADR001V02R03-foo.md"
+
+
+
+def test_revise_refuses_the_successor_of_an_unfinished_supersede(tmp_path, monkeypatch):
+    from adrpy.cli import supersede as supersede_module
+
+    tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
+
+    def failing_mark(*_args, **_kwargs):
+        raise OSError("simulated disk failure")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(supersede_module, "mark_superseded", failing_mark)
+        with pytest.raises(CommandError):
+            supersede_module.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
+    orphan = next(p for p in adr_path.parent.glob("ADR002*--001.md"))
+    with monkeypatch.context() as scoped:
+        from adrpy.cli import approve as approve_module
+
+        scoped.setattr(approve_module, "raise_if_supersede_not_finished", lambda *a, **k: None)
+        approve.run(["--file", str(orphan), "--refdate", "2026-01-04"])
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(orphan), "--refdate", "2026-01-05"])
+
+    assert excinfo.value.code == "supersede-not-finished"

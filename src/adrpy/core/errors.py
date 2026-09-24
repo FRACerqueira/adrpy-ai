@@ -208,6 +208,7 @@ class FailureCodes:
     MIGRATION_INVALID_HEADERS_EXIST = "migration-invalid-headers-exist"
     MIGRATION_SUCCESSOR_FILES_EXIST = "migration-successor-files-exist"
     REJECTED_SUCCESSOR_IS_FINAL = "rejected-successor-is-final"
+    SUPERSEDE_NOT_FINISHED = "supersede-not-finished"
     ALREADY_TOOL_CREATED_ADRS_EXIST = "already-tool-created-adrs-exist"
     NO_ELIGIBLE_FILES_TO_MIGRATE = "no-eligible-files-to-migrate"
     MIGRATION_LOCK_LOST = "migration-lock-lost"

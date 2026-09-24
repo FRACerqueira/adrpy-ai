@@ -104,19 +104,20 @@ member of its family (see the family rules).
 | Command | The target must be | The family must not have | Result |
 |---|---|---|---|
 | `new` | -- (takes `--path`) | -- | A new family, `V01`, `Proposed`, under the next number. The title must be unique in the repository after case-transform normalization (`title-already-exists`). |
-| `approve` | `Proposed` | a `Superseded` member | Target `Accepted`. |
+| `approve` | `Proposed`, and not in the family of an unfinished supersede's successor | a `Superseded` member | Target `Accepted`. |
 | `reject` | `Proposed` | a `Superseded` member | Target `Rejected`. If the target is a successor, its predecessor goes back first (see below). |
 | `undo` | `Accepted` or `Rejected` (any Changed value), and not in a rejected successor's family | a `Superseded` member; another `Proposed` member | Target back to `Proposed`. |
 | `supersede` | `Accepted` | a `Superseded` member; a `Proposed` member | A successor, `Proposed`, in a new family; then the target `Superseded`. |
-| `version` | `Accepted` or `Rejected`, and not in a rejected successor's family | a `Superseded` member; a `Proposed` member | A new major version, `Proposed`, in the same family. |
-| `revise` | `Accepted` or `Rejected`, and not in a rejected successor's family | a `Superseded` member; a `Proposed` member | A new revision of the target's version, `Proposed`. Needs `lenrevision > 0`. |
+| `version` | `Accepted` or `Rejected`, and not in a rejected or unfinished successor's family | a `Superseded` member; a `Proposed` member | A new major version, `Proposed`, in the same family; scope and domain default to the target's. |
+| `revise` | `Accepted` or `Rejected`, and not in a rejected or unfinished successor's family | a `Superseded` member; a `Proposed` member | A new revision of the target's version, `Proposed`. Needs `lenrevision > 0`. |
 
 When the target's own status does not fit, the code says which status it
 has: `not-proposed`, `still-proposed`, `already-accepted`,
 `already-rejected`, `already-superseded`, or `unexpected-status` for a
 cell holding something no command writes. The family rules fail with
 `family-member-superseded`, `family-member-pending`,
-`not-latest-version` and `rejected-successor-is-final`.
+`not-latest-version`, `rejected-successor-is-final` and
+`supersede-not-finished`.
 
 ## Family rules, in short
 
@@ -172,7 +173,8 @@ cell holding something no command writes. The family rules fail with
 
 If step 2 fails, the successor exists and the predecessor is still
 `Accepted` (`supersede-write-failed`). Run `supersede --resume` on the
-predecessor to finish; without `--resume`, `supersede` refuses
+predecessor to finish -- until then the successor can't be approved,
+versioned or revised (`supersede-not-finished`), only rejected; without `--resume`, `supersede` refuses
 (`supersede-successor-already-exists`) instead of creating a second
 successor. Only a file with a higher number than the predecessor counts
 as its successor, and a rejected one never does.
@@ -206,7 +208,7 @@ and not before the latest date the decision it builds on already carries
 | `new` | -- |
 | `approve`, `reject` | the target's creation date |
 | `supersede` | the target's Changed date (or its creation date); with `--resume`, also the existing successor's creation date |
-| `version`, `revise` | the family's latest member's Changed date (or its creation date) |
+| `version`, `revise` | the target's Changed date (or its creation date) |
 
 `undo` takes no date: it clears the Changed cell.
 

@@ -168,7 +168,7 @@ def test_an_orphaned_successor_that_moved_on_is_not_resumed(tmp_path, monkeypatc
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     monkeypatch.undo()
     successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
-    approve.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    _approve_as_a_pre_round_41_repository_could_have(successor_path, "2026-01-06", monkeypatch)
     predecessor_before = adr_path.read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
@@ -636,6 +636,18 @@ def test_a_rejected_earlier_successor_does_not_stop_resuming_onto_the_new_orphan
     assert "|Superseded|Superseded (2026-01-08) <!-- Superseded --> : 003|" in adr_path.read_text(encoding="utf-8")
 
 
+def _approve_as_a_pre_round_41_repository_could_have(path, refdate, monkeypatch):
+    """Round 41 (K2a) refuses approving the successor of an unfinished
+    supersede; repositories from before that rule -- or hand edits -- can
+    still hold one, and the recovery advice below must work for them. The
+    setup approves it with that one check switched off."""
+    from adrpy.cli import approve as approve_module
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(approve_module, "raise_if_supersede_not_finished", lambda *args, **kwargs: None)
+        approve.run(["--file", str(path), "--refdate", refdate])
+
+
 def _leave_an_orphan(tmp_path, monkeypatch, refdate="2026-01-05"):
     """A supersede whose predecessor write failed: the successor exists and
     points back, the predecessor is still Accepted."""
@@ -758,7 +770,7 @@ def test_an_orphan_approved_since_is_recovered_by_undo_then_resume(tmp_path, mon
     from adrpy.cli import reject, undo
 
     tmp_path, adr_path, successor_path = _leave_an_orphan(tmp_path, monkeypatch)
-    approve.run(["--file", str(successor_path), "--refdate", "2026-01-06"])
+    _approve_as_a_pre_round_41_repository_could_have(successor_path, "2026-01-06", monkeypatch)
     with pytest.raises(CommandError) as excinfo:
         reject.run(["--file", str(successor_path), "--refdate", "2026-01-07"])
     assert excinfo.value.code == "already-accepted"
@@ -886,7 +898,7 @@ def test_following_the_superseded_since_advice_recovers_when_its_successor_was_a
     from adrpy.cli import reject, undo
 
     tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
+    _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
     second = Path(supersede.run(["--file", str(orphan), "--refdate", "2026-01-07"])["created"])
     approve.run(["--file", str(second), "--refdate", "2026-01-08"])
 
@@ -914,7 +926,7 @@ def test_the_already_exists_advice_covers_an_approved_successor_further_down_the
 
 def test_the_not_resumable_reasons_name_the_step_that_fixes_them(tmp_path, monkeypatch):
     tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
-    approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
+    _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-07", "--resume"])
@@ -931,3 +943,73 @@ def test_a_failed_predecessor_write_tells_you_to_resume(tmp_path, monkeypatch):
 
     assert excinfo.value.code == "supersede-write-failed"
     assert "supersede --resume" in excinfo.value.detail
+
+
+
+@pytest.mark.parametrize("command", ["approve", "version"])
+def test_an_unfinished_supersede_must_be_finished_before_its_successor_moves_on(tmp_path, monkeypatch, command):
+    # Round 41 (K2a): the successor of an interrupted supersede can't be
+    # approved (or branched) while its predecessor doesn't point at it --
+    # that would leave two live lines; finish with --resume, or reject it.
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    if command == "version":
+        _approve_as_a_pre_round_41_repository_could_have(orphan, "2026-01-06", monkeypatch)
+    before = orphan.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        if command == "approve":
+            approve.run(["--file", str(orphan), "--refdate", "2026-01-06"])
+        else:
+            version.run(["--file", str(orphan), "--refdate", "2026-01-07"])
+
+    assert excinfo.value.code == "supersede-not-finished"
+    assert excinfo.value.data["predecessor_number"] == 1
+    assert orphan.read_bytes() == before
+
+
+def test_after_resume_the_successor_can_be_approved(tmp_path, monkeypatch):
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+    supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06", "--resume"])
+
+    assert approve.run(["--file", str(orphan), "--refdate", "2026-01-07"])["status"] == "Accepted"
+
+
+def test_an_unfinished_successor_can_still_be_rejected(tmp_path, monkeypatch):
+    from adrpy.cli import reject
+
+    tmp_path, adr_path, orphan = _leave_an_orphan(tmp_path, monkeypatch)
+
+    assert reject.run(["--file", str(orphan), "--refdate", "2026-01-06"])["status"] == "Rejected"
+
+
+def _hand_written_proposed(adr_dir, name):
+    from datetime import date
+
+    from adrpy.core.config import load_repo_config
+    from adrpy.core.header import DecisionRecord, build_header
+    from adrpy.core.naming import parse_any_filename
+
+    config = load_repo_config(adr_dir.parent.parent / "adr-config.adrplus")
+    parsed = parse_any_filename(name, config)[1]
+    record = DecisionRecord(number=parsed.number, title=parsed.title, version=parsed.version,
+                            status_create="Proposed", date_create=date(2026, 1, 1))
+    (adr_dir / name).write_bytes((build_header(config, record) + "# body\n").encode("utf-8"))
+    return adr_dir / name
+
+
+@pytest.mark.parametrize("name", ["ADR001V01-use-x--001.md", "ADR001V01-use-a--002.md"])
+def test_a_suffix_from_the_same_or_a_higher_number_is_not_a_successor_for_any_rule(tmp_path, name):
+    # Only a file with a higher number than the one its suffix names is a
+    # successor (doc/lifecycle.md). A hand-made suffix pointing at its own
+    # number or a later one must not trip the successor rules: approve,
+    # reject, then undo all behave as for an ordinary decision.
+    from adrpy.cli import reject, undo
+
+    adr_dir = _hand_written_repo(tmp_path, "ADR002V01-use-b.md")
+    target = _hand_written_proposed(adr_dir, name)
+
+    assert approve.run(["--file", str(target), "--refdate", "2026-01-05"])["status"] == "Accepted"
+    undo.run(["--file", str(target)])
+    reject.run(["--file", str(target), "--refdate", "2026-01-06"])
+    created = version.run(["--file", str(target), "--refdate", "2026-01-07"])["created"]
+    assert Path(created).name.startswith("ADR001V02-")

@@ -864,6 +864,14 @@ def latest_in_family(folder, config, number, members=None):
     return max(members, key=lambda item: (item[0].version, item[0].revision or 0))
 
 
+def is_successor(parsed):
+    """True when a filename names a successor: it carries a supersede
+    suffix (--NNN) and its own number is higher than the one it names.
+    A suffix pointing at its own number or a later one is not a successor
+    for any rule (a successor always gets a later number)."""
+    return parsed.superseded_from is not None and parsed.number > parsed.superseded_from
+
+
 def locking_member(filename_info, members):
     """The family member that makes `filename_info`'s decision no longer
     the live one, or None when it is.
@@ -964,7 +972,7 @@ def raise_if_rejected_successor(members, warnings):
     but is the successor's family all the same (Round 40, decided by the
     project owner). `members` is the target's own family."""
     rejected = next(
-        (m for m in members if m[0].superseded_from is not None and m[1].status_update == "Rejected"), None
+        (m for m in members if is_successor(m[0]) and m[1].status_update == "Rejected"), None
     )
     if rejected is not None:
         raise CommandError(
@@ -974,6 +982,31 @@ def raise_if_rejected_successor(members, warnings):
             data={"successor_file": str(rejected[2]), "predecessor_number": rejected[0].superseded_from},
             warnings=warnings,
         )
+
+
+def raise_if_supersede_not_finished(folder, config, members, warnings):
+    """supersede-not-finished when the target's family is a successor
+    (its first member carries a --NNN suffix) whose predecessor does not
+    point at it: an interrupted supersede. Approving or branching it then
+    would leave two live lines (Round 41, decided by the project owner);
+    finish with `supersede --resume` on the predecessor, or reject it. A
+    rejected successor is handled by raise_if_rejected_successor."""
+    suffixed = next((m for m in members if is_successor(m[0])), None)
+    if suffixed is None or suffixed[1].status_update == "Rejected":
+        return
+    number = suffixed[0].number
+    predecessor = suffixed[0].superseded_from
+    pred_members = family_members(folder, config, predecessor, warnings=warnings)
+    if any(m[1].status_change == "Superseded" and _as_number(m[1].superseded_by_file) == number for m in pred_members):
+        return
+    raise CommandError(
+        FailureCodes.SUPERSEDE_NOT_FINISHED,
+        f"{suffixed[2].name} is the successor of an interrupted supersede: its predecessor (sequence "
+        f"{predecessor}) does not point at it yet. Run supersede --resume on the predecessor to finish, or "
+        "reject this successor.",
+        data={"successor_file": str(suffixed[2]), "predecessor_number": predecessor},
+        warnings=warnings,
+    )
 
 
 def _ineligibility_reason_for_proposed_state(header):

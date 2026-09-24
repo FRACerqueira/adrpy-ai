@@ -12,6 +12,7 @@ from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES, DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks, cleanup_orphaned_temp_files
 from adrpy.core.lifecycle import (
+    raise_if_supersede_not_finished,
     raise_if_superseded_sibling,
     raise_if_pending_sibling,
     raise_if_not_latest,
@@ -76,7 +77,7 @@ def describe():
             "decision's own family can't be resolved, or lenrevision-too-small-for-new-revision "
             "(data.new_revision/data.lenrevision) if the next revision number -- the one after the highest "
             "revision this version already holds, whatever file holds it -- doesn't fit the configured "
-            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with rejected-successor-is-final if the "
+            "width -- no write is made either way. Fails with not-latest-version (data names the newer file) if a newer member of the family locks this one: only the latest member is alive, unless every newer one is Rejected (see doc/lifecycle.md). Fails with supersede-not-finished if this decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it. Fails with rejected-successor-is-final if the "
             "target belongs to the family of a successor that was rejected. Fails with one of still-proposed, "
             "already-superseded, not-proposed, or unexpected-status if the target isn't eligible, or "
             "family-member-superseded/family-member-pending if another member of the same family has "
@@ -99,8 +100,7 @@ def describe():
                 "required": False,
                 "description": (
                     "Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before "
-                    "the LATEST family member's own last update date (or creation date, if never updated) "
-                    "-- not necessarily this file's own date, when branching off an older Rejected sibling "
+                    "this decision's own last update date (or creation date, if never updated) "
                     "(refdate-invalid-format/refdate-in-future/refdate-before-history)."
                 ),
             },
@@ -112,9 +112,10 @@ def describe():
                 FailureCodes.FAMILY_NOT_FOUND: "This decision's own family could not be resolved.",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
-                FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before the LATEST family member's own last update date (or creation date, if never updated).",
+                FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own last update date (or creation date, if never updated).",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new revision's own resulting filename already exists on disk (data.file names it).",
                 FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION: "The next revision number does not fit in the configured lenrevision width.",
+                FailureCodes.SUPERSEDE_NOT_FINISHED: "This decision belongs to the successor of an interrupted supersede whose predecessor doesn't point at it yet -- run supersede --resume on the predecessor first, or reject it (data.successor_file, data.predecessor_number).",
                 FailureCodes.NOT_LATEST_VERSION: "A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file).",
                 FailureCodes.REJECTED_SUCCESSOR_IS_FINAL: "This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number).",
                 FailureCodes.REVISION_NOT_CONFIGURED: "This repository's config has lenrevision == 0.",
@@ -173,7 +174,6 @@ def run(args):
                 raise CommandError(
                     FailureCodes.FAMILY_NOT_FOUND, "Could not resolve this decision's own family.", warnings=warnings
                 )
-            latest_parsed, latest_header, latest_path = latest
             # The filename decides numbering, counting every file: the next
             # revision after the highest one this version already holds
             # (Round 40, a deliberate divergence from AdrPlus, whose
@@ -208,17 +208,18 @@ def run(args):
             raise_if_pending_sibling(members, warnings)
             raise_if_not_latest(filename_info, members, warnings)
             raise_if_rejected_successor(members, warnings)
+            raise_if_supersede_not_finished(folder, config, members, warnings)
 
             refdate = parse_refdate(flags.get("refdate"))
             validate_refdate_not_in_future(refdate)
-            not_before = latest_header.date_update or latest_header.date_create
+            not_before = header.date_update or header.date_create
             if not_before is not None:
                 validate_refdate_not_before(refdate, not_before)
 
             # title/scope/domain are all re-read from the SOURCE file's own
             # header cells, not live flags -- unlike `version`, which
             # re-validates scope/domain even when they fall back to the
-            # latest member's own value, this command never did, so a
+            # target's own value, this command never did, so a
             # hand-edited or migrated file's control character (e.g. VT,
             # confirmed live to survive an unrelated revise unchanged) would
             # otherwise propagate silently into every future revision's own

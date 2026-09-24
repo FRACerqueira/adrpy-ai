@@ -21,6 +21,7 @@ from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import (
+    is_successor,
     raise_if_superseded_sibling,
     raise_if_not_latest,
     SHARED_FAILURE_CODES as LIFECYCLE_FAILURE_CODES,
@@ -204,7 +205,7 @@ def run(args):
             # (status_change is a terminal state everywhere else in this
             # codebase; there is no "unsupersede" verb).
             undone_predecessor = None
-            if filename_info.superseded_from is not None:
+            if is_successor(filename_info):
                 # No write has happened yet at this point, so a scan
                 # failure here needs no special partial-success re-raise --
                 # it propagates exactly like this command's own primary

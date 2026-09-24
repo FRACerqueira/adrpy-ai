@@ -287,16 +287,18 @@ def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
     init.run(["--path", str(target)])
     config = load_repo_config(target / "adr-config.adrplus")
     adr_dir = target / "doc" / "adr"
-    successor_path = adr_dir / "ADR002V01-successor--999.md"
+    # A real successor shape (its number is higher than the one it names),
+    # whose predecessor file does not exist.
+    successor_path = adr_dir / "ADR005V01-successor--003.md"
     _write_raw(
         successor_path,
         config,
-        number=2,
+        number=5,
         title="Successor",
         version=1,
         status_create="Proposed",
         date_create=date(2026, 1, 1),
-        superseded=999,
+        superseded=3,
     )
 
     with pytest.raises(CommandError) as excinfo:

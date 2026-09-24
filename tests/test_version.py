@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from datetime import date, timedelta
 
 from adrpy.cli import approve, init, new, reject, version
@@ -548,3 +549,31 @@ def test_version_checks_the_targets_own_status_before_the_family_lock(tmp_path):
         version.run(["--file", str(v01), "--refdate", "2026-01-02"])
 
     assert excinfo.value.code == "still-proposed"
+
+
+
+def test_version_takes_its_defaults_from_the_target_not_a_rejected_newer_member(tmp_path):
+    # Round 41 (K1a): branching off V01 while V02 was rejected, the new
+    # version's scope/domain default to V01's, and --refdate is bounded by
+    # V01's own dates, not V02's.
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-10", "--scope", "Other", "--domain", "Elsewhere"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-12"])
+
+    result = version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
+
+    text = Path(result["created"]).read_text(encoding="utf-8")
+    assert "|Scope|Data|" in text and "|Domain|Backend|" in text
+
+
+
+def test_version_scope_and_domain_default_to_the_target_even_with_a_later_refdate(tmp_path):
+    # Isolates the defaults from the refdate bound: the date is after every
+    # date in the family, so only the scope/domain source is under test.
+    tmp_path, adr_path = _setup_accepted_repo(tmp_path)
+    v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-10", "--scope", "Other", "--domain", "Elsewhere"])["created"]
+    reject.run(["--file", v02, "--refdate", "2026-01-12"])
+
+    text = Path(version.run(["--file", str(adr_path), "--refdate", "2026-01-20"])["created"]).read_text(encoding="utf-8")
+
+    assert "|Scope|Data|" in text and "|Domain|Backend|" in text
