@@ -16,14 +16,21 @@ back into this repository's own `adr-config.adrplus`.
 """
 
 import contextlib
-import json
 from dataclasses import asdict
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
-from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, atomic_write_chunks, atomic_write_text
-from adrpy.core.fs import cleanup_orphaned_temp_files, cleanup_orphaned_temp_files_for, scan_tree
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config
+from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, normalize_newlines
+from adrpy.core.fs import (
+    cleanup_orphaned_temp_files,
+    cleanup_orphaned_temp_files_for,
+    commit_write,
+    is_zero_bytes,
+    prepare_write,
+    scan_tree,
+    write_landed,
+)
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config, serialize_repo_config
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import (
     DecisionRecord,
@@ -33,7 +40,7 @@ from adrpy.core.header import (
     read_header_lines_with_report,
 )
 from adrpy.core.install_config import read_install_config_text
-from adrpy.core.lifecycle import resolve_target_and_config
+from adrpy.core.lifecycle import PATTERN_ADVICE_AFTER_MIGRATE, legacy_pattern_warnings, resolve_target_and_config
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
 from adrpy.core.text import is_ascii_digits
@@ -52,7 +59,7 @@ def _stream_migrated_candidate(candidate_path, header_text):
     schema-bounded), followed by the candidate's own content streamed
     through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
     the source file into the destination temp file (via
-    atomic_write_chunks), never assembled as one in-memory bytes object
+    core/fs.prepare_write), never assembled as one in-memory bytes object
     -- except any run of leading UTF-8 BOMs, stripped from the very first chunk
     only (see this module's own docstring)."""
     yield header_text.encode("utf-8")
@@ -138,7 +145,9 @@ def describe():
             "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
             "touched. It is also refused as a whole when a scanned file has a damaged header, carries a "
             "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
-            " one; if any fails, data.results names every file's outcome."
+            " one; if any fails, data.results names every file's outcome. `adrpy explore --path .` previews "
+            "what the pattern reads from each name (number, version, title) before migrating; `warnings` flags a "
+            "title that starts with a separator or a number far above the others (a likely wrong pattern)."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -156,7 +165,7 @@ def describe():
                 FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
-                FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created) -- nothing needs migration.",
+                FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",
                 FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
@@ -174,7 +183,10 @@ def _report_persisted_pattern(persisted, warnings):
     (data.migrationpattern_persisted), or it reads as "nothing written".
     Likewise an interrupt once the per-file loop has started
     (`persisted["results"]`): the files already migrated are reported in
-    data.results, so a re-run's smaller batch doesn't look like a loss."""
+    data.results, so a re-run's smaller batch doesn't look like a loss.
+    A file whose write was interrupted right after the replace that
+    committed it (`persisted["in_flight"]`, decided from the disk by
+    core/fs.write_landed) counts as migrated."""
     try:
         yield
     except CommandError as error:
@@ -182,6 +194,9 @@ def _report_persisted_pattern(persisted, warnings):
             error.data = {**(error.data or {}), "migrationpattern_persisted": persisted["pattern"]}
         raise
     except KeyboardInterrupt as error:
+        in_flight = persisted.get("in_flight")
+        if in_flight is not None and write_landed(in_flight):
+            _record_migrated(persisted["results"], in_flight.path)
         data = {}
         if persisted["pattern"] is not None:
             data["migrationpattern_persisted"] = persisted["pattern"]
@@ -190,6 +205,13 @@ def _report_persisted_pattern(persisted, warnings):
         if not data:
             raise
         raise CommandError("interrupted", "Interrupted (Ctrl+C).", data=data, warnings=list(warnings)) from error
+
+
+def _record_migrated(results, candidate_path):
+    """Adds `candidate_path` to `results` as migrated, once."""
+    entry = {"file": str(candidate_path), "status": "migrated", "error": None}
+    if entry not in results:
+        results.append(entry)
 
 
 def run(args):
@@ -247,16 +269,26 @@ def run(args):
             # reads as "nothing written".
             merged = asdict(config)
             merged["migrationpattern"] = fallback_pattern
-            merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
+            merged_text = serialize_repo_config(merged)
             config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
-            attempts = atomic_write_text(config_path, merged_text)
-            persisted["pattern"] = fallback_pattern
+            prepared = prepare_write(config_path, normalize_newlines(merged_text).encode("utf-8"))
+            try:
+                attempts = prepared.attempts + commit_write(prepared) - 1
+                persisted["pattern"] = fallback_pattern
+            except BaseException:
+                # Interrupted right after the replace that committed it.
+                if write_landed(prepared):
+                    persisted["pattern"] = fallback_pattern
+                raise
             warning = retry_warning(attempts)
             if warning:
                 warnings.append(warning)
 
         entries = []  # (ParsedFileName, Path, HeaderParseResult)
         adulterated_files = []
+        # 0-byte files: an interrupted create's name reservation, never a
+        # decision to migrate.
+        empty_files = []
         if scan is not None:
             # scan_tree keeps only files inside the folder's real
             # boundary (a junction or symlink escaping it is excluded).
@@ -297,10 +329,19 @@ def run(args):
                 # eligibility pass over every candidate, not a report
                 # on one specific target file the way prepare's
                 # own warning already covers.
+                if not lines and is_zero_bytes(candidate):
+                    empty_files.append(candidate)
+                    continue
                 header = parse_header(lines, config)
                 if not header.is_valid and has_header_shape(lines):
                     adulterated_files.append(str(candidate))
                 entries.append((parsed, candidate, header))
+
+            if empty_files:
+                warnings.append(
+                    f"{len(empty_files)} empty (0-byte) file(s) skipped, most likely left by an interrupted "
+                    f"create: remove them. {', '.join(sorted(str(path) for path in empty_files))}."
+                )
 
             # Same as explore and the repository scan -- an excluded
             # candidate is reported, not dropped with zero signal.
@@ -326,7 +367,7 @@ def run(args):
                     warnings=warnings,
                 )
 
-        if not entries:
+        if not entries and not empty_files:
             raise CommandError(
                 FailureCodes.NO_DECISIONS_FOUND,
                 "No .md files matching a recognized naming scheme were found.",
@@ -425,14 +466,22 @@ def run(args):
                 # commit that follows has its own and never reads the
                 # source again. Each candidate is prepared and committed
                 # on its own: best-effort per file.
-                attempts = atomic_write_chunks(
+                prepared = prepare_write(
                     candidate_path,
                     lambda: _stream_migrated_candidate(candidate_path, header_text),
                 )
+                persisted["in_flight"] = prepared
+                try:
+                    attempts = prepared.attempts + commit_write(prepared) - 1
+                except (OSError, UnicodeError):
+                    if not write_landed(prepared):
+                        raise
+                    attempts = 1
+                _record_migrated(results, candidate_path)
+                persisted["in_flight"] = None
                 warning = retry_warning(attempts)
                 if warning:
                     warnings.append(warning)
-                results.append({"file": str(candidate_path), "status": "migrated", "error": None})
             except (OSError, UnicodeError, CommandError) as error:
                 # UnicodeError (e.g. a UnicodeEncodeError from a title
                 # containing a lone surrogate) is not an OSError, but is
@@ -444,6 +493,15 @@ def run(args):
                 # not a whole-batch abort.
                 results.append({"file": str(candidate_path), "status": "failed", "error": explain(error)})
 
+        warnings.extend(
+            legacy_pattern_warnings(
+                [
+                    {"file": str(path), "number": parsed.number, "title": (parsed.title or "").strip()}
+                    for parsed, path in candidates
+                ],
+                PATTERN_ADVICE_AFTER_MIGRATE,
+            )
+        )
         failed = [entry for entry in results if entry["status"] == "failed"]
         if failed:
             raise CommandError(

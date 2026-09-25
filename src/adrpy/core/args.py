@@ -37,9 +37,9 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None, allow
         elif len(token) == 2 and token[0] == "-" and token[1] in aliases:
             name = aliases[token[1]]
         else:
-            raise UsageError(f"Unknown argument: {token}")
+            raise UsageError(f"Unknown argument: {token}", unknown=token)
         if name not in known_values | known_switches:
-            raise UsageError(f"Unknown argument: {token}")
+            raise UsageError(f"Unknown argument: {token}", unknown=token)
         if name in values:
             # Silently letting the last one win hides a mistyped command.
             raise UsageError(f"--{name} was given more than once")
@@ -63,5 +63,5 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None, allow
 
     missing = [name for name in required if name not in values]
     if missing:
-        raise UsageError(f"Missing required argument(s): {', '.join(f'--{m}' for m in missing)}")
+        raise UsageError(f"Missing required argument(s): {', '.join(f'--{m}' for m in missing)}", missing=missing)
     return values

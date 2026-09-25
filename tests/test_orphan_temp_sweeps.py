@@ -108,3 +108,32 @@ def test_installconfig_sweeps_the_orphaned_temps_of_its_file(install_config_path
 
     _assert_swept(old, young, result["warnings"])
     assert json.loads(install_config_path.read_text(encoding="utf-8"))["prefix"] == "XYZ"
+
+
+def test_the_known_files_sweep_never_removes_a_link_named_like_its_own_temp(tmp_path):
+    # A junction (or symlink) at the repository root that happens to carry
+    # the config's own temp-file name is not a temp file this tool wrote:
+    # only a regular file is swept, as in the folder sweeps (scan_tree).
+    import subprocess
+    import sys
+
+    from adrpy.core.fs import cleanup_orphaned_temp_files_for
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("user data", encoding="utf-8")
+    stamp = time.time() - 120
+    os.utime(outside, (stamp, stamp))
+    config_path = tmp_path / "repo" / "adr-config.adrplus"
+    config_path.parent.mkdir()
+    link = config_path.with_name(f"{config_path.name}.{uuid.uuid4().hex}.tmp")
+    if sys.platform == "win32":
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)], check=True, capture_output=True)
+    else:
+        os.symlink(outside, link, target_is_directory=True)
+
+    removed = cleanup_orphaned_temp_files_for([config_path])
+
+    assert removed == []
+    assert os.path.lexists(link)
+    assert (outside / "keep.txt").exists()

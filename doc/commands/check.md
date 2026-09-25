@@ -11,7 +11,7 @@ Validates every decision in the repository and lists every inconsistency found.
 
 ## Description
 
-Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file.
+Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name starts with a digit) is named in `warnings`, on success or failure.
 
 ## Arguments
 
@@ -25,7 +25,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 |---|---|
 | `repository-inconsistent` | At least one consistency rule is broken; data.errors lists every one. |
 | `merge-conflict-markers` | data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists). |
-| `no-header` | data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool). |
+| `no-header` | data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty, left by an interrupted create (remove it). |
 | `invalid-header` | data.errors[].code: a file's header does not parse; `detail` names the parse failure. |
 | `invalid-status-combination` | data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells). |
 | `duplicate-number` | data.errors[].code: two files share number, version and revision (a missing revision counts as 0). |
@@ -61,6 +61,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

@@ -2,15 +2,16 @@
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.consistency import validate_repository
-from adrpy.core.errors import FailureCodes, build_failure_codes
+from adrpy.core.consistency import unrecognized_decision_like_warning, validate_repository
+from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.fs import scan_tree
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import resolve_target_and_config
 from adrpy.core.security import resolve_within
 
 _ERROR_CODES = {
     FailureCodes.MERGE_CONFLICT_MARKERS: "data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists).",
-    FailureCodes.NO_HEADER: "data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool).",
+    FailureCodes.NO_HEADER: "data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty, left by an interrupted create (remove it).",
     FailureCodes.INVALID_HEADER: "data.errors[].code: a file's header does not parse; `detail` names the parse failure.",
     FailureCodes.INVALID_STATUS_COMBINATION: "data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells).",
     FailureCodes.DUPLICATE_NUMBER: "data.errors[].code: two files share number, version and revision (a missing revision counts as 0).",
@@ -48,7 +49,8 @@ def describe():
             "folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. "
             "Succeeds with the number of decisions when every rule holds; otherwise fails with "
             "repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, "
-            "detail, hint), sorted by file."
+            "detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name "
+            "starts with a digit) is named in `warnings`, on success or failure."
         ),
         "arguments": [
             {
@@ -80,5 +82,13 @@ def run(args):
     path = parse_flags(args, required=("path",), aliases={"p": "path"})["path"]
     target, _config_path, config = resolve_target_and_config(path)
     folder = resolve_within(target, config.folderadr)
-    snapshot = validate_repository(folder, config)
-    return {"decisions": len(snapshot.decisions), "warnings": []}
+    scan = scan_tree(folder) if folder.is_dir() else None
+    warning = unrecognized_decision_like_warning(scan, config)
+    warnings = [warning] if warning else []
+    try:
+        snapshot = validate_repository(folder, config, scan=scan)
+    except CommandError as error:
+        if warnings:
+            error.warnings = warnings
+        raise
+    return {"decisions": len(snapshot.decisions), "warnings": warnings}

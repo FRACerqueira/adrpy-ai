@@ -559,3 +559,33 @@ def test_the_orphan_sweep_reuses_the_command_scan_instead_of_walking_again(tmp_p
     migrate.run(["--path", str(legacy.root)])
 
     assert calls == []
+
+
+def test_a_reservation_that_cannot_be_removed_is_not_taken_for_someone_elses_file(tmp_path, monkeypatch):
+    # The fallback's replace keeps failing with a PermissionError and its
+    # own empty reservation cannot be removed: a retry would then find
+    # that reservation and answer "file already exists" about a file this
+    # very call created. It fails once, with an error naming it instead.
+    _no_hard_links(monkeypatch)
+    target = tmp_path / "decision.md"
+
+    def always_busy(_src, _dst):
+        raise PermissionError(errno.EACCES, "busy")
+
+    real_unlink = Path.unlink
+
+    def stuck_reservation(self, missing_ok=False):
+        if self == target:
+            raise PermissionError(errno.EACCES, "in use")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(os, "replace", always_busy)
+    monkeypatch.setattr(Path, "unlink", stuck_reservation)
+
+    with pytest.raises(OSError) as excinfo:
+        fs.commit_write(fs.prepare_write(target, b"new"), exclusive=True)
+
+    assert not isinstance(excinfo.value, (FileExistsError, PermissionError))
+    assert excinfo.value.filename == str(target)
+    assert target.read_bytes() == b""
+    assert _temps(tmp_path) == []

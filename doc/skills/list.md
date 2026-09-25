@@ -18,7 +18,7 @@ Reports, for every requested skill and provider, whether it is installed, whethe
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
 | `--provider` | `-p` | no | string | Comma-separated list of providers to report on: claude, cursor, copilot, agentsmd. Defaults to 'all'. |
-| `--skill` | `-s` | no | string | Comma-separated list of skills to report on: comment-audit, decision-log, pre-release-audit. Defaults to 'all'. |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to report on: adrpy, decision-log, pre-release-audit, or one no longer shipped that an older version installed (comment-audit). Defaults to 'all', which lists a no-longer-shipped skill only where it is still installed. |
 | `--path` | -- | no | string | Repository root to inspect for project-scope entries. Defaults to '.'. |
 
 ## Failure codes

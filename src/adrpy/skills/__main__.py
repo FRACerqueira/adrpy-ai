@@ -44,6 +44,9 @@ def main(argv=None):
     try:
         data = command.run(rest)
     except UsageError as error:
+        if error.unknown in ("--help", "-h"):
+            # `adrpy-skills <command> --help` is `adrpy-skills help <command>`.
+            return emit_success(COMMANDS["help"].run([verb]))
         return emit_usage_failure("usage-error", str(error))
     except CommandError as error:
         return emit_failure(error.code, error.detail, error.data, error.warnings)

@@ -350,13 +350,13 @@ def test_log_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_
     no end-to-end coverage for this command -- every sibling write
     command has this test; log was the only one missing it."""
     _init_repo(tmp_path)
-    real_atomic_write_text = log.atomic_write_text
+    real_commit_write = log.commit_write
 
-    def flaky_atomic_write_text(*args, **kwargs):
-        real_atomic_write_text(*args, **kwargs)
+    def flaky_commit_write(*args, **kwargs):
+        real_commit_write(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(log, "atomic_write_text", flaky_atomic_write_text)
+    monkeypatch.setattr(log, "commit_write", flaky_commit_write)
 
     result = log.run(
         [
@@ -751,32 +751,37 @@ def test_log_fails_before_any_write_on_an_unrecognized_file_for_a_structured_cla
     assert not any(p.name.endswith("--lock--x.md") for p in log_dir.glob("*.md"))
 
 
-def test_log_reports_the_entry_already_written_when_an_unrecognized_file_blocks_index_regeneration(tmp_path):
-    """For a non-structured classification, the directory is only ever
-    scanned during index regeneration -- AFTER the entry write already
-    committed. An unrecognized file there is still caught, but as a
-    log-index-regeneration-failed partial success (same shape as the
-    OSError case), not a clean pre-write refusal -- this
-    is genuinely different from the structured-classification case
-    above, not an inconsistency to paper over."""
+@pytest.mark.parametrize(
+    "name, content",
+    [
+        ("not-a-real-entry-name.md", b"nothing useful\n"),
+        # An interrupted earlier log's reservation (no hard links): 0 bytes.
+        ("2026-09-01--scope-note--lock--earlier.md", b""),
+    ],
+)
+@pytest.mark.parametrize("classification", ["scope-note", "retraction", "risk-accepted"])
+def test_log_refuses_before_any_write_on_a_file_the_index_could_not_list(tmp_path, name, content, classification):
+    """Every classification checks folderlog the way regenerating
+    INDEX.md would, before the entry is written: a file there that
+    would fail that regeneration refuses the call with nothing written,
+    instead of writing the entry and then failing (again on every call,
+    each one adding an entry)."""
     _init_repo(tmp_path)
     log_dir = tmp_path / "doc" / "decision-log"
     log_dir.mkdir(parents=True)
-    (log_dir / "not-a-real-entry-name.md").write_text("nothing useful\n", encoding="utf-8")
+    (log_dir / name).write_bytes(content)
 
     with pytest.raises(CommandError) as excinfo:
         log.run(
             [
-                "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock", "--slug", "x",
+                "--path", str(tmp_path), "--classification", classification, "--scope", "lock", "--slug", "x",
                 "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
             ]
         )
 
-    assert excinfo.value.code == "log-index-regeneration-failed"
-    created = log_dir / "2026-09-18--scope-note--lock--x.md"
-    assert excinfo.value.data == {"file": str(created)}
-    assert created.exists()  # the entry write itself really did succeed
-    assert "not-a-real-entry-name.md" in excinfo.value.detail  # the underlying cause is still named
+    assert excinfo.value.code == "log-directory-contains-unrecognized-file"
+    assert excinfo.value.data == {"file": name}
+    assert sorted(p.name for p in log_dir.iterdir()) == [name]
 
 
 def test_an_identical_retry_after_an_index_failure_still_brings_the_index_up_to_date(tmp_path, monkeypatch):
@@ -807,20 +812,21 @@ def test_an_identical_retry_after_an_index_failure_still_brings_the_index_up_to_
 
 
 
-def test_an_already_exists_refusal_warns_when_the_index_could_not_be_regenerated(tmp_path):
+def test_an_already_exists_refusal_warns_when_the_index_could_not_be_regenerated(tmp_path, monkeypatch):
     # The documented recovery (an identical retry brings INDEX.md up to
-    # date) must not fail silently.
+    # date) must not fail silently. A file INDEX.md could not list is
+    # refused before any write, so the regeneration fails here on writing.
     _init_repo(tmp_path)
     args = [
         "--path", str(tmp_path), "--classification", "scope-note", "--scope", "cli", "--slug", "other",
         "--summary", "Other", "--body", "x", "--refdate", "2026-09-18",
     ]
-    log_dir = tmp_path / "doc" / "decision-log"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "notes.md").write_text("not an entry\n", encoding="utf-8")
-    with pytest.raises(CommandError):
-        log.run(args)
+    log.run(args)
 
+    def failing_regenerate_index(_log_dir, **_kwargs):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr(log, "regenerate_index", failing_regenerate_index)
     with pytest.raises(CommandError) as excinfo:
         log.run(args)
 

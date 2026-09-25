@@ -28,7 +28,15 @@ class CommandError(Exception):
 
 
 class UsageError(Exception):
-    pass
+    """A malformed invocation. `unknown`: the argument that was not
+    recognized (`adrpy <command> --help` is answered as `adrpy help
+    <command>`); `missing`: the required flags left out (the answer shows
+    an example)."""
+
+    def __init__(self, message, *, unknown=None, missing=()):
+        super().__init__(message)
+        self.unknown = unknown
+        self.missing = tuple(missing)
 
 
 class FailureCodes:
@@ -74,6 +82,7 @@ class FailureCodes:
     # src/adrpy/core/config.py
     LANGUAGE_NOT_SUPPORTED = "language-not-supported"
     CONFIG_FILE_TOO_LARGE = "config-file-too-large"
+    CONFIG_FILE_EMPTY = "config-file-empty"
     CONFIG_INVALID_ENCODING = "config-invalid-encoding"
     CONFIG_INVALID_JSON = "config-invalid-json"
     CONFIG_MISSING_FIELD = "config-missing-field"

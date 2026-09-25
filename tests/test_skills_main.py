@@ -25,7 +25,7 @@ class TestCliDispatch:
         assert (tmp_path / ".cursor" / "rules" / "pre-release-audit.mdc").exists()
 
     def test_list_via_cli_defaults_to_all(self, tmp_path, capsys):
-        main(["install", "--path", str(tmp_path), "--skill", "comment-audit", "--provider", "cursor"])
+        main(["install", "--path", str(tmp_path), "--skill", "adrpy", "--provider", "cursor"])
         capsys.readouterr()
         exit_code, out = _run(["list", "--path", str(tmp_path)], capsys)
         assert exit_code == 0
@@ -76,6 +76,16 @@ class TestCliDispatch:
         exit_code, out = _run(["--help"], capsys)
         assert exit_code == 0
         assert {c["name"] for c in out["data"]["commands"]} == {"help", "install", "remove", "list"}
+
+    @pytest.mark.parametrize("flag", ["--help", "-h"])
+    @pytest.mark.parametrize("command", ["install", "remove", "list", "help"])
+    def test_a_command_followed_by_help_describes_that_command(self, tmp_path, capsys, command, flag):
+        expected = _run(["help", command], capsys)
+
+        assert _run([command, flag], capsys) == expected
+        if command != "help":
+            assert _run([command, "--path", str(tmp_path), flag], capsys) == expected
+        assert list(tmp_path.rglob("*")) == []
 
     def test_no_args_lists_every_command(self, capsys):
         exit_code, out = _run([], capsys)
@@ -198,14 +208,14 @@ class TestPartialEffectsSurviveAFailure:
         self._fail_on_write(monkeypatch, 3, OSError(28, "No space left on device"))
 
         exit_code, out = _run(
-            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "comment-audit,decision-log"],
+            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "adrpy,decision-log"],
             capsys,
         )
 
         assert exit_code != 0
         assert out["code"] == "io-error"
         written = [(row["provider"], row["skill"]) for row in out["data"]["installed"]]
-        assert written == [("claude", "comment-audit"), ("cursor", "comment-audit")]
+        assert written == [("claude", "adrpy"), ("cursor", "adrpy")]
         assert out["warnings"] == []
 
     def test_an_interrupt_midway_through_install_reports_what_was_already_written(self, tmp_path, monkeypatch, capsys):
@@ -213,7 +223,7 @@ class TestPartialEffectsSurviveAFailure:
         self._fail_on_write(monkeypatch, 2, KeyboardInterrupt())
 
         exit_code, out = _run(
-            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "comment-audit"], capsys
+            ["install", "--path", str(tmp_path), "--provider", "claude,cursor", "--skill", "adrpy"], capsys
         )
 
         assert out["code"] == "interrupted"
@@ -231,17 +241,17 @@ class TestPartialEffectsSurviveAFailure:
 
     def test_remove_reports_deletions_made_before_an_unreadable_agentsmd(self, tmp_path, monkeypatch, capsys):
         self._isolate_home(tmp_path, monkeypatch)
-        main(["install", "--path", str(tmp_path), "--provider", "claude", "--skill", "comment-audit"])
+        main(["install", "--path", str(tmp_path), "--provider", "claude", "--skill", "adrpy"])
         capsys.readouterr()
         (tmp_path / "AGENTS.md").write_bytes("# Notas do projeto\n".encode("utf-16"))
 
         exit_code, out = _run(
-            ["remove", "--path", str(tmp_path), "--provider", "claude,agentsmd", "--skill", "comment-audit"], capsys
+            ["remove", "--path", str(tmp_path), "--provider", "claude,agentsmd", "--skill", "adrpy"], capsys
         )
 
         assert out["code"] == "io-error"
         assert [row["provider"] for row in out["data"]["removed"]] == ["claude"]
-        assert not (tmp_path / ".claude" / "skills" / "comment-audit" / "SKILL.md").exists()
+        assert not (tmp_path / ".claude" / "skills" / "adrpy" / "SKILL.md").exists()
 
 
 class TestCliErgonomics:
@@ -260,7 +270,7 @@ class TestCliErgonomics:
     def test_target_tolerates_surrounding_spaces_like_provider_and_skill(self, tmp_path, monkeypatch, capsys):
         self._isolate_home(tmp_path, monkeypatch)
         exit_code, out = _run(
-            ["install", "--path", str(tmp_path), "-p", " cursor", "-s", " comment-audit", "-t", " project"], capsys
+            ["install", "--path", str(tmp_path), "-p", " cursor", "-s", " adrpy", "-t", " project"], capsys
         )
         assert exit_code == 0 and out["success"] is True
 
@@ -278,20 +288,20 @@ class TestCliErgonomics:
     def test_a_missing_path_is_refused_not_created(self, tmp_path, monkeypatch, capsys, verb):
         self._isolate_home(tmp_path, monkeypatch)
         missing = tmp_path / "does" / "not" / "exist"
-        exit_code, out = _run([verb, "--path", str(missing), "-p", "cursor", "-s", "comment-audit"], capsys)
+        exit_code, out = _run([verb, "--path", str(missing), "-p", "cursor", "-s", "adrpy"], capsys)
         assert out["code"] == "target-directory-not-found"
         assert not missing.exists()
 
     def test_target_global_with_no_provider_defaults_to_the_global_capable_ones(self, tmp_path, monkeypatch, capsys):
         home = self._isolate_home(tmp_path, monkeypatch)
-        exit_code, out = _run(["install", "-t", "global", "-s", "comment-audit"], capsys)
+        exit_code, out = _run(["install", "-t", "global", "-s", "adrpy"], capsys)
         assert exit_code == 0
         assert [row["provider"] for row in out["data"]["installed"]] == ["claude"]
-        assert (home / ".claude" / "skills" / "comment-audit" / "SKILL.md").exists()
+        assert (home / ".claude" / "skills" / "adrpy" / "SKILL.md").exists()
 
     def test_an_explicit_all_with_target_global_suggests_the_provider_to_use(self, tmp_path, monkeypatch, capsys):
         self._isolate_home(tmp_path, monkeypatch)
-        _, out, err = self._run_err(["install", "-t", "global", "-p", "all", "-s", "comment-audit"], capsys)
+        _, out, err = self._run_err(["install", "-t", "global", "-p", "all", "-s", "adrpy"], capsys)
         assert out["code"] == "usage-error"
         assert "--provider claude" in err
 

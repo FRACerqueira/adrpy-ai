@@ -6,8 +6,11 @@
 
 `adrpy` manages the ADR/decision-log *record* -- it never decides when a
 decision needs recording, when a hardening review is due, or when to close
-a review cycle. That judgment already exists as three vendor-neutral AI
-coding-agent skills (`decision-log`, `pre-release-audit`, `comment-audit`).
+a review cycle. That judgment ships as two vendor-neutral AI coding-agent
+skills (`decision-log`, `pre-release-audit`).
+A third skill, `adrpy`, tells an agent how to drive the CLI itself: run
+`adrpy help` and `adrpy check` first, follow each error's hint, and change
+decision files only through the commands, never by hand.
 `adrpy-skills` installs those skills into a repository (or your own global
 config), for whichever AI coding assistants you actually use. See
 [ADR009V01](../adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
@@ -31,9 +34,9 @@ pieces, concatenated in this order:
 
 1. **`gate.md`** (when the skill has one) -- *when* this skill is allowed
    to run, rewritten to stand on its own without the maintainer's personal
-   global instructions. `pre-release-audit` and `decision-log` both have
-   one; `comment-audit` doesn't need one (it's already self-contained on
-   scope and triggering).
+   global instructions. Every bundled skill has one: `pre-release-audit`
+   and `decision-log` say when they may run, and `adrpy`'s says it applies
+   to ADR tasks in a repository that has `adr-config.adrplus`.
 2. **`body.md`** -- the skill's own vendor-neutral mechanics: the *how*,
    once the gate (if any) says this is allowed to run.
 3. **`glue.md`** (decision-log only) -- the adrpy-specific instantiation:
@@ -66,6 +69,15 @@ Only `claude` has a meaningful global scope (`--target global`, writing
 under your own home directory instead of the repository); every other
 provider only understands project scope, and rejects `--target global`
 with `usage-error`.
+
+## A skill that is no longer shipped
+
+Development builds also shipped a `comment-audit` skill; it is no longer
+part of adrpy. `install` refuses it, but `remove` and `list` still know
+its name, so what an older version installed can be found and removed:
+`remove` (with `--skill comment-audit`, or the default `all`) deletes it
+under the same drift rules as any other skill, and `list` with the default
+`all` shows its rows only where something of it is still on disk.
 
 ## Drift protection, not blind overwrite
 

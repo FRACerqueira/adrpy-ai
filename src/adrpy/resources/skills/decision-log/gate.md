@@ -20,6 +20,19 @@ friction. Do not write the ADR file, do not create a new ADR
 version/revision, and do not create a new decision-log entry, until that
 separate question has been asked and answered.
 
+**An explicit request from the user is that separate approval.** If the
+user's own message explicitly asks to record this specific decision or
+entry, that request is the separate approval for that one write: fill
+only what they gave, ask only for required fields that are missing (for
+`adrpy log`: e.g. `--front`/`--resolution` for `audit-finding`), then
+report exactly what was written. It covers that one write only -- not a
+second entry, and not a record of something they did not name.
+
+**Every approved write goes through the `adrpy` commands, never a
+hand-written file:** `adrpy log` for a decision-log entry; `adrpy new`,
+`version`, `revise`, `supersede` (and `approve`/`reject`/`undo` for a
+status change) for an ADR. Run `adrpy help <command>` for the arguments.
+
 **This gate covers every write, not only the first one, and not only
 ADRs.** An ADR that already has an open running section built for exactly
 this kind of entry (an audit's ongoing findings log, a decisions-so-far
@@ -28,7 +41,8 @@ decision-log entry already being the "lightweight, just ask fast" record
 carries no standing authorization either -- this skill's own body says
 "ask before writing, every time," and that is the same gate as this one,
 not a lighter version of it. Each new entry, of either kind, still needs
-its own ask before the edit, even when the fix or finding it records was
+its own ask before the edit (or the user's own explicit request for that
+entry, above), even when the fix or finding it records was
 already approved earlier in the same turn, and even though adding to an
 already-open section or logging "just one more finding" feels like
 continuing already-authorized work rather than a fresh write. That feeling

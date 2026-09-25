@@ -11,7 +11,7 @@ Reads or updates an existing repository's own `adr-config.adrplus`.
 
 ## Description
 
-With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). `activeplugins` is never read or written.
+With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); after setting it, `adrpy explore --path .` shows the same before `adrpy migrate`. `activeplugins` is never read or written.
 
 ## Arguments
 
@@ -20,7 +20,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `--path` | -- | yes | string | Repository root directory. |
 | `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
 | `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
-| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' (N##:##T##[V##:##][R##:##][P##:##]); an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a recognized LEGACY-scheme decision would lose recognition. |
+| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading; after setting it, `adrpy explore --path .` shows the same before `adrpy migrate`. An empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
 | `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--prefix` | -- | no | string | ASCII letters only, max 5 characters; every decision name starts with it (compared case-insensitively), so it is guarded like --separator. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--separator` | -- | no | string | One of ('-', '_', '.'). |
@@ -63,13 +63,14 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `folderlog-change-would-adopt-unrelated-files` | The NEW folderlog already holds a file that would newly parse as a decision-log entry. |
 | `log-directory-contains-unrecognized-file` | The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry. |
 | `log-scan-incomplete` | A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change. |
-| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--prefix/--migrationpattern change would break recognition of an existing decision. |
+| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--prefix change would break recognition of an existing decision, or a --migrationpattern change that of a legacy-scheme decision that already has a header (migrated). |
 | `separator-change-would-adopt-unrelated-files` | --separator would make a file NOT currently recognized as a decision newly parse as one. |
 | `prefix-change-would-adopt-unrelated-files` | --prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files). |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
@@ -140,7 +141,15 @@ already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
 An empty value (`--migrationpattern ""`) clears the pattern. Clearing is a
 change like any other: it is refused
 (`status-or-separator-change-blocked-by-existing-decisions`) while a
-recognized legacy-scheme decision would lose recognition.
+legacy-scheme decision that already has a valid header (one already
+migrated) would lose recognition. A legacy name the pattern matches that
+has no header yet does not block it, so a wrong pattern can still be fixed
+before `migrate` runs.
+
+`lenseq`, `lenversion` and `lenrevision` are not guarded: narrowing one
+below a number already on disk succeeds, and the mismatch shows up at the
+next command that numbers a new file (see "What each command requires" in
+[the lifecycle](../lifecycle.md)).
 
 ## Example
 
@@ -151,7 +160,7 @@ adrpy config --path .
 # Update one field
 adrpy config --path . --lenrevision 2
 
-# Clear the migration pattern (no legacy-scheme decision may exist)
+# Clear the migration pattern (no migrated legacy-scheme decision may exist)
 adrpy config --path . --migrationpattern ""
 ```
 

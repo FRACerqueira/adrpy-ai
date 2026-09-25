@@ -50,11 +50,11 @@ class TestInstallBasic:
         # 4 providers x 3 skills, plus 1 shared-doc row per skill.
         assert len(installed_pairs) == 4 * 3 + 3
 
-    def test_comment_audit_has_no_gate_and_still_installs(self, tmp_path):
-        result = installer.install(str(tmp_path), ["claude"], ["comment-audit"], "project", False)
+    def test_adrpy_skill_installs_its_gate_before_its_body(self, tmp_path):
+        result = installer.install(str(tmp_path), ["claude"], ["adrpy"], "project", False)
         assert result["skipped"] == []
-        content = (tmp_path / ".claude" / "skills" / "comment-audit" / "SKILL.md").read_text(encoding="utf-8")
-        assert "# Comment audit" in content
+        content = (tmp_path / ".claude" / "skills" / "adrpy" / "SKILL.md").read_text(encoding="utf-8")
+        assert content.index("# When this skill applies") < content.index("# Working with adrpy")
 
 
 class TestMarkerRoundTrip:
@@ -137,29 +137,29 @@ class TestDriftProtection:
         assert "HAND EDITED" not in path.read_text(encoding="utf-8")
 
     def test_hand_edited_shared_doc_is_skipped_on_install_without_force(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         reasons = {row["reason"] for row in result["skipped"] if row["provider"] == "shared-doc"}
         assert "drifted" in reasons
         assert "HAND EDITED" in shared.read_text(encoding="utf-8")
 
     def test_hand_edited_shared_doc_is_overwritten_on_install_with_force(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
 
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", True)
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", True)
         assert "HAND EDITED" not in shared.read_text(encoding="utf-8")
 
     def test_hand_edited_shared_doc_is_skipped_on_remove_without_force(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         assert shared.exists()
         reasons = {row["reason"] for row in result["skipped"] if row["provider"] == "shared-doc"}
         assert "drifted" in reasons
@@ -170,16 +170,16 @@ class TestDriftProtection:
         # with its own, more complex reference-counting via
         # _other_stub_providers_reference, and had never triggered a
         # drift/foreign shared-doc scenario in any test.
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
 
-        install_result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        install_result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         reasons = {row["reason"] for row in install_result["skipped"] if row["provider"] == "shared-doc"}
         assert "drifted" in reasons
         assert "HAND EDITED" in shared.read_text(encoding="utf-8")
 
-        remove_result = installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        remove_result = installer.remove(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         assert shared.exists()
         reasons = {row["reason"] for row in remove_result["skipped"] if row["provider"] == "shared-doc"}
         assert "drifted" in reasons
@@ -310,21 +310,21 @@ class TestRemove:
 
 class TestSharedDocLifecycle:
     def test_shared_doc_survives_while_another_stub_provider_still_references_it(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         assert shared.exists()
 
-        installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         assert shared.exists()  # agentsmd still references it
 
-        installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        installer.remove(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         assert not shared.exists()  # nothing references it anymore
 
     def test_removing_full_mode_provider_never_touches_shared_doc(self, tmp_path):
-        installer.install(str(tmp_path), ["claude", "copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["claude", "copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         assert shared.exists()
-        installer.remove(str(tmp_path), ["claude"], ["comment-audit"], "project", False)
+        installer.remove(str(tmp_path), ["claude"], ["adrpy"], "project", False)
         assert shared.exists()
 
 
@@ -378,8 +378,8 @@ class TestList:
         # row under `installed`/`removed`; list never did, even though a
         # blocked/drifted shared doc is exactly what would later cause
         # install's own "shared-doc-blocked" skip.
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["adrpy"])["skills"]
         shared_rows = [r for r in rows if r["provider"] == "shared-doc"]
         assert len(shared_rows) == 1
         assert shared_rows[0]["scope"] == "project"
@@ -387,14 +387,14 @@ class TestList:
         assert shared_rows[0]["drifted"] is False
 
     def test_list_omits_the_shared_doc_row_when_only_full_mode_providers_are_requested(self, tmp_path):
-        rows = installer.list_installed(str(tmp_path), ["cursor"], ["comment-audit"])["skills"]
+        rows = installer.list_installed(str(tmp_path), ["cursor"], ["adrpy"])["skills"]
         assert all(r["provider"] != "shared-doc" for r in rows)
 
     def test_list_flags_a_hand_edited_shared_doc_via_its_own_row(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared_path = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared_path = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared_path.write_text("hand-edited, no longer matches the marker", encoding="utf-8")
-        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["adrpy"])["skills"]
         shared_row = next(r for r in rows if r["provider"] == "shared-doc")
         assert shared_row["installed"] is True
         assert shared_row["drifted"] is True
@@ -528,22 +528,22 @@ class TestRemoveForeignProtection:
         assert "Hand-written block" not in agents_md.read_text(encoding="utf-8")
 
     def test_remove_never_deletes_a_foreign_shared_doc(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text("hand-written shared doc, not generated by this tool", encoding="utf-8")
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         assert shared.exists()
         assert shared.read_text(encoding="utf-8") == "hand-written shared doc, not generated by this tool"
         reasons = {row["reason"] for row in result["skipped"] if row["provider"] == "shared-doc"}
         assert "foreign" in reasons
 
     def test_remove_deletes_a_foreign_shared_doc_with_force(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text("hand-written shared doc, not generated by this tool", encoding="utf-8")
 
-        installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", True)
+        installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", True)
         assert not shared.exists()
 
 
@@ -815,8 +815,8 @@ class TestRemoveTolerateVanishingFile:
         # branch's own, separate read-then-unlink sequence (installer.py's
         # `remove()`, the "still_referenced" block) never did, despite the
         # identical TOCTOU shape.
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         original_read_text = Path.read_text
 
         def read_then_vanish(self, *args, **kwargs):
@@ -827,7 +827,7 @@ class TestRemoveTolerateVanishingFile:
 
         monkeypatch.setattr(Path, "read_text", read_then_vanish)
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         removed_providers = {row["provider"] for row in result["removed"]}
         assert "copilot" in removed_providers
         assert not shared.exists()
@@ -971,10 +971,10 @@ class TestSharedDocReportingAndBlocking:
         # the result, even in the plain happy path -- a caller checking
         # `installed` for confirmation of what was actually written on
         # disk would have missed it entirely.
-        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         shared_rows = [row for row in result["installed"] if row["provider"] == "shared-doc"]
         assert len(shared_rows) == 1
-        assert shared_rows[0]["file"] == str(tmp_path / "doc" / "ai-skills" / "comment-audit.md")
+        assert shared_rows[0]["file"] == str(tmp_path / "doc" / "ai-skills" / "adrpy.md")
 
     def test_blocked_shared_doc_prevents_stub_provider_from_writing_a_stale_reference(self, tmp_path):
         # High: a foreign/drifted shared doc, blocked without --force,
@@ -982,11 +982,11 @@ class TestSharedDocReportingAndBlocking:
         # file still got written pointing at it -- reported as a clean
         # install success while referencing content that was never
         # actually verified or regenerated.
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
 
         assert "agentsmd" not in {row["provider"] for row in result["installed"]}
         agentsmd_skip = next(row for row in result["skipped"] if row["provider"] == "agentsmd")
@@ -995,48 +995,48 @@ class TestSharedDocReportingAndBlocking:
         assert shared.read_text(encoding="utf-8") == "hand-written doc, no marker at all"
 
     def test_force_writes_both_the_shared_doc_and_the_stub_provider_it_blocked(self, tmp_path):
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
-        shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
+        shared.write_text("USER-DOC-SENTINEL, no marker at all", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", True)
 
         assert "agentsmd" in {row["provider"] for row in result["installed"]}
         assert (tmp_path / "AGENTS.md").exists()
-        assert "hand-written" not in shared.read_text(encoding="utf-8")
+        assert "USER-DOC-SENTINEL" not in shared.read_text(encoding="utf-8")
 
     def test_blocked_shared_doc_also_blocks_copilot_not_just_agentsmd(self, tmp_path):
         # Round 37, Class P9: the sibling test above only ever exercised
         # agentsmd -- copilot is the other stub-mode provider and shares
         # the exact same shared_doc_blocked check, never independently
         # confirmed.
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert "copilot" not in {row["provider"] for row in result["installed"]}
         copilot_skip = next(row for row in result["skipped"] if row["provider"] == "copilot")
         assert copilot_skip["reason"] == "shared-doc-blocked"
-        assert not (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").exists()
+        assert not (tmp_path / ".github" / "instructions" / "adrpy.instructions.md").exists()
 
     def test_blocked_shared_doc_for_one_skill_does_not_leak_into_another_skills_install(self, tmp_path):
         # Round 37, Class P9: shared_doc_blocked is a per-skill local inside
         # the skill_name loop -- never actually proven not to leak across
         # skills or providers in the same multi-skill call.
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
 
         result = installer.install(
-            str(tmp_path), ["copilot", "agentsmd"], ["comment-audit", "decision-log"], "project", False
+            str(tmp_path), ["copilot", "agentsmd"], ["adrpy", "decision-log"], "project", False
         )
 
         blocked_pairs = {
             (row["provider"], row["skill"]) for row in result["skipped"] if row["reason"] == "shared-doc-blocked"
         }
-        assert blocked_pairs == {("copilot", "comment-audit"), ("agentsmd", "comment-audit")}
+        assert blocked_pairs == {("copilot", "adrpy"), ("agentsmd", "adrpy")}
         installed_pairs = {(row["provider"], row["skill"]) for row in result["installed"]}
         assert ("copilot", "decision-log") in installed_pairs
         assert ("agentsmd", "decision-log") in installed_pairs
@@ -1073,8 +1073,8 @@ class TestWarningIdentityAndWording:
 
         monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
 
-        result = installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        assert any(w.startswith("shared-doc/comment-audit: ") and "4 attempts" in w for w in result["warnings"])
+        result = installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        assert any(w.startswith("shared-doc/adrpy: ") and "4 attempts" in w for w in result["warnings"])
 
     def test_install_agentsmd_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
         def multi_attempt_write(path, content):
@@ -1084,11 +1084,11 @@ class TestWarningIdentityAndWording:
 
         monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
-        assert any(w.startswith("agentsmd/comment-audit: ") and "2 attempts" in w for w in result["warnings"])
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
+        assert any(w.startswith("agentsmd/adrpy: ") and "2 attempts" in w for w in result["warnings"])
 
     def test_remove_agentsmd_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
 
         def multi_attempt_write(path, content):
             Path(path).write_text(content, encoding="utf-8")
@@ -1096,19 +1096,19 @@ class TestWarningIdentityAndWording:
 
         monkeypatch.setattr(installer, "atomic_write_text", multi_attempt_write)
 
-        result = installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
-        assert any(w.startswith("agentsmd/comment-audit: ") and "3 attempts" in w for w in result["warnings"])
+        result = installer.remove(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
+        assert any(w.startswith("agentsmd/adrpy: ") and "3 attempts" in w for w in result["warnings"])
 
     def test_force_overwrite_of_a_foreign_shared_doc_produces_its_own_warning(self, tmp_path):
         # Round 37, Class P9: exercised by TestSharedDocReportingAndBlocking's
         # own force test, but the warning text itself was never asserted on.
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", True)
 
-        assert any(w == "shared-doc/comment-audit: foreign, overwritten (--force)." for w in result["warnings"])
+        assert any(w == "shared-doc/adrpy: foreign, overwritten (--force)." for w in result["warnings"])
 
     def test_force_over_malformed_block_does_not_claim_the_body_was_overwritten(self, tmp_path):
         agents_md = tmp_path / "AGENTS.md"
@@ -1140,8 +1140,8 @@ class TestReadTextTOCTOUCollapse:
         assert installer._read_text(tmp_path / "does-not-exist.md") is None
 
     def test_list_installed_tolerates_a_file_vanishing_exactly_at_the_read(self, tmp_path, monkeypatch):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        path = tmp_path / ".github" / "instructions" / "comment-audit.instructions.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        path = tmp_path / ".github" / "instructions" / "adrpy.instructions.md"
         original_open = Path.open
 
         def vanish_then_raise(self, *args, **kwargs):
@@ -1151,14 +1151,14 @@ class TestReadTextTOCTOUCollapse:
 
         monkeypatch.setattr(Path, "open", vanish_then_raise)
 
-        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["adrpy"])["skills"]
         row = next(r for r in rows if r["provider"] == "copilot")
         assert row["installed"] is False
         assert row["drifted"] is None
 
     def test_remove_tolerates_shared_doc_vanishing_during_its_own_post_loop_check(self, tmp_path, monkeypatch):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         original_open = Path.open
 
         def vanish_then_raise(self, *args, **kwargs):
@@ -1168,7 +1168,7 @@ class TestReadTextTOCTOUCollapse:
 
         monkeypatch.setattr(Path, "open", vanish_then_raise)
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         # copilot's own removal must have committed for real (and been
         # reported) despite the later shared-doc check hitting a vanished
         # file, instead of the whole call crashing after the fact.
@@ -1230,25 +1230,25 @@ class TestOrphanedTempFileCleanup:
     atomic_write_text leaving the exact same kind of orphan behind."""
 
     def test_install_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
-        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        orphan = tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp"
         orphan.parent.mkdir(parents=True)
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
 
-        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert not orphan.exists()
         assert any(orphan.name in w for w in result["warnings"])
 
     def test_remove_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
-        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
+        orphan = tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp"
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
 
-        result = installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert not orphan.exists()
         assert any(orphan.name in w for w in result["warnings"])
@@ -1256,7 +1256,7 @@ class TestOrphanedTempFileCleanup:
     def test_install_cleans_up_orphans_of_the_shared_doc_and_agentsmd_too(self, tmp_path):
         orphans = [
             tmp_path / f"AGENTS.md.{OWN_TEMP_HEX}.tmp",
-            tmp_path / "doc" / "ai-skills" / f"comment-audit.md.{OWN_TEMP_HEX}.tmp",
+            tmp_path / "doc" / "ai-skills" / f"adrpy.md.{OWN_TEMP_HEX}.tmp",
         ]
         old_time = time.time() - 999
         for orphan in orphans:
@@ -1264,7 +1264,7 @@ class TestOrphanedTempFileCleanup:
             orphan.write_text("never committed", encoding="utf-8")
             os.utime(orphan, (old_time, old_time))
 
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
 
         assert not any(orphan.exists() for orphan in orphans)
 
@@ -1272,13 +1272,13 @@ class TestOrphanedTempFileCleanup:
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
-        orphan = home / ".claude" / "skills" / "comment-audit" / f"SKILL.md.{OWN_TEMP_HEX}.tmp"
+        orphan = home / ".claude" / "skills" / "adrpy" / f"SKILL.md.{OWN_TEMP_HEX}.tmp"
         orphan.parent.mkdir(parents=True)
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(orphan, (old_time, old_time))
 
-        result = installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+        result = installer.install(str(tmp_path), ["claude"], ["adrpy"], "global", False)
 
         assert not orphan.exists()
         assert any(orphan.name in w for w in result["warnings"])
@@ -1286,19 +1286,19 @@ class TestOrphanedTempFileCleanup:
     def test_a_fresh_temp_file_is_left_alone(self, tmp_path):
         # Under ORPHAN_MAX_AGE_SECONDS -- could still be an in-flight write
         # from a genuinely concurrent process, not an orphan yet.
-        fresh = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        fresh = tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp"
         fresh.parent.mkdir(parents=True)
         fresh.write_text("still being written, maybe", encoding="utf-8")
 
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert fresh.exists()
 
     @pytest.mark.parametrize("name", [
-        "comment-audit.mdc.notes.tmp",
-        f"comment-audit.mdc.{OWN_TEMP_HEX[:31]}.tmp",
-        f"comment-audit.mdc.{OWN_TEMP_HEX}0.tmp",
-        f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp.notes.tmp",
+        "adrpy.mdc.notes.tmp",
+        f"adrpy.mdc.{OWN_TEMP_HEX[:31]}.tmp",
+        f"adrpy.mdc.{OWN_TEMP_HEX}0.tmp",
+        f"adrpy.mdc.{OWN_TEMP_HEX}.tmp.notes.tmp",
         f"other-rule.mdc.{OWN_TEMP_HEX}.tmp",
     ])
     def test_a_near_miss_tmp_next_to_a_written_file_is_left_alone(self, tmp_path, name):
@@ -1310,7 +1310,7 @@ class TestOrphanedTempFileCleanup:
         old_time = time.time() - 999
         os.utime(foreign, (old_time, old_time))
 
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert foreign.exists()
 
@@ -1329,19 +1329,19 @@ class TestOrphanedTempFileCleanup:
         old_time = time.time() - 999
         os.utime(foreign, (old_time, old_time))
 
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert foreign.exists()
 
     def test_remove_never_deletes_a_users_own_tmp_file_outside_its_write_surface(self, tmp_path):
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
         foreign = tmp_path / "build" / "cache.tmp"
         foreign.parent.mkdir(parents=True)
         foreign.write_text("user data", encoding="utf-8")
         old_time = time.time() - 999
         os.utime(foreign, (old_time, old_time))
 
-        installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        installer.remove(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert foreign.exists()
 
@@ -1355,7 +1355,7 @@ class TestOrphanedTempFileCleanup:
         old_time = time.time() - 999
         os.utime(foreign, (old_time, old_time))
 
-        installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+        installer.install(str(tmp_path), ["claude"], ["adrpy"], "global", False)
 
         assert foreign.exists()
 
@@ -1382,7 +1382,7 @@ class TestCoverageOfRecentGuarantees:
         monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
         with pytest.raises(CommandError) as excinfo:
-            installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+            installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         assert excinfo.value.code == "io-error"
 
         monkeypatch.undo()
@@ -1435,11 +1435,11 @@ class TestCoverageOfRecentGuarantees:
         assert installer._read_text(classic_mac) == "line one\nline two\n"
 
     def test_a_blocked_shared_doc_never_blocks_a_full_mode_provider(self, tmp_path):
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written, no marker\n", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["claude", "agentsmd"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["claude", "agentsmd"], ["adrpy"], "project", False)
 
         assert "claude" in {row["provider"] for row in result["installed"]}
         reasons = {row["provider"]: row["reason"] for row in result["skipped"]}
@@ -1447,12 +1447,12 @@ class TestCoverageOfRecentGuarantees:
 
     @pytest.mark.parametrize("provider,stub_path", [
         ("agentsmd", "AGENTS.md"),
-        ("copilot", ".github/instructions/comment-audit.instructions.md"),
+        ("copilot", ".github/instructions/adrpy.instructions.md"),
     ])
     def test_a_stub_write_never_reports_the_shared_docs_retry_count(self, tmp_path, monkeypatch, provider, stub_path):
         # The shared doc is always written first in the same loop; its
         # attempt count must never be reported under the stub's own name.
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
 
         def write(path, content):
             Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -1461,13 +1461,13 @@ class TestCoverageOfRecentGuarantees:
 
         monkeypatch.setattr(installer, "atomic_write_text", write)
 
-        result = installer.install(str(tmp_path), [provider], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), [provider], ["adrpy"], "project", False)
 
-        assert any(w.startswith("shared-doc/comment-audit: ") for w in result["warnings"])
-        assert not any(w.startswith(f"{provider}/comment-audit: ") for w in result["warnings"])
+        assert any(w.startswith("shared-doc/adrpy: ") for w in result["warnings"])
+        assert not any(w.startswith(f"{provider}/adrpy: ") for w in result["warnings"])
 
     def test_an_orphan_the_sweep_cannot_remove_is_reported_in_install_warnings(self, tmp_path, monkeypatch):
-        orphan = tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp"
+        orphan = tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp"
         orphan.parent.mkdir(parents=True)
         orphan.write_text("never committed", encoding="utf-8")
         old_time = time.time() - 999
@@ -1481,20 +1481,20 @@ class TestCoverageOfRecentGuarantees:
 
         monkeypatch.setattr(Path, "unlink", stuck_unlink)
 
-        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert any("could not be checked/removed" in w and orphan.name in w for w in result["warnings"])
 
     def test_another_skills_tag_right_after_this_skills_start_tag_is_malformed(self):
         text = (
-            "<!-- adrpy:skills:comment-audit:start -->\n"
+            "<!-- adrpy:skills:adrpy:start -->\n"
             "<!-- adrpy:skills:decision-log:start -->\n"
             "body\n"
-            "<!-- adrpy:skills:comment-audit:end -->\n"
+            "<!-- adrpy:skills:adrpy:end -->\n"
             "<!-- adrpy:skills:decision-log:end -->\n"
         )
 
-        assert installer._agentsmd_block_state(text, "comment-audit") == "malformed"
+        assert installer._agentsmd_block_state(text, "adrpy") == "malformed"
 
 
 class TestRemoveRetriesATransientDeleteFailure:
@@ -1518,21 +1518,21 @@ class TestRemoveRetriesATransientDeleteFailure:
         monkeypatch.setattr("adrpy.core.fs.time.sleep", lambda _seconds: None)
 
     def test_a_provider_file_held_open_for_a_moment_is_still_removed(self, tmp_path, monkeypatch):
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
-        target = tmp_path / ".cursor" / "rules" / "comment-audit.mdc"
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
+        target = tmp_path / ".cursor" / "rules" / "adrpy.mdc"
         self._unlink_fails_once(monkeypatch, target)
 
-        result = installer.remove(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert [row["provider"] for row in result["removed"]] == ["cursor"]
         assert not target.exists()
 
     def test_a_shared_doc_held_open_for_a_moment_is_still_removed(self, tmp_path, monkeypatch):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         self._unlink_fails_once(monkeypatch, shared)
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert "shared-doc" in {row["provider"] for row in result["removed"]}
         assert not shared.exists()
@@ -1559,31 +1559,31 @@ class TestSharedDocNeverDanglesNorStrands:
         assert any(w.startswith("agentsmd/decision-log: malformed") and "left in place" in w for w in result["warnings"])
 
     def test_a_shared_doc_no_stub_points_at_is_removed_even_if_no_stub_was_removed_now(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        (tmp_path / ".github" / "instructions" / "adrpy.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert not shared.exists()
         assert "shared-doc" in {row["provider"] for row in result["removed"]}
 
     def test_a_shared_doc_another_stub_still_points_at_is_kept(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["comment-audit"], "project", False)
-        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["adrpy"], "project", False)
+        (tmp_path / ".github" / "instructions" / "adrpy.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
 
-        installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert shared.exists()
 
     def test_an_edited_orphaned_shared_doc_still_needs_force(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
-        (tmp_path / ".github" / "instructions" / "comment-audit.instructions.md").unlink()
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
+        (tmp_path / ".github" / "instructions" / "adrpy.instructions.md").unlink()
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nmy own note\n", encoding="utf-8")
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert shared.exists()
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("shared-doc", "drifted")}
@@ -1594,33 +1594,33 @@ class TestAgentsmdTagsAreWholeLines:
     the same text quoted inside a line of the user's prose is not a tag."""
 
     def test_a_tag_quoted_inline_in_the_users_prose_is_not_a_tag(self, tmp_path):
-        prose = "To mark a block we use `<!-- adrpy:skills:comment-audit:start -->` inline.\n"
+        prose = "To mark a block we use `<!-- adrpy:skills:adrpy:start -->` inline.\n"
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(prose, encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
 
         assert "agentsmd" in {row["provider"] for row in result["installed"]}
         after = agents_md.read_text(encoding="utf-8")
         assert after.startswith(prose)
-        assert installer._agentsmd_block_state(after, "comment-audit") == "clean"
+        assert installer._agentsmd_block_state(after, "adrpy") == "clean"
 
     def test_force_never_strips_a_tag_quoted_inline_in_the_users_prose(self, tmp_path):
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         agents_md = tmp_path / "AGENTS.md"
-        prose = "Quoted: `<!-- adrpy:skills:comment-audit:end -->` in a sentence.\n"
-        agents_md.write_text(agents_md.read_text(encoding="utf-8") + "<!-- adrpy:skills:comment-audit:end -->\n" + prose, encoding="utf-8")
+        prose = "Quoted: `<!-- adrpy:skills:adrpy:end -->` in a sentence.\n"
+        agents_md.write_text(agents_md.read_text(encoding="utf-8") + "<!-- adrpy:skills:adrpy:end -->\n" + prose, encoding="utf-8")
 
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", True)
 
         assert prose in agents_md.read_text(encoding="utf-8")
 
     def test_a_real_tag_line_is_still_recognized_as_malformed(self, tmp_path):
         # Positive control: a stray tag on its own line still counts.
         agents_md = tmp_path / "AGENTS.md"
-        agents_md.write_text("<!-- adrpy:skills:comment-audit:start -->\nno end tag\n", encoding="utf-8")
+        agents_md.write_text("<!-- adrpy:skills:adrpy:start -->\nno end tag\n", encoding="utf-8")
 
-        result = installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
 
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("agentsmd", "malformed")}
 
@@ -1650,7 +1650,7 @@ class TestWritesStayInsideTheTarget:
         _link_dir(repo / ".claude" / "skills", outside)
 
         with pytest.raises(CommandError) as excinfo:
-            installer.install(str(repo), ["claude"], ["comment-audit"], "project", False)
+            installer.install(str(repo), ["claude"], ["adrpy"], "project", False)
 
         assert excinfo.value.code == "path-outside-repository"
         assert list(outside.iterdir()) == []
@@ -1660,14 +1660,14 @@ class TestWritesStayInsideTheTarget:
         repo.mkdir()
         outside.mkdir()
         (tmp_path / "seed").mkdir()
-        installer.install(str(tmp_path / "seed"), ["claude"], ["comment-audit"], "project", False)
-        (outside / "comment-audit").mkdir()
-        victim = outside / "comment-audit" / "SKILL.md"
-        victim.write_bytes((tmp_path / "seed" / ".claude" / "skills" / "comment-audit" / "SKILL.md").read_bytes())
+        installer.install(str(tmp_path / "seed"), ["claude"], ["adrpy"], "project", False)
+        (outside / "adrpy").mkdir()
+        victim = outside / "adrpy" / "SKILL.md"
+        victim.write_bytes((tmp_path / "seed" / ".claude" / "skills" / "adrpy" / "SKILL.md").read_bytes())
         _link_dir(repo / ".claude" / "skills", outside)
 
         with pytest.raises(CommandError) as excinfo:
-            installer.remove(str(repo), ["claude"], ["comment-audit"], "project", False)
+            installer.remove(str(repo), ["claude"], ["adrpy"], "project", False)
 
         assert excinfo.value.code == "path-outside-repository"
         assert victim.exists()
@@ -1678,9 +1678,9 @@ class TestWritesStayInsideTheTarget:
         outside.mkdir()
         _link_dir(repo / ".claude" / "skills", outside)
 
-        installer.install(str(repo), ["claude"], ["comment-audit"], "project", False, allow_external_links=True)
+        installer.install(str(repo), ["claude"], ["adrpy"], "project", False, allow_external_links=True)
 
-        assert (outside / "comment-audit" / "SKILL.md").exists()
+        assert (outside / "adrpy" / "SKILL.md").exists()
 
     def test_a_link_that_stays_inside_the_target_is_fine(self, tmp_path):
         # Positive control: only leaving the target is refused.
@@ -1688,10 +1688,10 @@ class TestWritesStayInsideTheTarget:
         (repo / "shared" / "skills").mkdir(parents=True)
         _link_dir(repo / ".claude" / "skills", repo / "shared" / "skills")
 
-        result = installer.install(str(repo), ["claude"], ["comment-audit"], "project", False)
+        result = installer.install(str(repo), ["claude"], ["adrpy"], "project", False)
 
         assert [row["provider"] for row in result["installed"]] == ["claude"]
-        assert (repo / "shared" / "skills" / "comment-audit" / "SKILL.md").exists()
+        assert (repo / "shared" / "skills" / "adrpy" / "SKILL.md").exists()
 
     def test_global_scope_refuses_a_link_leading_outside_home(self, tmp_path, monkeypatch):
         home, outside = tmp_path / "home", tmp_path / "dotfiles"
@@ -1701,7 +1701,7 @@ class TestWritesStayInsideTheTarget:
         _link_dir(home / ".claude", outside)
 
         with pytest.raises(CommandError) as excinfo:
-            installer.install(str(tmp_path), ["claude"], ["comment-audit"], "global", False)
+            installer.install(str(tmp_path), ["claude"], ["adrpy"], "global", False)
 
         assert excinfo.value.code == "path-outside-repository"
         assert list(outside.iterdir()) == []
@@ -1714,7 +1714,7 @@ class TestRemoveNeverReachesAHandWrittenSharedDoc:
     call does the existing foreign/--force rule apply to it."""
 
     def _hand_written(self, tmp_path):
-        doc = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        doc = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         doc.parent.mkdir(parents=True)
         doc.write_text("# My own hand-written notes\n", encoding="utf-8")
         return doc
@@ -1722,7 +1722,7 @@ class TestRemoveNeverReachesAHandWrittenSharedDoc:
     def test_force_remove_with_no_stub_installed_never_deletes_a_hand_written_doc(self, tmp_path):
         doc = self._hand_written(tmp_path)
 
-        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["comment-audit"], "project", True)
+        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["adrpy"], "project", True)
 
         assert doc.exists()
         assert result["removed"] == []
@@ -1730,7 +1730,7 @@ class TestRemoveNeverReachesAHandWrittenSharedDoc:
     def test_remove_with_no_stub_installed_does_not_report_a_hand_written_doc(self, tmp_path):
         self._hand_written(tmp_path)
 
-        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), list(installer.PROVIDERS), ["adrpy"], "project", False)
 
         assert result["skipped"] == []
 
@@ -1739,7 +1739,7 @@ class TestWarningsSayWhere:
     def test_orphan_cleanup_warning_names_each_file_relative_to_the_target(self, tmp_path):
         old_time = time.time() - 999
         orphans = [
-            tmp_path / ".cursor" / "rules" / f"comment-audit.mdc.{OWN_TEMP_HEX}.tmp",
+            tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp",
             tmp_path / ".cursor" / "rules" / f"decision-log.mdc.{OWN_TEMP_HEX}.tmp",
         ]
         for orphan in orphans:
@@ -1747,17 +1747,17 @@ class TestWarningsSayWhere:
             orphan.write_text("never committed", encoding="utf-8")
             os.utime(orphan, (old_time, old_time))
 
-        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit", "decision-log"], "project", False)
+        result = installer.install(str(tmp_path), ["cursor"], ["adrpy", "decision-log"], "project", False)
 
         warning = [w for w in result["warnings"] if "orphaned temp file" in w][0]
         assert str(Path(".cursor") / "rules" / orphans[0].name) in warning
 
     def test_remove_says_why_it_kept_a_shared_doc_another_stub_still_uses(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["copilot", "agentsmd"], ["adrpy"], "project", False)
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
-        assert any(w.startswith("shared-doc/comment-audit: kept") for w in result["warnings"])
+        assert any(w.startswith("shared-doc/adrpy: kept") for w in result["warnings"])
 
 
 class TestToolWrittenAgentsmdSurvivesEditorArtifacts:
@@ -1814,15 +1814,15 @@ class TestSharedDocReferenceSpellings:
 
 class TestEditorBomOnAToolWrittenFile:
     def _installed_with_bom(self, tmp_path):
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
-        target = tmp_path / ".cursor" / "rules" / "comment-audit.mdc"
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
+        target = tmp_path / ".cursor" / "rules" / "adrpy.mdc"
         target.write_bytes(b"\xef\xbb\xbf" + target.read_bytes())
         return target
 
     def test_a_bom_an_editor_added_keeps_the_file_clean_not_foreign(self, tmp_path):
         target = self._installed_with_bom(tmp_path)
 
-        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert [row["provider"] for row in result["installed"]] == ["cursor"]
         assert result["skipped"] == []
@@ -1831,22 +1831,22 @@ class TestEditorBomOnAToolWrittenFile:
         target = self._installed_with_bom(tmp_path)
         target.write_bytes(target.read_bytes() + b"\nmy own note\n")
 
-        result = installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
+        result = installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
 
         assert {(row["provider"], row["reason"]) for row in result["skipped"]} == {("cursor", "drifted")}
 
 
 class TestAnUnreadableAgentsmdNeverBlocksAnotherProvidersRemove:
     def test_remove_of_copilot_keeps_the_shared_doc_and_warns_instead_of_failing(self, tmp_path):
-        installer.install(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         (tmp_path / "AGENTS.md").write_bytes("# Notas do projeto\n".encode("utf-16"))
-        shared = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
 
-        result = installer.remove(str(tmp_path), ["copilot"], ["comment-audit"], "project", False)
+        result = installer.remove(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
 
         assert [row["provider"] for row in result["removed"]] == ["copilot"]
         assert shared.exists()
-        kept = [w for w in result["warnings"] if w.startswith("shared-doc/comment-audit: kept")]
+        kept = [w for w in result["warnings"] if w.startswith("shared-doc/adrpy: kept")]
         assert len(kept) == 1 and "could not be read" in kept[0]
 
     def test_remove_of_agentsmd_itself_still_fails_on_an_unreadable_agentsmd(self, tmp_path):
@@ -1854,18 +1854,18 @@ class TestAnUnreadableAgentsmdNeverBlocksAnotherProvidersRemove:
         (tmp_path / "AGENTS.md").write_bytes("# Notas\n".encode("utf-16"))
 
         with pytest.raises(CommandError) as excinfo:
-            installer.remove(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", False)
+            installer.remove(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         assert excinfo.value.code == "io-error"
 
 
 class TestListAgreesWithRemoveOnAHandWrittenSharedDocPath:
     def _hand_written(self, tmp_path):
-        doc = tmp_path / "doc" / "ai-skills" / "comment-audit.md"
+        doc = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         doc.parent.mkdir(parents=True)
         doc.write_text("# My own notes\n", encoding="utf-8")
 
     def _shared_row(self, tmp_path):
-        rows = installer.list_installed(str(tmp_path), ["copilot"], ["comment-audit"])["skills"]
+        rows = installer.list_installed(str(tmp_path), ["copilot"], ["adrpy"])["skills"]
         return [row for row in rows if row["provider"] == "shared-doc"][0]
 
     def test_a_hand_written_file_with_no_stub_is_not_reported_as_the_shared_doc(self, tmp_path):
@@ -1878,7 +1878,7 @@ class TestListAgreesWithRemoveOnAHandWrittenSharedDocPath:
     def test_the_same_file_with_a_stub_pointing_at_it_is_reported_and_flagged(self, tmp_path):
         # Positive control: then it's what install would refuse to overwrite.
         self._hand_written(tmp_path)
-        stub = tmp_path / ".github" / "instructions" / "comment-audit.instructions.md"
+        stub = tmp_path / ".github" / "instructions" / "adrpy.instructions.md"
         stub.parent.mkdir(parents=True)
         stub.write_text("stub\n", encoding="utf-8")
 
@@ -1898,15 +1898,15 @@ class TestAgentsmdAndSharedDocEdgeCases:
         # an example quoted there is the user's content, not a block.
         example = (
             "Example:\n\n"
-            f"{indent}<!-- adrpy:skills:comment-audit:start -->\n"
+            f"{indent}<!-- adrpy:skills:adrpy:start -->\n"
             f"{indent}example body\n"
-            f"{indent}<!-- adrpy:skills:comment-audit:end -->\n"
+            f"{indent}<!-- adrpy:skills:adrpy:end -->\n"
         )
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(example, encoding="utf-8")
 
-        assert installer._agentsmd_block_state(example, "comment-audit") == "absent"
-        installer.install(str(tmp_path), ["agentsmd"], ["comment-audit"], "project", True)
+        assert installer._agentsmd_block_state(example, "adrpy") == "absent"
+        installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", True)
         assert agents_md.read_text(encoding="utf-8").startswith(example)
 
     def test_up_to_three_spaces_before_a_tag_still_count(self, tmp_path):
@@ -1932,14 +1932,14 @@ class TestAgentsmdAndSharedDocEdgeCases:
     def test_more_than_one_leading_bom_still_reads_clean(self, tmp_path):
         from adrpy.core.hashing import check_drift
 
-        installer.install(str(tmp_path), ["cursor"], ["comment-audit"], "project", False)
-        text = (tmp_path / ".cursor" / "rules" / "comment-audit.mdc").read_text(encoding="utf-8")
+        installer.install(str(tmp_path), ["cursor"], ["adrpy"], "project", False)
+        text = (tmp_path / ".cursor" / "rules" / "adrpy.mdc").read_text(encoding="utf-8")
 
         assert check_drift("\ufeff\ufeff" + text) == "clean"
 
     def test_an_invalid_target_is_reported_together_with_invalid_providers(self, tmp_path):
         with pytest.raises(UsageError) as excinfo:
-            installer.install(str(tmp_path), ["bogus"], ["comment-audit"], "golbal", False)
+            installer.install(str(tmp_path), ["bogus"], ["adrpy"], "golbal", False)
 
         assert "--provider" in str(excinfo.value) and "--target" in str(excinfo.value)
 

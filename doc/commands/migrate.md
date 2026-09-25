@@ -11,7 +11,7 @@ Adds an adrpy-compliant header to existing, hand-written decision files.
 
 ## Description
 
-Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback. It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome.
+Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback. It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome. `adrpy explore --path .` previews what the pattern reads from each name (number, version, title) before migrating; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
 
 ## Arguments
 
@@ -34,12 +34,13 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (a `\|Adr-Plus ` row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
 | `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
-| `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created) -- nothing needs migration. |
+| `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration. |
 | `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

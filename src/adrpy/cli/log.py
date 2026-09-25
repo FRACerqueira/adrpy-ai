@@ -17,6 +17,7 @@ from adrpy.core.decision_log import (
     SEVERITIES,
     STRUCTURED_CLASSIFICATIONS,
     build_entry_content,
+    check_entries,
     build_filename,
     decision_log_dir_for,
     max_existing_round,
@@ -32,14 +33,14 @@ from adrpy.core.decision_log import (
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
 from adrpy.core.output import explain
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
-from adrpy.core.atomic_write import atomic_write_text
+from adrpy.core.atomic_write import normalize_newlines
 from adrpy.core.lifecycle import (
     parse_refdate,
     resolve_target_and_config,
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import reject_aliased_repo_folders, reject_embedded_delimiter, resolve_within
-from adrpy.core.fs import cleanup_orphaned_temp_files
+from adrpy.core.fs import cleanup_orphaned_temp_files, commit_write, prepare_write, write_landed
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 _STRUCTURED_FIELDS = ("front", "severity", "resolution")
@@ -287,7 +288,12 @@ def run(args):
                 warnings.append(warning)
 
         round_ = None
-        if classification in STRUCTURED_CLASSIFICATIONS:
+        if classification not in STRUCTURED_CLASSIFICATIONS:
+            # A file INDEX.md could not list refuses the call before the
+            # entry is written (the structured classifications get the
+            # same check, and their Round's, from max_existing_round).
+            check_entries(log_dir, warnings=warnings)
+        else:
             current_max = max_existing_round(log_dir, warnings=warnings)
             if explicit_round is not None:
                 validate_round_not_regressing(explicit_round, current_max)
@@ -329,8 +335,9 @@ def run(args):
         # exist, with no conflicting content to lose -- exist_ok=True
         # closes the race outright.
         log_dir.mkdir(parents=True, exist_ok=True)
+        prepared = prepare_write(file_path, normalize_newlines(content).encode("utf-8"))
         try:
-            attempts = atomic_write_text(file_path, content, exclusive=True)
+            attempts = prepared.attempts + commit_write(prepared, exclusive=True) - 1
         except FileExistsError as error:
             # An identical retry after log-index-regeneration-failed
             # lands here forever; rebuilding INDEX.md (a full,
@@ -350,11 +357,17 @@ def run(args):
                 data={"file": filename},
                 warnings=warnings,
             ) from error
-        warning = retry_warning(attempts)
-        if warning:
-            warnings.append(warning)
+        except BaseException as error:
+            # An interrupt right after the rename that committed the
+            # entry: decided from the disk (core/fs.write_landed).
+            if not write_landed(prepared):
+                raise
+            raise _interrupted_after_the_entry(file_path, error, warnings) from error
 
         try:
+            warning = retry_warning(attempts)
+            if warning:
+                warnings.append(warning)
             regenerate_index(log_dir, warnings=warnings)
         except (OSError, CommandError) as error:
             # The entry above is already committed to disk for real --
@@ -376,12 +389,16 @@ def run(args):
         except BaseException as error:
             # Ctrl+C (or anything unexpected) here: the entry is on disk
             # all the same, so the answer names it too.
-            raise CommandError(
-                FailureCodes.INTERRUPTED,
-                f"{file_path}: entry written, but interrupted ({explain(error)}) before INDEX.md was regenerated; "
-                "the next log call that succeeds regenerates it.",
-                data={"file": str(file_path)},
-                warnings=warnings,
-            ) from error
+            raise _interrupted_after_the_entry(file_path, error, warnings) from error
 
     return {"created": str(file_path), "round": round_, "warnings": warnings}
+
+
+def _interrupted_after_the_entry(file_path, error, warnings):
+    return CommandError(
+        FailureCodes.INTERRUPTED,
+        f"{file_path}: entry written, but interrupted ({explain(error)}) before INDEX.md was regenerated; "
+        "the next log call that succeeds regenerates it.",
+        data={"file": str(file_path)},
+        warnings=warnings,
+    )

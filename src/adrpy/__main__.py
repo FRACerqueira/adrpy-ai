@@ -36,6 +36,15 @@ def _print_version():
     print("Usage: adrpy help")
 
 
+def _with_example(verb, error):
+    """The usage error's text, plus -- for missing required flags -- an
+    example with them and where the full contract is."""
+    if not error.missing:
+        return str(error)
+    example = " ".join(f"--{name} {'.' if name == 'path' else f'<{name}>'}" for name in error.missing)
+    return f"{error} (e.g. `adrpy {verb} {example}`; see `adrpy help {verb}`)."
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
 
@@ -54,7 +63,10 @@ def main(argv=None):
     try:
         data = command.run(rest)
     except UsageError as error:
-        return emit_usage_failure("usage-error", str(error))
+        if error.unknown in ("--help", "-h"):
+            # `adrpy <command> --help` is `adrpy help <command>`.
+            return emit_success(COMMANDS["help"].run([verb]))
+        return emit_usage_failure("usage-error", _with_example(verb, error))
     except CommandError as error:
         return emit_failure(error.code, error.detail, error.data, error.warnings)
     except OSError as error:

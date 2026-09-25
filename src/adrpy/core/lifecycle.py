@@ -19,6 +19,7 @@ from adrpy.core.config import (
     LENREVISION_MAX,
     LENVERSION_MAX,
     SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    VALID_SEPARATORS,
     _STATUS_LABEL_FIELDS,
     load_repo_config,
 )
@@ -26,13 +27,22 @@ from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.family import is_successor, locking_member
 from adrpy.core.consistency import validate_repository
 from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
-from adrpy.core.header import _REAL_NEWLINE_BYTES, HEADER_LINE_COUNT, DecisionRecord, _read_header_bytes, build_header
+from adrpy.core.header import (
+    _REAL_NEWLINE_BYTES,
+    HEADER_LINE_COUNT,
+    DecisionRecord,
+    _read_header_bytes,
+    build_header,
+    parse_header,
+    read_header_lines_with_report,
+)
 from adrpy.core.fs import (
     cleanup_orphaned_temp_files,
     commit_write,
     discard_write,
     prepare_write,
     scan_tree,
+    write_landed,
 )
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
@@ -145,7 +155,10 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
       does not exist yet is not scanned.
     - status labels, separator and prefix: only while no decision (any
       scheme) is recognized; migrationpattern: only while no LEGACY-scheme
-      one is (status-or-separator-change-blocked-by-existing-decisions,
+      one that has a valid header (already migrated) is -- a hand-written
+      file it merely matches by name is not a decision yet, so a wrong
+      pattern can be fixed before migrate
+      (status-or-separator-change-blocked-by-existing-decisions,
       data.existing_decisions counting only what the blocking fields
       affect). A separator or prefix change must also not newly recognize
       a file (separator-/prefix-change-would-adopt-unrelated-files) --
@@ -243,7 +256,9 @@ def _check_status_or_separator_change(
         )
 
     existing = _recognized(scan, old_config, warnings)
-    legacy_existing_count = sum(1 for scheme, _, _ in existing if scheme == "legacy")
+    legacy_existing_count = sum(
+        1 for scheme, _, path in existing if scheme == "legacy" and _has_valid_header(path, old_config)
+    )
 
     blocking_fields = []
     if blanket_fields_changed and existing:
@@ -290,6 +305,68 @@ def _check_status_or_separator_change(
                 data={"adopted_files": [str(path) for path in adopted]},
                 warnings=warnings,
             )
+
+
+def legacy_pattern_preview(paths, config):
+    """What `config`'s migrationpattern reads from each of `paths` it
+    recognizes as a legacy-scheme decision: [{file, number, version,
+    title}], in path order -- `config --migrationpattern`'s preview."""
+    preview = []
+    for path in sorted(paths, key=str):
+        found = parse_any_filename(path.name, config)
+        if found is not None and found[0] == "legacy":
+            parsed = found[1]
+            preview.append({"file": str(path), "number": parsed.number, "version": parsed.version, "title": parsed.title})
+    return preview
+
+
+# What to do about a likely misreading: before migrate the pattern can
+# still change; after it, the migrated files block any change (ADR004V02).
+PATTERN_ADVICE_BEFORE_MIGRATE = (
+    "Set the right one with `adrpy config --migrationpattern` before `adrpy migrate` (its result lists what it "
+    "reads; `adrpy explore --path .` shows it too)."
+)
+PATTERN_ADVICE_AFTER_MIGRATE = (
+    "These files are migrated now, and migrationpattern can no longer change while they are: to redo them, "
+    "restore their content from before this migrate (e.g. `git checkout -- <file>`) before any other command, "
+    "set the right pattern with `adrpy config --migrationpattern`, and run `adrpy migrate` again."
+)
+
+
+def legacy_pattern_warnings(preview, advice):
+    """Warnings for what usually means migrationpattern misreads the names
+    in `preview` (legacy_pattern_preview's shape): titles that start with
+    a separator (T points at it), or a number far above all the others
+    (N reading part of a date or of the title). `advice` ends each one
+    (PATTERN_ADVICE_BEFORE_MIGRATE or PATTERN_ADVICE_AFTER_MIGRATE)."""
+    warnings = []
+    separated = [entry["file"] for entry in preview if (entry["title"] or "")[:1] in VALID_SEPARATORS]
+    if separated:
+        warnings.append(
+            f"{len(separated)} title(s) start with a separator: {', '.join(separated)}. The pattern's T "
+            "(title start) likely points at the separator: for `0001-title.md`, 'N00:04T05' reads number "
+            f"0001 and title 'title'. {advice}"
+        )
+    ranked = sorted(preview, key=lambda entry: entry["number"], reverse=True)
+    if len(ranked) >= 2 and ranked[0]["number"] >= 100 and ranked[0]["number"] > 10 * ranked[1]["number"]:
+        warnings.append(
+            f"Number {ranked[0]['number']} ({ranked[0]['file']}) is far above the others (next highest: "
+            f"{ranked[1]['number']}): the pattern's N (start:length) may be reading part of a date or of the "
+            f"title. {advice}"
+        )
+    return warnings
+
+
+def _has_valid_header(path, config):
+    """True when `path`'s header parses under `config` -- a decision
+    already migrated (or created by the tool), not a hand-written file
+    that only matches migrationpattern by name. A file that cannot be
+    read counts as one (fails closed)."""
+    try:
+        lines, _encoding_repaired = read_header_lines_with_report(path)
+    except OSError:
+        return True
+    return parse_header(lines, config).is_valid
 
 
 def next_number(decisions):
@@ -1103,7 +1180,12 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
     data.applied and data.pending naming the files, and `hint` telling
     how to finish. `repair`, when given ({file, row}), is the exact
     header row to put in `file` by hand to make the repository
-    consistent again; it goes into data.repair and the detail."""
+    consistent again; it goes into data.repair and the detail.
+
+    What was written is decided from the disk (core/fs.write_landed): an
+    interrupt right after a rename/replace returned counts that file as
+    written. An interrupt once every file is written reports them all,
+    with no hint or repair (the repository is consistent)."""
     applied = []
     try:
         for prepared, exclusive, applied_warnings in steps:
@@ -1114,6 +1196,11 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
             if warning:
                 warnings.append(warning)
     except BaseException as error:
+        if len(applied) < len(steps) and not isinstance(error, FileExistsError):
+            current = steps[len(applied)]
+            if write_landed(current[0]):
+                applied.append(str(current[0].path))
+                warnings.extend(current[2])
         # The failing one's own temp too: already gone when commit_write
         # itself failed, and discarding is idempotent.
         unwritten = steps[len(applied) :]
@@ -1122,6 +1209,14 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
         if not applied:
             raise
         pending = [str(step[0].path) for step in unwritten]
+        if not pending:
+            raise CommandError(
+                FailureCodes.INTERRUPTED,
+                f"Interrupted ({explain(error)}) after every file was written: {', '.join(applied)}. "
+                "The operation is complete.",
+                data={"applied": applied, "pending": []},
+                warnings=warnings,
+            ) from error
         if isinstance(error, OSError):
             code, cause = FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED, f"{unwritten[0][0].path}: {error}"
         else:
@@ -1129,7 +1224,7 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
         raise CommandError(
             code,
             f"{cause}. Already written: {', '.join(applied)}; not written: "
-            f"{', '.join(pending) or 'nothing'}. {hint}"
+            f"{', '.join(pending)}. {hint}"
             + (f" In {repair['file']}, replace the row starting '|{repair['row'].split('|')[1]}|' with: {repair['row']}" if repair else ""),
             data={"applied": applied, "pending": pending, **({"repair": repair} if repair else {})},
             warnings=warnings,

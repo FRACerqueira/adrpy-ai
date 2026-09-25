@@ -27,6 +27,19 @@ def _init_repo_with_pattern(tmp_path, pattern="N00:04T04"):
     return tmp_path
 
 
+def _interrupt_candidate_writes(monkeypatch):
+    """Ctrl+C while preparing any decision file's write -- never the
+    config's own (the fallback migrationpattern persist-back)."""
+    real_prepare_write = migrate.prepare_write
+
+    def interrupted(path, data):
+        if Path(path).name != "adr-config.adrplus":
+            raise KeyboardInterrupt()
+        return real_prepare_write(path, data)
+
+    monkeypatch.setattr(migrate, "prepare_write", interrupted)
+
+
 def _write_legacy_file(tmp_path, filename, content):
     # Raw bytes, not write_text: the default text-mode write would
     # translate every "\n" to os.linesep, silently hiding the exact bug
@@ -232,16 +245,16 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
 
     from adrpy.cli import migrate as migrate_module
 
-    real_atomic_write_chunks = migrate_module.atomic_write_chunks
+    real_prepare_write = migrate_module.prepare_write
     processed = []
 
     def flaky_write(path, chunks_factory):
         processed.append(str(path))
         if len(processed) == 2:
             raise OSError("simulated disk failure")
-        return real_atomic_write_chunks(path, chunks_factory)
+        return real_prepare_write(path, chunks_factory)
 
-    monkeypatch.setattr(migrate_module, "atomic_write_chunks", flaky_write)
+    monkeypatch.setattr(migrate_module, "prepare_write", flaky_write)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -350,13 +363,13 @@ def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(
     migrate.py calls atomic_write_CHUNKS (ADR006V01), not atomic_write_text."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001UsePostgreSQL.md", "# Use PostgreSQL\n")
-    real_atomic_write_chunks = migrate.atomic_write_chunks
+    real_commit_write = migrate.commit_write
 
-    def flaky_atomic_write_chunks(*args, **kwargs):
-        real_atomic_write_chunks(*args, **kwargs)
+    def flaky_commit_write(*args, **kwargs):
+        real_commit_write(*args, **kwargs)
         return 3
 
-    monkeypatch.setattr(migrate, "atomic_write_chunks", flaky_atomic_write_chunks)
+    monkeypatch.setattr(migrate, "commit_write", flaky_commit_write)
 
     result = migrate.run(["--path", str(tmp_path)])
 
@@ -658,12 +671,7 @@ def test_an_interrupt_after_the_persist_back_still_says_it_persisted_the_pattern
     tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
-    real_chunks = migrate.atomic_write_chunks
-
-    def interrupted(*args, **kwargs):
-        raise KeyboardInterrupt()
-
-    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+    _interrupt_candidate_writes(monkeypatch)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -677,11 +685,7 @@ def test_an_interrupt_after_the_persist_back_keeps_the_warnings_already_collecte
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(_seed_config_with_pattern("N00:04T04")))
     monkeypatch.setattr(migrate, "orphan_cleanup_warning", lambda *_args: "an earlier warning")
-
-    def interrupted(*args, **kwargs):
-        raise KeyboardInterrupt()
-
-    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+    _interrupt_candidate_writes(monkeypatch)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -697,7 +701,7 @@ def test_a_per_file_failure_with_an_empty_message_still_says_what_failed(tmp_pat
     def failing_write(*args, **kwargs):
         raise OSError()
 
-    monkeypatch.setattr(migrate, "atomic_write_chunks", failing_write)
+    monkeypatch.setattr(migrate, "prepare_write", failing_write)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -748,16 +752,16 @@ def test_an_interrupt_mid_run_reports_the_files_already_migrated(tmp_path, monke
     tmp_path = _init_repo_with_pattern(tmp_path)
     first = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     second = _write_legacy_file(tmp_path, "0002Second.md", "# Second\n")
-    real_chunks = migrate.atomic_write_chunks
+    real_prepare_write = migrate.prepare_write
     calls = {"count": 0}
 
     def interrupt_on_second(*args, **kwargs):
         calls["count"] += 1
         if calls["count"] == 2:
             raise KeyboardInterrupt()
-        return real_chunks(*args, **kwargs)
+        return real_prepare_write(*args, **kwargs)
 
-    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupt_on_second)
+    monkeypatch.setattr(migrate, "prepare_write", interrupt_on_second)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -972,11 +976,7 @@ def test_an_interrupt_once_the_per_file_loop_started_is_reported_even_with_no_fi
     # first file is interrupted: data.results is present, and empty.
     tmp_path = _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
-
-    def interrupted(*args, **kwargs):
-        raise KeyboardInterrupt()
-
-    monkeypatch.setattr(migrate, "atomic_write_chunks", interrupted)
+    _interrupt_candidate_writes(monkeypatch)
 
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
@@ -1013,3 +1013,77 @@ def test_a_repository_with_a_header_migrate_did_not_write_does_not_get_the_fallb
     assert excinfo.value.code == "already-tool-created-adrs-exist"
     assert "migrationpattern_persisted" not in excinfo.value.data
     assert (tmp_path / "adr-config.adrplus").read_bytes() == config_before
+
+
+def test_migrate_never_adopts_an_empty_file_left_by_an_interrupted_create(tmp_path):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
+    empty = _write_legacy_file(tmp_path, "ADR002V01-second.md", "")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy)]
+    assert empty.read_bytes() == b""
+    assert any(empty.name in w and "0-byte" in w for w in result["warnings"])
+
+
+def test_migrate_migrates_a_file_holding_only_a_bom(tmp_path):
+    # Only a 0-byte file is an interrupted create's reservation.
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    bom_only = _write_legacy_file(tmp_path, "0001First.md", "")
+    bom_only.write_bytes(b"\xef\xbb\xbf")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(bom_only)]
+    assert not any("0-byte" in w for w in result["warnings"])
+
+
+def test_migrate_with_only_an_empty_file_has_nothing_to_migrate(tmp_path):
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    empty = _write_legacy_file(tmp_path, "ADR001V01-first.md", "")
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "no-eligible-files-to-migrate"
+    assert empty.read_bytes() == b""
+    assert any(empty.name in w for w in excinfo.value.warnings)
+
+
+def test_migrate_warns_when_the_pattern_likely_misreads_the_names(tmp_path):
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="N00:04T04")
+    for name in ("0001-use-postgres.md", "0002-use-rest.md", "2024-roadmap.md"):
+        _write_legacy_file(tmp_path, name, "# x\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert len(result["migrated"]) == 3
+    assert any("start with a separator" in w for w in result["warnings"])
+    assert any("2024" in w and "far above" in w for w in result["warnings"])
+    assert "adrpy explore --path ." in migrate.describe()["description"]
+
+
+def test_the_redo_route_the_misread_warning_gives_after_migrate_works(tmp_path):
+    # After migrate the pattern can no longer change (the migrated files
+    # block it); restoring their content first, as the warning says,
+    # makes the change and a second migrate possible.
+    from adrpy.cli import config
+
+    tmp_path = _init_repo_with_pattern(tmp_path, pattern="N00:04T04")
+    legacy = _write_legacy_file(tmp_path, "0001-use-postgres.md", "# x\n")
+    _write_legacy_file(tmp_path, "0002-use-rest.md", "# y\n")
+    result = migrate.run(["--path", str(tmp_path)])
+    assert any("git checkout -- <file>" in w for w in result["warnings"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T05"])
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+
+    legacy.write_bytes(b"# x\n")
+    (tmp_path / "doc" / "adr" / "0002-use-rest.md").write_bytes(b"# y\n")
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T05"])
+    again = migrate.run(["--path", str(tmp_path)])
+
+    assert len(again["migrated"]) == 2
+    assert again["warnings"] == []

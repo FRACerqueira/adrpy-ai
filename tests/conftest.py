@@ -1,6 +1,7 @@
 import pytest
 
 from adrpy.cli import init, migrate
+from adrpy.core import install_config
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +29,9 @@ def _no_install_level_config_by_default(monkeypatch):
     fixtures rather than assuming this one already covers it."""
     monkeypatch.setattr(init, "read_install_config_text", lambda *args, **kwargs: None)
     monkeypatch.setattr(migrate, "read_install_config_text", lambda *args, **kwargs: None)
+    # `help`'s defaults preview reaches it through install_config's own
+    # resolve_effective_default_config_text, i.e. the module's own name.
+    monkeypatch.setattr(install_config, "read_install_config_text", lambda *args, **kwargs: None)
 
 
 # ---------------------------------------------------------------- make_repo --

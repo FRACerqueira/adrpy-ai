@@ -18,7 +18,7 @@ Writes each requested (provider, skill) pair in the shape that provider expects:
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
 | `--provider` | `-p` | no | string | Comma-separated list of providers to install for: claude, cursor, copilot, agentsmd. Defaults to 'all' (every bundled provider) when omitted -- or, with --target global, to every provider that has a global scope (claude). |
-| `--skill` | `-s` | no | string | Comma-separated list of skills to install: comment-audit, decision-log, pre-release-audit. Defaults to 'all' (every bundled skill) when omitted. |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to install: adrpy, decision-log, pre-release-audit. Defaults to 'all' (every bundled skill) when omitted. |
 | `--target` | `-t` | no | string | 'project' (default) writes under --path; 'global' writes under the user's own home directory (only meaningful for claude -- every other provider fails with usage-error under --target global). |
 | `--path` | -- | no | string | Repository root to install into. Defaults to '.'. Only meaningful for --target project. |
 | `--force` | `-f` | no | switch | Overwrites a 'foreign', 'drifted', or (agentsmd) 'malformed' file/block instead of skipping it. Presence-only: pass just '--force', not '--force true/false'. |

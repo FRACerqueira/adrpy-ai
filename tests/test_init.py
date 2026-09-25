@@ -17,11 +17,21 @@ def _default_config_text():
     return resources.files("adrpy.resources").joinpath("default_repo_config.json").read_text(encoding="utf-8")
 
 
+def _as_written(config_text):
+    """`config_text` in the one form init writes the config in (the same
+    serializer `config` uses): the same fields, reformatted."""
+    from dataclasses import asdict
+
+    from adrpy.core.config import parse_repo_config, serialize_repo_config
+
+    return serialize_repo_config(asdict(parse_repo_config(config_text)))
+
+
 def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     result = init.run(["--path", str(tmp_path)])
 
     config_path = tmp_path / "adr-config.adrplus"
-    assert config_path.read_text(encoding="utf-8") == _default_config_text()
+    assert config_path.read_text(encoding="utf-8") == _as_written(_default_config_text())
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
     # No --seed, no --language, no install-level config on this machine
@@ -238,7 +248,11 @@ def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_alr
 def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_already_exists(tmp_path):
     """ADR004V02: the guard's own call site wiring, not just the shared
     function's internals -- --seed changing migrationpattern is exactly
-    as capable of breaking legacy-scheme recognition as `config` is."""
+    as capable of breaking legacy-scheme recognition as `config` is. The
+    legacy decision is a migrated one (a hand-written file with no header
+    does not block it)."""
+    from adrpy.core.header import DecisionRecord, build_header
+
     seed = json.loads(init.default_repo_config_text())
     seed["migrationpattern"] = "N00:04T04"
     seed_path = tmp_path / "seed.json"
@@ -246,7 +260,9 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
     init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
-    (adr_dir / "0001T01.md").write_bytes(b"Legacy content\n")
+    record = DecisionRecord(number=1, title="T01", version=0)
+    header = build_header(load_repo_config(tmp_path / "adr-config.adrplus"), record, migrated=True)
+    (adr_dir / "0001T01.md").write_bytes((header + "Legacy content\n").encode("utf-8"))
 
     seed["migrationpattern"] = "N00:05T05"
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
@@ -427,7 +443,7 @@ def test_init_with_seed_overwrites_using_custom_config(tmp_path):
 
     result = init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == json.dumps(custom)
+    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == _as_written(json.dumps(custom))
     assert (tmp_path / "decisions").is_dir()
     assert str(tmp_path / "decisions") in result["created"]
 
@@ -609,7 +625,7 @@ def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypat
     result = init.run(["--path", str(tmp_path)])
 
     config_path = tmp_path / "adr-config.adrplus"
-    assert config_path.read_text(encoding="utf-8") == install_text
+    assert config_path.read_text(encoding="utf-8") == _as_written(install_text)
     assert load_repo_config(config_path).activeplugins == ["AdrIndexer"]
     assert result["created"][0] == str(config_path)
 
@@ -746,3 +762,40 @@ def test_init_rejects_language_combined_with_seed(tmp_path):
 
     with pytest.raises(UsageError):
         init.run(["--path", str(tmp_path), "--seed", str(file_path), "--language", "pt-br"])
+
+
+def test_init_over_an_empty_config_says_it_is_empty(tmp_path):
+    # An interrupted init (no hard links) can leave a 0-byte config: init
+    # names that, instead of "already exists".
+    (tmp_path / "adr-config.adrplus").write_bytes(b"")
+
+    with pytest.raises(CommandError) as excinfo:
+        init.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "config-file-empty"
+    assert "remove it" in excinfo.value.detail and "init" in excinfo.value.detail
+
+
+@pytest.mark.parametrize("source", ["default", "language", "seed"])
+def test_the_first_config_change_after_init_rewrites_only_the_changed_line(tmp_path, source):
+    # init writes the config in the same JSON form `config` rewrites it
+    # in, so the first change is a one-line diff, not a rewrite of every
+    # escaped character (\u003C...) of the template.
+    from adrpy.cli import config
+
+    args = ["--path", str(tmp_path)]
+    if source == "language":
+        args += ["--language", "pt-br"]
+    elif source == "seed":
+        seed_file = tmp_path / "seed.json"
+        seed_file.write_text(_default_config_text(), encoding="utf-8")
+        args += ["--seed", str(seed_file)]
+    init.run(args)
+    config_path = tmp_path / "adr-config.adrplus"
+    before = config_path.read_text(encoding="utf-8").splitlines()
+
+    config.run(["--path", str(tmp_path), "--lenseq", "4"])
+
+    after = config_path.read_text(encoding="utf-8").splitlines()
+    assert len(before) == len(after)
+    assert [(old, new) for old, new in zip(before, after) if old != new] == [('  "lenseq": 3,', '  "lenseq": 4,')]

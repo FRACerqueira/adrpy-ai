@@ -1,4 +1,0 @@
-{
-  "name": "comment-audit",
-  "description": "Audit every comment and doc-comment (XML doc, docstring, JSDoc, etc.) across a project, batch by batch, and sanitize them -- strip references to intermediate work states (audit rounds, finding codes, completed/deleted action plans, \"as of this fix\"), trim narration and staleness, keep durable design references (ADRs, tickets, RFCs), never touch code logic. Use when asked to audit, clean up, sanitize, or review comments/XML docs across a project or repo, or phrases like \"comment audit\", \"clean up comments\", \"review comments and XML docs\", \"sanitize documentation\", \"comment pass\" at project scope. For a narrower pass limited to the current uncommitted diff, prefer a lighter ad hoc cleanup instead -- this skill is for a deliberate, whole-project sweep."
-}

@@ -460,7 +460,8 @@ def test_adrplus_v01_superseded_next_to_v02_accepted(tmp_path):
 
     assert [error["code"] for error in errors] == [FailureCodes.SUPERSEDED_NOT_LIVE]
     assert errors[0]["file"] == str(repo.paths[0])
-    assert errors[0]["hint"] == HINTS[FailureCodes.SUPERSEDED_NOT_LIVE]
+    # Built per error, with the literal rows (see the hint tests below).
+    assert "move the Superseded cell to the live member" in errors[0]["hint"]
 
 
 def test_adrplus_two_superseded_members_in_one_family(tmp_path):
@@ -668,3 +669,94 @@ def test_the_no_header_hint_says_migrate_always_needs_a_migrationpattern():
 
     assert "if the names need it" not in hint
     assert "migrate always needs one" in hint
+
+
+def test_an_empty_file_with_an_adr_name_is_no_header_and_says_it_is_empty(tmp_path):
+    # A 0-byte file with an ADR name is what an interrupted create leaves
+    # on a filesystem without hard links (its name reservation): the
+    # error says it is empty, and the hint says to remove it.
+    repo = make_repo(tmp_path)
+    (repo.folder / "ADR001V01-first.md").write_bytes(b"")
+
+    _snapshot, errors = check_repository(repo.folder, repo.config)
+
+    assert [error["code"] for error in errors] == [FailureCodes.NO_HEADER]
+    assert "0-byte" in errors[0]["detail"]
+    assert "interrupted create" in errors[0]["hint"] and "remove it" in errors[0]["hint"]
+
+
+# ------------------------------------------- hints with the literal cell --
+
+# Non-default labels: the literal row a hint gives must be the one this
+# repository's own header uses.
+_LABELS = {
+    "statussup": "Substituida",
+    "statusrej": "Rejeitada",
+    "headertitlestatussuperseded": "Substituicao",
+    "headertitlestatuschanged": "Alteracao",
+}
+
+
+def _replace_row(path, label, row):
+    lines = path.read_text(encoding="utf-8").split("\n")
+    index = next(i for i, line in enumerate(lines) if line.startswith(f"|{label}|"))
+    lines[index] = row
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def test_successor_without_predecessor_hint_gives_the_literal_rows_in_order_of_preference(tmp_path):
+    from datetime import date
+
+    from adrpy.core.header import status_row
+
+    repo = make_repo(tmp_path, config=_LABELS, files=[D(1, state="accepted"), D(2, suffix=1)])
+    snapshot, errors = check_repository(repo.folder, repo.config)
+    assert [error["code"] for error in errors] == [FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR]
+    successor = snapshot.by_number[2][0]
+    finish = status_row(repo.config, "Substituicao", "Superseded", successor.header.date_create, suffix=" : 002")
+    reject_row = status_row(repo.config, "Alteracao", "Rejected", date.today())
+
+    hint = errors[0]["hint"]
+
+    assert f"in {repo.paths[0]}, replace the row starting '|Substituicao|' with: {finish}" in hint
+    assert f"in {repo.paths[1]}, replace the row starting '|Alteracao|' with: {reject_row}" in hint
+    assert hint.index(finish) < hint.index(reject_row) < hint.index("remove it")
+    assert hint.endswith("Do not rename it: the --001 suffix is what links it to 001.")
+    # The preferred repair, applied literally, leaves a consistent repository.
+    _replace_row(repo.paths[0], "Substituicao", finish)
+    assert _errors(repo) == []
+
+
+def test_the_second_successor_without_predecessor_option_also_repairs_it(tmp_path):
+    from datetime import date
+
+    from adrpy.core.header import status_row
+
+    repo = make_repo(tmp_path, config=_LABELS, files=[D(1, state="accepted"), D(2, suffix=1)])
+
+    _replace_row(repo.paths[1], "Alteracao", status_row(repo.config, "Alteracao", "Rejected", date.today()))
+
+    assert _errors(repo) == []
+
+
+def test_superseded_not_live_hint_gives_the_literal_rows_to_move_the_cell(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        config=_LABELS,
+        files=[D(1, state="superseded", successor=3), D(1, version=2, state="accepted"), D(3, suffix=1)],
+    )
+    from adrpy.core.header import status_row
+
+    snapshot, errors = check_repository(repo.folder, repo.config)
+    assert [error["code"] for error in errors] == [FailureCodes.SUPERSEDED_NOT_LIVE]
+    superseded = snapshot.by_number[1][0]
+    moved = status_row(repo.config, "Substituicao", "Superseded", superseded.header.date_change, suffix=" : 003")
+
+    hint = errors[0]["hint"]
+
+    assert f"in {repo.paths[1]}, replace the row starting '|Substituicao|' with: {moved}" in hint
+    assert f"in {repo.paths[0]}, replace the row starting '|Substituicao|' with: |Substituicao||" in hint
+    assert hint.index(moved) < hint.index("Rejeitada")
+    _replace_row(repo.paths[1], "Substituicao", moved)
+    _replace_row(repo.paths[0], "Substituicao", "|Substituicao||")
+    assert _errors(repo) == []

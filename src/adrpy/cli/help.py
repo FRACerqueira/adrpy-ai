@@ -73,8 +73,8 @@ def run(args):
     for token in args:
         if token == "--full":
             full = True
-        elif token.startswith("--"):
-            raise UsageError(f"Unknown argument: {token}")
+        elif token.startswith("-"):
+            raise UsageError(f"Unknown argument: {token}", unknown=token)
         else:
             positional.append(token)
     if len(positional) > 1:

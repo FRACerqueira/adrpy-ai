@@ -3,7 +3,7 @@ ADR009V01."""
 
 from adrpy.core.args import parse_flags
 from adrpy.skills import installer
-from adrpy.skills.resources import SKILL_NAMES
+from adrpy.skills.resources import RETIRED_SKILL_NAMES, SKILL_NAMES
 
 
 def describe():
@@ -29,7 +29,11 @@ def describe():
                 "alias": "-s",
                 "type": "string",
                 "required": False,
-                "description": f"Comma-separated list of skills to report on: {', '.join(SKILL_NAMES)}. Defaults to 'all'.",
+                "description": (
+                    f"Comma-separated list of skills to report on: {', '.join(SKILL_NAMES)}, or one no longer shipped "
+                    f"that an older version installed ({', '.join(RETIRED_SKILL_NAMES)}). Defaults to 'all', which "
+                    "lists a no-longer-shipped skill only where it is still installed."
+                ),
             },
             {
                 "name": "path",

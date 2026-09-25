@@ -146,7 +146,11 @@ file. This applies even when the triage question above already
 produced an obvious "yes, log this" — approving that something is
 log-worthy is not the same as approving the write, exactly as with an
 ADR. The bar to say yes is normally fast here, since there is no design
-trade-off to weigh — but the ask itself is never skipped.
+trade-off to weigh — but the ask itself is never skipped, with one
+exception: when the user's own message explicitly asks to record this
+specific entry, that request is the approval for that one write (see the
+gate above) — fill only what they gave, ask only for missing required
+fields, and report exactly what was written.
 
 **Evaluate at the commit boundary, not from memory afterward.** The
 failure mode this guards against was never forgetting the rule exists —

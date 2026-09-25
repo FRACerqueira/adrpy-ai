@@ -8,6 +8,7 @@ default config already contains (confirmed true even with --language's
 own merge, since no language pack defines that field).
 """
 
+from dataclasses import asdict
 from pathlib import Path
 
 from adrpy.core.args import parse_flags
@@ -19,7 +20,9 @@ from adrpy.core.config import (
     default_repo_config_text_for_language,
     load_repo_config,
     parse_repo_config,
+    raise_config_file_empty,
     read_config_text,
+    serialize_repo_config,
 )
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.fs import cleanup_orphaned_temp_files_for, scan_tree
@@ -98,12 +101,12 @@ def describe():
                     "dependency is current-scheme-only, but a value already present in a legacy filename could "
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
-                    "exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
+                    "that already has a header (migrated) exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
                     "migration path -- for the four status fields, --separator and --prefix that means ANY recognized "
                     "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already "
                     "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
                     "config change itself -- a marker-protected repository is blocked exactly the same as one "
-                    "with none); for --migrationpattern it means a LEGACY-scheme decision specifically. "
+                    "with none); for --migrationpattern it means a migrated LEGACY-scheme decision specifically. "
                     "data.changed_fields on this error names only the "
                     "field(s) actually blocking, not necessarily every field the seed touched) -- or "
                     "status-or-separator-change-scan-incomplete if that check itself can't be completed (that "
@@ -193,6 +196,8 @@ def run(args):
     # Non-interactive by design (no wizard, no prompt to fall back on) --
     # refuse cleanly when no --seed is given to replace the config.
     if config_already_existed and seed_arg is None:
+        if read_config_text(config_path) == "":
+            raise_config_file_empty(config_path)
         raise CommandError(FailureCodes.CONFIG_ALREADY_EXISTS, f"Configuration file already exists at: {config_path}")
 
     # ADR002V01: an install-level config, when present, is an implicit
@@ -325,14 +330,14 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     # either folder's real, resolved location is knowable.
     reject_aliased_repo_folders(target, config)
 
-    # atomic_write_text normalizes to this host's line separator (the real
-    # terminator is host-OS-dependent, not fixed) -- config_text is
-    # otherwise written verbatim, never re-serialized from `config`.
-    # A fresh bootstrap creates the config exclusively: one that appeared
-    # since the check above is refused, not overwritten. --seed over an
-    # existing config is an intended overwrite.
+    # Written in the one form `config` rewrites it in
+    # (serialize_repo_config), whatever the source's own formatting, so a
+    # later change is a diff of its own lines only. A fresh bootstrap
+    # creates the config exclusively: one that appeared since the check
+    # above is refused, not overwritten. --seed over an existing config is
+    # an intended overwrite.
     try:
-        attempts = atomic_write_text(config_path, config_text, exclusive=old_config is None)
+        attempts = atomic_write_text(config_path, serialize_repo_config(asdict(config)), exclusive=old_config is None)
     except FileExistsError as error:
         raise CommandError(
             FailureCodes.CONFIG_ALREADY_EXISTS,

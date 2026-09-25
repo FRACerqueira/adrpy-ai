@@ -18,7 +18,7 @@ Deletes each requested (provider, skill) pair -- for agentsmd, only that skill's
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
 | `--provider` | `-p` | no | string | Comma-separated list of providers to remove from: claude, cursor, copilot, agentsmd. Defaults to 'all' -- or, with --target global, to every provider that has a global scope (claude). |
-| `--skill` | `-s` | no | string | Comma-separated list of skills to remove: comment-audit, decision-log, pre-release-audit. Defaults to 'all'. |
+| `--skill` | `-s` | no | string | Comma-separated list of skills to remove: adrpy, decision-log, pre-release-audit, or one no longer shipped that an older version installed (comment-audit). Defaults to 'all', which covers both. |
 | `--target` | `-t` | no | string | 'project' (default) or 'global' (claude only -- every other provider fails with usage-error). |
 | `--path` | -- | no | string | Repository root to remove from. Defaults to '.'. Only meaningful for --target project. |
 | `--force` | `-f` | no | switch | Removes a 'drifted', 'foreign', or (agentsmd) 'malformed' or 'indented' file/block instead of skipping it. Presence-only. |
@@ -38,7 +38,10 @@ Deletes each requested (provider, skill) pair -- for agentsmd, only that skill's
 ## Example
 
 ```bash
-adrpy-skills remove --skill comment-audit --provider copilot
+adrpy-skills remove --skill pre-release-audit --provider copilot
+
+# Remove the no-longer-shipped comment-audit skill an older version installed
+adrpy-skills remove --skill comment-audit
 ```
 
 ---

@@ -6,7 +6,10 @@ shared doc gets."""
 import json
 from importlib import resources
 
-SKILL_NAMES = ("comment-audit", "decision-log", "pre-release-audit")
+SKILL_NAMES = ("adrpy", "decision-log", "pre-release-audit")
+# No longer shipped: install refuses them, but remove and list still know
+# them, so what an older version installed can be found and removed.
+RETIRED_SKILL_NAMES = ("comment-audit",)
 
 
 def _read_optional(skill_name, filename):

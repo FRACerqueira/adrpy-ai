@@ -434,10 +434,12 @@ def _expand_problem(names, universe, flag):
     return None
 
 
-def _expand_all(providers, skills, scope=None):
+def _expand_all(providers, skills, scope=None, retired=False):
     """Validates --provider, --skill and (when given) --target together,
     reporting every problem in one usage-error instead of stopping at the
-    first flag."""
+    first flag. With `retired`, --skill also accepts (and 'all' also
+    covers) the skills an older version shipped."""
+    skill_universe = resources.SKILL_NAMES + (resources.RETIRED_SKILL_NAMES if retired else ())
     target_problem = None
     if scope is not None and scope not in ("project", "global"):
         target_problem = f"Unknown --target value: {scope!r}. Valid values: global, project."
@@ -455,7 +457,7 @@ def _expand_all(providers, skills, scope=None):
         problem
         for problem in (
             _expand_problem(providers, PROVIDERS, "--provider"),
-            _expand_problem(skills, resources.SKILL_NAMES, "--skill"),
+            _expand_problem(skills, skill_universe, "--skill"),
             target_problem,
         )
         if problem
@@ -463,7 +465,7 @@ def _expand_all(providers, skills, scope=None):
     if problems:
         raise UsageError(" ".join(problems))
     expand = lambda names, universe: list(universe) if names == ["all"] else list(dict.fromkeys(names))  # noqa: E731
-    return expand(providers, PROVIDERS), expand(skills, resources.SKILL_NAMES)
+    return expand(providers, PROVIDERS), expand(skills, skill_universe)
 
 
 def _require_target_dir(target_dir, scope):
@@ -694,7 +696,7 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
 
 
 def remove(target_dir, providers, skills, scope, force, allow_external_links=False):
-    provider_names, skill_names = _expand_all(providers, skills, scope)
+    provider_names, skill_names = _expand_all(providers, skills, scope, retired=True)
     _validate_scope(provider_names, scope)
     _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
@@ -814,7 +816,7 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
 
 
 def list_installed(target_dir, providers, skills):
-    provider_names, skill_names = _expand_all(providers, skills)
+    provider_names, skill_names = _expand_all(providers, skills, retired=True)
     _require_target_dir(target_dir, "project")
     rows = []
 
@@ -879,4 +881,7 @@ def list_installed(target_dir, providers, skills):
                     }
                 )
 
+    if skills == ["all"]:
+        # A retired skill is listed under 'all' only where something of it is still on disk.
+        rows = [row for row in rows if row["skill"] not in resources.RETIRED_SKILL_NAMES or row["installed"]]
     return {"skills": rows, "warnings": []}

@@ -1,0 +1,4 @@
+{
+  "name": "adrpy",
+  "description": "How to work on Architecture Decision Records (ADRs) in a repository managed by the adrpy CLI (it has an adr-config.adrplus file) -- create, approve, reject, undo, version, revise, supersede or migrate a decision, repair a failing adrpy check, or change the ADR config -- always through adrpy commands, never by renaming, hand-writing or hand-editing ADR files. Use for any ADR or decision-record task in a repository that has adr-config.adrplus."
+}

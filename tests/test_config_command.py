@@ -1166,3 +1166,138 @@ def test_a_guard_refusal_does_not_leave_behind_the_folderadr_it_created_to_scan(
 
     assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
     assert not (tmp_path / "doc" / "adr").exists()
+
+
+class _Crash(BaseException):
+    """Anything that is not a CommandError (not KeyboardInterrupt, which
+    would stop the whole test session if it escaped)."""
+
+
+@pytest.mark.parametrize("existing", [None, "a"])
+def test_a_refused_config_removes_every_folder_it_created_and_none_that_existed(tmp_path, existing):
+    import shutil
+
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--folderadr", "a/b/c"])
+    shutil.rmtree(tmp_path / "a")
+    if existing:
+        (tmp_path / existing).mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "ADR001V01-junk.md").write_text("junk\n", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--folderadr", "other"])
+
+    assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
+    assert (tmp_path / "a").exists() == bool(existing)
+    assert not (tmp_path / "a" / "b").exists()
+
+
+def test_any_failure_of_the_guard_removes_the_folder_it_created(tmp_path, monkeypatch):
+    import shutil
+
+    tmp_path = _init_repo(tmp_path)
+    shutil.rmtree(tmp_path / "doc")
+
+    def crashing_guard(*_args, **_kwargs):
+        raise _Crash()
+
+    monkeypatch.setattr(config, "validate_config_change", crashing_guard)
+
+    with pytest.raises(_Crash):
+        config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert not (tmp_path / "doc").exists()
+
+
+def test_a_refusal_keeps_a_created_folder_that_received_content(tmp_path, monkeypatch):
+    import shutil
+
+    tmp_path = _init_repo(tmp_path)
+    shutil.rmtree(tmp_path / "doc" / "adr")
+
+    def guard_while_someone_writes(*_args, **_kwargs):
+        (tmp_path / "doc" / "adr" / "notes.txt").write_text("someone else's\n", encoding="utf-8")
+        raise CommandError("status-or-separator-change-blocked-by-existing-decisions", "refused")
+
+    monkeypatch.setattr(config, "validate_config_change", guard_while_someone_writes)
+
+    with pytest.raises(CommandError):
+        config.run(["--path", str(tmp_path), "--separator", "_"])
+
+    assert (tmp_path / "doc" / "adr" / "notes.txt").exists()
+
+
+@pytest.mark.parametrize("new_pattern", ["N00:04T05", ""])
+def test_a_wrong_migrationpattern_can_be_fixed_while_no_legacy_decision_is_migrated(tmp_path, new_pattern):
+    # Owner decision: only a LEGACY decision that already has a header
+    # (migrated) blocks a migrationpattern change. Hand-written files the
+    # pattern merely matches by name are not decisions yet: fixing (or
+    # clearing) a wrong pattern before migrate must be possible.
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    adr_dir = tmp_path / "doc" / "adr"
+    (adr_dir / "0001-use-postgres.md").write_bytes(b"# Use Postgres\n")
+    (adr_dir / "0002-use-rest.md").write_bytes(b"# Use REST\n")
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", new_pattern])
+
+    assert result["updated_fields"] == ["migrationpattern"]
+    assert config.run(["--path", str(tmp_path)])["config"]["migrationpattern"] == new_pattern
+
+
+@pytest.mark.parametrize("new_pattern", ["N00:04T05", ""])
+def test_a_migrated_legacy_decision_still_blocks_a_migrationpattern_change(tmp_path, new_pattern):
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+    _write_legacy_file(tmp_path, "0001-use-postgres.md")
+    (tmp_path / "doc" / "adr" / "0002-use-rest.md").write_bytes(b"# Use REST\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--migrationpattern", new_pattern])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data == {"changed_fields": ["migrationpattern"], "existing_decisions": 1}
+
+
+def _legacy_names(tmp_path):
+    adr_dir = tmp_path / "doc" / "adr"
+    adr_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("0001-use-postgres.md", "0002-use-rest.md", "2024-roadmap.md"):
+        (adr_dir / name).write_bytes(b"# x\n")
+    return adr_dir
+
+
+def test_setting_migrationpattern_previews_what_it_recognizes_and_flags_a_likely_wrong_pattern(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = _legacy_names(tmp_path)
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
+
+    assert result["migrationpattern_preview"] == [
+        {"file": str(adr_dir / "0001-use-postgres.md"), "number": 1, "version": 0, "title": "-use-postgres"},
+        {"file": str(adr_dir / "0002-use-rest.md"), "number": 2, "version": 0, "title": "-use-rest"},
+        {"file": str(adr_dir / "2024-roadmap.md"), "number": 2024, "version": 0, "title": "-roadmap"},
+    ]
+    assert any("start with a separator" in w and "T05" in w for w in result["warnings"])
+    assert any("2024" in w and "far above" in w for w in result["warnings"])
+
+
+def test_a_right_migrationpattern_previews_without_warnings(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+    adr_dir = tmp_path / "doc" / "adr"
+    (adr_dir / "0001-use-postgres.md").write_bytes(b"# x\n")
+
+    result = config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T05"])
+
+    assert [entry["title"] for entry in result["migrationpattern_preview"]] == ["use-postgres"]
+    assert result["warnings"] == []
+
+
+def test_migrationpattern_help_explains_the_syntax_and_points_at_the_explore_preview():
+    info = config.describe()
+    argument = next(a for a in info["arguments"] if a["name"] == "migrationpattern")
+
+    assert "'N00:04T05'" in argument["description"] and "`0001-title.md`" in argument["description"]
+    assert "adrpy explore --path ." in info["description"]

@@ -14,6 +14,7 @@ most a temp file, which `cleanup_orphaned_temp_files` removes later.
 
 import errno
 import glob
+import hashlib
 import os
 import re
 import stat
@@ -83,6 +84,16 @@ def read_bounded(path, max_bytes, chunk_size):
     return b"".join(chunks)
 
 
+def is_zero_bytes(path):
+    """True for a 0-byte file, what an interrupted create's reservation
+    leaves (a file holding only a BOM is not one). False when it cannot
+    be read: the caller's own read reports that."""
+    try:
+        return os.stat(path).st_size == 0
+    except OSError:
+        return False
+
+
 def unlink_with_retry(path):
     """Deletes `path` (already absent is fine), retrying a transient
     PermissionError with the write side's budget and exponential backoff
@@ -102,20 +113,25 @@ def unlink_with_retry(path):
 def _discard(temp_path):
     """Best-effort removal of a temp file this module created. A failure
     here never replaces the error that led to it; whatever is left is an
-    orphan the next sweep removes."""
+    orphan the next sweep removes. Returns whether the file is gone."""
     try:
         temp_path.unlink(missing_ok=True)
     except OSError:
-        pass
+        return False
+    return True
 
 
 @dataclass(frozen=True)
 class Prepared:
-    """A complete temp file waiting to be committed onto `path`."""
+    """A complete temp file waiting to be committed onto `path`, with the
+    sha256 `digest` and `size` of the bytes written to it (see
+    write_landed)."""
 
     path: Path
     temp_path: Path
     attempts: int
+    digest: bytes
+    size: int
 
 
 def prepare_write(path, data):
@@ -130,21 +146,44 @@ def prepare_write(path, data):
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
 
     def _write_temp():
+        # A fresh digest per attempt: a retry rewrites the temp from the start.
+        digest = hashlib.sha256()
+        size = 0
         try:
             with open(temp_path, "wb") as handle:
-                if callable(data):
-                    for chunk in data():
-                        handle.write(chunk)
-                else:
-                    handle.write(data)
+                for chunk in data() if callable(data) else (data,):
+                    handle.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
         except BaseException:
             _discard(temp_path)
             raise
+        return digest.digest(), size
 
-    _, attempts = retry_on_permission(
+    (digest, size), attempts = retry_on_permission(
         _write_temp, attempts=RETRY_ATTEMPTS, delay=RETRY_DELAY_SECONDS, exponential=True
     )
-    return Prepared(path=path, temp_path=temp_path, attempts=attempts)
+    return Prepared(path=path, temp_path=temp_path, attempts=attempts, digest=digest, size=size)
+
+
+def write_landed(prepared):
+    """True when `prepared.path` now holds exactly the bytes prepared for
+    it. An interrupt (Ctrl+C) can reach Python right after the rename or
+    replace that commits a write has returned -- still inside
+    commit_write, or before its caller records the write -- so a caller
+    that reports what it wrote decides it from the disk: a step counts as
+    applied when this is True. False when the target cannot be read
+    (the caller then keeps its "not written" answer)."""
+    try:
+        if Path(prepared.path).stat().st_size != prepared.size:
+            return False
+        digest = hashlib.sha256()
+        with Path(prepared.path).open("rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.digest() == prepared.digest
 
 
 def discard_write(prepared):
@@ -162,12 +201,20 @@ def _copy_exclusive(source, target):
     atomic step. A crash in between leaves at most that empty file (the
     repository validator reports it: no header) and the temp; never a
     truncated decision. A failure before the replace removes the
-    reservation, so a retry does not take it for someone else's file."""
+    reservation, so a retry does not take it for someone else's file;
+    when it cannot be removed, a PermissionError (which commit_write
+    would retry, into that reservation) becomes an OSError naming it."""
     os.close(os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
     try:
         os.replace(source, target)
-    except BaseException:
-        _discard(target)
+    except BaseException as error:
+        if not _discard(target) and isinstance(error, PermissionError):
+            raise OSError(
+                errno.EIO,
+                f"the write failed ({error}) and the empty file reserving its name could not be removed; "
+                "remove it by hand",
+                str(target),
+            ) from error
         raise
 
 
@@ -217,6 +264,37 @@ def write_prepared(path, data, exclusive=False):
     took together: 1 when neither retried."""
     prepared = prepare_write(path, data)
     return prepared.attempts + commit_write(prepared, exclusive=exclusive) - 1
+
+
+def make_dirs(folder):
+    """Creates `folder` and its missing parents. Returns the highest
+    folder this call created, None when `folder` already existed -- for
+    remove_created_dirs."""
+    folder = Path(folder)
+    top = None
+    current = folder
+    while not current.exists() and current.parent != current:
+        top = current
+        current = current.parent
+    folder.mkdir(parents=True, exist_ok=True)
+    return top
+
+
+def remove_created_dirs(folder, top):
+    """Undoes make_dirs: removes `folder` and its parents up to `top`,
+    bottom-up, stopping at the first one that is not empty (or cannot be
+    removed). Nothing when `top` is None."""
+    if top is None:
+        return
+    current = Path(folder)
+    while True:
+        try:
+            current.rmdir()
+        except OSError:
+            return
+        if current == top:
+            return
+        current = current.parent
 
 
 @dataclass(frozen=True)
@@ -424,7 +502,13 @@ def _remove_orphans(candidates, max_age_seconds, warnings):
     skipped = []
     for candidate in candidates:
         try:
-            age = now - candidate.stat().st_mtime
+            # Only a regular file is a temp this module wrote: a symlink
+            # or junction carrying such a name is left alone, and never
+            # aged by what it points to.
+            info = candidate.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            age = now - info.st_mtime
         except FileNotFoundError:
             # Gone since the scan listed it -- typically a concurrent write
             # finishing its own os.replace. Nothing left to clean up.

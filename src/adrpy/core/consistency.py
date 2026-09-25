@@ -8,7 +8,9 @@ tool itself writes, plus the migrated shapes). `check_repository`
 returns the snapshot with every broken invariant it finds;
 `validate_repository` raises repository-inconsistent when there is any.
 
-The invariants, one error code each (HINTS has a repair hint per code):
+The invariants, one error code each (HINTS has a repair hint per code;
+successor-without-predecessor and superseded-not-live get theirs built
+per error, with the literal header rows to write):
 
 - header: merge-conflict markers in the 12 header lines are reported
   first, and alone (a supersede link to or from such a file is not also
@@ -36,9 +38,15 @@ newer members that are all Rejected not counting.
 from dataclasses import dataclass
 
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.fs import scan_tree
+from adrpy.core.fs import is_zero_bytes, scan_tree
 from adrpy.core.family import is_successor, locking_member
-from adrpy.core.header import describe_header_error, has_header_shape, parse_header, read_header_lines_with_report
+from adrpy.core.header import (
+    describe_header_error,
+    has_header_shape,
+    parse_header,
+    read_header_lines_with_report,
+    status_row,
+)
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.text import ascii_digits_int
 
@@ -76,7 +84,8 @@ HINTS = {
         "by hand, keeping one version of each of the 12 header lines, then run adrpy check again."
     ),
     FailureCodes.NO_HEADER: (
-        "The file has an ADR name but no header. If it is a decision written before adopting the tool and "
+        "The file has an ADR name but no header. If it is empty (detail says 0-byte file), it was left by an "
+        "interrupted create: remove it. If it is a decision written before adopting the tool and "
         "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
         "new; set migrationpattern with adrpy config first: migrate always needs one). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
         "created), rename it so its name is not an ADR name, or remove it."
@@ -217,14 +226,80 @@ def _status_cells(header):
     return f"Created: {created}; Changed: {changed}; Superseded: {superseded}."
 
 
-def _error(code, path, related=(), detail=None):
+def _error(code, path, related=(), detail=None, hint=None):
     return {
         "code": code,
         "file": str(path),
         "related_files": sorted(str(item) for item in related),
         "detail": detail,
-        "hint": HINTS[code],
+        "hint": hint or HINTS[code],
     }
+
+
+def _replace_row(path, label, row):
+    return f"in {path}, replace the row starting '|{label}|' with: {row}"
+
+
+def _numbered(options):
+    return "; ".join(f"{index}) {option}" for index, option in enumerate(options, 1))
+
+
+def _can_carry_superseded(decision):
+    # Only an Accepted decision (or a migrated placeholder) is ever marked
+    # Superseded.
+    return decision is not None and decision.state in (ACCEPTED, PLACEHOLDER)
+
+
+def _successor_without_predecessor_hint(config, successor, family):
+    """The repairs of a successor nothing points back at, most preferred
+    first, each with the literal row to write."""
+    number = f"{successor.number:0{config.lenseq}d}"
+    predecessor = f"{successor.name.superseded_from:0{config.lenseq}d}"
+    known = [d for d in family if d.state is not None and d.state != REJECTED]
+    live = max(known, key=lambda d: d.key) if known else None
+    options = []
+    if _can_carry_superseded(live):
+        row = status_row(
+            config, config.headertitlestatussuperseded, "Superseded", successor.header.date_create, suffix=f" : {number}"
+        )
+        options.append(f"finish the supersede: {_replace_row(live.path, config.headertitlestatussuperseded, row)}")
+    rejected = status_row(config, config.headertitlestatuschanged, "Rejected", None)
+    options.append(f"drop this successor: {_replace_row(successor.path, config.headertitlestatuschanged, rejected)}")
+    options.append("remove it if it was just created from the template")
+    sep = config.separator * 2
+    return (
+        f"A successor that is not Rejected has no member of family {predecessor} whose Superseded cell points back "
+        "at it, usually a supersede (or a reject) that stopped halfway. By hand (commands refuse this repository), "
+        f"in order of preference: {_numbered(options)}. Do not rename it: the {sep}{predecessor} suffix is what "
+        f"links it to {predecessor}."
+    )
+
+
+def _superseded_not_live_hint(config, decision, blocker):
+    """The repairs of a Superseded cell on a member that is not the live
+    one, most preferred first, each with the literal row(s) to write."""
+    label = config.headertitlestatussuperseded
+    options = []
+    if _can_carry_superseded(blocker):
+        moved = status_row(
+            config, label, "Superseded", decision.header.date_change, suffix=f" : {decision.header.superseded_by_file}"
+        )
+        options.append(
+            f"move the Superseded cell to the live member: {_replace_row(blocker.path, label, moved)}, "
+            f"and {_replace_row(decision.path, label, status_row(config, label, None, None))}"
+        )
+    rejected = status_row(config, config.headertitlestatuschanged, "Rejected", None)
+    options.append(f"drop the newer member: {_replace_row(blocker.path, config.headertitlestatuschanged, rejected)}")
+    return (
+        "A Superseded decision is not the live member of its family: a newer member that is not Rejected "
+        f"(related_files) locks it. By hand (commands refuse this repository), in order of preference: "
+        f"{_numbered(options)}."
+        + (
+            ""
+            if _can_carry_superseded(blocker)
+            else " Only an Accepted member can carry the Superseded cell, so it cannot move to the newer one."
+        )
+    )
 
 
 def _read_decisions(scan, config, errors):
@@ -251,7 +326,8 @@ def _read_decisions(scan, config, errors):
                 if has_header_shape(lines):
                     errors.append(_error(FailureCodes.INVALID_HEADER, path, detail=describe_header_error(header)))
                 else:
-                    errors.append(_error(FailureCodes.NO_HEADER, path))
+                    detail = "0-byte file (most likely left by an interrupted create)." if not lines and is_zero_bytes(path) else None
+                    errors.append(_error(FailureCodes.NO_HEADER, path, detail=detail))
             else:
                 state = derive_state(header)
                 if state is None:
@@ -283,7 +359,7 @@ def _live_blocker(decision, family):
     return None if blocker is None else blocker[2]
 
 
-def _check_family(family, errors):
+def _check_family(family, config, errors):
     for state, duplicate_code, not_live_code in (
         (PROPOSED, FailureCodes.PENDING_DUPLICATE, FailureCodes.PENDING_NOT_LIVE),
         (SUPERSEDED, FailureCodes.SUPERSEDED_DUPLICATE, FailureCodes.SUPERSEDED_NOT_LIVE),
@@ -295,7 +371,11 @@ def _check_family(family, errors):
         for member in members:
             blocker = _live_blocker(member, family)
             if blocker is not None:
-                errors.append(_error(not_live_code, member.path, [blocker]))
+                hint = None
+                if state == SUPERSEDED:
+                    blocking = next(d for d in family if d.path == blocker)
+                    hint = _superseded_not_live_hint(config, member, blocking)
+                errors.append(_error(not_live_code, member.path, [blocker], hint=hint))
     rejected_successors = [d.path for d in family if d.state == REJECTED and is_successor(d.name)]
     if rejected_successors:
         for member in family:
@@ -303,7 +383,7 @@ def _check_family(family, errors):
                 errors.append(_error(FailureCodes.REJECTED_SUCCESSOR_FAMILY_NOT_FINAL, member.path, rejected_successors))
 
 
-def _check_supersede(decisions, by_number, errors):
+def _check_supersede(decisions, by_number, config, errors):
     # A file with merge-conflict markers keeps its name (and number) but
     # has no known state; the supersede links it may complete are not
     # reported as broken while the conflict exists (the conflict is).
@@ -341,8 +421,67 @@ def _check_supersede(decisions, by_number, errors):
             if not pointing and any(d.number == predecessor for d in conflicted):
                 continue
             if not pointing:
-                related = [d.path for d in by_number.get(predecessor, ())]
-                errors.append(_error(FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR, successor.path, related))
+                family = by_number.get(predecessor, ())
+                errors.append(
+                    _error(
+                        FailureCodes.SUCCESSOR_WITHOUT_PREDECESSOR,
+                        successor.path,
+                        [d.path for d in family],
+                        hint=_successor_without_predecessor_hint(config, successor, family),
+                    )
+                )
+
+
+def unrecognized_decision_like_warning(scan, config):
+    """The warning for `.md` files of `scan` that have no ADR name but
+    look like decisions (the name starts with a digit, as in
+    `0001-use-x.md`) -- written before adrpy, and invisible to every rule
+    until migrationpattern names them. None when there are none (a
+    README.md or INDEX.md never counts)."""
+    if scan is None:
+        return None
+    names = sorted(
+        path.name
+        for path in scan.markdown
+        if path.name[:1].isascii() and path.name[:1].isdigit() and parse_any_filename(path.name, config) is None
+    )
+    if not names:
+        return None
+    found = f"{len(names)} .md file(s) in folderadr are not recognized: {', '.join(names)}."
+    if _has_tool_created_decision(scan, config):
+        # migrate refuses here (already-tool-created-adrs-exist).
+        return (
+            f"{found} If they are decisions written before adrpy: migrate does not run in a repository that "
+            "already has decisions the tool created, so each one needs a header by hand (copy one from a "
+            "decision the tool created) once migrationpattern names it -- until then every command refuses "
+            "the repository (no-header)."
+        )
+    pattern = (
+        f"migrationpattern ('{config.migrationpattern}') does not match them: fix it"
+        if config.migrationpattern
+        else "set migrationpattern"
+    )
+    return (
+        f"{found} If they are decisions written before adrpy, {pattern} with `adrpy config --migrationpattern` "
+        "(its result previews what it reads from each name, as `adrpy explore --path .` does afterwards) and "
+        "run `adrpy migrate`."
+    )
+
+
+def _has_tool_created_decision(scan, config):
+    """Whether a file of `scan` with an ADR name has a valid header migrate
+    did not write (AdrPlus or adrpy)."""
+    for path in scan.markdown:
+        if parse_any_filename(path.name, config) is None:
+            continue
+        try:
+            lines, _encoding_repaired = read_header_lines_with_report(path)
+        except OSError:
+            continue
+        header = parse_header(lines, config)
+        if header.is_valid and not header.is_migrated:
+            return True
+    return False
 
 
 def check_repository(folder, config, scan=None):
@@ -364,8 +503,8 @@ def check_repository(folder, config, scan=None):
 
     _check_numbering(decisions, errors)
     for family in by_number.values():
-        _check_family(family, errors)
-    _check_supersede(decisions, by_number, errors)
+        _check_family(family, config, errors)
+    _check_supersede(decisions, by_number, config, errors)
 
     errors.sort(key=lambda error: (error["file"], error["code"]))
     return Snapshot(tuple(decisions), by_number, scan.excluded if scan is not None else ()), errors

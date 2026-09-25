@@ -126,6 +126,7 @@ _TOO_LONG_CODES = {
 # installconfig, not universal).
 SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_FILE_TOO_LARGE: "The config file exceeds the 64KB size limit.",
+    FailureCodes.CONFIG_FILE_EMPTY: "The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again.",
     FailureCodes.CONFIG_INVALID_ENCODING: "The config file's bytes are not valid UTF-8.",
     FailureCodes.CONFIG_INVALID_JSON: "The config file is not valid JSON, or its root is not a JSON object.",
     FailureCodes.CONFIG_MISSING_FIELD: "The config is missing one or more required fields.",
@@ -282,9 +283,30 @@ class RepoConfig:
     disableplugins: bool
 
 
+def serialize_repo_config(fields):
+    """The one JSON form adr-config.adrplus is written in (init, config,
+    migrate's migrationpattern persist-back): `fields` (a RepoConfig's
+    asdict, in schema order) with a 2-space indent and non-ASCII
+    characters kept as they are -- so a later change rewrites only its
+    own lines."""
+    return json.dumps(fields, indent=2, ensure_ascii=False)
+
+
 def load_repo_config(path):
     text = read_config_text(path)
+    if text == "":
+        raise_config_file_empty(path)
     return parse_repo_config(text)
+
+
+def raise_config_file_empty(path):
+    """A 0-byte adr-config.adrplus: what an init interrupted after
+    reserving the name leaves on a filesystem without hard links."""
+    raise CommandError(
+        FailureCodes.CONFIG_FILE_EMPTY,
+        f"{path} is empty (0 bytes), most likely left by an interrupted init: remove it and run adrpy init again.",
+        data={"file": str(path)},
+    )
 
 
 def default_repo_config_text():

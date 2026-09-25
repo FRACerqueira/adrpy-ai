@@ -27,6 +27,7 @@ Lists every command with its one-line summary, plus `defaults` (a short preview 
 | `unknown-command` | The named `command` doesn't match any registered command. |
 | `io-error` | The bare listing could not read this machine's install-level config (permission denied or similar). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

@@ -72,6 +72,12 @@ A file is a decision only when its name is an **ADR name**:
   to nothing, and no supersede rule reads it. Everything after a doubled
   separator is read as the suffix: a name where that part is not all
   digits, or with more than one doubled separator, is not an ADR name.
+  The suffix is read only after a title, that is, when a single separator
+  comes before the doubled one: `ADR002V01--001.md` has no title and is
+  not an ADR name.
+- The `.md` extension is compared case-insensitively (`ADR001V01-x.MD`
+  counts). The folder scan follows the platform's file-name case rule,
+  so on a case-sensitive file system only a lower-case `.md` is scanned.
 
 A legacy name (`0001-use-postgres.md`) is an ADR name only through the
 `migrationpattern` (see [`config`](commands/config.md)). Anything else --
@@ -98,7 +104,9 @@ What is validated:
 
 - every file with an ADR name (see above) anywhere under the decisions
   folder (`folderadr`), subdirectories included. A `.md` whose name is not
-  an ADR name is not a decision and is ignored;
+  an ADR name is not a decision and is ignored, except that `check` and
+  `explore` warn about one whose name starts with a digit (as in
+  `0001-use-x.md`), most likely a decision written before adrpy;
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
@@ -228,6 +236,14 @@ reported:
 (`lenseq-too-small-for-new-number`) last. A number that does not fit says
 which `adrpy config --lenseq` / `--lenversion` / `--lenrevision` widens
 it, or that the field is already at its maximum.
+
+`config` does not guard these three fields: narrowing `lenseq`,
+`lenversion` or `lenrevision` below a number already on disk succeeds,
+and `check` still passes (a wider number is still an ADR name). The
+mismatch shows up at the next command that numbers a new file -- `new`
+or `supersede` for `lenseq`, `version` for `lenversion`, `revise` for
+`lenrevision`. Only `init` (with or without `--seed`) checks the numbers
+already on disk against them.
 
 ## Family rules, in short
 
@@ -359,10 +375,14 @@ the install-level fallback, which it then saves into the repository's
 config. It needs one even when every file already has an ADR name (the
 ADR name is read first). The pattern also makes a decision of every
 other name it matches -- a dated note, now or added later -- so choose
-one that matches nothing else in the folder, and look at `explore`
-(`scheme: legacy`) before migrating. A pattern set by mistake can be
-changed or cleared (`adrpy config --migrationpattern ""`) only while no
-legacy-scheme decision exists: once one does, every change is refused
+one that matches nothing else in the folder, and look at
+`adrpy explore --path .` (`scheme: legacy`) before migrating. A pattern
+set by mistake can be changed or cleared (`adrpy config
+--migrationpattern ""`) only while no legacy-scheme decision with a valid
+header exists -- that is, one already migrated. A legacy name the pattern
+matches that has no header yet does not count: the pattern can still be
+fixed before `migrate` runs. Once a migrated legacy decision exists,
+every change is refused
 (`status-or-separator-change-blocked-by-existing-decisions`). `migrate` refuses the whole run, checking
 in this order:
 

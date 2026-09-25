@@ -9,7 +9,7 @@ not silently either.
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.consistency import check_repository
+from adrpy.core.consistency import check_repository, unrecognized_decision_like_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
 from adrpy.core.lifecycle import resolve_target_and_config
@@ -121,6 +121,9 @@ def run(args):
     # ever dropped silently from this report.
     warnings = []
     warning = excluded_candidate_warning(excluded)
+    if warning:
+        warnings.append(warning)
+    warning = unrecognized_decision_like_warning(scan, config)
     if warning:
         warnings.append(warning)
     if unreadable:

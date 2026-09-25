@@ -51,6 +51,7 @@ Creates a new major version of an Accepted or Rejected decision, status Proposed
 | `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

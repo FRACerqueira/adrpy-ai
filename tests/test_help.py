@@ -588,3 +588,35 @@ def test_an_adrpy_failure_carries_its_detail_on_stdout_and_the_same_text_on_stde
     assert out["code"] == "unknown-command"
     assert "frobnicate" in out["detail"]
     assert captured.err.strip() == out["detail"]
+
+
+def _main_json(capsys, argv):
+    capsys.readouterr()
+    code = main(argv)
+    return code, json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+@pytest.mark.parametrize("command", ["check", "new", "log", "help"])
+def test_a_command_followed_by_help_describes_that_command(capsys, command, flag):
+    expected = _main_json(capsys, ["help", command])
+
+    assert _main_json(capsys, [command, flag]) == expected
+    if command != "help":
+        assert _main_json(capsys, [command, "--path", ".", flag]) == expected
+
+
+def test_help_answers_any_dash_token_as_an_unknown_argument(capsys):
+    code, response = _main_json(capsys, ["help", "-x"])
+
+    assert code == EXIT_USAGE_ERROR
+    assert response == {"success": False, "code": "usage-error", "detail": "Unknown argument: -x"}
+
+
+def test_a_missing_required_flag_shows_an_example_and_where_to_read_more(capsys):
+    code, response = _main_json(capsys, ["check"])
+
+    assert code == EXIT_USAGE_ERROR
+    assert response["code"] == "usage-error"
+    assert "e.g. `adrpy check --path .`" in response["detail"]
+    assert "see `adrpy help check`" in response["detail"]

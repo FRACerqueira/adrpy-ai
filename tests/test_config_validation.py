@@ -92,15 +92,14 @@ def test_config_prepares_migrate_on_a_repository_not_yet_migrated(tmp_path):
     assert len(result["migrated"]) == 2
 
 
-def test_config_still_runs_its_own_guard_over_a_legacy_file_not_yet_migrated(tmp_path):
-    """no-header does not block config, but the guard itself still does:
-    changing migrationpattern would make the recognized legacy file
-    unrecognized."""
+def test_config_changes_migrationpattern_over_a_legacy_file_not_yet_migrated(tmp_path):
+    """no-header does not block config, and neither does the guard (owner
+    decision): a legacy file with no header is not a decision yet, so a
+    wrong migrationpattern can be fixed before migrate. A migrated one
+    still blocks it (tests/test_config_command.py)."""
     repo = make_repo(tmp_path, config={"migrationpattern": "N00:04T04"})
     (repo.folder / "0001T01.md").write_bytes(b"Legacy content\n")
 
-    with pytest.raises(CommandError) as excinfo:
-        config.run(["--path", str(repo.root), "--migrationpattern", "N00:05T05"])
+    result = config.run(["--path", str(repo.root), "--migrationpattern", "N00:05T05"])
 
-    assert excinfo.value.code != "repository-inconsistent"
-    assert "blocked-by-existing-decisions" in excinfo.value.code
+    assert result["updated_fields"] == ["migrationpattern"]

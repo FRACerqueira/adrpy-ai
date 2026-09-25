@@ -290,6 +290,14 @@ def _existing_entries(decision_log_dir, *, warnings=None):
     ]
 
 
+def check_entries(decision_log_dir, *, warnings=None):
+    """Raises what regenerate_index would raise for the files under
+    `decision_log_dir` (log-directory-contains-unrecognized-file,
+    log-scan-incomplete), without writing anything -- `log` runs it
+    before writing an entry of any classification."""
+    _existing_entries(decision_log_dir, warnings=warnings)
+
+
 def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_folderlog, *, target, warnings=None):
     """The folderlog counterpart to the folderadr check of core/lifecycle.py's
     validate_config_change (ADR007V01), which calls it -- changing
