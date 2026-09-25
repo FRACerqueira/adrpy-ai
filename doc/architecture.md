@@ -264,7 +264,9 @@ agent*, a different concern, for more than one provider (Claude Code,
 Cursor, GitHub Copilot, generic `AGENTS.md`) with genuinely different
 activation models, which AdrPlus has no equivalent of at all.
 `adrpy`'s own command surface never mentions `adrpy-skills`; installing or
-running it is entirely opt-in.
+running it is entirely opt-in. One of the shipped skills, `adrpy`, tells an
+agent to change decision files only through the CLI -- see
+[ADR011V01](adr/ADR011V01-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md).
 
 ### Module map
 
