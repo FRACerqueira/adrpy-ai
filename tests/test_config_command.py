@@ -1281,7 +1281,7 @@ def test_setting_migrationpattern_previews_what_it_recognizes_and_flags_a_likely
         {"file": str(adr_dir / "2024-roadmap.md"), "number": 2024, "version": 0, "title": "-roadmap"},
     ]
     assert any("start with a separator" in w and "T05" in w for w in result["warnings"])
-    assert any("2024" in w and "far above" in w for w in result["warnings"])
+    assert any("2024" in w and "far above" in w and "not a decision" in w for w in result["warnings"])
 
 
 def test_a_right_migrationpattern_previews_without_warnings(tmp_path):
@@ -1301,3 +1301,44 @@ def test_migrationpattern_help_explains_the_syntax_and_points_at_the_explore_pre
 
     assert "'N00:04T05'" in argument["description"] and "`0001-title.md`" in argument["description"]
     assert "adrpy explore --path ." in info["description"]
+
+
+def test_an_interrupt_while_previewing_a_migrationpattern_leaves_the_config_unchanged(tmp_path, monkeypatch):
+    # The preview is computed before the write: nothing that can fail
+    # runs after the config is on disk.
+    _init_repo(tmp_path)
+    (tmp_path / "doc" / "adr" / "0001-use-x.md").write_text("# x\n", encoding="utf-8")
+    before = (tmp_path / "adr-config.adrplus").read_bytes()
+    real_scan = config.scan_tree
+    calls = {"n": 0}
+
+    def interrupted_on_the_second_scan(folder):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt()
+        return real_scan(folder)
+
+    monkeypatch.setattr(config, "scan_tree", interrupted_on_the_second_scan)
+
+    with pytest.raises(KeyboardInterrupt):
+        config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T05"])
+
+    assert (tmp_path / "adr-config.adrplus").read_bytes() == before
+
+
+def test_a_folder_that_cannot_be_created_leaves_none_of_its_new_parents(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    real_mkdir = os.mkdir
+
+    def leaf_denied(path, *args, **kwargs):
+        # Denied only once its parents exist, as with an ACL on `a`.
+        if os.path.basename(os.fspath(path)) == "b" and os.path.isdir(os.path.dirname(os.fspath(path))):
+            raise PermissionError(13, "Permission denied", os.fspath(path))
+        return real_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "mkdir", leaf_denied)
+
+    with pytest.raises(CommandError):
+        config.run(["--path", str(tmp_path), "--folderadr", "zz/a/b"])
+
+    assert not (tmp_path / "zz").exists()

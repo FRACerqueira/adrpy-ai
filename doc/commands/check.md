@@ -11,7 +11,7 @@ Validates every decision in the repository and lists every inconsistency found.
 
 ## Description
 
-Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name starts with a digit) is named in `warnings`, on success or failure.
+Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only migrationpattern matches and that has no header once the repository has a decision with a valid header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names).
 
 ## Arguments
 

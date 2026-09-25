@@ -40,7 +40,7 @@ from adrpy.core.lifecycle import (
     validate_refdate_not_in_future,
 )
 from adrpy.core.security import reject_aliased_repo_folders, reject_embedded_delimiter, resolve_within
-from adrpy.core.fs import cleanup_orphaned_temp_files, commit_write, prepare_write, write_landed
+from adrpy.core.fs import cleanup_orphaned_temp_files, commit_write, landed_after_failure, prepare_write
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
 _STRUCTURED_FIELDS = ("front", "severity", "resolution")
@@ -360,7 +360,7 @@ def run(args):
         except BaseException as error:
             # An interrupt right after the rename that committed the
             # entry: decided from the disk (core/fs.write_landed).
-            if not write_landed(prepared):
+            if not landed_after_failure(prepared):
                 raise
             raise _interrupted_after_the_entry(file_path, error, warnings) from error
 

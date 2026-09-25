@@ -2,8 +2,13 @@
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.consistency import unrecognized_decision_like_warning, validate_repository
-from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
+from adrpy.core.consistency import (
+    check_repository,
+    inconsistent_repository,
+    unheadered_legacy_warning,
+    unrecognized_decision_like_warning,
+)
+from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.fs import scan_tree
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
 from adrpy.core.lifecycle import resolve_target_and_config
@@ -50,7 +55,9 @@ def describe():
             "Succeeds with the number of decisions when every rule holds; otherwise fails with "
             "repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, "
             "detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name "
-            "starts with a digit) is named in `warnings`, on success or failure."
+            "starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only "
+            "migrationpattern matches and that has no header once the repository has a decision with a valid "
+            "header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names)."
         ),
         "arguments": [
             {
@@ -83,12 +90,18 @@ def run(args):
     target, _config_path, config = resolve_target_and_config(path)
     folder = resolve_within(target, config.folderadr)
     scan = scan_tree(folder) if folder.is_dir() else None
-    warning = unrecognized_decision_like_warning(scan, config)
-    warnings = [warning] if warning else []
-    try:
-        snapshot = validate_repository(folder, config, scan=scan)
-    except CommandError as error:
+    snapshot, errors = check_repository(folder, config, scan)
+    warnings = [
+        warning
+        for warning in (
+            unrecognized_decision_like_warning(scan, config),
+            unheadered_legacy_warning(snapshot),
+        )
+        if warning
+    ]
+    if errors:
+        error = inconsistent_repository(errors)
         if warnings:
             error.warnings = warnings
-        raise
+        raise error
     return {"decisions": len(snapshot.decisions), "warnings": warnings}

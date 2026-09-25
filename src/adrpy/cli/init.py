@@ -24,11 +24,11 @@ from adrpy.core.config import (
     read_config_text,
     serialize_repo_config,
 )
+from adrpy.core.consistency import decision_names
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.fs import cleanup_orphaned_temp_files_for, scan_tree
 from adrpy.core.install_config import read_install_config_text
 from adrpy.core.lifecycle import resolve_target_and_config, validate_config_change
-from adrpy.core.naming import parse_any_filename
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import (
     attach_warnings,
@@ -359,7 +359,8 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
 def _max_existing_numbers(target, config, warnings=None):
     """Recognizes both naming schemes -- a legacy file's number must count
     too, or a shrunk lenseq could silently stop fitting it without this
-    check ever noticing.
+    check ever noticing -- through core/consistency.decision_names, so a
+    file the phase rule says is not a decision does not count.
 
     `warnings`, when given, reports any candidate excluded for escaping
     the folder -- same convention as explore/migrate."""
@@ -370,11 +371,8 @@ def _max_existing_numbers(target, config, warnings=None):
     max_number = max_version = max_revision = 0
     scan = scan_tree(folder)
     excluded = list(scan.excluded)
-    for candidate in scan.markdown:
-        found = parse_any_filename(candidate.name, config)
-        if found is None:
-            continue
-        _, parsed = found
+    names, _unheadered = decision_names(scan, config)
+    for parsed in (name.parsed for name in names):
         max_number = max(max_number, parsed.number)
         max_version = max(max_version, parsed.version)
         max_revision = max(max_revision, parsed.revision or 0)

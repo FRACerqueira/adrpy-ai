@@ -172,18 +172,35 @@ def write_landed(prepared):
     replace that commits a write has returned -- still inside
     commit_write, or before its caller records the write -- so a caller
     that reports what it wrote decides it from the disk: a step counts as
-    applied when this is True. False when the target cannot be read
-    (the caller then keeps its "not written" answer)."""
-    try:
+    applied when this is True. The read retries a transient
+    PermissionError like every other read. False when the target cannot
+    be read (the caller then keeps its "not written" answer)."""
+
+    def matches():
         if Path(prepared.path).stat().st_size != prepared.size:
             return False
         digest = hashlib.sha256()
         with Path(prepared.path).open("rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
                 digest.update(chunk)
+        return digest.digest() == prepared.digest
+
+    try:
+        return read_with_permission_retry(matches)
     except OSError:
         return False
-    return digest.digest() == prepared.digest
+
+
+def landed_after_failure(prepared):
+    """write_landed for a handler already reporting a failure (a Ctrl+C
+    or an error): a further Ctrl+C during the check leaves this one file
+    unconfirmed instead of escaping, so the handler still reports what it
+    had counted. Never used outside such a handler, where a Ctrl+C is the
+    user's first and must stop the command."""
+    try:
+        return write_landed(prepared)
+    except KeyboardInterrupt:
+        return False
 
 
 def discard_write(prepared):
@@ -269,27 +286,35 @@ def write_prepared(path, data, exclusive=False):
 def make_dirs(folder):
     """Creates `folder` and its missing parents. Returns the highest
     folder this call created, None when `folder` already existed -- for
-    remove_created_dirs."""
+    remove_created_dirs. A failure part-way (the parents created, the
+    folder itself refused) removes what this call created."""
     folder = Path(folder)
     top = None
     current = folder
     while not current.exists() and current.parent != current:
         top = current
         current = current.parent
-    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except BaseException:
+        remove_created_dirs(folder, top)
+        raise
     return top
 
 
 def remove_created_dirs(folder, top):
     """Undoes make_dirs: removes `folder` and its parents up to `top`,
     bottom-up, stopping at the first one that is not empty (or cannot be
-    removed). Nothing when `top` is None."""
+    removed); one that was never created is skipped. Nothing when `top`
+    is None."""
     if top is None:
         return
     current = Path(folder)
     while True:
         try:
             current.rmdir()
+        except FileNotFoundError:
+            pass
         except OSError:
             return
         if current == top:

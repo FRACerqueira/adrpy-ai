@@ -26,6 +26,7 @@ from adrpy.core.fs import (
     cleanup_orphaned_temp_files_for,
     commit_write,
     is_zero_bytes,
+    landed_after_failure,
     prepare_write,
     scan_tree,
     write_landed,
@@ -145,8 +146,9 @@ def describe():
             "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
             "touched. It is also refused as a whole when a scanned file has a damaged header, carries a "
             "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
-            " one; if any fails, data.results names every file's outcome. `adrpy explore --path .` previews "
-            "what the pattern reads from each name (number, version, title) before migrating; `warnings` flags a "
+            " one; if any fails, data.results names every file's outcome, and a re-run migrates the files still "
+            "without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern "
+            "reads from each name (number, version, title) without writing anything; `warnings` flags a "
             "title that starts with a separator or a number far above the others (a likely wrong pattern)."
         ),
         "arguments": [
@@ -193,9 +195,11 @@ def _report_persisted_pattern(persisted, warnings):
         if persisted["pattern"] is not None:
             error.data = {**(error.data or {}), "migrationpattern_persisted": persisted["pattern"]}
         raise
-    except KeyboardInterrupt as error:
+    except BaseException as error:
+        # Ctrl+C or anything unexpected (as core/lifecycle.commit_in_order
+        # does): what was already migrated is reported, not lost.
         in_flight = persisted.get("in_flight")
-        if in_flight is not None and write_landed(in_flight):
+        if in_flight is not None and landed_after_failure(in_flight):
             _record_migrated(persisted["results"], in_flight.path)
         data = {}
         if persisted["pattern"] is not None:
@@ -204,7 +208,8 @@ def _report_persisted_pattern(persisted, warnings):
             data["results"] = persisted["results"]
         if not data:
             raise
-        raise CommandError("interrupted", "Interrupted (Ctrl+C).", data=data, warnings=list(warnings)) from error
+        cause = "Ctrl+C" if isinstance(error, KeyboardInterrupt) else explain(error)
+        raise CommandError("interrupted", f"Interrupted ({cause}).", data=data, warnings=list(warnings)) from error
 
 
 def _record_migrated(results, candidate_path):
@@ -277,7 +282,7 @@ def run(args):
                 persisted["pattern"] = fallback_pattern
             except BaseException:
                 # Interrupted right after the replace that committed it.
-                if write_landed(prepared):
+                if landed_after_failure(prepared):
                     persisted["pattern"] = fallback_pattern
                 raise
             warning = retry_warning(attempts)
@@ -491,6 +496,7 @@ def run(args):
                 # CommandError is the title-validation check just above
                 # (a hostile legacy filename) -- same per-file treatment,
                 # not a whole-batch abort.
+                persisted["in_flight"] = None
                 results.append({"file": str(candidate_path), "status": "failed", "error": explain(error)})
 
         warnings.extend(

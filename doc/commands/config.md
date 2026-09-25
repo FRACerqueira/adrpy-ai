@@ -11,7 +11,7 @@ Reads or updates an existing repository's own `adr-config.adrplus`.
 
 ## Description
 
-With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); after setting it, `adrpy explore --path .` shows the same before `adrpy migrate`. `activeplugins` is never read or written.
+With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". `activeplugins` is never read or written.
 
 ## Arguments
 
@@ -20,7 +20,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `--path` | -- | yes | string | Repository root directory. |
 | `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
 | `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
-| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading; after setting it, `adrpy explore --path .` shows the same before `adrpy migrate`. An empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
+| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading. While the repository is not adopted yet (no file has a valid header migrate did not write, so migrate can still run), `adrpy check` (and every command that validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
 | `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--prefix` | -- | no | string | ASCII letters only, max 5 characters; every decision name starts with it (compared case-insensitively), so it is guarded like --separator. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--separator` | -- | no | string | One of ('-', '_', '.'). |
@@ -138,6 +138,18 @@ already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
 - `N04:04T13V10:02P00:03` reads `ADR-0007-v02-use-postgres.md` as decision 7,
   version 2, prefix `ADR`, title `use-postgres`.
 
+Setting the pattern writes the config. Preview one first, writing
+nothing, with `adrpy explore --path . --migrationpattern <pattern>`: its
+`migrationpattern_preview` is the list this command returns for the same
+pattern, with the same likely-misreading warnings. Before the repository
+is adopted, every file the pattern matches is a decision without a header,
+so `adrpy check` fails with `no-header` on each one until `adrpy migrate`
+runs. The repository is adopted once any file has a valid header `migrate`
+did not write (from then on `migrate` no longer runs); after that, a
+matched file without a header is not a decision: commands ignore it, and
+`check` and `explore` name it in `warnings` (see "ADR names" in
+[the lifecycle](../lifecycle.md)).
+
 An empty value (`--migrationpattern ""`) clears the pattern. Clearing is a
 change like any other: it is refused
 (`status-or-separator-change-blocked-by-existing-decisions`) while a
@@ -156,6 +168,10 @@ next command that numbers a new file (see "What each command requires" in
 ```bash
 # Read the current config
 adrpy config --path .
+
+# Preview a migration pattern first (writes nothing), then set it
+adrpy explore --path . --migrationpattern N00:04T05
+adrpy config --path . --migrationpattern N00:04T05
 
 # Update one field
 adrpy config --path . --lenrevision 2

@@ -35,7 +35,7 @@ Marks a Proposed decision (or a migrated placeholder) Rejected, after the same r
 | `interrupted` | Interrupted (Ctrl+C) after the predecessor's Superseded status was reverted but before this decision was marked Rejected -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). Once both are written, data.applied names both, data.pending is empty and there is no data.repair (the repository is consistent). What was written is read from the disk, so an interrupt right after a write counts it. An interrupt before the first write is reported without data. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
-| `filename-not-recognized` | --file's own name matches neither naming scheme. |
+| `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |

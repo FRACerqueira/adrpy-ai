@@ -11,13 +11,14 @@ Lists every decision file in the repository, on a best-effort basis.
 
 ## Description
 
-Lists every file under the decisions folder, recognized or not, and never refuses an inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's `header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) or `no-header`, with `header.invalid_reason` naming the parse failure for the last two.
+Lists every file under the decisions folder, recognized or not, and never refuses an inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's `header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) or `no-header`, with `header.invalid_reason` naming the parse failure for the last two. A file whose name only migrationpattern matches and that has no header is listed with `scheme` null (not a decision) once the repository has a decision with a valid header migrate did not write, and named in `warnings`. With --migrationpattern, the result also has `migrationpattern_preview` -- the list `adrpy config --migrationpattern` would return for that pattern (file, number, version, title of each file it recognizes), its likely-misreading warnings in `warnings` -- while writing nothing: the inventory and consistency.errors still read the repository's own config.
 
 ## Arguments
 
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
 | `--path` | `-p` | yes | string | Repository root directory (must contain adr-config.adrplus). |
+| `--migrationpattern` | -- | no | string | A migrationpattern to preview (same syntax as `adrpy config --migrationpattern`), read instead of the repository's own for `migrationpattern_preview` only; nothing is written. An invalid one fails with config-migrationpattern-invalid; an empty value is a usage error (there is nothing to preview). |
 
 ## Failure codes
 
@@ -76,7 +77,16 @@ Lists every file under the decisions folder, recognized or not, and never refuse
 ```bash
 # List every decision in the repository
 adrpy explore --path .
+
+# Preview what a migrationpattern would read from each name, writing nothing
+adrpy explore --path . --migrationpattern N00:04T05
 ```
+
+A legacy name (one only `migrationpattern` matches) without a header is
+listed with `scheme: null` and named in `warnings` once any file has a
+valid header `migrate` did not write: it is not a decision then (see "ADR names" in
+[the lifecycle](../lifecycle.md)). Before that, it is a decision with no
+header, listed with `scheme: legacy`.
 
 ---
 

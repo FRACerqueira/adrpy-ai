@@ -85,6 +85,30 @@ a README, an index, `2024-01-15-meeting.md`, a name without the prefix or
 without `V` -- is not a decision: validation and numbering ignore it
 (`explore` still lists it).
 
+A legacy name also depends on the repository's **phase**, decided on
+every scan of the folder: once any file with an ADR name (either scheme)
+has a valid header `migrate` did not write -- one the tool or AdrPlus
+created, or one copied by hand; from then on `migrate` no longer runs
+(`already-tool-created-adrs-exist`) -- a legacy name **without a header**
+is not a decision anywhere: validation, numbering, the config guards and
+`init`'s existing-number check ignore it, a command given it as `--file`
+refuses it (`filename-not-recognized`), `explore` lists it with
+`scheme: null`, and `check`, `explore` and every lifecycle command name it
+in `warnings` -- its number, read from the name, may already be a
+decision's, so rename it to a free number before giving it a header by
+hand. Before
+that (the repository not adopted yet), it is a decision with no header
+(`no-header`, until `migrate` runs), as a hand-written repository expects:
+headers `migrate` wrote do not end the adoption, so after a partial run
+the files left still block every lifecycle command until `migrate`
+finishes them. A 0-byte file with a legacy name counts as one without a header
+(the tool only ever creates current-scheme names, so it is never an
+interrupted create's). A header that looks like this tool's but does not
+parse never adopts the repository, and stays `invalid-header` in both
+phases; a legacy name with a valid header is a decision in both. `migrate`
+still finds every legacy name, so a re-run after a partial `migrate`
+migrates what is left.
+
 ## Validate the whole repository before acting
 
 Every lifecycle command -- `new`, `approve`, `reject`, `undo`,
@@ -103,10 +127,12 @@ validation on its own and changes nothing.
 What is validated:
 
 - every file with an ADR name (see above) anywhere under the decisions
-  folder (`folderadr`), subdirectories included. A `.md` whose name is not
-  an ADR name is not a decision and is ignored, except that `check` and
-  `explore` warn about one whose name starts with a digit (as in
-  `0001-use-x.md`), most likely a decision written before adrpy;
+  folder (`folderadr`), subdirectories included, less the legacy names
+  without a header of an adopted repository (the phase rule above). A
+  `.md` whose name is not an ADR name is not a decision and is ignored,
+  except that `check` and `explore` warn about one whose name starts with
+  a digit (as in `0001-use-x.md`), most likely a decision written before
+  adrpy, and about each legacy name the phase rule leaves out;
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
@@ -116,7 +142,7 @@ The rules, one error code each:
 | Rule | `data.errors[].code` |
 |---|---|
 | No git merge-conflict marker line (starting `<<<<<<< ` or `>>>>>>> `) in the 12 header lines -- checked first, and reported alone for that file. The file keeps its name, so it still holds its number (`duplicate-number`, the next number), but it has no status: the family rules skip it, and a supersede link to or from it is not reported broken while the conflict lasts | `merge-conflict-markers` |
-| Every file with an ADR name has a header (the hint points at `migrate` for a file that predates the tool) | `no-header` |
+| Every file with an ADR name has a header -- for a legacy name, only while the repository is not adopted yet (see ADR names) -- (the hint points at `migrate` for a file that predates the tool) | `no-header` |
 | The header parses: every row has exactly its two cells (an extra `\|` makes the row invalid), and the title, scope and domain have no `\|` and no line-break-like character (the title also no filesystem-unsafe character and not only whitespace, `_` or `-`); `detail` names the reason | `invalid-header` |
 | The Created/Changed/Superseded cells form a combination the tool writes (below) | `invalid-status-combination` |
 | No two files share number, version and revision (a missing revision counts as 0) | `duplicate-number` |
@@ -374,9 +400,15 @@ what brings a repository to a state that validates.
 the install-level fallback, which it then saves into the repository's
 config. It needs one even when every file already has an ADR name (the
 ADR name is read first). The pattern also makes a decision of every
-other name it matches -- a dated note, now or added later -- so choose
-one that matches nothing else in the folder, and look at
-`adrpy explore --path .` (`scheme: legacy`) before migrating. A pattern
+other name it matches -- a dated note -- a decision while the repository
+is not adopted yet, that is while `migrate` can still run (after that,
+one without a header is ignored and warned about: see ADR names), so choose one that matches nothing else in
+the folder. `adrpy explore --path . --migrationpattern <pattern>` previews
+what a pattern reads from each name (`migrationpattern_preview`, the list
+`config --migrationpattern` returns, with the same misreading warnings)
+without writing anything; `adrpy config --migrationpattern` then writes
+it, and `check` fails with `no-header` on each matched file until
+`migrate` runs. A pattern
 set by mistake can be changed or cleared (`adrpy config
 --migrationpattern ""`) only while no legacy-scheme decision with a valid
 header exists -- that is, one already migrated. A legacy name the pattern

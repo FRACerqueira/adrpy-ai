@@ -1,18 +1,26 @@
 """`explore` command: read-only inventory of every decision file.
 Recognizes BOTH naming schemes via `parse_any_filename` -- a file
-matching neither still appears in the report, never dropped silently. A
+matching neither (or one the phase rule of core/consistency.decision_names
+leaves out) still appears in the report, never dropped silently. A
 distinct mechanism, is_within (core/security.py), CAN still exclude a
 candidate whose real path escapes the repository boundary (e.g. a
 symlink/junction) -- that exclusion is reported via `warnings` instead,
 not silently either.
 """
 
+from dataclasses import asdict
+
 from adrpy.core.args import parse_flags
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.consistency import check_repository, unrecognized_decision_like_warning
+from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config, serialize_repo_config
+from adrpy.core.consistency import check_repository, unheadered_legacy_warning, unrecognized_decision_like_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
-from adrpy.core.lifecycle import resolve_target_and_config
+from adrpy.core.lifecycle import (
+    PATTERN_ADVICE_BEFORE_MIGRATE,
+    legacy_pattern_preview,
+    legacy_pattern_warnings,
+    resolve_target_and_config,
+)
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.fs import scan_tree
 from adrpy.core.security import resolve_within
@@ -28,7 +36,14 @@ def describe():
             "inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and "
             "every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's "
             "`header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) "
-            "or `no-header`, with `header.invalid_reason` naming the parse failure for the last two."
+            "or `no-header`, with `header.invalid_reason` naming the parse failure for the last two. A file whose "
+            "name only migrationpattern matches and that has no header is listed with `scheme` null (not a "
+            "decision) once the repository has a decision with a valid header migrate did not write, and named in "
+            "`warnings`. With "
+            "--migrationpattern, the result also has `migrationpattern_preview` -- the list `adrpy config "
+            "--migrationpattern` would return for that pattern (file, number, version, title of each file it "
+            "recognizes), its likely-misreading warnings in `warnings` -- while writing nothing: the inventory "
+            "and consistency.errors still read the repository's own config."
         ),
         "arguments": [
             {
@@ -37,6 +52,17 @@ def describe():
                 "type": "string",
                 "required": True,
                 "description": "Repository root directory (must contain adr-config.adrplus).",
+            },
+            {
+                "name": "migrationpattern",
+                "type": "string",
+                "required": False,
+                "description": (
+                    "A migrationpattern to preview (same syntax as `adrpy config --migrationpattern`), read "
+                    "instead of the repository's own for `migrationpattern_preview` only; nothing is written. "
+                    "An invalid one fails with config-migrationpattern-invalid; an empty value is a usage error "
+                    "(there is nothing to preview)."
+                ),
             },
         ],
         "failure_codes": build_failure_codes(
@@ -52,9 +78,15 @@ def describe():
 
 
 def run(args):
-    path = parse_flags(args, required=("path",), aliases={"p": "path"})["path"]
-    target, config_path, config = resolve_target_and_config(path)
+    flags = parse_flags(args, required=("path",), optional=("migrationpattern",), aliases={"p": "path"})
+    target, config_path, config = resolve_target_and_config(flags["path"])
     folder = resolve_within(target, config.folderadr)
+    preview_config = None
+    if "migrationpattern" in flags:
+        # Validated as config would validate it (same failure code).
+        preview_config = parse_repo_config(
+            serialize_repo_config({**asdict(config), "migrationpattern": flags["migrationpattern"]})
+        )
 
     entries = []
     excluded = []
@@ -75,6 +107,7 @@ def run(args):
         # one of the check's scan-incomplete errors.
         failed = {error["file"] for error in errors if error["code"] == FailureCodes.SCAN_INCOMPLETE}
         no_header = {error["file"] for error in errors if error["code"] == FailureCodes.NO_HEADER}
+        not_decisions = set(snapshot.unheadered_legacy)
         for candidate in scan.markdown:
             # Best-effort: a single persistently unreadable file (locked by
             # an editor, backup tool, or antivirus -- ordinary in a folder
@@ -95,10 +128,11 @@ def run(args):
             if str(candidate) in failed:
                 unreadable_files.append(candidate)
                 continue
-            # Not a decision (its name matches no scheme), or one whose
-            # header lines hold merge-conflict markers: read here.
+            # Not a decision (its name matches no scheme, or the phase
+            # rule leaves it out), or one whose header lines hold
+            # merge-conflict markers: read here.
             try:
-                entries.append(_build_entry(candidate, config))
+                entries.append(_build_entry(candidate, config, candidate in not_decisions))
             except OSError:
                 unreadable_files.append(candidate)
 
@@ -123,9 +157,13 @@ def run(args):
     warning = excluded_candidate_warning(excluded)
     if warning:
         warnings.append(warning)
-    warning = unrecognized_decision_like_warning(scan, config)
-    if warning:
-        warnings.append(warning)
+    for warning in (unrecognized_decision_like_warning(scan, config), unheadered_legacy_warning(snapshot)):
+        if warning:
+            warnings.append(warning)
+    preview = None
+    if preview_config is not None:
+        preview = legacy_pattern_preview(scan.markdown if scan is not None else (), preview_config)
+        warnings.extend(legacy_pattern_warnings(preview, PATTERN_ADVICE_BEFORE_MIGRATE))
     if unreadable:
         names = ", ".join(unreadable)
         warnings.append(
@@ -140,11 +178,14 @@ def run(args):
         )
     # The repository's consistency errors (core/consistency.py), listed
     # without failing: explore stays an inventory.
-    return {"decisions": entries, "consistency": {"errors": errors}, "warnings": warnings}
+    result = {"decisions": entries, "consistency": {"errors": errors}, "warnings": warnings}
+    if preview is not None:
+        result["migrationpattern_preview"] = preview
+    return result
 
 
-def _build_entry(path, config):
-    found = parse_any_filename(path.name, config)
+def _build_entry(path, config, not_a_decision=False):
+    found = None if not_a_decision else parse_any_filename(path.name, config)
     scheme, parsed = found if found else (None, None)
 
     # Reading and decoding the file's ENTIRE content (path.read_bytes())

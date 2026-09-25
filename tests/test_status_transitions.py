@@ -953,12 +953,12 @@ def test_undo_rejects_when_pending_sibling_exists(tmp_path):
     assert excinfo.value.code == "family-member-pending"
 
 
-def test_undo_refuses_a_repository_with_an_unmigrated_legacy_file(tmp_path):
+def test_undo_ignores_an_unmigrated_legacy_file_once_a_decision_has_a_header(tmp_path):
     """A hand-written, never-migrated legacy file (matched by
-    migrationpattern "N00:04T04") has an ADR name and no header: a broken
-    repository rule (no-header, with the migrate hint), so undo refuses
-    with nothing written. (It used to be left out of the family and
-    ignored.)"""
+    migrationpattern "N00:04T04") with no header, in a repository that
+    already has a decision with a header, is not a decision (the phase
+    rule, core/consistency.decision_names): undo goes on, and the file is
+    left as it is."""
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["migrationpattern"] = "N00:04T04"
     config_file = tmp_path / "seed-config.json"
@@ -971,15 +971,12 @@ def test_undo_refuses_a_repository_with_an_unmigrated_legacy_file(tmp_path):
     legacy_sibling = tmp_path / "doc" / "adr" / "0001LegacyNotes.md"
     legacy_sibling.write_text("# Some legacy notes\n\nNever run through migrate.\n", encoding="utf-8")
     before = adr_path.read_bytes()
+    legacy_before = legacy_sibling.read_bytes()
 
-    with pytest.raises(CommandError) as excinfo:
-        undo.run(["--file", str(adr_path)])
+    undo.run(["--file", str(adr_path)])
 
-    assert excinfo.value.code == "repository-inconsistent"
-    [error] = excinfo.value.data["errors"]
-    assert (error["code"], error["file"]) == ("no-header", str(legacy_sibling.resolve()))
-    assert "migrate" in error["hint"]
-    assert adr_path.read_bytes() == before
+    assert adr_path.read_bytes() != before
+    assert legacy_sibling.read_bytes() == legacy_before
 
 
 def test_status_transitions_end_to_end_through_main(tmp_path):

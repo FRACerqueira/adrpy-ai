@@ -75,10 +75,14 @@ def _field_description(field):
             "Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the "
             "number's start:length in the name without '.md', T where the title starts (after the separator), "
             "V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' "
-            "for `0001-title.md`, 'N00:04T04' for `0001Title.md`. The result lists what it recognizes "
-            "(migrationpattern_preview) and warns about a likely misreading; after setting it, `adrpy explore "
-            "--path .` shows the same before `adrpy migrate`. An empty value (--migrationpattern \"\") clears "
-            "it. Like "
+            "for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a "
+            "pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. "
+            "The result lists what it recognizes (migrationpattern_preview) and warns about a likely "
+            "misreading. While the repository is not adopted yet (no file has a valid header migrate did not "
+            "write, so migrate can still run), `adrpy check` (and every command that "
+            "validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a "
+            "valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value "
+            "(--migrationpattern \"\") clears it. Like "
             "any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) "
             "while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; "
             "hand-written files it only matches by name do not block it."
@@ -158,10 +162,14 @@ def describe():
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
             "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
-            "reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern also returns "
-            "`migrationpattern_preview` (file, number, version, title of each file it recognizes); after "
-            "setting it, `adrpy explore --path .` shows the same before `adrpy migrate`. `activeplugins` is "
-            "never read or written."
+            "reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config "
+            "and also returns `migrationpattern_preview` (file, number, version, title of each file it "
+            "recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview "
+            "without writing anything, so preview there first. While the repository is not adopted yet, check "
+            "then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a "
+            "decision migrate did not write exists, such a file is only warned about. To back out, "
+            "--migrationpattern \"\". "
+            "`activeplugins` is never read or written."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -308,6 +316,12 @@ def run(args):
             # unused empty folder, not a real cost.
             new_folder = resolve_within(target, new_config.folderadr)
             created.append((new_folder, make_dirs(new_folder)))
+            # Before the write, so nothing that can fail runs once the
+            # config is on disk.
+            preview = None
+            if "migrationpattern" in flags and new_config.migrationpattern:
+                preview = legacy_pattern_preview(scan_tree(new_folder).markdown, new_config)
+                warnings.extend(legacy_pattern_warnings(preview, PATTERN_ADVICE_BEFORE_MIGRATE))
         except BaseException:
             for created_folder, top in reversed(created):
                 remove_created_dirs(created_folder, top)
@@ -319,9 +333,6 @@ def run(args):
             warnings.append(warning)
 
     result = {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}
-    if "migrationpattern" in flags and new_config.migrationpattern:
-        new_folder = resolve_within(target, new_config.folderadr)
-        preview = legacy_pattern_preview(scan_tree(new_folder).markdown, new_config)
+    if preview is not None:
         result["migrationpattern_preview"] = preview
-        warnings.extend(legacy_pattern_warnings(preview, PATTERN_ADVICE_BEFORE_MIGRATE))
     return result

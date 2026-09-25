@@ -52,6 +52,26 @@ class TestAdrpySkillIsBundled:
         ):
             assert needle in content, needle
 
+    def test_it_keeps_the_agent_to_what_the_user_asked(self):
+        # Real-agent runs approved decisions nobody asked to accept,
+        # invented options and deciders, and changed files before check.
+        content = " ".join(resources.load_full_content("adrpy").split())
+        for needle in (
+            "Do only the lifecycle actions the user asked for.",
+            "is not a request to accept it",
+            "Write only what the user gave.",
+            "never take Deciders or dates from git or the environment",
+            "Whenever you wrote or changed a decision's text",
+            "even when the user asked you to accept it",
+            "Either way, please review the decision's text",
+            "apply the hint's first option without asking",
+            "list in one question the files",
+            "adrpy explore --path . --migrationpattern",
+            "migrationpattern \"\"",
+            "only `check` validates the whole repository",
+        ):
+            assert needle in content, needle
+
     @pytest.mark.parametrize("skill", resources.SKILL_NAMES)
     def test_every_description_is_plain_yaml_in_the_frontmatter(self, skill):
         # claude/cursor put the description in YAML frontmatter unquoted:

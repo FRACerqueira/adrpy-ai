@@ -25,7 +25,7 @@ from adrpy.core.config import (
 )
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.family import is_successor, locking_member
-from adrpy.core.consistency import validate_repository
+from adrpy.core.consistency import decision_names, unheadered_legacy_warning, validate_repository
 from adrpy.core.decision_log import decision_log_dir_for, reject_folderlog_change_if_entries_exist
 from adrpy.core.header import (
     _REAL_NEWLINE_BYTES,
@@ -40,9 +40,9 @@ from adrpy.core.fs import (
     cleanup_orphaned_temp_files,
     commit_write,
     discard_write,
+    landed_after_failure,
     prepare_write,
     scan_tree,
-    write_landed,
 )
 from adrpy.core.naming import parse_any_filename
 from adrpy.core.output import explain
@@ -122,19 +122,17 @@ def guarded_fields_changed(old_config, new_config):
 
 
 def _recognized(scan, config, warnings):
-    """(scheme, ParsedFileName, path) for every `.md` of `scan` whose name
-    matches a naming scheme under `config`; reports the candidates the
-    scan excluded for escaping the folder, when `warnings` is given."""
+    """(scheme, ParsedFileName, path) for every `.md` of `scan` that is a
+    decision under `config` (core/consistency.decision_names: a name
+    matching a naming scheme, less what the phase rule leaves out);
+    reports the candidates the scan excluded for escaping the folder,
+    when `warnings` is given."""
     if warnings is not None:
         warning = excluded_candidate_warning(list(scan.excluded))
         if warning:
             warnings.append(warning)
-    found = []
-    for candidate in scan.markdown:
-        result = parse_any_filename(candidate.name, config)
-        if result is not None:
-            found.append((result[0], result[1], candidate))
-    return found
+    names, _unheadered = decision_names(scan, config)
+    return [(name.scheme, name.parsed, name.path) for name in names]
 
 
 def validate_config_change(old_config, new_config, old_folder, *, target, scan=None, warnings=None):
@@ -323,8 +321,8 @@ def legacy_pattern_preview(paths, config):
 # What to do about a likely misreading: before migrate the pattern can
 # still change; after it, the migrated files block any change (ADR004V02).
 PATTERN_ADVICE_BEFORE_MIGRATE = (
-    "Set the right one with `adrpy config --migrationpattern` before `adrpy migrate` (its result lists what it "
-    "reads; `adrpy explore --path .` shows it too)."
+    "Preview another with `adrpy explore --path . --migrationpattern <pattern>` (it writes nothing), set the "
+    "right one with `adrpy config --migrationpattern` (it writes the config), then run `adrpy migrate`."
 )
 PATTERN_ADVICE_AFTER_MIGRATE = (
     "These files are migrated now, and migrationpattern can no longer change while they are: to redo them, "
@@ -352,7 +350,8 @@ def legacy_pattern_warnings(preview, advice):
         warnings.append(
             f"Number {ranked[0]['number']} ({ranked[0]['file']}) is far above the others (next highest: "
             f"{ranked[1]['number']}): the pattern's N (start:length) may be reading part of a date or of the "
-            f"title. {advice}"
+            f"title, or that file is not a decision (a note, say): move it out of the decisions folder before "
+            f"migrate. {advice}"
         )
     return warnings
 
@@ -517,7 +516,11 @@ def stream_normalized_body_chunks(source_path, report):
 SHARED_FAILURE_CODES = {
     FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
-    FailureCodes.FILENAME_NOT_RECOGNIZED: "--file's own name matches neither naming scheme.",
+    FailureCodes.FILENAME_NOT_RECOGNIZED: (
+        "--file's own name matches neither naming scheme, or only migrationpattern matches it and it has no "
+        "header while the repository already has a decision with a header migrate did not write (then it "
+        "is not a decision; data.file)."
+    ),
     FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header).",
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
@@ -954,7 +957,7 @@ def _validated_field(name, source, flags, header, filename_info):
 def _resolve_file(fileadr):
     """--file's path (a bare name gets '.md'), its repository's config
     (found by walking up for adr-config.adrplus) and root, and its
-    filename identity (a ParsedFileName) -- nothing read from the file itself yet."""
+    filename identity ((scheme, ParsedFileName)) -- nothing read from the file itself yet."""
     fileadr = Path(fileadr)
     if fileadr.suffix == "":
         fileadr = fileadr.with_suffix(".md")
@@ -969,7 +972,7 @@ def _resolve_file(fileadr):
     found = parse_any_filename(fileadr.name, config)
     if found is None:
         raise CommandError(FailureCodes.FILENAME_NOT_RECOGNIZED, f"Filename matches no naming scheme: {fileadr.name}")
-    return fileadr, config, config_path.parent, found[1]
+    return fileadr, config, config_path.parent, found
 
 
 def _target_in(snapshot, path, number):
@@ -1000,7 +1003,7 @@ def prepare(command, fileadr, flags):
     folder, is refused as such, whatever state the repository is in."""
     row = TRANSITIONS[command]
     warnings = []
-    path, config, root, parsed = _resolve_file(fileadr)
+    path, config, root, (scheme, parsed) = _resolve_file(fileadr)
     with attach_warnings(warnings):
         folder = resolve_within(root, config.folderadr)
         if not is_within(folder, path):
@@ -1015,10 +1018,20 @@ def prepare(command, fileadr, flags):
         warning = orphan_cleanup_warning(cleanup_orphaned_temp_files(folder, warnings=warnings, scan=scan))
         if warning:
             warnings.append(warning)
+        if scheme == "legacy":
+            real = path.resolve()
+            if any(left_out.resolve() == real for left_out in decision_names(scan, config)[1]):
+                raise CommandError(
+                    FailureCodes.FILENAME_NOT_RECOGNIZED,
+                    f"Not a decision file: {path.name} matches migrationpattern but has no header, and this "
+                    "repository already has decisions the tool created (migrate no longer runs here). Give it "
+                    "a header by hand, or move it out of the decisions folder.",
+                    data={"file": str(path)},
+                )
         snapshot = validate_repository(folder, config, scan=scan)
-        warning = excluded_candidate_warning(list(snapshot.excluded))
-        if warning:
-            warnings.append(warning)
+        for warning in (excluded_candidate_warning(list(snapshot.excluded)), unheadered_legacy_warning(snapshot)):
+            if warning:
+                warnings.append(warning)
 
         target = _target_in(snapshot, path, parsed.number)
         filename_info, header = target.name, target.header
@@ -1198,7 +1211,7 @@ def commit_in_order(steps, warnings, *, hint, repair=None):
     except BaseException as error:
         if len(applied) < len(steps) and not isinstance(error, FileExistsError):
             current = steps[len(applied)]
-            if write_landed(current[0]):
+            if landed_after_failure(current[0]):
                 applied.append(str(current[0].path))
                 warnings.extend(current[2])
         # The failing one's own temp too: already gone when commit_write

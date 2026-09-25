@@ -9,7 +9,7 @@ from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
 from adrpy.core.config import LENSEQ_MAX, SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES
-from adrpy.core.consistency import validate_repository
+from adrpy.core.consistency import unheadered_legacy_warning, validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.lifecycle import (
@@ -136,9 +136,9 @@ def run(args):
         # Before any other rule: title-uniqueness and next-number
         # allocation below read this one validated snapshot.
         snapshot = validate_repository(folder, config, scan=scan)
-        warning = excluded_candidate_warning(list(snapshot.excluded))
-        if warning:
-            warnings.append(warning)
+        for warning in (excluded_candidate_warning(list(snapshot.excluded)), unheadered_legacy_warning(snapshot)):
+            if warning:
+                warnings.append(warning)
 
         reject_embedded_delimiter(title, "title")
         reject_filesystem_unsafe_title(title, "title")

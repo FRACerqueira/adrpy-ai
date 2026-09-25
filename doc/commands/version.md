@@ -40,7 +40,7 @@ Creates a new major version of an Accepted or Rejected decision, status Proposed
 | `title-produces-unrecognizable-filename` | The new version's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
-| `filename-not-recognized` | --file's own name matches neither naming scheme. |
+| `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |

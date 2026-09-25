@@ -245,8 +245,6 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
     adr_dir.mkdir(parents=True)
     (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
     (adr_dir / "0001UsePostgreSQL.md").write_text("# legacy content, no header yet", encoding="utf-8")
-    with open(adr_dir / "ADR002V01-current-scheme.md", "w", encoding="utf-8", newline="") as handle:
-        handle.write(_decision_text(config, number=2, title="Current scheme", version=1))
 
     result = explore.run(["--path", str(tmp_path)])
     by_name = {entry["filename"]: entry for entry in result["decisions"]}
@@ -254,6 +252,16 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
     assert by_name["0001UsePostgreSQL.md"]["scheme"] == "legacy"
     assert by_name["0001UsePostgreSQL.md"]["number"] == 1
     assert by_name["0001UsePostgreSQL.md"]["title"] == "UsePostgreSQL"
+
+    # Once a decision has a valid header, the legacy name without one is
+    # not a decision (the phase rule): still listed, with no scheme.
+    with open(adr_dir / "ADR002V01-current-scheme.md", "w", encoding="utf-8", newline="") as handle:
+        handle.write(_decision_text(config, number=2, title="Current scheme", version=1))
+
+    result = explore.run(["--path", str(tmp_path)])
+    by_name = {entry["filename"]: entry for entry in result["decisions"]}
+
+    assert by_name["0001UsePostgreSQL.md"]["scheme"] is None
     assert by_name["ADR002V01-current-scheme.md"]["scheme"] == "current"
 
 

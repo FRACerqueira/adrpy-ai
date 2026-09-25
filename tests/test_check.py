@@ -152,7 +152,7 @@ def test_check_and_explore_warn_about_md_files_that_look_like_decisions_but_are_
     assert code == EXIT_SUCCESS
     assert payload["data"]["decisions"] == 1
     [warning] = payload["data"]["warnings"]
-    assert warning.startswith("2 .md file(s) in folderadr are not recognized: 0001-use-postgres.md, 0002-use-rest.md.")
+    assert warning.startswith("2 .md file(s) in doc/adr are not recognized: 0001-use-postgres.md, 0002-use-rest.md.")
     assert "README.md" not in warning
     if tool_created:
         assert "migrate does not run" in warning and "header by hand" in warning
@@ -169,7 +169,7 @@ def test_the_unrecognized_file_warning_also_comes_with_a_failing_check(tmp_path,
 
     assert code == EXIT_FAILURE
     assert payload["code"] == FailureCodes.REPOSITORY_INCONSISTENT
-    assert [w.split(":")[0] for w in payload["warnings"]] == ["1 .md file(s) in folderadr are not recognized"]
+    assert [w.split(":")[0] for w in payload["warnings"]] == ["1 .md file(s) in doc/adr are not recognized"]
 
 
 def test_a_failing_check_without_that_warning_has_no_warnings_key(tmp_path, capsys):
@@ -180,19 +180,25 @@ def test_a_failing_check_without_that_warning_has_no_warnings_key(tmp_path, caps
     assert "warnings" not in payload
 
 
-def test_in_a_tool_created_repository_naming_the_files_makes_them_no_header_as_the_warning_says(tmp_path, capsys):
+def test_in_a_tool_created_repository_naming_the_files_without_a_header_keeps_them_out_as_the_warning_says(
+    tmp_path, capsys
+):
     # The warning's claim, checked: once migrationpattern names them,
-    # they are no-header decisions and commands refuse the repository.
+    # they are still not decisions without a header (the phase rule), so
+    # commands go on and the other warning names them.
     from adrpy.cli import config, new
 
     repo = make_repo(tmp_path, files=[D(1)])
     (repo.folder / "0001-use-postgres.md").write_text("# x\n", encoding="utf-8")
 
     config.run(["--path", str(repo.root), "--migrationpattern", "N00:04T05"])
-    _code, payload = _run(capsys, ["new", "--path", str(repo.root), "--title", "Next"])
+    code, _payload = _run(capsys, ["new", "--path", str(repo.root), "--title", "Next"])
+    _code, checked = _run(capsys, ["check", "--path", str(repo.root)])
 
-    assert payload["code"] == FailureCodes.REPOSITORY_INCONSISTENT
-    assert [error["code"] for error in payload["data"]["errors"]] == [FailureCodes.NO_HEADER]
+    assert code == EXIT_SUCCESS
+    assert checked["data"]["decisions"] == 2
+    [warning] = checked["data"]["warnings"]
+    assert warning.startswith("1 file(s) match migrationpattern but have no header, so they are not decisions")
 
 
 def test_no_unrecognized_file_warning_without_decision_like_names(tmp_path, capsys):

@@ -2,7 +2,11 @@
 
 One scan of the decisions folder (core/fs.scan_tree) gives a `Decision`
 for every file with an ADR name -- a `.md` whose name matches neither
-naming scheme is not a decision and is ignored. Each decision's `state`
+naming scheme is not a decision and is ignored. The phase rule
+(decision_names) narrows that for a legacy-scheme name: once any file
+has a valid header migrate did not write (migrate no longer runs), one
+without a header is not a decision either (before that it is a
+no-header one, until migrate). Each decision's `state`
 is derived once, from a closed set of status combinations (the ones the
 tool itself writes, plus the migrated shapes). `check_repository`
 returns the snapshot with every broken invariant it finds;
@@ -87,7 +91,9 @@ HINTS = {
         "The file has an ADR name but no header. If it is empty (detail says 0-byte file), it was left by an "
         "interrupted create: remove it. If it is a decision written before adopting the tool and "
         "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
-        "new; set migrationpattern with adrpy config first: migrate always needs one). Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
+        "new; set migrationpattern with adrpy config first: migrate always needs one). If it is not a "
+        "decision (a note whose name the pattern happens to match), move it out of the decisions folder "
+        "first: migrate would make it one. Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
         "created), rename it so its name is not an ADR name, or remove it."
     ),
     FailureCodes.INVALID_HEADER: (
@@ -187,13 +193,82 @@ class Decision:
 @dataclass(frozen=True)
 class Snapshot:
     """Every decision (sorted by number, version, revision, path), the
-    same decisions grouped by number, in that order, and the `.md` files
+    same decisions grouped by number, in that order, the `.md` files
     left out because their real path escapes the folder (a junction or
-    symlink)."""
+    symlink), and the legacy-scheme names the phase rule leaves out
+    (`unheadered_legacy`, see decision_names)."""
 
     decisions: tuple
     by_number: dict
     excluded: tuple = ()
+    unheadered_legacy: tuple = ()
+
+
+@dataclass(frozen=True)
+class DecisionName:
+    """One file of a scan whose name is a decision's: its scheme and
+    ParsedFileName, and its header lines as read (`lines`,
+    `encoding_repaired`), or the OSError the read raised (`read_error`)."""
+
+    path: object
+    scheme: str
+    parsed: object
+    lines: object = None
+    encoding_repaired: bool = False
+    read_error: object = None
+
+
+def _is_unheadered(lines, config):
+    """No header at all: nothing parses, and nothing has this tool's
+    header shape or merge-conflict markers (a 0-byte file included) --
+    the no-header case of _read_decisions."""
+    return (
+        not _has_conflict_markers(lines)
+        and not parse_header(lines, config).is_valid
+        and not has_header_shape(lines)
+    )
+
+
+def decision_names(scan, config):
+    """(names, unheadered_legacy) for the `.md` files of `scan`: every
+    DecisionName, and the paths the phase rule leaves out. The rule: once
+    any file whose name is a decision's (either scheme) has a valid header
+    migrate did not write -- created by the tool or AdrPlus, or copied by
+    hand, the point after which migrate no longer runs
+    (already-tool-created-adrs-exist) -- a legacy-scheme name (recognized
+    only through migrationpattern) with no header at all is not a
+    decision; before that, it is one (no-header, until migrate: migrated
+    headers alone keep it so, and a partial migrate's leftovers block the
+    lifecycle commands until migrate finishes them). A header-shaped
+    file that does not parse, a merge conflict or an unreadable file never
+    adopts the repository and is never left out. The one reading of "is
+    this a decision" for every consumer; migrate's own discovery alone
+    still reads names (parse_any_filename), to migrate what is left out."""
+    names = []
+    adopted = False
+    for path in scan.markdown:
+        found = parse_any_filename(path.name, config)
+        if found is None:
+            continue
+        scheme, parsed = found
+        try:
+            lines, encoding_repaired = read_header_lines_with_report(path)
+        except OSError as error:
+            names.append(DecisionName(path, scheme, parsed, read_error=error))
+            continue
+        names.append(DecisionName(path, scheme, parsed, lines, encoding_repaired))
+        if not adopted and not _has_conflict_markers(lines):
+            header = parse_header(lines, config)
+            adopted = header.is_valid and not header.is_migrated
+    if not adopted:
+        return names, []
+    unheadered = [
+        name.path
+        for name in names
+        if name.scheme == "legacy" and name.read_error is None and _is_unheadered(name.lines, config)
+    ]
+    left_out = set(unheadered)
+    return [name for name in names if name.path not in left_out], unheadered
 
 
 def derive_state(header):
@@ -302,20 +377,14 @@ def _superseded_not_live_hint(config, decision, blocker):
     )
 
 
-def _read_decisions(scan, config, errors):
-    for directory in scan.unreadable:
-        errors.append(_error(FailureCodes.SCAN_INCOMPLETE, directory))
+def _read_decisions(names, config, errors):
     decisions = []
-    for path in scan.markdown:
-        found = parse_any_filename(path.name, config)
-        if found is None:
+    for name in names:
+        path, scheme, parsed = name.path, name.scheme, name.parsed
+        if name.read_error is not None:
+            errors.append(_error(FailureCodes.SCAN_INCOMPLETE, path, detail=str(name.read_error)))
             continue
-        scheme, parsed = found
-        try:
-            lines, encoding_repaired = read_header_lines_with_report(path)
-        except OSError as error:
-            errors.append(_error(FailureCodes.SCAN_INCOMPLETE, path, detail=str(error)))
-            continue
+        lines, encoding_repaired = name.lines, name.encoding_repaired
         if _has_conflict_markers(lines):
             errors.append(_error(FailureCodes.MERGE_CONFLICT_MARKERS, path))
             state, header = None, None
@@ -447,24 +516,44 @@ def unrecognized_decision_like_warning(scan, config):
     )
     if not names:
         return None
-    found = f"{len(names)} .md file(s) in folderadr are not recognized: {', '.join(names)}."
+    found = f"{len(names)} .md file(s) in {config.folderadr} are not recognized: {', '.join(names)}."
+    if config.migrationpattern:
+        found += f" migrationpattern ('{config.migrationpattern}') does not match them."
+    preview = "preview a pattern with `adrpy explore --path . --migrationpattern <pattern>` (it writes nothing)"
     if _has_tool_created_decision(scan, config):
-        # migrate refuses here (already-tool-created-adrs-exist).
+        # migrate refuses here (already-tool-created-adrs-exist), and a
+        # name migrationpattern matches without a header is not a
+        # decision here (decision_names).
         return (
             f"{found} If they are decisions written before adrpy: migrate does not run in a repository that "
-            "already has decisions the tool created, so each one needs a header by hand (copy one from a "
-            "decision the tool created) once migrationpattern names it -- until then every command refuses "
-            "the repository (no-header)."
+            f"already has decisions the tool created, so {preview}, set migrationpattern with `adrpy config "
+            "--migrationpattern` (it writes the config) and give each one a header by hand (copy one from a "
+            "decision the tool created) -- without one, a name migrationpattern matches is still not a decision."
         )
-    pattern = (
-        f"migrationpattern ('{config.migrationpattern}') does not match them: fix it"
-        if config.migrationpattern
-        else "set migrationpattern"
-    )
     return (
-        f"{found} If they are decisions written before adrpy, {pattern} with `adrpy config --migrationpattern` "
-        "(its result previews what it reads from each name, as `adrpy explore --path .` does afterwards) and "
-        "run `adrpy migrate`."
+        f"{found} If they are decisions written before adrpy, {preview}, then set migrationpattern with "
+        "`adrpy config --migrationpattern` (it writes the config) and run `adrpy migrate`."
+    )
+
+
+def unheadered_legacy_warning(snapshot):
+    """The warning for the legacy-scheme names the phase rule left out of
+    `snapshot` (decision_names): not decisions, and invisible to every
+    rule. None when there are none."""
+    if not snapshot.unheadered_legacy:
+        return None
+    names = sorted(path.name for path in snapshot.unheadered_legacy)
+    found = (
+        f"{len(names)} file(s) match migrationpattern but have no header, so they are not decisions: "
+        f"{', '.join(names)}."
+    )
+    # Left out only once a decision migrate did not write exists, so
+    # migrate no longer runs here.
+    return (
+        f"{found} If they are decisions written before adrpy: migrate does not run in a repository that "
+        "already has decisions the tool created, so give each one a header by hand (copy one from a "
+        "decision the tool created) -- its number, read from the name, may already be a decision's: "
+        "rename it to a free number first; otherwise move them out of the decisions folder."
     )
 
 
@@ -495,7 +584,12 @@ def check_repository(folder, config, scan=None):
         scan = None
     elif scan is None:
         scan = scan_tree(folder)
-    decisions = _read_decisions(scan, config, errors) if scan is not None else []
+    decisions, unheadered = [], []
+    if scan is not None:
+        for directory in scan.unreadable:
+            errors.append(_error(FailureCodes.SCAN_INCOMPLETE, directory))
+        names, unheadered = decision_names(scan, config)
+        decisions = _read_decisions(names, config, errors)
     by_number = {}
     for decision in decisions:
         by_number.setdefault(decision.number, []).append(decision)
@@ -507,7 +601,8 @@ def check_repository(folder, config, scan=None):
     _check_supersede(decisions, by_number, config, errors)
 
     errors.sort(key=lambda error: (error["file"], error["code"]))
-    return Snapshot(tuple(decisions), by_number, scan.excluded if scan is not None else ()), errors
+    excluded = scan.excluded if scan is not None else ()
+    return Snapshot(tuple(decisions), by_number, excluded, tuple(unheadered)), errors
 
 
 def validate_repository(folder, config, scan=None, tolerate=()):
@@ -520,10 +615,16 @@ def validate_repository(folder, config, scan=None, tolerate=()):
     snapshot, errors = check_repository(folder, config, scan)
     errors = [error for error in errors if error["code"] not in tolerate]
     if errors:
-        raise CommandError(
-            FailureCodes.REPOSITORY_INCONSISTENT,
-            f"The decisions folder breaks {len(errors)} consistency rule(s); nothing was changed. "
-            "Each entry in data.errors names the file, the rule and a repair hint.",
-            data={"errors": errors},
-        )
+        raise inconsistent_repository(errors)
     return snapshot
+
+
+def inconsistent_repository(errors):
+    """The repository-inconsistent CommandError for check_repository's
+    `errors` (validate_repository's, and `check`'s own)."""
+    return CommandError(
+        FailureCodes.REPOSITORY_INCONSISTENT,
+        f"The decisions folder breaks {len(errors)} consistency rule(s); nothing was changed. "
+        "Each entry in data.errors names the file, the rule and a repair hint.",
+        data={"errors": errors},
+    )
