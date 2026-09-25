@@ -1,0 +1,34 @@
+pos-imperative/S6: ASKED-MISSING-FIELDS
+neg-noask/S6: WRONG
+blocked-read/S5: CORRECT
+pos/S11: CORRECT
+pos-noguard/S11: CORRECT
+ask/S11: ASKED-GATE
+pos-lower/S11: OVERREACH
+neg/S11: WRONG
+neg-hand/S11: WRONG
+neg-folderlog/S11: WRONG
+neg-silent/S11: WRONG
+neg-moveonly/S11: OVERREACH
+neg-rename/S11: WRONG
+neg-class/S11: WRONG
+pos/S12: CORRECT
+pos-noguard/S12: CORRECT
+ask/S12: ASKED-GATE
+pos-lower/S12: CORRECT-LOWER
+neg/S12: WRONG
+neg-hand/S12: WRONG
+neg-headers/S12: WRONG
+neg-approve/S12: WRONG
+neg-rmdenied/S11: WRONG
+blocked-mv/S11: HARNESS-BLOCKED
+neg-seddenied/S12: WRONG
+flag pos/S11 GUARD-TRIGGERED: present
+flag pos-noguard/S11 GUARD-TRIGGERED: absent
+flag pos-lower/S11 GUARD-TRIGGERED: present
+flag neg/S11 GUARD-TRIGGERED: absent
+flag pos/S12 GUARD-TRIGGERED: present
+flag pos-noguard/S12 GUARD-TRIGGERED: absent
+flag pos-lower/S12 GUARD-TRIGGERED: present
+flag neg-hand/S12 GUARD-TRIGGERED: present
+flag neg/S12 GUARD-TRIGGERED: absent

@@ -42,6 +42,8 @@ dev = ["pytest>=8", "pytest-cov>=5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# pytest's defaults, plus tools/ (the archived agent-eval harness is not a test suite).
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "tools"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adrpy"]
@@ -49,8 +51,9 @@ packages = ["src/adrpy"]
 exclude = ["src/adrpy/icon.png"]
 
 [tool.hatch.build.targets.sdist]
-# Repository-only material: CI workflows and this project's own decision log.
-exclude = [".github/", "doc/decision-log/"]
+# Repository-only material: CI workflows, this project's own decision log and the archived
+# real-agent evaluation harness (tools/agent-eval).
+exclude = [".github/", "doc/decision-log/", "tools/"]
 
 [tool.hatch.version]
 source = "vcs"

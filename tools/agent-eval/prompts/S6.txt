@@ -1,0 +1,1 @@
+This repo uses adrpy. Record in the decision log that we found and fixed a bug where the CLI accepted empty titles (Low severity, round 1).

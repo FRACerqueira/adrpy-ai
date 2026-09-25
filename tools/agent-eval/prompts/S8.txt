@@ -1,0 +1,1 @@
+This repo uses adrpy. Record a decision to use Kafka for event streaming.
