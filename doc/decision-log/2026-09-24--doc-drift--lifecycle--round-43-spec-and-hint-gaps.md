@@ -1,0 +1,5 @@
+# doc/lifecycle.md, README, command pages and hints aligned with the code where the spec was silent or wrong
+
+**Front:** Round 43: validator vs specification (independent oracle, Fable) and Round 43: contract and docs of the new surfaces | **Severity:** Medium | **Resolution:** Direct | **Round:** 43
+
+Now documented: what an ADR name is; the real refusal order (status, family-member-superseded, family-member-pending, not-latest-version, rejected-successor-is-final, refdate/fields, new number last); a suffix counts as a successor only when it names a lower number; one error entry per broken rule, on the first file in sort order; the marker wins over the label; the migrationpattern syntax; detail may be null; io-error is universal; an AdrPlus 1.0.0 header example; the pre-commit hook checks the working tree; ADRpy on PyPI is unrelated. Hints fixed: target-outside-folderadr, superseded-not-live, duplicate-number, the AdrPlus table's rejected-successor repair. The generated INDEX and help log point to the absolute workflow URL. Fixed in c7331d0.
