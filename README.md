@@ -205,7 +205,7 @@ adrpy-skills install --skill decision-log --provider claude,cursor
 adrpy-skills list                             # what's installed where, and whether any of it has drifted
 ```
 
-Supported providers: `claude` (Claude Code, project or global scope), `cursor`, `copilot` (GitHub Copilot), and `agentsmd` (a generic `AGENTS.md`, editing only its own marked block). Every file `adrpy-skills` writes carries a content-hash marker, so a plain re-run after `pip install --upgrade` picks up updates safely, while anything you hand-edited since is left alone unless you pass `--force`. Full command reference: [`doc/skills/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/skills/README.md).
+Supported providers: `claude` (Claude Code, project or global scope), `cursor`, `copilot` (GitHub Copilot), and `agentsmd` (a generic `AGENTS.md`, editing only its own marked block). Every file `adrpy-skills` writes carries a content-hash marker, so a plain re-run after `pip install --upgrade` picks up updates safely, while anything you hand-edited since is left alone unless you pass `--force`. Full command reference: [`doc/skills/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/skills/README.md). How well an agent follows the skills depends on its model: they were tested with Claude Code, where a model at least as capable as Claude Sonnet 5 is recommended for any task that writes decisions; the other providers were not tested with a real agent (see "Which model to use" there).
 
 ## Configuration
 

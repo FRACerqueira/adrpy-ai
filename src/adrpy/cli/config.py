@@ -18,7 +18,14 @@ from dataclasses import asdict
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
-from adrpy.core.config import INT_FIELD_BOUNDS, _INT_FIELDS, _STRING_FIELDS, parse_repo_config, serialize_repo_config
+from adrpy.core.config import (
+    INT_FIELD_BOUNDS,
+    _INT_FIELDS,
+    _STRING_FIELDS,
+    parse_repo_config,
+    reject_overlapping_migration_pattern,
+    serialize_repo_config,
+)
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.fs import cleanup_orphaned_temp_files_for, make_dirs, remove_created_dirs, scan_tree
@@ -78,7 +85,11 @@ def _field_description(field):
             "for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a "
             "pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. "
             "The result lists what it recognizes (migrationpattern_preview) and warns about a likely "
-            "misreading. While the repository is not adopted yet (no file has a valid header migrate did not "
+            "misreading. A pattern that reads part of a name twice -- its T starts inside its N/V/R/P range, "
+            "or two of those ranges overlap, as 'N00:04T02' for `0001-title.md` (title '01-title') -- is "
+            "refused with config-migrationpattern-invalid, the detail naming the overlap; a config that "
+            "already holds one still loads, and this flag can clear or correct it while no decision was migrated with "
+            "it (after that the guard keeps it, and migrate finishes with it and warns). While the repository is not adopted yet (no file has a valid header migrate did not "
             "write, so migrate can still run), `adrpy check` (and every command that "
             "validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a "
             "valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value "
@@ -263,6 +274,9 @@ def run(args):
 
         merged_text = serialize_repo_config(merged)
         new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+        # Only the value being set: one already stored is left loadable.
+        if "migrationpattern" in flags:
+            reject_overlapping_migration_pattern(new_config.migrationpattern)
 
         # _is_relative_path only rejects an anchored escape ("C:\..",
         # "\\server\.."); "../../evil" is still relative and passes that check,

@@ -11,7 +11,7 @@ Validates every decision in the repository and lists every inconsistency found.
 
 ## Description
 
-Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only migrationpattern matches and that has no header once the repository has a decision with a valid header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names).
+Validates the whole repository, read-only: every file with an ADR name under the decisions folder (any other .md is ignored) is checked against the consistency rules in doc/lifecycle.md. Succeeds with the number of decisions when every rule holds; otherwise fails with repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only migrationpattern matches and that has no header once the repository has a decision with a valid header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names; the warning gives the number read from each name), as is a file in the decision-log folder (folderlog) that is not a decision-log entry (INDEX.md and CYCLES.md are the log's own): `adrpy log` refuses to write while it is there. Warnings never change the outcome.
 
 ## Arguments
 
@@ -86,7 +86,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
 | `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
-| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]. |
+| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
 | `config-headerrevision-too-long` | headerrevision exceeds 40 characters. |

@@ -536,17 +536,28 @@ def unrecognized_decision_like_warning(scan, config):
     )
 
 
-def unheadered_legacy_warning(snapshot):
+def unheadered_legacy_warning(snapshot, config, shared=()):
     """The warning for the legacy-scheme names the phase rule left out of
     `snapshot` (decision_names): not decisions, and invisible to every
-    rule. None when there are none."""
+    rule. Each is named with the number `config`'s migrationpattern reads
+    from its name. `shared`: (number, created) for each decision the
+    calling command just created (True) or acted on (False); the warning
+    says which of them has an ignored file's number. None when there are
+    none."""
     if not snapshot.unheadered_legacy:
         return None
-    names = sorted(path.name for path in snapshot.unheadered_legacy)
+    numbered = sorted((path.name, _name_number(path.name, config)) for path in snapshot.unheadered_legacy)
+    listed = ", ".join(name if number is None else f"{name} (number {number})" for name, number in numbered)
     found = (
-        f"{len(names)} file(s) match migrationpattern but have no header, so they are not decisions: "
-        f"{', '.join(names)}."
+        f"{len(numbered)} file(s) match migrationpattern but have no header, so they are not decisions: "
+        f"{listed}."
     )
+    for number, created in shared:
+        label = f"{config.prefix or ''}{number:0{config.lenseq}d}"
+        verb = "now shares" if created else "shares"
+        for name, ignored_number in numbered:
+            if ignored_number == number:
+                found += f" {label} {verb} number {number} with {name}."
     # Left out only once a decision migrate did not write exists, so
     # migrate no longer runs here.
     return (
@@ -555,6 +566,22 @@ def unheadered_legacy_warning(snapshot):
         "decision the tool created) -- its number, read from the name, may already be a decision's: "
         "rename it to a free number first; otherwise move them out of the decisions folder."
     )
+
+
+def note_shared_numbers(warnings, snapshot, config, shared):
+    """Once a write succeeded: replaces, in `warnings`, the phase warning
+    the command carried (unheadered_legacy_warning with no `shared`) by
+    the one that says which of `shared` has an ignored file's number --
+    still one warning, never a second."""
+    before = unheadered_legacy_warning(snapshot, config)
+    if before is None or before not in warnings:
+        return
+    warnings[warnings.index(before)] = unheadered_legacy_warning(snapshot, config, shared)
+
+
+def _name_number(name, config):
+    found = parse_any_filename(name, config)
+    return found[1].number if found else None
 
 
 def _has_tool_created_decision(scan, config):

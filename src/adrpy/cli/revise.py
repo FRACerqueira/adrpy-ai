@@ -7,6 +7,7 @@ not the latest member's. --open is permanently not implemented (see
 """
 
 from adrpy.core.args import parse_flags
+from adrpy.core.consistency import note_shared_numbers
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.atomic_write import atomic_write_chunks
@@ -105,6 +106,7 @@ def run(args):
             ) from error
         if ctx.encoding_repaired or body_report["encoding_repaired"]:
             warnings.append(encoding_repaired_source_warning(path))
+        note_shared_numbers(warnings, ctx.snapshot, config, [(record.number, True)])
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)

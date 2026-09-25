@@ -255,7 +255,7 @@ def _check_status_or_separator_change(
 
     existing = _recognized(scan, old_config, warnings)
     legacy_existing_count = sum(
-        1 for scheme, _, path in existing if scheme == "legacy" and _has_valid_header(path, old_config)
+        1 for scheme, _, path in existing if scheme == "legacy" and has_valid_header(path, old_config)
     )
 
     blocking_fields = []
@@ -356,7 +356,7 @@ def legacy_pattern_warnings(preview, advice):
     return warnings
 
 
-def _has_valid_header(path, config):
+def has_valid_header(path, config):
     """True when `path`'s header parses under `config` -- a decision
     already migrated (or created by the tool), not a hand-written file
     that only matches migrationpattern by name. A file that cannot be
@@ -1029,7 +1029,7 @@ def prepare(command, fileadr, flags):
                     data={"file": str(path)},
                 )
         snapshot = validate_repository(folder, config, scan=scan)
-        for warning in (excluded_candidate_warning(list(snapshot.excluded)), unheadered_legacy_warning(snapshot)):
+        for warning in (excluded_candidate_warning(list(snapshot.excluded)), unheadered_legacy_warning(snapshot, config)):
             if warning:
                 warnings.append(warning)
 

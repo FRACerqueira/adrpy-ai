@@ -60,6 +60,12 @@ _REOPEN_WHEN_RE = re.compile(r"^\*\*Reopen-when:\*\*\s*(.+?)\s*$")
 
 _INDEX_FILENAME = "INDEX.md"
 _NON_ENTRY_FILES = {_INDEX_FILENAME, "CYCLES.md"}
+# Said with every refusal over a file that is not an entry: a real agent
+# once moved such a note away silently to get the entry written.
+_USERS_FILE = (
+    " It was not written by adrpy: it is the user's file -- ask where it belongs before moving it, "
+    "and never delete it."
+)
 
 
 def decision_log_dir_for(target, config):
@@ -183,7 +189,7 @@ def _parse_entry(path):
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} does not match the expected "
             "{ISO date}--{classification}--{scope}--{slug}.md shape -- cannot safely compute the next "
-            "Round or regenerate INDEX.md while this file is present.",
+            "Round or regenerate INDEX.md while this file is present." + _USERS_FILE,
             data={"file": path.name},
         ) from error
     if classification not in CLASSIFICATIONS:
@@ -198,7 +204,7 @@ def _parse_entry(path):
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has an unrecognized classification ('{classification}') -- cannot safely "
-            "compute the next Round or regenerate INDEX.md while this file is present.",
+            "compute the next Round or regenerate INDEX.md while this file is present." + _USERS_FILE,
             data={"file": path.name},
         )
     # Reading the ENTIRE entry file (path.read_text().splitlines()) would
@@ -220,7 +226,7 @@ def _parse_entry(path):
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has no content -- cannot safely compute the next Round or regenerate "
-            "INDEX.md while this file is present.",
+            "INDEX.md while this file is present." + _USERS_FILE,
             data={"file": path.name},
         )
     heading = lines[0].lstrip("#").strip()
@@ -283,11 +289,48 @@ def _existing_entries(decision_log_dir, *, warnings=None):
             data={"folder": str(decision_log_dir), "unreadable": unreadable},
             warnings=warnings,
         )
-    return [
-        _parse_entry(path)
-        for path in sorted(scan.markdown)
-        if path.name not in _NON_ENTRY_FILES
-    ]
+    return [_parse_entry(path) for path in _entry_candidates(scan)]
+
+
+def _entry_candidates(scan):
+    """The files of `scan` that must each be an entry: every `.md` but
+    the log's own INDEX.md and CYCLES.md, sorted."""
+    return [path for path in sorted(scan.markdown) if path.name not in _NON_ENTRY_FILES]
+
+
+def unrecognized_log_files_warning(target, config):
+    """The warning for the files under `config.folderlog` that are not
+    decision-log entries -- the ones `log` refuses to write past
+    (log-directory-contains-unrecognized-file, the same _parse_entry
+    reading), e.g. a note moved into the log. None when there are none,
+    when folderlog does not exist, or when it cannot be resolved inside
+    the repository. Never raises for what it cannot read: a subdirectory
+    or file that cannot be read is left out, not reported as a stray."""
+    try:
+        decision_log_dir = decision_log_dir_for(target, config)
+    except CommandError:
+        return None
+    if not decision_log_dir.is_dir():
+        return None
+    names = []
+    for path in _entry_candidates(scan_tree(decision_log_dir)):
+        try:
+            _parse_entry(path)
+        except CommandError as error:
+            if error.code != FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE:
+                raise
+            names.append(path.relative_to(decision_log_dir).as_posix())
+        except OSError:
+            continue
+    if not names:
+        return None
+    return (
+        f"{len(names)} file(s) in {config.folderlog} are not decision-log entries: {', '.join(names)}. "
+        "adrpy did not write them, so they are the user's files: ask where they belong before moving "
+        "any, and never delete one (an entry whose name is wrong is renamed to "
+        "{ISO date}--{classification}--{scope}--{slug}.md instead). `adrpy log` refuses to write an entry "
+        "while any of them is there (log-directory-contains-unrecognized-file)."
+    )
 
 
 def check_entries(decision_log_dir, *, warnings=None):

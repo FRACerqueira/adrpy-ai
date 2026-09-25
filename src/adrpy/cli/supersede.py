@@ -7,6 +7,7 @@ never a collision-disambiguator. `--open` is permanently not implemented
 
 from adrpy.core.args import parse_flags
 from adrpy.core.config import LENSEQ_MAX
+from adrpy.core.consistency import note_shared_numbers
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.header import DecisionRecord, build_header, status_row
 from adrpy.core.atomic_write import normalize_newlines
@@ -227,6 +228,9 @@ def run(args):
                 data={"intended_successor": str(successor_path)},
                 warnings=warnings,
             ) from error
+        note_shared_numbers(
+            warnings, ctx.snapshot, config, [(successor_number, True), (filename_info.number, False)]
+        )
 
     # Canonical keyword, not the repo's configured status label.
     return {

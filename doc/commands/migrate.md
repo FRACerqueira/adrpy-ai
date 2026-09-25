@@ -11,7 +11,7 @@ Adds an adrpy-compliant header to existing, hand-written decision files.
 
 ## Description
 
-Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback. It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
+Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback, and must not read part of a name twice (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid, refused before anything is written, a fallback before it is persisted; once a decision was migrated with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the titles begin with part of the number). It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
 
 ## Arguments
 
@@ -65,7 +65,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
 | `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
-| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]. |
+| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
 | `config-headerrevision-too-long` | headerrevision exceeds 40 characters. |
@@ -103,6 +103,18 @@ A name too short for a part, or with anything but digits where `N`, `V`
 or `R` expects them, is not a legacy ADR name. The current naming scheme
 is always tried first, so the pattern only reads names that are not
 already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
+
+`T` must not start inside the `N`, `V`, `R` or `P` range, and those
+ranges must not overlap (a range placed after `T` ends up inside the
+title, which runs to the end of the name: that is not checked). `N00:04T02` on `0001-use-x.md` would record the
+title `01-use-x`; such a pattern is refused with
+`config-migrationpattern-invalid` wherever it is set (`config`,
+`installconfig`, `init`, `explore`'s preview) and by `migrate`, before
+anything is written. A config that already holds one still loads, and the
+pattern can be corrected or cleared while no decision was migrated with
+it. After that the `migrationpattern` guard keeps it, and `migrate`
+finishes with it, warning that the titles it reads begin with part of the
+number: correct those `File title md` rows by hand.
 
 - `N00:04T05` reads `0001-use-postgres.md` as decision 1, title `use-postgres`.
 - `N04:04T13V10:02P00:03` reads `ADR-0007-v02-use-postgres.md` as decision 7,

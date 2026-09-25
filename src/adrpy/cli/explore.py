@@ -11,8 +11,14 @@ not silently either.
 from dataclasses import asdict
 
 from adrpy.core.args import parse_flags
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config, serialize_repo_config
+from adrpy.core.config import (
+    SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    parse_repo_config,
+    reject_overlapping_migration_pattern,
+    serialize_repo_config,
+)
 from adrpy.core.consistency import check_repository, unheadered_legacy_warning, unrecognized_decision_like_warning
+from adrpy.core.decision_log import unrecognized_log_files_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
 from adrpy.core.lifecycle import (
@@ -39,7 +45,9 @@ def describe():
             "or `no-header`, with `header.invalid_reason` naming the parse failure for the last two. A file whose "
             "name only migrationpattern matches and that has no header is listed with `scheme` null (not a "
             "decision) once the repository has a decision with a valid header migrate did not write, and named in "
-            "`warnings`. With "
+            "`warnings` with the number read from its name. A file in the decision-log folder (folderlog) that is "
+            "not a decision-log entry (INDEX.md and CYCLES.md are the log's own) is named in `warnings` too: "
+            "`adrpy log` refuses to write while it is there. With "
             "--migrationpattern, the result also has `migrationpattern_preview` -- the list `adrpy config "
             "--migrationpattern` would return for that pattern (file, number, version, title of each file it "
             "recognizes), its likely-misreading warnings in `warnings` -- while writing nothing: the inventory "
@@ -60,8 +68,9 @@ def describe():
                 "description": (
                     "A migrationpattern to preview (same syntax as `adrpy config --migrationpattern`), read "
                     "instead of the repository's own for `migrationpattern_preview` only; nothing is written. "
-                    "An invalid one fails with config-migrationpattern-invalid; an empty value is a usage error "
-                    "(there is nothing to preview)."
+                    "An invalid one fails with config-migrationpattern-invalid, as does one that reads part of a "
+                    "name twice (its T starts inside its N/V/R/P range, or two of those ranges overlap; the "
+                    "detail names the overlap); an empty value is a usage error (there is nothing to preview)."
                 ),
             },
         ],
@@ -87,6 +96,7 @@ def run(args):
         preview_config = parse_repo_config(
             serialize_repo_config({**asdict(config), "migrationpattern": flags["migrationpattern"]})
         )
+        reject_overlapping_migration_pattern(preview_config.migrationpattern)
 
     entries = []
     excluded = []
@@ -157,7 +167,11 @@ def run(args):
     warning = excluded_candidate_warning(excluded)
     if warning:
         warnings.append(warning)
-    for warning in (unrecognized_decision_like_warning(scan, config), unheadered_legacy_warning(snapshot)):
+    for warning in (
+        unrecognized_decision_like_warning(scan, config),
+        unheadered_legacy_warning(snapshot, config),
+        unrecognized_log_files_warning(target, config),
+    ):
         if warning:
             warnings.append(warning)
     preview = None

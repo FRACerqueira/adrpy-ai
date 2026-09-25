@@ -76,7 +76,7 @@ Creates a new major version of an Accepted or Rejected decision, status Proposed
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
 | `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
-| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]. |
+| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
 | `config-headerrevision-too-long` | headerrevision exceeds 40 characters. |

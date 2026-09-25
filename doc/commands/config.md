@@ -20,7 +20,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `--path` | -- | yes | string | Repository root directory. |
 | `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
 | `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
-| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading. While the repository is not adopted yet (no file has a valid header migrate did not write, so migrate can still run), `adrpy check` (and every command that validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
+| `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading. A pattern that reads part of a name twice -- its T starts inside its N/V/R/P range, or two of those ranges overlap, as 'N00:04T02' for `0001-title.md` (title '01-title') -- is refused with config-migrationpattern-invalid, the detail naming the overlap; a config that already holds one still loads, and this flag can clear or correct it while no decision was migrated with it (after that the guard keeps it, and migrate finishes with it and warns). While the repository is not adopted yet (no file has a valid header migrate did not write, so migrate can still run), `adrpy check` (and every command that validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
 | `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--prefix` | -- | no | string | ASCII letters only, max 5 characters; every decision name starts with it (compared case-insensitively), so it is guarded like --separator. The stored value may be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty optional value outright) -- use `init --seed` for that. |
 | `--separator` | -- | no | string | One of ('-', '_', '.'). |
@@ -95,7 +95,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
 | `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
-| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]. |
+| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
 | `config-headerrevision-too-long` | headerrevision exceeds 40 characters. |
@@ -133,6 +133,18 @@ A name too short for a part, or with anything but digits where `N`, `V`
 or `R` expects them, is not a legacy ADR name. The current naming scheme
 is always tried first, so the pattern only reads names that are not
 already ADR names (see "ADR names" in [the lifecycle](../lifecycle.md)).
+
+`T` must not start inside the `N`, `V`, `R` or `P` range, and those
+ranges must not overlap (a range placed after `T` ends up inside the
+title, which runs to the end of the name: that is not checked). `N00:04T02` on `0001-use-x.md` would record the
+title `01-use-x`; such a pattern is refused with
+`config-migrationpattern-invalid` wherever it is set (`config`,
+`installconfig`, `init`, `explore`'s preview) and by `migrate`, before
+anything is written. A config that already holds one still loads, and the
+pattern can be corrected or cleared while no decision was migrated with
+it. After that the `migrationpattern` guard keeps it, and `migrate`
+finishes with it, warning that the titles it reads begin with part of the
+number: correct those `File title md` rows by hand.
 
 - `N00:04T05` reads `0001-use-postgres.md` as decision 1, title `use-postgres`.
 - `N04:04T13V10:02P00:03` reads `ADR-0007-v02-use-postgres.md` as decision 7,

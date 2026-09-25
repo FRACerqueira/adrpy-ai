@@ -31,7 +31,12 @@ from adrpy.core.fs import (
     scan_tree,
     write_landed,
 )
-from adrpy.core.config import SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES, parse_repo_config, serialize_repo_config
+from adrpy.core.config import (
+    SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    parse_repo_config,
+    reject_overlapping_migration_pattern,
+    serialize_repo_config,
+)
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
 from adrpy.core.header import (
     DecisionRecord,
@@ -41,8 +46,13 @@ from adrpy.core.header import (
     read_header_lines_with_report,
 )
 from adrpy.core.install_config import read_install_config_text
-from adrpy.core.lifecycle import PATTERN_ADVICE_AFTER_MIGRATE, legacy_pattern_warnings, resolve_target_and_config
-from adrpy.core.naming import parse_any_filename
+from adrpy.core.lifecycle import (
+    PATTERN_ADVICE_AFTER_MIGRATE,
+    has_valid_header,
+    legacy_pattern_warnings,
+    resolve_target_and_config,
+)
+from adrpy.core.naming import migration_pattern_overlap, parse_any_filename
 from adrpy.core.output import explain
 from adrpy.core.text import is_ascii_digits
 from adrpy.core.security import (
@@ -86,6 +96,19 @@ def _carries_supersede_suffix(parsed, config):
         return True
     _head, separator, tail = (parsed.title or "").rpartition(config.separator * 2)
     return bool(separator) and is_ascii_digits(tail)
+
+
+def _migrated_with_the_pattern(scan, config):
+    """Whether a legacy-scheme file of `scan` already has a valid header:
+    the same count that blocks a migrationpattern change
+    (core/lifecycle.has_valid_header)."""
+    if scan is None:
+        return False
+    for candidate in scan.markdown:
+        found = parse_any_filename(candidate.name, config)
+        if found is not None and found[0] == "legacy" and has_valid_header(candidate, config):
+            return True
+    return False
 
 
 def _existing_headers(scan, config):
@@ -140,7 +163,11 @@ def describe():
         "description": (
             "Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written "
             "decision file matching the repository's migrationpattern, which must be set in this repository's"
-            " config or come from the install-level config's fallback. It is a one-time step, refused as a whole"
+            " config or come from the install-level config's fallback, and must not read part of a name twice"
+            " (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid,"
+            " refused before anything is written, a fallback before it is persisted; once a decision was migrated"
+            " with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the"
+            " titles begin with part of the number). It is a one-time step, refused as a whole"
             " when a file already has a valid header migrate did not write (checked first, before anything is "
             "written); a fallback value is then persisted into adr-config.adrplus (reported as "
             "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
@@ -253,6 +280,23 @@ def run(args):
             if tool_created:
                 _refuse_headers_migrate_did_not_write(tool_created, warnings)
 
+        # A pattern that reads part of a name twice is refused before
+        # anything is written: the repository's own here, the fallback
+        # before it is persisted. Once a decision was migrated with the
+        # repository's own, the migrationpattern guard keeps it from
+        # changing, so migrate finishes with it and says so instead.
+        if config.migrationpattern:
+            overlap = migration_pattern_overlap(config.migrationpattern)
+            if overlap is not None:
+                if not _migrated_with_the_pattern(scan, config):
+                    reject_overlapping_migration_pattern(config.migrationpattern)
+                warnings.append(
+                    f"migrationpattern '{config.migrationpattern}' reads part of a name twice: {overlap}. "
+                    "Decisions were already migrated with it, so it can no longer change and migrate uses "
+                    "it: the titles it reads begin with part of the number -- correct each migrated "
+                    "file's `File title md` row by hand."
+                )
+
         # ADR002V01: the install-level fallback is only consulted when
         # the repository's own migrationpattern is empty.
         if not config.migrationpattern:
@@ -265,6 +309,7 @@ def run(args):
                     "config (see installconfig) has none either.",
                     warnings=warnings,
                 )
+            reject_overlapping_migration_pattern(fallback_pattern)
             # Persists the found value back into the repo's own config
             # now, as its own write, before any candidate is looked at:
             # the repository then carries the pattern it was migrated

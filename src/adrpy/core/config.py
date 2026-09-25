@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from adrpy.core.casing import CASE_TRANSFORMS
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.fs import read_bounded, read_with_permission_retry
-from adrpy.core.naming import parse_migration_pattern
+from adrpy.core.naming import migration_pattern_overlap, parse_migration_pattern
 from adrpy.core.security import (
     reject_embedded_delimiter,
     reject_marker_comment_syntax,
@@ -151,7 +151,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_HEADERDISCLAIMER_TOO_LONG: f"headerdisclaimer exceeds {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_FIELD_IS_BLANK: "A field is non-empty but blank after stripping whitespace.",
     FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->').",
-    FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID: "migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##].",
+    FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID: "migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap).",
     FailureCodes.CONFIG_HEADERTITLEFILE_TOO_LONG: f"headertitlefile exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERVERSION_TOO_LONG: f"headerversion exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERREVISION_TOO_LONG: f"headerrevision exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
@@ -607,3 +607,19 @@ def parse_repo_config(text):
         )
 
     return RepoConfig(**{name: lowered[name] for name in ALL_FIELDS})
+
+
+def reject_overlapping_migration_pattern(pattern_text):
+    """config-migrationpattern-invalid when `pattern_text` reads part of a
+    name twice (core/naming.migration_pattern_overlap). Called where a
+    migrationpattern is set and by migrate, deliberately not by
+    parse_repo_config: a repository whose config already holds such a
+    pattern (possibly with decisions migrated under it) must still load,
+    and the pattern guard would otherwise leave it unable to change."""
+    overlap = migration_pattern_overlap(pattern_text)
+    if overlap is not None:
+        raise CommandError(
+            FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID,
+            f"migrationpattern '{pattern_text}' reads part of a name twice: {overlap}. For `0001-title.md`, "
+            "'N00:04T05' reads number 0001 and title 'title'.",
+        )

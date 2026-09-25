@@ -124,6 +124,40 @@ def parse_migration_pattern(pattern_text):
     return result
 
 
+_RANGE_NAMES = {"N": "number", "V": "version", "R": "revision", "P": "prefix"}
+
+
+def migration_pattern_overlap(pattern_text):
+    """What makes `pattern_text` read the same characters twice, or None:
+    T (the title start) inside one of the N/V/R/P ranges, or two of those
+    ranges overlapping (e.g. 'N00:04T02' on 0001-use-x.md: title
+    '01-use-x'). None too for an empty or unparseable pattern (the shape
+    check is parse_repo_config's). Checked only where a pattern is set
+    and by migrate, never at load, so a repository already holding one
+    keeps working and can change it."""
+    pattern = parse_migration_pattern(pattern_text)
+    if pattern is None:
+        return None
+    ranges = [(key, *pattern[key]) for key in "NVRP" if key in pattern]
+    t_pos = pattern["T"][0]
+    for key, pos, length in ranges:
+        if pos <= t_pos < pos + length:
+            unit = "characters" if key == "P" else "digits"
+            which = f"last {unit}" if t_pos > pos else unit
+            return (
+                f"T{t_pos:02d} starts inside {key}{pos:02d}:{length:02d}: the title would begin with the "
+                f"{_RANGE_NAMES[key]}'s {which}"
+            )
+    for index, (key, pos, length) in enumerate(ranges):
+        for other, other_pos, other_length in ranges[index + 1 :]:
+            if pos < other_pos + other_length and other_pos < pos + length:
+                return (
+                    f"{key}{pos:02d}:{length:02d} and {other}{other_pos:02d}:{other_length:02d} overlap: the same "
+                    f"characters would be read as both the {_RANGE_NAMES[key]} and the {_RANGE_NAMES[other]}"
+                )
+    return None
+
+
 def parse_legacy_filename(filename, config):
     """Legacy scheme only. Recognizes ONLY the legacy scheme, and only
     when `config.migrationpattern` itself parses --

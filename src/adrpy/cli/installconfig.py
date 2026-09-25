@@ -59,6 +59,7 @@ from adrpy.core.config import (
     default_repo_config_text_for_language,
     parse_repo_config,
     read_config_text,
+    reject_overlapping_migration_pattern,
 )
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import resolve_install_config_path
@@ -106,7 +107,9 @@ def _field_description(field):
     if field == "migrationpattern":
         return (
             "Positional pattern for the legacy naming scheme, e.g. 'N00:04T04' "
-            "(N##:##T##[V##:##][R##:##][P##:##]); the stored value may be empty, but this flag can't set "
+            "(N##:##T##[V##:##][R##:##][P##:##]); one that reads part of a name twice (its T starts inside "
+            "its N/V/R/P range, or two of those ranges overlap) is refused with "
+            "config-migrationpattern-invalid, here and in --seed. The stored value may be empty, but this flag can't set "
             "it to an empty string here (parse_flags rejects any empty optional value outright) -- use "
             "`installconfig --seed` for that."
         )
@@ -274,7 +277,7 @@ def run(args):
         if not seed_path.is_file():
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
-        parse_repo_config(seed_text)  # validates before writing
+        reject_overlapping_migration_pattern(parse_repo_config(seed_text).migrationpattern)  # validates before writing
         return {
             "file": str(target),
             "updated_fields": list(_EDITABLE_FIELDS),
@@ -342,5 +345,7 @@ def run(args):
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
+    if "migrationpattern" in flags:
+        reject_overlapping_migration_pattern(merged["migrationpattern"])
 
     return {"file": str(target), "updated_fields": updated_fields, "warnings": _write(merged_text)}

@@ -94,9 +94,12 @@ is not a decision anywhere: validation, numbering, the config guards and
 `init`'s existing-number check ignore it, a command given it as `--file`
 refuses it (`filename-not-recognized`), `explore` lists it with
 `scheme: null`, and `check`, `explore` and every lifecycle command name it
-in `warnings` -- its number, read from the name, may already be a
-decision's, so rename it to a free number before giving it a header by
-hand. Before
+in `warnings`, each with the number read from its name -- that number
+may already be a decision's, so rename it to a free number before giving
+it a header by hand. When `new`, `version`, `revise` or `supersede` has
+just created a decision with that number, or `supersede` acts on one, the
+same warning says so (`ADR002 now shares number 2 with
+0002-team-offsite-notes.md`). Before
 that (the repository not adopted yet), it is a decision with no header
 (`no-header`, until `migrate` runs), as a hand-written repository expects:
 headers `migrate` wrote do not end the adoption, so after a partial run
@@ -408,7 +411,15 @@ what a pattern reads from each name (`migrationpattern_preview`, the list
 `config --migrationpattern` returns, with the same misreading warnings)
 without writing anything; `adrpy config --migrationpattern` then writes
 it, and `check` fails with `no-header` on each matched file until
-`migrate` runs. A pattern
+`migrate` runs. A pattern that reads part of a name twice -- its T (title
+start) inside its N, V, R or P range, or two of those ranges overlapping,
+as `N00:04T02` for `0001-use-x.md`, which would record the title
+`01-use-x` -- is refused with `config-migrationpattern-invalid` wherever
+it is set (`config`, `installconfig`, `init --seed` or the install-level
+config `init` reads, `explore`'s preview), and `migrate` refuses it before
+writing anything (a fallback before it is persisted). A config that
+already holds one still loads, and the pattern can be cleared or
+corrected as the next rule allows. A pattern
 set by mistake can be changed or cleared (`adrpy config
 --migrationpattern ""`) only while no legacy-scheme decision with a valid
 header exists -- that is, one already migrated. A legacy name the pattern

@@ -22,6 +22,7 @@ from adrpy.core.config import (
     parse_repo_config,
     raise_config_file_empty,
     read_config_text,
+    reject_overlapping_migration_pattern,
     serialize_repo_config,
 )
 from adrpy.core.consistency import decision_names
@@ -125,7 +126,11 @@ def describe():
                     "subdirectory and a guarded field change occur together, status-or-separator-change-scan-"
                     "incomplete is what's raised (unless the seed also changes folderadr, whose own "
                     "folderadr-change-scan-incomplete fires first). See this command's own top-level description for "
-                    "init-existing-numbers-scan-incomplete, which is NOT scoped to this --seed path either."
+                    "init-existing-numbers-scan-incomplete, which is NOT scoped to this --seed path either. "
+                    "A seed (or the install-level config read in its place) whose migrationpattern reads part of "
+                    "a name twice -- its T starts inside its N/V/R/P range, or two of those ranges overlap -- "
+                    "fails with config-migrationpattern-invalid before anything is written, unless the existing "
+                    "config already holds that same pattern."
                 ),
             },
             {
@@ -259,6 +264,10 @@ def run(args):
 
 
 def _validate_and_write(target, config_path, config_text, config, warnings, old_config=None):
+    # The seed's migrationpattern is being set, unless it is the one the
+    # repository already holds (left loadable, like config leaves it).
+    if old_config is None or config.migrationpattern != old_config.migrationpattern:
+        reject_overlapping_migration_pattern(config.migrationpattern)
     if old_config is not None:
         # --seed replacing an ALREADY-existing repository's config is
         # exactly as capable of orphaning or unrecognizing existing

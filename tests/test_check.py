@@ -208,3 +208,79 @@ def test_no_unrecognized_file_warning_without_decision_like_names(tmp_path, caps
     _code, payload = _run(capsys, ["check", "--path", str(repo.root)])
 
     assert payload["data"]["warnings"] == []
+
+
+# ------------------------------------------------------------- folderlog --
+
+_ENTRY = "2026-09-18--scope-note--lock--a-note.md"
+
+
+def _log_dir(repo):
+    folder = repo.root / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / _ENTRY).write_text("# A note\n\nBody.\n", encoding="utf-8")
+    (folder / "INDEX.md").write_text("# Decision log index\n", encoding="utf-8")
+    (folder / "CYCLES.md").write_text("# Cycles\n", encoding="utf-8")
+    return folder
+
+
+def _log_warnings(warnings):
+    return [warning for warning in warnings if "are not decision-log entries" in warning]
+
+
+def test_check_and_explore_warn_about_a_file_in_folderlog_that_is_not_an_entry(tmp_path, capsys):
+    # An agent moved a meeting note INTO the decision log: `log` then
+    # refuses to write; check says so first, without failing.
+    from adrpy.cli import log
+    from adrpy.core.errors import CommandError
+
+    repo = make_repo(tmp_path, files=[D(1)])
+    folder = _log_dir(repo)
+    (folder / "meeting-notes.md").write_text("# Team meeting\n", encoding="utf-8")
+    (folder / "sub").mkdir()
+    (folder / "sub" / "2026-09-18--not-a-class--lock--x.md").write_text("# x\n", encoding="utf-8")
+
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+
+    assert code == EXIT_SUCCESS
+    [warning] = payload["data"]["warnings"]
+    assert warning.startswith(
+        "2 file(s) in doc/decision-log are not decision-log entries: meeting-notes.md, "
+        "sub/2026-09-18--not-a-class--lock--x.md."
+    )
+    # The file is the user's: an agent must ask, never move it to get past
+    # the refusal (a real run moved it silently and wrote the entry).
+    assert "the user's" in warning and "ask where they belong" in warning and "never delete" in warning
+    assert "Move them out" not in warning and "`adrpy log` refuses" in warning
+    assert "INDEX.md" not in warning and "CYCLES.md" not in warning and _ENTRY not in warning
+    assert warning in explore.run(["--path", str(repo.root)])["warnings"]
+    # The same recognition `log` refuses on.
+    with pytest.raises(CommandError) as excinfo:
+        log.run(
+            ["--path", str(repo.root), "--classification", "scope-note", "--scope", "lock", "--slug", "b",
+             "--summary", "B", "--body", "B.", "--refdate", "2026-09-18"]
+        )
+    assert excinfo.value.code == FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE
+    assert "the user's file" in excinfo.value.detail and "ask where it belongs" in excinfo.value.detail
+
+
+def test_no_folderlog_warning_for_a_clean_log_or_a_missing_one(tmp_path, capsys):
+    clean = make_repo(tmp_path / "clean", files=[D(1)])
+    _log_dir(clean)
+    missing = make_repo(tmp_path / "missing", files=[D(1)])
+
+    for repo in (clean, missing):
+        code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+        assert (code, payload["data"]["warnings"]) == (EXIT_SUCCESS, [])
+        assert _log_warnings(explore.run(["--path", str(repo.root)])["warnings"]) == []
+    assert not (missing.root / "doc" / "decision-log").exists()
+
+
+def test_the_folderlog_warning_also_comes_with_a_failing_check(tmp_path, capsys):
+    repo = make_repo(tmp_path, files=[D(1), D(1, title="Other")])
+    (_log_dir(repo) / "notes.md").write_text("# x\n", encoding="utf-8")
+
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+
+    assert code == EXIT_FAILURE
+    assert len(_log_warnings(payload["warnings"])) == 1

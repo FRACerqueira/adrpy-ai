@@ -71,7 +71,7 @@ def test_after_adoption_a_legacy_name_without_header_is_ignored_and_warned_about
     assert payload["data"]["decisions"] == 1
     [warning] = payload["data"]["warnings"]
     assert warning.startswith(
-        "1 file(s) match migrationpattern but have no header, so they are not decisions: 0099-notes.md."
+        "1 file(s) match migrationpattern but have no header, so they are not decisions: 0099-notes.md (number 99)."
     )
     assert "migrate does not run" in warning and "header by hand" in warning
     assert "move them out of the decisions folder" in warning
@@ -163,6 +163,90 @@ def test_writing_commands_warn_that_an_ignored_file_may_share_a_number(tmp_path)
         [warning] = _phase_warnings(result["warnings"])
         assert "0002-legacy.md" in warning
         assert "number" in warning and "rename" in warning
+
+
+def test_the_phase_warning_names_the_number_read_from_each_ignored_file(tmp_path, capsys):
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
+    _note(repo, "0007-legacy.md")
+    _note(repo)
+
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+
+    assert code == EXIT_SUCCESS
+    [warning] = _phase_warnings(payload["data"]["warnings"])
+    assert "0007-legacy.md (number 7), 0099-notes.md (number 99)." in warning
+
+
+def test_new_says_when_the_decision_it_created_shares_an_ignored_files_number(tmp_path):
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
+    _note(repo, "0002-team-offsite-notes.md")
+
+    result = new.run(["--path", str(repo.root), "--title", "Next"])
+
+    [warning] = _phase_warnings(result["warnings"])
+    assert "ADR002 now shares number 2 with 0002-team-offsite-notes.md." in warning
+    assert len(result["warnings"]) == 1
+
+
+def test_new_does_not_claim_a_shared_number_when_there_is_none(tmp_path):
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
+    _note(repo, "0005-legacy.md")
+
+    result = new.run(["--path", str(repo.root), "--title", "Next"])
+
+    [warning] = _phase_warnings(result["warnings"])
+    assert "shares number" not in warning
+
+
+def test_a_refused_new_does_not_claim_the_number_is_now_shared(tmp_path):
+    # title-already-exists: nothing was created, so nothing "now shares".
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1, title="Next")])
+    _note(repo, "0002-legacy.md")
+
+    with pytest.raises(CommandError) as excinfo:
+        new.run(["--path", str(repo.root), "--title", "Next"])
+
+    assert excinfo.value.code == FailureCodes.TITLE_ALREADY_EXISTS
+    [warning] = _phase_warnings(excinfo.value.warnings)
+    assert "0002-legacy.md (number 2)" in warning and "shares number" not in warning
+
+
+def test_version_says_its_new_version_shares_an_ignored_files_number(tmp_path):
+    from adrpy.cli import version
+
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1, state="accepted")])
+    _note(repo, "0001-legacy.md")
+
+    result = version.run(["--file", str(repo.paths[0])])
+
+    [warning] = _phase_warnings(result["warnings"])
+    assert "ADR001 now shares number 1 with 0001-legacy.md." in warning
+
+
+def test_revise_says_its_new_revision_shares_an_ignored_files_number(tmp_path):
+    from adrpy.cli import revise
+
+    repo = make_repo(tmp_path, config={**_PATTERN, "lenrevision": 2}, files=[D(1, state="accepted")])
+    _note(repo, "0001-legacy.md")
+
+    result = revise.run(["--file", str(repo.paths[0])])
+
+    [warning] = _phase_warnings(result["warnings"])
+    assert "ADR001 now shares number 1 with 0001-legacy.md." in warning
+
+
+def test_supersede_names_both_the_successor_and_its_target_sharing_numbers(tmp_path):
+    from adrpy.cli import supersede
+
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1, state="accepted")])
+    _note(repo, "0001-old-notes.md")
+    _note(repo, "0002-new-notes.md")
+
+    result = supersede.run(["--file", str(repo.paths[0])])
+
+    [warning] = _phase_warnings(result["warnings"])
+    assert "ADR002 now shares number 2 with 0002-new-notes.md." in warning
+    assert "ADR001 shares number 1 with 0001-old-notes.md." in warning
 
 
 @pytest.mark.parametrize("command", ["approve", "reject", "undo", "version", "supersede"])

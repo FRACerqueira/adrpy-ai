@@ -29,16 +29,20 @@ takes flags and prints one JSON object; none of them prompts.
   leave it as the command left it. Run `approve`, `reject` or `undo` only
   when the user asks for that action, or ask first -- a decision described
   as already made, or an old document that says "Accepted", is not a
-  request to accept it.
+  request to accept it. A command that needs another status first (`version`
+  or `revise` of a Proposed decision) is refused: tell the user and ask;
+  never approve it to make the command work.
 - **Write only what the user gave.** In the decision's text, fill a
   section only with what the user said; list the sections still open and
   ask, in the closing sentence below, whether the user wants to fill them
   now. A section
-  with no answer keeps the template's placeholder. Never invent options,
+  with no answer keeps the template's placeholder; when you fill part of a
+  line (the chosen option, say), keep the placeholder for the part the user
+  did not give (its justification). Never invent options,
   drivers or consequences, and never take Deciders or dates from git or
   the environment.
-- **Close with one sentence that asks for a review.** Whenever you wrote or
-  changed a decision's text, the last sentence of your reply asks the user
+- **Close with one sentence that asks for a review.** Whenever you created a
+  decision or wrote or changed its text, the last sentence of your reply asks the user
   to review that text, together with the open-sections question, e.g.:
   "Context, Drivers and Consequences are still open -- want to fill them
   now? Either way, please review the decision's text before it is
@@ -54,6 +58,8 @@ takes flags and prints one JSON object; none of them prompts.
   `adrpy supersede --file <path of the predecessor> --title "<new title>"`.
   It marks the predecessor Superseded and creates the successor in one
   command. Do not create the successor with `new` and link it by hand.
+  When the user says a decision replaces, supersedes or changes an earlier
+  one, that is a supersede, not a new decision.
 - **Repair by hand only when check's hint says so**, and write exactly the
   row or cell the hint gives. When the user asked to fix a failing check,
   apply the hint's first option without asking and say which one you
@@ -65,12 +71,25 @@ takes flags and prints one JSON object; none of them prompts.
   a pattern with `adrpy explore --path . --migrationpattern <pattern>`: it
   writes nothing. Before writing anything, list in one question the files
   in the decisions folder that do not look like decisions and where you
-  intend to move them; move them and migrate only after the answer.
+  intend to move them; move them and migrate only after the answer. If
+  every file looks like a decision, there is nothing to ask: go ahead. In
+  the pattern, N is the number's start:length and T where the title starts,
+  after the separator: for `0001-use-x.md`, `N00:04T05` (`T02` would start
+  the title inside the number). If a pattern the user gave is refused, say
+  why and ask before using another one. Migrated decisions have no status yet,
+  whatever their old text says: report them as migrated, without a status
+  (never describe their old status as kept or existing), and ask before
+  approving any.
   `adrpy config --migrationpattern` writes the config, and `check` fails
   until `migrate` runs: if you stop, clear it with
   `adrpy config --path . --migrationpattern ""` and tell the user. Once
   the repository has a decision `migrate` did not write, a file whose name
   only matches the pattern is not a decision; check warns about it.
+- **Never move, rename or delete a file adrpy did not write to get past a
+  refusal**: a note in the decisions or decision-log folder is the user's.
+  Report the refusal and ask where the file belongs.
+- **Relay every warning** a command returns about the files you touched
+  (a number shared with a file that is not a decision, say), in your reply.
 - **Run one command at a time per working copy.** adrpy does not lock
   files: two commands running together on the same working copy can
   overwrite each other's work.
@@ -87,7 +106,7 @@ takes flags and prints one JSON object; none of them prompts.
 - `adrpy reject --file <file>` -- marks a Proposed decision Rejected.
 - `adrpy undo --file <file>` -- sets an Accepted or Rejected decision back to Proposed.
 - `adrpy supersede --file <file> --title "..."` -- marks an Accepted decision Superseded and creates its successor.
-- `adrpy version --file <file>` -- creates a new major version of an Accepted or Rejected decision.
+- `adrpy version --file <file>` -- creates a new major version of an Accepted or Rejected decision, or of a migrated one (a Proposed one is refused: ask, never approve it).
 - `adrpy revise --file <file>` -- creates a revision (a wording fix) of an Accepted or Rejected decision.
 - `adrpy migrate --path .` -- adds a header to hand-written decision files, once, at adoption; preview a pattern with `adrpy explore --path . --migrationpattern <pattern>` first.
 - `adrpy config --path .` -- reads the repository's config, or changes the fields passed.

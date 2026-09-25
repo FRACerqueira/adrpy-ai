@@ -70,6 +70,33 @@ under your own home directory instead of the repository); every other
 provider only understands project scope, and rejects `--target global`
 with `usage-error`.
 
+## Which model to use
+
+The skills are instructions in natural language: how well an agent follows
+them depends on the model, not only on the text. They were tested with
+Claude Code (`claude -p`, one fresh session per scenario, only what
+`adrpy-skills` installs) on 14 scenarios, with three models, in two
+batches: the second after the skills and the CLI were corrected from what
+the first showed.
+
+- **Claude Opus 5.5** followed every rule in every run of both batches.
+- **Claude Sonnet 5** followed 95% of the rules in the second batch; the
+  misses were small (a question it did not need to ask, how it described
+  the status of migrated decisions).
+- **Claude Haiku 4.5** went from 67% to 85%. In the first batch it moved a
+  file out of the decisions folder without asking, approved a decision to
+  be able to version it and migrated with a pattern that recorded wrong
+  titles; the corrections stopped those. It still created a new decision
+  where the user described a replacement (a supersede), did not always ask
+  for a review, and said things about the result that were not true.
+
+Recommendation: for any task that writes decisions, use a model at least
+as capable as Claude Sonnet 5; a smaller model can be enough for reading
+(`adrpy check`, `adrpy explore`). The other providers (Cursor, GitHub
+Copilot, a generic `AGENTS.md`) and their models were **not** tested with
+a real agent: test the scenarios that matter to you before relying on
+them. These are a few runs per scenario on one day, not statistics.
+
 ## A skill that is no longer shipped
 
 Development builds also shipped a `comment-audit` skill; it is no longer

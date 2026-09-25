@@ -8,6 +8,7 @@ from adrpy.core.consistency import (
     unheadered_legacy_warning,
     unrecognized_decision_like_warning,
 )
+from adrpy.core.decision_log import unrecognized_log_files_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.fs import scan_tree
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
@@ -57,7 +58,10 @@ def describe():
             "detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name "
             "starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only "
             "migrationpattern matches and that has no header once the repository has a decision with a valid "
-            "header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names)."
+            "header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names; the "
+            "warning gives the number read from each name), as is a file in the decision-log folder "
+            "(folderlog) that is not a decision-log entry (INDEX.md and CYCLES.md are the log's own): "
+            "`adrpy log` refuses to write while it is there. Warnings never change the outcome."
         ),
         "arguments": [
             {
@@ -95,7 +99,8 @@ def run(args):
         warning
         for warning in (
             unrecognized_decision_like_warning(scan, config),
-            unheadered_legacy_warning(snapshot),
+            unheadered_legacy_warning(snapshot, config),
+            unrecognized_log_files_warning(target, config),
         )
         if warning
     ]
