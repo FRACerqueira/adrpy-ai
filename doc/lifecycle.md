@@ -38,7 +38,11 @@ is filled. `undo` never touches the Superseded cell.
   never given to a second one: `new` takes the number after the highest
   one held (gaps are not reused), `revise` the revision after the
   highest one its version holds, and `version` the version after the
-  highest one its family holds.
+  highest one its family holds. The one exception is the phase rule
+  (see ADR names): once the repository is adopted, a legacy name without
+  a header is not a decision and its number is not counted, so a new
+  decision can get that number -- the command that writes it warns that
+  the two share it.
 - **Status comes from the header.** Every file with an ADR name must have
   a header that parses, with a status combination the tool writes (see
   the next section). A header written by AdrPlus 1.0.0 -- the status read
@@ -106,11 +110,14 @@ headers `migrate` wrote do not end the adoption, so after a partial run
 the files left still block every lifecycle command until `migrate`
 finishes them. A 0-byte file with a legacy name counts as one without a header
 (the tool only ever creates current-scheme names, so it is never an
-interrupted create's). A header that looks like this tool's but does not
+interrupted create's: it is the user's, and `check`'s hint says to ask
+before removing it). A header that looks like this tool's but does not
 parse never adopts the repository, and stays `invalid-header` in both
 phases; a legacy name with a valid header is a decision in both. `migrate`
 still finds every legacy name, so a re-run after a partial `migrate`
-migrates what is left.
+migrates what is left -- except a 0-byte file, which every run skips with
+a warning: it stays `no-header` until it has content (then `migrate`
+takes it), is moved out of the decisions folder, or is removed.
 
 ## Validate the whole repository before acting
 
@@ -139,6 +146,11 @@ What is validated:
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
+
+`check` and `explore` also warn, without failing, about a file in the
+decision-log folder (`folderlog`) that is not an entry (`INDEX.md` and
+`CYCLES.md` are the log's own): `adrpy log` refuses to write while it is
+there.
 
 The rules, one error code each:
 
@@ -186,7 +198,7 @@ The status combinations the tool writes (Created / Changed / Superseded;
 A blank Created cell is valid only on a migrated file.
 
 Not every command validates. `explore` is the inventory: it lists every
-file, and reports the same errors in `consistency.errors` while still
+`.md` file, and reports the same errors in `consistency.errors` while still
 succeeding. `help`, `init`, `installconfig` and `log` do not act on
 existing decisions and do not validate. `config` validates only when it
 changes a guarded field, and tolerates `no-header` (it is how
@@ -419,7 +431,11 @@ it is set (`config`, `installconfig`, `init --seed` or the install-level
 config `init` reads, `explore`'s preview), and `migrate` refuses it before
 writing anything (a fallback before it is persisted). A config that
 already holds one still loads, and the pattern can be cleared or
-corrected as the next rule allows. A pattern
+corrected as the next rule allows. Once a decision was migrated with the
+repository's own such pattern, that rule keeps it from changing, so
+`migrate` finishes with it instead of refusing, with a warning that the
+titles it reads begin with part of the number (each migrated file's
+title row is then corrected by hand). A pattern
 set by mistake can be changed or cleared (`adrpy config
 --migrationpattern ""`) only while no legacy-scheme decision with a valid
 header exists -- that is, one already migrated. A legacy name the pattern
@@ -433,20 +449,25 @@ in this order:
    (`migration-invalid-headers-exist`), then a file with a valid header
    `migrate` did not write -- AdrPlus's or adrpy's
    (`already-tool-created-adrs-exist`); both before the pattern is needed;
-2. no pattern (`migration-pattern-not-configured`);
-3. a file or directory it cannot read (`migration-scan-failed`,
+2. the repository's own pattern reads part of a name twice
+   (`config-migrationpattern-invalid`), unless a decision was already
+   migrated with it (then `migrate` goes on with a warning, as above);
+3. no pattern (`migration-pattern-not-configured`), then an install-level
+   fallback that reads part of a name twice
+   (`config-migrationpattern-invalid`, before it is persisted);
+4. a file or directory it cannot read (`migration-scan-failed`,
    `migration-scan-incomplete`), then no decision at all
    (`no-decisions-found`);
-4. the two header checks of step 1 again, over the names the pattern adds;
-5. a file that already carries a supersede suffix (`--NNN`, whatever its
+5. the two header checks of step 1 again, over the names the pattern adds;
+6. a file that already carries a supersede suffix (`--NNN`, whatever its
    number; `migration-successor-files-exist`): a supersede chain is
    something only this tool creates -- rename the file without the
    suffix, migrate, then record the chain with `supersede`;
-6. files sharing number, version and revision
+7. files sharing number, version and revision
    (`migration-duplicate-numbers-exist`);
-7. nothing left to migrate (`no-eligible-files-to-migrate`).
+8. nothing left to migrate (`no-eligible-files-to-migrate`).
 
-The refusals about specific files (steps 1, 4, 5 and 6) name them in
+The refusals about specific files (steps 1, 5, 6 and 7) name them in
 `data.files`.
 
 See each command's page in the [Command Reference](commands/INDEX.md)

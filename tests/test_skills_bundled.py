@@ -78,7 +78,16 @@ class TestAdrpySkillIsBundled:
             "list in one question the files",
             "adrpy explore --path . --migrationpattern",
             "migrationpattern \"\"",
-            "only `check` validates the whole repository",
+            "`check` is the one to run before changing anything",
+            "lists every `.md` file in the decisions folder",
+            "Repair by hand only when a check hint or a command's warning says so",
+            "(`migration-successor-files-exist`): then rename it only as that refusal's detail says, after asking the user",
+            "its approval gate applies before recording a new decision or a decision-log entry",
+            "marks a Proposed decision (or a migrated one with no status yet) Accepted",
+            "marks a Proposed decision (or a migrated one with no status yet) Rejected",
+            "back to Proposed (a migrated one back to no status)",
+            "marks an Accepted decision (or a migrated one with no status yet) Superseded",
+            "creates a revision (a wording fix) of an Accepted or Rejected decision, or of a migrated one with no status yet",
         ):
             assert needle in content, needle
 
@@ -165,7 +174,7 @@ class TestDecisionLogGateHonorsAnExplicitRequest:
         "If the user's own message explicitly asks to record this specific decision or "
         "entry, that request is the separate approval for that one write: fill only what "
         "they gave, ask only for required fields that are missing (for `adrpy log`: e.g. "
-        "`--front`/`--resolution` for `audit-finding`), then report exactly what was written."
+        "`--front`/`--severity`/`--resolution` for `audit-finding` or `doc-drift`), then report exactly what was written."
     )
 
     def test_the_gate_carries_the_clause(self):
@@ -176,6 +185,7 @@ class TestDecisionLogGateHonorsAnExplicitRequest:
         content = " ".join(resources.load_full_content("decision-log").split())
         assert "never a hand-written file" in content
         assert "`adrpy log` for a decision-log entry" in content
+        assert "`adrpy new`, `version`, `revise`, `supersede`, `migrate` (and" in content
 
     def test_the_description_no_longer_demands_a_confirmation_for_an_explicit_request(self):
         description = resources.load_meta("decision-log")["description"]

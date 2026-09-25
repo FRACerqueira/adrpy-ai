@@ -8,8 +8,9 @@ takes flags and prints one JSON object; none of them prompts.
 1. Run `adrpy help`: it lists every command and the defaults of this
    machine.
 2. Run `adrpy check --path .` before the first change, even if you
-   already ran `explore` or `help`: `explore` lists the files, only
-   `check` validates the whole repository. When it fails, each entry in
+   already ran `explore` or `help`: `explore` lists the files and also
+   reports the errors, but succeeds either way; `check` is the one to run
+   before changing anything. When it fails, each entry in
    `data.errors` names the file, the rule broken and a `hint`. Follow the
    hint of each error before running any other command:
    every lifecycle command refuses a repository that does not pass check.
@@ -53,15 +54,17 @@ takes flags and prints one JSON object; none of them prompts.
 - **The `<sep><sep>NNN` suffix is part of the name.** A file name ending
   in a doubled separator and a number (`ADR002V01-use-x--001.md` with the
   default `-`) marks the successor of decision `NNN`. Never remove or
-  change it.
+  change it, except in a file `migrate` refuses because it carries one
+  before adoption (`migration-successor-files-exist`): then rename it only
+  as that refusal's detail says, after asking the user.
 - **To supersede a decision**, run
   `adrpy supersede --file <path of the predecessor> --title "<new title>"`.
   It marks the predecessor Superseded and creates the successor in one
   command. Do not create the successor with `new` and link it by hand.
   When the user says a decision replaces, supersedes or changes an earlier
   one, that is a supersede, not a new decision.
-- **Repair by hand only when check's hint says so**, and write exactly the
-  row or cell the hint gives. When the user asked to fix a failing check,
+- **Repair by hand only when a check hint or a command's warning says so**,
+  and write exactly the row or cell it gives. When the user asked to fix a failing check,
   apply the hint's first option without asking and say which one you
   applied: a repair the user asked for is not a lifecycle action you
   start. A failed `supersede` or `reject` that wrote
@@ -99,15 +102,15 @@ takes flags and prints one JSON object; none of them prompts.
 
 - `adrpy help` -- lists every command; `adrpy help <command>` describes one.
 - `adrpy init --path .` -- creates `adr-config.adrplus` and the decisions folder.
-- `adrpy explore --path .` -- lists every file in the decisions folder, decision or not; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
+- `adrpy explore --path .` -- lists every `.md` file in the decisions folder, decision or not; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
 - `adrpy check --path .` -- validates the repository; each error has a `hint`.
 - `adrpy new --path . --title "..."` -- creates a decision, status Proposed.
-- `adrpy approve --file <file>` -- marks a Proposed decision Accepted.
-- `adrpy reject --file <file>` -- marks a Proposed decision Rejected.
-- `adrpy undo --file <file>` -- sets an Accepted or Rejected decision back to Proposed.
-- `adrpy supersede --file <file> --title "..."` -- marks an Accepted decision Superseded and creates its successor.
-- `adrpy version --file <file>` -- creates a new major version of an Accepted or Rejected decision, or of a migrated one (a Proposed one is refused: ask, never approve it).
-- `adrpy revise --file <file>` -- creates a revision (a wording fix) of an Accepted or Rejected decision.
+- `adrpy approve --file <file>` -- marks a Proposed decision (or a migrated one with no status yet) Accepted.
+- `adrpy reject --file <file>` -- marks a Proposed decision (or a migrated one with no status yet) Rejected.
+- `adrpy undo --file <file>` -- sets an Accepted or Rejected decision back to Proposed (a migrated one back to no status).
+- `adrpy supersede --file <file> --title "..."` -- marks an Accepted decision (or a migrated one with no status yet) Superseded and creates its successor.
+- `adrpy version --file <file>` -- creates a new major version of an Accepted or Rejected decision, or of a migrated one with no status yet (a Proposed one is refused: ask, never approve it).
+- `adrpy revise --file <file>` -- creates a revision (a wording fix) of an Accepted or Rejected decision, or of a migrated one with no status yet (a Proposed one is refused: ask, never approve it).
 - `adrpy migrate --path .` -- adds a header to hand-written decision files, once, at adoption; preview a pattern with `adrpy explore --path . --migrationpattern <pattern>` first.
 - `adrpy config --path .` -- reads the repository's config, or changes the fields passed.
 - `adrpy installconfig` -- reads or changes this machine's default config for new repositories.

@@ -525,7 +525,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
-    FailureCodes.STILL_PROPOSED: "This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise).",
+    FailureCodes.STILL_PROPOSED: "This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision.",
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
     FailureCodes.ALREADY_REJECTED: "This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again.",
     FailureCodes.ALREADY_SUPERSEDED: "This decision has already been superseded.",
@@ -1024,8 +1024,8 @@ def prepare(command, fileadr, flags):
                 raise CommandError(
                     FailureCodes.FILENAME_NOT_RECOGNIZED,
                     f"Not a decision file: {path.name} matches migrationpattern but has no header, and this "
-                    "repository already has decisions the tool created (migrate no longer runs here). Give it "
-                    "a header by hand, or move it out of the decisions folder.",
+                    "repository already has a file with a valid header migrate did not write (migrate no longer "
+                    "runs here). Give it a header by hand, or move it out of the decisions folder.",
                     data={"file": str(path)},
                 )
         snapshot = validate_repository(folder, config, scan=scan)

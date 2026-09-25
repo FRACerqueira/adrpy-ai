@@ -25,7 +25,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 |---|---|
 | `repository-inconsistent` | At least one consistency rule is broken; data.errors lists every one. |
 | `merge-conflict-markers` | data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists). |
-| `no-header` | data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty, left by an interrupted create (remove it). |
+| `no-header` | data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty: with a current-scheme name, left by an interrupted create (remove it); with a legacy-scheme name, the user's file (ask before removing it). |
 | `invalid-header` | data.errors[].code: a file's header does not parse; `detail` names the parse failure. |
 | `invalid-status-combination` | data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells). |
 | `duplicate-number` | data.errors[].code: two files share number, version and revision (a missing revision counts as 0). |

@@ -22,7 +22,7 @@ def describe():
         "name": "revise",
         "summary": "Creates a new revision (wording fix) of an Accepted/Rejected decision.",
         "description": (
-            "Creates a new revision (a wording fix) of an Accepted or Rejected decision, status Proposed, "
+            "Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, "
             "numbered after the highest revision its version holds. Needs the repository's lenrevision to be "
             "greater than 0 (see config), which a freshly initialized repository's is not. The whole "
             "repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a"

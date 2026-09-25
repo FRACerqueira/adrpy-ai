@@ -13,5 +13,8 @@ adrpy does not manage its decisions, unless the user asks to set it up
 
 This skill says how to change the decision files. Whether a decision
 should be recorded at all, and when, is not decided here: if the
-`decision-log` skill is installed, its approval gate applies before any
-write.
+`decision-log` skill is installed, its approval gate applies before
+recording a new decision or a decision-log entry. Repairing a check the
+user asked to fix, or running a `migrate` the user asked for (it adds
+headers to decisions already written), records nothing new: the rules
+below say when to ask for those.

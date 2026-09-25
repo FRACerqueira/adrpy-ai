@@ -104,6 +104,42 @@ def test_version_checks_the_targets_status_before_the_new_number_fits(tmp_path):
     assert excinfo.value.code == "still-proposed"
 
 
+@pytest.mark.parametrize("command", ["undo", "version", "supersede"])
+def test_still_proposed_does_not_read_as_an_instruction_to_approve(tmp_path, command):
+    # An agent read "it must be approved first" as a step to take; whether
+    # to accept a Proposed decision is the user's call.
+    from adrpy.core.registry import COMMANDS
+
+    init.run(["--path", str(tmp_path)])
+    created = new.run(["--path", str(tmp_path), "--title", "Pending"])["created"]
+    argv = ["--file", created] + (["--title", "Next"] if command == "supersede" else [])
+
+    with pytest.raises(CommandError) as excinfo:
+        COMMANDS[command].run(argv)
+
+    assert excinfo.value.code == "still-proposed"
+    assert "must be approved first" not in excinfo.value.detail
+    assert "is the user's decision" in excinfo.value.detail
+
+
+def test_still_proposed_on_a_migrated_placeholder_does_not_call_it_proposed(tmp_path):
+    # A migrated placeholder has no status yet: it is not Proposed.
+    from adrpy.cli import undo
+    from conftest import D, make_repo
+
+    repo = make_repo(
+        tmp_path,
+        config={"migrationpattern": "N00:04T05"},
+        files=[D(1, version=0, migrated=True, state="placeholder", filename="0001-first.md")],
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        undo.run(["--file", str(repo.folder / "0001-first.md")])
+
+    assert excinfo.value.code == "still-proposed"
+    assert "is still Proposed" not in excinfo.value.detail
+
+
 def test_version_checks_the_family_rules_before_the_new_number_fits(tmp_path):
     # The numbering comes last: V98 locked by an Accepted V99 is refused
     # as not-latest-version, not as a width problem that widening

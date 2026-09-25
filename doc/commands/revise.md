@@ -11,7 +11,7 @@ Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision.
 
 ## Description
 
-Creates a new revision (a wording fix) of an Accepted or Rejected decision, status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails.
+Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails.
 
 ## Arguments
 
@@ -24,7 +24,7 @@ Creates a new revision (a wording fix) of an Accepted or Rejected decision, stat
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
+| `still-proposed` | This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision. |
 | `already-superseded` | This decision has already been superseded. |
 | `family-not-found` | This decision's own family could not be resolved. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |

@@ -17,7 +17,7 @@ from adrpy.core.security import resolve_within
 
 _ERROR_CODES = {
     FailureCodes.MERGE_CONFLICT_MARKERS: "data.errors[].code: git merge-conflict markers in a file's 12 header lines (reported alone for that file; a supersede link to or from it is not also reported broken while the conflict exists).",
-    FailureCodes.NO_HEADER: "data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty, left by an interrupted create (remove it).",
+    FailureCodes.NO_HEADER: "data.errors[].code: a file with an ADR name has no header at all (run migrate if it predates the tool); `detail` says '0-byte file' when it is empty: with a current-scheme name, left by an interrupted create (remove it); with a legacy-scheme name, the user's file (ask before removing it).",
     FailureCodes.INVALID_HEADER: "data.errors[].code: a file's header does not parse; `detail` names the parse failure.",
     FailureCodes.INVALID_STATUS_COMBINATION: "data.errors[].code: a header's Created/Changed/Superseded cells form a combination no command writes (detail names the three cells).",
     FailureCodes.DUPLICATE_NUMBER: "data.errors[].code: two files share number, version and revision (a missing revision counts as 0).",

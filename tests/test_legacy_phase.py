@@ -404,3 +404,60 @@ def test_explore_refuses_an_invalid_or_empty_preview_pattern(tmp_path):
     assert excinfo.value.code == FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID
     with pytest.raises(UsageError):
         explore.run(["--path", str(repo.root), "--migrationpattern", ""])
+
+
+# ------------------------------------------ an empty legacy file is the user's --
+
+
+def test_before_adoption_a_zero_byte_legacy_file_is_the_users_not_an_interrupted_create(tmp_path):
+    # The tool only ever creates current-scheme names: an empty file with
+    # a legacy name is the user's, so the hint must not say to remove it.
+    repo = make_repo(tmp_path, config=_PATTERN)
+    _note(repo, "0001-empty.md", b"")
+
+    _snapshot, errors = check_repository(repo.folder, repo.config)
+
+    assert [error["code"] for error in errors] == [FailureCodes.NO_HEADER]
+    assert "0-byte" in errors[0]["detail"] and "interrupted create" not in errors[0]["detail"]
+    hint = errors[0]["hint"]
+    assert "interrupted create" not in hint
+    assert hint.startswith("The file is empty (0 bytes) and has a legacy-scheme name")
+    assert "the user's file" in hint and "ask the user before removing it" in hint
+
+
+def test_migrate_skips_a_zero_byte_legacy_file_as_the_users_and_a_rerun_takes_it_once_filled(tmp_path):
+    repo = make_repo(tmp_path, config=_PATTERN)
+    _note(repo, "0001-first.md", "# First\n")
+    empty = _note(repo, "0002-empty.md", b"")
+
+    result = migrate.run(["--path", str(repo.root)])
+
+    assert result["migrated"] == [str(repo.folder / "0001-first.md")]
+    mentioning = [warning for warning in result["warnings"] if empty.name in warning]
+    assert len(mentioning) == 1
+    assert "interrupted create" not in mentioning[0] and "remove them" not in mentioning[0]
+    assert "the user's" in mentioning[0] and "ask before removing" in mentioning[0]
+    assert empty.read_bytes() == b""
+
+    empty.write_bytes(b"# Second\n")
+    assert migrate.run(["--path", str(repo.root)])["migrated"] == [str(empty)]
+
+
+def test_the_texts_about_adoption_say_what_the_docs_say(tmp_path, capsys):
+    # The condition is a valid header migrate did not write (AdrPlus's, or
+    # one copied by hand, count too), not "a decision the tool created".
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
+    note = _note(repo)
+    _note(repo, "12-x.md")
+
+    from adrpy.cli import approve
+
+    _code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(note)])
+
+    texts = [*payload["data"]["warnings"], excinfo.value.detail]
+    assert len(texts) == 3
+    for text in texts:
+        assert "valid header migrate did not write" in text, text
+        assert "decisions the tool created" not in text, text

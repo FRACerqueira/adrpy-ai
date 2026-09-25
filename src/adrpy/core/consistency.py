@@ -90,15 +90,15 @@ HINTS = {
     FailureCodes.NO_HEADER: (
         "The file has an ADR name but no header. If it is empty (detail says 0-byte file), it was left by an "
         "interrupted create: remove it. If it is a decision written before adopting the tool and "
-        "no decision was created with the tool yet, run adrpy migrate (it runs only once, before any "
+        "no file has a valid header migrate did not write yet, run adrpy migrate (it runs only once, before any "
         "new; set migrationpattern with adrpy config first: migrate always needs one). If it is not a "
         "decision (a note whose name the pattern happens to match), move it out of the decisions folder "
-        "first: migrate would make it one. Otherwise migrate refuses: give it a header by hand (copy one from a decision the tool "
-        "created), rename it so its name is not an ADR name, or remove it."
+        "first: migrate would make it one. Otherwise migrate refuses: give it a header by hand (copy one from a decision that has "
+        "one), rename it so its name is not an ADR name, or remove it."
     ),
     FailureCodes.INVALID_HEADER: (
         "The header does not parse (detail names the reason). Repair it by hand, comparing it with the "
-        "header of a decision the tool created, or restore it from git history."
+        "header of a decision that has a valid one, or restore it from git history."
     ),
     FailureCodes.INVALID_STATUS_COMBINATION: (
         "The Created/Changed/Superseded cells form a combination no command writes: Created is Proposed "
@@ -301,6 +301,17 @@ def _status_cells(header):
     return f"Created: {created}; Changed: {changed}; Superseded: {superseded}."
 
 
+# The no-header hint for an empty file with a legacy-scheme name: the
+# tool only ever creates current-scheme names, so it is never an
+# interrupted create's, and the user decides whether it goes.
+_EMPTY_LEGACY_NO_HEADER_HINT = (
+    "The file is empty (0 bytes) and has a legacy-scheme name, which this tool never creates: it is "
+    "the user's file, not a name reservation of this tool -- ask the user before removing it, never "
+    "remove it unasked. migrate skips an empty file on every run, so check reports it until it has "
+    "content (then run adrpy migrate), is moved out of the decisions folder or is removed by the user."
+)
+
+
 def _error(code, path, related=(), detail=None, hint=None):
     return {
         "code": code,
@@ -395,8 +406,14 @@ def _read_decisions(names, config, errors):
                 if has_header_shape(lines):
                     errors.append(_error(FailureCodes.INVALID_HEADER, path, detail=describe_header_error(header)))
                 else:
-                    detail = "0-byte file (most likely left by an interrupted create)." if not lines and is_zero_bytes(path) else None
-                    errors.append(_error(FailureCodes.NO_HEADER, path, detail=detail))
+                    detail, hint = None, None
+                    if not lines and is_zero_bytes(path):
+                        if scheme == "legacy":
+                            detail = "0-byte file with a legacy-scheme name (the user's file: this tool never creates one)."
+                            hint = _EMPTY_LEGACY_NO_HEADER_HINT
+                        else:
+                            detail = "0-byte file (most likely left by an interrupted create)."
+                    errors.append(_error(FailureCodes.NO_HEADER, path, detail=detail, hint=hint))
             else:
                 state = derive_state(header)
                 if state is None:
@@ -525,10 +542,10 @@ def unrecognized_decision_like_warning(scan, config):
         # name migrationpattern matches without a header is not a
         # decision here (decision_names).
         return (
-            f"{found} If they are decisions written before adrpy: migrate does not run in a repository that "
-            f"already has decisions the tool created, so {preview}, set migrationpattern with `adrpy config "
-            "--migrationpattern` (it writes the config) and give each one a header by hand (copy one from a "
-            "decision the tool created) -- without one, a name migrationpattern matches is still not a decision."
+            f"{found} If they are decisions written before adrpy: migrate does not run in a repository where "
+            f"a file already has a valid header migrate did not write, so {preview}, set migrationpattern "
+            "with `adrpy config --migrationpattern` (it writes the config) and give each one a header by hand "
+            "(copy one from a decision that has one) -- without one, a name migrationpattern matches is still not a decision."
         )
     return (
         f"{found} If they are decisions written before adrpy, {preview}, then set migrationpattern with "
@@ -561,9 +578,9 @@ def unheadered_legacy_warning(snapshot, config, shared=()):
     # Left out only once a decision migrate did not write exists, so
     # migrate no longer runs here.
     return (
-        f"{found} If they are decisions written before adrpy: migrate does not run in a repository that "
-        "already has decisions the tool created, so give each one a header by hand (copy one from a "
-        "decision the tool created) -- its number, read from the name, may already be a decision's: "
+        f"{found} If they are decisions written before adrpy: migrate does not run in a repository where "
+        "a file already has a valid header migrate did not write, so give each one a header by hand (copy "
+        "one from a decision that has one) -- its number, read from the name, may already be a decision's: "
         "rename it to a free number first; otherwise move them out of the decisions folder."
     )
 

@@ -31,7 +31,7 @@ def describe():
         "name": "supersede",
         "summary": "Marks an Accepted decision Superseded and creates its successor.",
         "description": (
-            "Marks an Accepted decision Superseded and creates its successor, status Proposed, in a new "
+            "Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new "
             "family whose filename ends with the predecessor's number (--NNN). The whole repository and the "
             "family rules in doc/lifecycle.md are checked first, and both files are prepared before either is"
             " written. The successor is written first; if only it could be written, the failure names what "

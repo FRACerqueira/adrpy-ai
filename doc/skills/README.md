@@ -75,27 +75,50 @@ with `usage-error`.
 The skills are instructions in natural language: how well an agent follows
 them depends on the model, not only on the text. They were tested with
 Claude Code (`claude -p`, one fresh session per scenario, only what
-`adrpy-skills` installs) on 14 scenarios, with three models, in two
-batches: the second after the skills and the CLI were corrected from what
-the first showed.
+`adrpy-skills` installs), with three models, in four batches; after each
+batch the skills and the CLI were corrected from what it showed. Batches
+1 to 3 ran the same scenarios; batch 3 added two (a note left in the
+decision-log folder, and a user who names a `migrationpattern` that reads
+part of the number), and batch 4 re-ran those two and the one with a
+file to move out of the decisions folder, twice each.
 
-- **Claude Opus 5.5** followed every rule in every run of both batches.
-- **Claude Sonnet 5** followed 95% of the rules in the second batch; the
-  misses were small (a question it did not need to ask, how it described
-  the status of migrated decisions).
-- **Claude Haiku 4.5** went from 67% to 85%. In the first batch it moved a
-  file out of the decisions folder without asking, approved a decision to
-  be able to version it and migrated with a pattern that recorded wrong
-  titles; the corrections stopped those. It still created a new decision
-  where the user described a replacement (a supersede), did not always ask
-  for a review, and said things about the result that were not true.
+Rules followed, on the scenarios batches 1 to 3 share:
+
+| Model | Batch 1 | Batch 2 | Batch 3 |
+|---|---|---|---|
+| Claude Opus 5.5 | 100% | 100% | 100% |
+| Claude Sonnet 5 | 84% | 95% | 100% |
+| Claude Haiku 4.5 | 67% | 85% | 80% |
+
+- **Opus** and **Sonnet**, in one of the scenarios batch 3 added (scored
+  apart from the table), each once used another pattern than the one the
+  user gave, after the CLI refused it, without asking first; neither did
+  in batch 4. Sonnet's misses in batch 2 were small (a question it did
+  not need to ask, how it described the status of migrated decisions).
+- **Haiku**, after batch 1's corrections, no longer approved a decision
+  to be able to version it, nor moved the file in the decisions folder
+  without asking; but it kept creating a new decision where the user
+  described a replacement (a supersede), not always asking for a review,
+  not relaying a command's warning, saying things about the result that
+  were not true, and swapping a refused pattern without asking. In batch 3 it moved the
+  user's note out of the decision-log folder without asking and did not
+  say so; in batch 4 no model moved it. That is credited to the refusal
+  text of `adrpy log` (the file is the user's: ask where it belongs), not
+  to the `adrpy` skill, which those runs did not load.
+
+These are one or two runs per scenario, on one day, with one provider.
+Each run was a single turn: what an agent does after the user answers its
+question was never tested. Every verdict was reviewed by hand, because the automatic
+evaluator got some wrong in every batch.
 
 Recommendation: for any task that writes decisions, use a model at least
-as capable as Claude Sonnet 5; a smaller model can be enough for reading
-(`adrpy check`, `adrpy explore`). The other providers (Cursor, GitHub
-Copilot, a generic `AGENTS.md`) and their models were **not** tested with
-a real agent: test the scenarios that matter to you before relying on
-them. These are a few runs per scenario on one day, not statistics.
+as capable as Claude Sonnet 5. The one read-only scenario (previewing a
+`migrationpattern` with `adrpy explore`, nothing written) passed with all
+three models; but in the writing scenarios Haiku left out warnings and
+misreported results, so if a smaller model reports what `adrpy check` or
+`adrpy explore` said, check it against the JSON. The other providers (Cursor, GitHub Copilot,
+a generic `AGENTS.md`) and their models were **not** tested with a real
+agent: test the scenarios that matter to you before relying on them.
 
 ## A skill that is no longer shipped
 

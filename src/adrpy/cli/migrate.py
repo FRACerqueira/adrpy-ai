@@ -336,9 +336,11 @@ def run(args):
 
         entries = []  # (ParsedFileName, Path, HeaderParseResult)
         adulterated_files = []
-        # 0-byte files: an interrupted create's name reservation, never a
-        # decision to migrate.
+        # 0-byte files, never a decision to migrate: with a current-scheme
+        # name, an interrupted create's name reservation; with a legacy
+        # one (the tool never creates such a name), the user's file.
         empty_files = []
+        empty_legacy_files = []
         if scan is not None:
             # scan_tree keeps only files inside the folder's real
             # boundary (a junction or symlink escaping it is excluded).
@@ -347,7 +349,7 @@ def run(args):
                 found = parse_any_filename(candidate.name, config)
                 if found is None:
                     continue
-                _, parsed = found
+                scheme, parsed = found
                 try:
                     # A byte a lossy decode replaced only matters if it
                     # breaks the header: then the file is refused as
@@ -380,7 +382,7 @@ def run(args):
                 # on one specific target file the way prepare's
                 # own warning already covers.
                 if not lines and is_zero_bytes(candidate):
-                    empty_files.append(candidate)
+                    (empty_legacy_files if scheme == "legacy" else empty_files).append(candidate)
                     continue
                 header = parse_header(lines, config)
                 if not header.is_valid and has_header_shape(lines):
@@ -391,6 +393,13 @@ def run(args):
                 warnings.append(
                     f"{len(empty_files)} empty (0-byte) file(s) skipped, most likely left by an interrupted "
                     f"create: remove them. {', '.join(sorted(str(path) for path in empty_files))}."
+                )
+            if empty_legacy_files:
+                warnings.append(
+                    f"{len(empty_legacy_files)} empty (0-byte) file(s) with a legacy-scheme name skipped: this tool "
+                    "never creates such a name, so they are the user's -- ask before removing them. They are not "
+                    "migrated while empty, and check reports them as no-header until they have content (then run "
+                    f"migrate again). {', '.join(sorted(str(path) for path in empty_legacy_files))}."
                 )
 
             # Same as explore and the repository scan -- an excluded
@@ -417,7 +426,7 @@ def run(args):
                     warnings=warnings,
                 )
 
-        if not entries and not empty_files:
+        if not entries and not empty_files and not empty_legacy_files:
             raise CommandError(
                 FailureCodes.NO_DECISIONS_FOUND,
                 "No .md files matching a recognized naming scheme were found.",

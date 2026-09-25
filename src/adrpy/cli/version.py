@@ -18,7 +18,7 @@ def describe():
         "name": "version",
         "summary": "Creates a new major version of an Accepted/Rejected decision.",
         "description": (
-            "Creates a new major version of an Accepted or Rejected decision, status Proposed, in the same "
+            "Creates a new major version of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, in the same "
             "family; scope and domain default to the target's. The whole repository and the family rules in "
             "doc/lifecycle.md are checked first, and the new version number must fit lenversion; nothing is "
             "written when a rule fails."

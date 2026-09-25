@@ -11,7 +11,7 @@ Marks an `Accepted` decision `Superseded` and creates its successor.
 
 ## Description
 
-Marks an Accepted decision Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair).
+Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair).
 
 ## Arguments
 
@@ -27,7 +27,7 @@ Marks an Accepted decision Superseded and creates its successor, status Proposed
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
+| `still-proposed` | This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision. |
 | `already-rejected` | This decision is already Rejected; run undo first to reconsider it (supersede needs it Accepted), unless it belongs to a rejected successor's family, whose line is final -- supersede its predecessor again. |
 | `already-superseded` | This decision has already been superseded. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |

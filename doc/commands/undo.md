@@ -23,7 +23,7 @@ Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cel
 
 | Code | Condition |
 |---|---|
-| `still-proposed` | This decision is still Proposed; it must be approved first (or rejected, for undo, version and revise). |
+| `still-proposed` | This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision. |
 | `already-superseded` | This decision has already been superseded. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |

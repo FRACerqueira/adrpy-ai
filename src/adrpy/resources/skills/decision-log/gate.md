@@ -24,13 +24,14 @@ separate question has been asked and answered.
 user's own message explicitly asks to record this specific decision or
 entry, that request is the separate approval for that one write: fill
 only what they gave, ask only for required fields that are missing (for
-`adrpy log`: e.g. `--front`/`--resolution` for `audit-finding`), then
+`adrpy log`: e.g. `--front`/`--severity`/`--resolution` for
+`audit-finding` or `doc-drift`), then
 report exactly what was written. It covers that one write only -- not a
 second entry, and not a record of something they did not name.
 
 **Every approved write goes through the `adrpy` commands, never a
 hand-written file:** `adrpy log` for a decision-log entry; `adrpy new`,
-`version`, `revise`, `supersede` (and `approve`/`reject`/`undo` for a
+`version`, `revise`, `supersede`, `migrate` (and `approve`/`reject`/`undo` for a
 status change) for an ADR. Run `adrpy help <command>` for the arguments.
 
 **This gate covers every write, not only the first one, and not only
