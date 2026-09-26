@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 
 import pytest
 
@@ -299,3 +301,15 @@ def test_check_warns_about_a_decision_name_too_long_to_rewrite(tmp_path):
 
     assert result["decisions"] == 1
     assert any(long.name in warning and "234" in warning for warning in result["warnings"])
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="NTFS accepts an unpaired surrogate in a name; POSIX gets one from an undecodable byte")
+def test_check_reads_a_decision_whose_name_holds_an_unpaired_surrogate(tmp_path):
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Alpha one", "--refdate", "2026-01-01"])
+    adr = tmp_path / "doc" / "adr"
+    os.rename(adr / "ADR001V01-alpha-one.md", adr / "ADR001V01-alpha-\ud800.md")
+
+    assert check.run(["--path", str(tmp_path)])["decisions"] == 1

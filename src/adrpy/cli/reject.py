@@ -19,7 +19,7 @@ from adrpy.core.consistency import SUPERSEDED
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.family import is_successor
 from adrpy.core.header import status_row
-from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, reject_too_long_filename
+from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, reject_linked_file, reject_too_long_filename
 from adrpy.core.lifecycle import (
     commit_in_order,
     discard_prepared,
@@ -149,6 +149,7 @@ def _revert_then_reject(ctx, predecessor):
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
     warnings = ctx.warnings
     pred_parsed, pred_header, pred_path = predecessor
+    reject_linked_file(pred_path, warnings=warnings)
     reject_too_long_filename(pred_path.name, REWRITE_TOO_LONG_REMEDY, warnings=warnings)
     prepared = []
     try:

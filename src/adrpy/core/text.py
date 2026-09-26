@@ -54,6 +54,12 @@ def shell_argument(value, placeholder="<path>"):
     risk, and `placeholder` when a shell would expand part of it even in
     quotes -- a printed command never runs something else."""
     value = str(value)
+    # A trailing backslash would escape bash's closing quote: dropped when
+    # the path means the same without it, else the placeholder (a root).
+    if value.endswith("\\"):
+        value = value.rstrip("\\")
+        if not value or value.endswith(":"):
+            return placeholder
     if _UNQUOTABLE.search(value):
         return placeholder
     return f'"{value}"' if _NEEDS_QUOTES.search(value) else value

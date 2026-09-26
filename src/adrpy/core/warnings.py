@@ -114,15 +114,29 @@ def names_too_long_to_rewrite_warning(paths):
     cannot be rewritten (its temp file's name would pass one name's limit):
     every command that changes it refuses with filename-too-long. None when
     no such name exists."""
-    from adrpy.core.fs import MAX_NAME_BYTES
+    from adrpy.core.fs import MAX_NAME_BYTES, name_bytes
 
-    names = sorted(path.name for path in paths if len(path.name.encode("utf-8")) > MAX_NAME_BYTES)
+    names = sorted(path.name for path in paths if name_bytes(path.name) > MAX_NAME_BYTES)
     if not names:
         return None
     return (
         f"{len(names)} decision name(s) are longer than the {MAX_NAME_BYTES} bytes this tool can rewrite: "
         "a command that changes them refuses with filename-too-long. Rename each by hand to a shorter title "
         f"part, keeping its number, version, revision and any --NNN suffix: {', '.join(names)}."
+    )
+
+
+def linked_decisions_warning(paths):
+    """The `.md` files in the decisions folder that are symbolic links:
+    every command that would rewrite one refuses with target-is-a-link.
+    None when there is none."""
+    if not paths:
+        return None
+    names = sorted(str(path) for path in paths)
+    return (
+        f"{len(names)} .md file(s) in the decisions folder are symbolic links: a command that would rewrite "
+        "one refuses with target-is-a-link. Replace each link with the file it points to, or remove it: "
+        f"{', '.join(names)}."
     )
 
 

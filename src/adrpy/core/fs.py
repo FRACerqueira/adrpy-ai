@@ -56,6 +56,18 @@ _OWN_TEMP_NAME = re.compile(r".+(?i:\.md)" + _OWN_TEMP_SUFFIX)
 MAX_NAME_BYTES = 255 - len(".0123456789abcdef.tmp")
 
 
+def name_bytes(name):
+    """A file name's length as the filesystem stores it: os.fsencode, so a
+    byte that is not UTF-8 (a lone surrogate in the name Python gives us)
+    counts as what is on disk instead of raising UnicodeEncodeError. A lone
+    surrogate the filesystem encoding cannot map (one that did not come from
+    a name on disk, on POSIX) counts as UTF-8 with surrogatepass."""
+    try:
+        return len(os.fsencode(name))
+    except UnicodeEncodeError:
+        return len(name.encode("utf-8", "surrogatepass"))
+
+
 def retry_on_permission(fn, *, attempts, delay, exponential=False):
     """Calls the zero-arg `fn`, retrying only a PermissionError, up to
     `attempts` calls in total, sleeping `delay` between them (doubled
@@ -335,13 +347,25 @@ def remove_created_dirs(folder, top):
 class TreeScan:
     """What scan_tree found under one folder: the `.md` and `.tmp` files
     inside its real boundary, the candidates excluded for escaping it
-    (through a junction or a file symlink), and the directories that
-    could not be listed."""
+    (through a junction or a file symlink), the directories that could
+    not be listed, and the `.md` files inside that are symbolic links
+    (no command writes through one)."""
 
     markdown: tuple
     temp: tuple
     excluded: tuple
     unreadable: tuple
+    links: tuple = ()
+
+
+def _is_file_link(entry):
+    """A file entry that is a symbolic link; one that cannot be inspected
+    counts as one. Unlike _is_link, another reparse point (a cloud-storage
+    placeholder, say) is not: only a link would be replaced by a write."""
+    try:
+        return entry.is_symlink()
+    except OSError:
+        return True
 
 
 def _is_link(entry):
@@ -395,7 +419,7 @@ def scan_tree(folder):
         resolved = folder.resolve()
     except (OSError, ValueError):
         resolved = None
-    excluded, unreadable = [], []
+    excluded, unreadable, links = [], [], []
     # real path -> the path found; a file reached twice (through a junction
     # inside the folder) is kept once, under the path that needs no link.
     found = {".md": {}, ".tmp": {}}
@@ -444,6 +468,8 @@ def scan_tree(folder):
             if not inside:
                 excluded.append(candidate)
                 continue
+            if kind == ".md" and _is_file_link(entry):
+                links.append(candidate)
             known = found[kind].get(real)
             if known is None or os.path.normcase(str(candidate.relative_to(folder))) == os.path.normcase(
                 str(real.relative_to(resolved))
@@ -467,7 +493,9 @@ def scan_tree(folder):
                 through_links.append((path, real_sub))
             else:
                 pending.append((path, real_sub))
-    return TreeScan(tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable))
+    return TreeScan(
+        tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links)
+    )
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):

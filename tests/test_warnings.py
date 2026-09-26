@@ -133,3 +133,9 @@ def test_excluded_candidate_warning_names_the_paths_in_the_same_order_whatever_o
 def test_the_no_install_level_config_warning_shows_a_command_that_sets_something():
     # A bare `adrpy installconfig` only reads.
     assert "`adrpy installconfig --" in no_install_level_config_warning()
+
+
+def test_the_too_long_to_rewrite_warning_measures_a_name_that_is_not_utf8():
+    from adrpy.core.warnings import names_too_long_to_rewrite_warning
+
+    assert names_too_long_to_rewrite_warning([Path("ADR001V01-alpha-\udcff.md")]) is None

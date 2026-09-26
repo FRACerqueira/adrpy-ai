@@ -63,3 +63,19 @@ def test_shell_argument_never_prints_a_value_a_shell_would_expand_even_in_quotes
     from adrpy.core.text import shell_argument
 
     assert shell_argument(value, "<path>") == "<path>"
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        ("C:\\a b\\", '"C:\\a b"'),
+        ("C:\\repo\\", '"C:\\repo"'),
+        ("C:\\", "<path>"),
+        ("\\", "<path>"),
+    ],
+)
+def test_shell_argument_never_ends_a_quoted_value_with_a_backslash(value, shown):
+    # bash reads a backslash right before the closing quote as escaping it.
+    from adrpy.core.text import shell_argument
+
+    assert shell_argument(value) == shown

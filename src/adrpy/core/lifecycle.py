@@ -45,7 +45,7 @@ from adrpy.core.fs import (
     prepare_write,
     scan_tree,
 )
-from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, parse_any_filename, reject_too_long_filename
+from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, parse_any_filename, reject_linked_file, reject_too_long_filename
 from adrpy.core.output import explain
 from adrpy.core.text import ascii_digits_int, shell_argument
 from adrpy.core.security import (
@@ -529,6 +529,11 @@ SHARED_FAILURE_CODES = {
     FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header).",
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+    FailureCodes.TARGET_IS_A_LINK: (
+        "A file this command would rewrite (--file; for reject of a successor, also the predecessor it "
+        "reverts) is a symbolic link -- nothing was written (a write would replace the link, not the file it "
+        "points to); give the real file (data.real_file), and check warns about the link."
+    ),
     FailureCodes.FILENAME_TOO_LONG: (
         "The name of a file this command would rewrite (--file; for reject of a successor, also the "
         "predecessor it reverts) is longer than the 234 bytes this tool can rewrite (data.filename) -- nothing "
@@ -838,6 +843,10 @@ TRANSITIONS = {
 }
 
 _ROW_SPECIFIC_CODES = {code for row in TRANSITIONS.values() for code in row.reasons + row.guards}
+# Raised by prepare only for the rows that rewrite --file (no numbering):
+# version and revise never do (their own filename-too-long is about the
+# file they create).
+_REWRITE_ONLY_CODES = {FailureCodes.TARGET_IS_A_LINK, FailureCodes.FILENAME_TOO_LONG}
 
 
 def failure_codes(command, own):
@@ -852,7 +861,8 @@ def failure_codes(command, own):
     tail = {
         code: text
         for code, text in SHARED_FAILURE_CODES.items()
-        if code in row.guards or code not in _ROW_SPECIFIC_CODES
+        if (code in row.guards or code not in _ROW_SPECIFIC_CODES)
+        and not (row.numbering is not None and code in _REWRITE_ONLY_CODES)
     }
     return build_failure_codes(head, own, tail, CONFIG_FAILURE_CODES)
 
@@ -980,11 +990,17 @@ def _resolve_file(fileadr):
         raise CommandError(FailureCodes.FILE_NOT_FOUND, f"File not found: {fileadr}")
     config_path = find_repo_root(fileadr)
     if config_path is None:
-        raise CommandError(
-            FailureCodes.CANNOT_DETERMINE_ROOT_PATH,
+        detail = (
             f"Cannot determine the repository root for: {fileadr} -- no adr-config.adrplus in its folder or any "
-            "folder above it (run `adrpy init --path .` at the repository's root).",
+            "folder above it (run `adrpy init --path .` at the repository's root)."
         )
+        real = fileadr.resolve()
+        if ".." in fileadr.parts and Path(os.path.abspath(fileadr)).resolve() != real:
+            detail += (
+                f" The path is read as written: a `..` after a symlinked folder is not followed. Give the "
+                f"file's real path instead: {real}."
+            )
+        raise CommandError(FailureCodes.CANNOT_DETERMINE_ROOT_PATH, detail)
     config = load_repo_config(config_path)
     found = parse_any_filename(fileadr.name, config)
     if found is None:
@@ -1056,6 +1072,7 @@ def prepare(command, fileadr, flags):
         # raw OSError: refused here, before anything is written, by the
         # commands that rewrite --file (version and revise never do).
         if row.numbering is None:
+            reject_linked_file(path)
             reject_too_long_filename(path.name, REWRITE_TOO_LONG_REMEDY)
         # ADR004V01: a marker/label disagreement on the target itself, not
         # on a sibling (that would misattribute it to this command).

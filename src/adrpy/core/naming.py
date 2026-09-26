@@ -24,10 +24,11 @@ legacy scheme if the current scheme didn't match AND a valid
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from adrpy.core.casing import to_case
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.fs import MAX_NAME_BYTES
+from adrpy.core.fs import MAX_NAME_BYTES, name_bytes
 from adrpy.core.text import is_ascii_digits
 
 # re.ASCII: \d must mean 0-9 only -- other scripts' digits would read as the
@@ -284,16 +285,30 @@ REWRITE_TOO_LONG_REMEDY = (
 )
 
 
+def reject_linked_file(path, warnings=None):
+    """A decision file that is a symbolic link: the write's atomic replace
+    would put a regular file where the link is and leave the file it
+    points to unchanged, while reporting success. Refused before writing."""
+    if Path(path).is_symlink():
+        raise CommandError(
+            FailureCodes.TARGET_IS_A_LINK,
+            f"{path} is a symbolic link: this tool never writes through one (the write would replace the "
+            f"link, not the file it points to). Give the real file's path instead: {Path(path).resolve()}.",
+            data={"file": str(path), "real_file": str(Path(path).resolve())},
+            warnings=warnings,
+        )
+
+
 def reject_too_long_filename(filename, remedy, warnings=None):
     """A name longer than the filesystem allows once the temp file's suffix
     is added fails the write with a raw OSError (Errno 22 or 36), after the
     temp write was attempted: refused here, with `remedy` (what the caller's
     own flags allow) as the way out."""
-    size = len(filename.encode("utf-8"))
+    size = name_bytes(filename)
     if size > MAX_NAME_BYTES:
         raise CommandError(
             FailureCodes.FILENAME_TOO_LONG,
-            f"The file name would be {size} bytes in UTF-8, over the {MAX_NAME_BYTES} this tool can write "
+            f"The file name would be {size} bytes on disk, over the {MAX_NAME_BYTES} this tool can write "
             "(255 bytes for one name, the strictest of NTFS, ext4 and APFS, less the suffix of the temp file "
             f"written first): {remedy}.",
             data={"filename": filename},

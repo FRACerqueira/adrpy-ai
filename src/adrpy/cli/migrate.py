@@ -56,6 +56,7 @@ from adrpy.core.naming import (
     REWRITE_TOO_LONG_REMEDY,
     migration_pattern_overlap,
     parse_any_filename,
+    reject_linked_file,
     reject_too_long_filename,
 )
 from adrpy.core.output import explain
@@ -200,7 +201,7 @@ def describe():
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",
-                FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite fails that way too, with nothing written to it (its error says to rename it by hand).",
+                FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite, or a candidate that is a symbolic link, fails that way too, with nothing written to it (its error says what to do).",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
                 FailureCodes.IO_ERROR: "A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
@@ -522,6 +523,7 @@ def run(args):
                 reject_embedded_delimiter(title, "title")
                 reject_filesystem_unsafe_title(title, "title")
                 reject_title_with_no_case_transform_content(title, "title")
+                reject_linked_file(candidate_path)
                 reject_too_long_filename(candidate_path.name, REWRITE_TOO_LONG_REMEDY)
                 record = DecisionRecord(number=parsed.number, title=title, version=0)
                 header_text = build_header(config, record, migrated=True)

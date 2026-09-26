@@ -462,3 +462,16 @@ def test_build_filename_counts_the_name_in_bytes_not_characters():
         build_filename(config, DecisionRecord(number=1, title="ã" * 111, version=1))
 
     assert excinfo.value.code == "filename-too-long"
+
+
+def test_a_name_holding_a_byte_that_is_not_utf8_is_measured_not_crashed_on():
+    # An undecodable byte reaches Python as a lone surrogate (surrogateescape
+    # on POSIX, an unpaired UTF-16 unit on NTFS): the name's length is its
+    # bytes on disk, never a UnicodeEncodeError.
+    from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, reject_too_long_filename
+
+    reject_too_long_filename("ADR001V01-alpha-\udcff.md", REWRITE_TOO_LONG_REMEDY)
+    with pytest.raises(CommandError) as excinfo:
+        # 230 of them pass 234 bytes both ways: 1 byte each on POSIX, 3 on NTFS.
+        reject_too_long_filename("ADR001V01-" + "\udcff" * 230 + ".md", REWRITE_TOO_LONG_REMEDY)
+    assert excinfo.value.code == "filename-too-long"

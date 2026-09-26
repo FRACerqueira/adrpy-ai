@@ -35,7 +35,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration. |
-| `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite fails that way too, with nothing written to it (its error says to rename it by hand). |
+| `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite, or a candidate that is a symbolic link, fails that way too, with nothing written to it (its error says what to do). |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |

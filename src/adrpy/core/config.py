@@ -421,9 +421,15 @@ def parse_repo_config(text):
     except (ValueError, RecursionError) as error:
         # ValueError covers JSONDecodeError and an integer past Python's
         # digit limit; RecursionError, nesting too deep to decode. Each is a
-        # config that is not usable JSON -- never an internal error, so the
-        # commands that replace the whole file can still repair it.
-        raise CommandError(FailureCodes.CONFIG_INVALID_JSON, str(error)) from error
+        # config that is not usable JSON -- a stable code, never an internal
+        # error. installconfig --seed/--language replace such an install-level
+        # config; a repository's is repaired by hand (init and config run the
+        # change guards against the current file, so they cannot).
+        raise CommandError(
+            FailureCodes.CONFIG_INVALID_JSON,
+            f"{error} -- the file is not valid JSON: repair it by hand (the install-level config can also be "
+            "replaced with `adrpy installconfig --seed` or `--language`).",
+        ) from error
 
     if not isinstance(raw, dict):
         raise CommandError(FailureCodes.CONFIG_INVALID_JSON, "Configuration root must be a JSON object.")

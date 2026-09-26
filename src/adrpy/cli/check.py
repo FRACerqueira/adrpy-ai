@@ -9,7 +9,7 @@ from adrpy.core.consistency import (
     unrecognized_decision_like_warning,
 )
 from adrpy.core.decision_log import unrecognized_log_files_warning
-from adrpy.core.warnings import names_too_long_to_rewrite_warning
+from adrpy.core.warnings import excluded_candidate_warning, linked_decisions_warning, names_too_long_to_rewrite_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.fs import scan_tree
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
@@ -62,7 +62,10 @@ def describe():
             "header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names; the "
             "warning gives the number read from each name), as is a file in the decision-log folder "
             "(folderlog) that is not a decision-log entry (INDEX.md and CYCLES.md are the log's own): "
-            "`adrpy log` refuses to write while it is there. Warnings never change the outcome."
+            "`adrpy log` refuses to write while it is there. It also warns about a decision name longer than the 234 "
+            "bytes the tool can rewrite, a .md in the decisions folder that is a symbolic link (commands refuse "
+            "to write through it: target-is-a-link), and a candidate excluded because its real path escapes the "
+            "repository (a link out of it). Warnings never change the outcome."
         ),
         "arguments": [
             {
@@ -103,6 +106,8 @@ def run(args):
             unheadered_legacy_warning(snapshot, config),
             unrecognized_log_files_warning(target, config),
             names_too_long_to_rewrite_warning(decision.path for decision in snapshot.decisions),
+            linked_decisions_warning(scan.links if scan is not None else ()),
+            excluded_candidate_warning(list(scan.excluded) if scan is not None else []),
         )
         if warning
     ]

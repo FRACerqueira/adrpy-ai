@@ -48,6 +48,7 @@ Marks an Accepted decision (or a migrated placeholder) Superseded and creates it
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
+| `target-is-a-link` | A file this command would rewrite (--file; for reject of a successor, also the predecessor it reverts) is a symbolic link -- nothing was written (a write would replace the link, not the file it points to); give the real file (data.real_file), and check warns about the link. |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
 | `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
