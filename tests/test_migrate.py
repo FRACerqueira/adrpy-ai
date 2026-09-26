@@ -1087,3 +1087,31 @@ def test_the_redo_route_the_misread_warning_gives_after_migrate_works(tmp_path):
 
     assert len(again["migrated"]) == 2
     assert again["warnings"] == []
+
+
+def test_migrate_reports_a_legacy_name_too_long_to_rewrite_and_migrates_the_rest(tmp_path):
+    import json as _json
+    from adrpy.cli import init, migrate
+
+    seed = _json.loads((Path(__file__).parent / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8"))
+    seed["migrationpattern"] = "N00:04T05"
+    seed_file = tmp_path / "seed.json"
+    seed_file.write_text(_json.dumps(seed), encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init.run(["--path", str(repo), "--seed", str(seed_file)])
+    adr = repo / "doc" / "adr"
+    adr.mkdir(parents=True, exist_ok=True)
+    long = adr / f"0001-{'d' * 231}.md"  # 240 bytes
+    short = adr / "0002-short.md"
+    long.write_bytes(b"# Long\n")
+    short.write_bytes(b"# Short\n")
+
+    with pytest.raises(CommandError) as excinfo:
+        migrate.run(["--path", str(repo)])
+
+    results = {Path(r["file"]).name: r for r in excinfo.value.data["results"]}
+    assert results[short.name]["status"] == "migrated"
+    assert results[long.name]["status"] == "failed"
+    assert "rename" in results[long.name]["error"]
+    assert long.read_bytes() == b"# Long\n"

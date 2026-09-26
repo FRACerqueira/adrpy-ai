@@ -418,7 +418,11 @@ def read_config_text(path):
 def parse_repo_config(text):
     try:
         raw = json.loads(text)
-    except json.JSONDecodeError as error:
+    except (ValueError, RecursionError) as error:
+        # ValueError covers JSONDecodeError and an integer past Python's
+        # digit limit; RecursionError, nesting too deep to decode. Each is a
+        # config that is not usable JSON -- never an internal error, so the
+        # commands that replace the whole file can still repair it.
         raise CommandError(FailureCodes.CONFIG_INVALID_JSON, str(error)) from error
 
     if not isinstance(raw, dict):

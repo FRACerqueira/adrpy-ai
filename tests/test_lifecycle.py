@@ -975,3 +975,25 @@ def test_cannot_determine_root_path_says_what_is_missing(tmp_path):
 
     assert "adr-config.adrplus" in excinfo.value.detail
     assert "adrpy init" in excinfo.value.detail
+
+
+def test_config_not_found_quotes_a_path_that_needs_it(tmp_path):
+    folder = tmp_path / "with space"
+    folder.mkdir()
+
+    with pytest.raises(CommandError) as excinfo:
+        resolve_target_and_config(folder)
+
+    assert f'adrpy init --path "{folder}"' in excinfo.value.detail
+
+
+def test_cannot_determine_root_path_gives_init_its_required_path(tmp_path):
+    orphan_dir = tmp_path / "no-repo-here"
+    orphan_dir.mkdir()
+    target = orphan_dir / "ADR001V01-orphan.md"
+    target.write_text("not a real decision", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        prepare("approve", target, {})
+
+    assert "`adrpy init --path .`" in excinfo.value.detail

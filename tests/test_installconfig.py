@@ -239,3 +239,16 @@ def test_the_replaced_values_warning_names_the_fields_without_their_long_values(
     warning = next(warning for warning in result["warnings"] if "replaced" in warning)
     assert "template" in warning
     assert len(warning) < 600
+
+
+@pytest.mark.parametrize("corrupt", ["[" * 30000 + "]" * 30000, '{"lenseq": ' + "9" * 5000 + "}"], ids=["deep-nesting", "huge-integer"])
+def test_language_replaces_a_config_too_corrupt_to_parse(_isolated_install_config_path, corrupt):
+    # A config json.loads cannot even finish (nesting past the recursion
+    # limit, an integer past Python's digit limit) is invalid JSON like any
+    # other, so the whole-file replace still repairs it.
+    _isolated_install_config_path.write_text(corrupt, encoding="utf-8")
+
+    result = installconfig.run(["--language", "en-us"])
+
+    assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
+    assert installconfig.run([])["configured"] is True

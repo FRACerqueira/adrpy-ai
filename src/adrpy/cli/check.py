@@ -9,6 +9,7 @@ from adrpy.core.consistency import (
     unrecognized_decision_like_warning,
 )
 from adrpy.core.decision_log import unrecognized_log_files_warning
+from adrpy.core.warnings import names_too_long_to_rewrite_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.fs import scan_tree
 from adrpy.core.header import SHARED_FAILURE_CODES as HEADER_FAILURE_CODES
@@ -101,6 +102,7 @@ def run(args):
             unrecognized_decision_like_warning(scan, config),
             unheadered_legacy_warning(snapshot, config),
             unrecognized_log_files_warning(target, config),
+            names_too_long_to_rewrite_warning(decision.path for decision in snapshot.decisions),
         )
         if warning
     ]

@@ -6,10 +6,11 @@ check the command makes and before its write, so only the commit itself
 can notice it."""
 
 import json
+from pathlib import Path
 
 import pytest
 
-from adrpy.cli import approve, init, log, new, revise, supersede, version
+from adrpy.cli import approve, init, log, new, reject, revise, supersede, version
 from adrpy.core.errors import CommandError
 
 FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
@@ -227,3 +228,153 @@ def test_log_too_long_names_both_flags_that_make_up_the_name(tmp_path):
 
     assert excinfo.value.code == "filename-too-long"
     assert "--scope" in excinfo.value.detail and "--slug" in excinfo.value.detail
+
+
+# An existing name past the 234 bytes this tool can rewrite (renamed by hand,
+# or written by another tool): the rewrite's temp name would pass one name's
+# 255-byte limit, so the command refuses before writing anything.
+LONG_TITLE = "b" * 227  # ADR001V01-<227>.md is 240 bytes
+
+
+def _long_named(tmp_path, accepted=False):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    short = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    if accepted:
+        approve.run(["--file", str(short), "--refdate", "2026-01-02"])
+    long = short.with_name(f"ADR001V01-{LONG_TITLE}.md")
+    short.rename(long)
+    return long
+
+
+def test_approve_of_an_existing_name_too_long_to_rewrite_is_refused_before_writing(tmp_path):
+    path = _long_named(tmp_path)
+    before = path.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert "rename" in excinfo.value.detail
+    assert path.read_bytes() == before
+    assert _no_temp_left(tmp_path)
+
+
+def test_supersede_of_an_existing_name_too_long_to_rewrite_is_refused_before_writing(tmp_path):
+    path = _long_named(tmp_path, accepted=True)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(path), "--title", "Next", "--refdate", "2026-01-03"])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert sorted(p.name for p in path.parent.iterdir()) == [path.name]
+
+
+def test_reject_of_a_successor_whose_predecessor_name_is_too_long_is_refused_before_writing(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    adr = tmp_path / "doc" / "adr"
+    first = adr / "ADR001V01-short.md"
+    approve.run(["--file", str(first), "--refdate", "2026-01-02"])
+    successor = Path(supersede.run(["--file", str(first), "--title", "Next", "--refdate", "2026-01-03"])["created"])
+    long = first.with_name(f"ADR001V01-{LONG_TITLE}.md")
+    first.rename(long)
+    before = {p.name: p.read_bytes() for p in adr.iterdir()}
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert {p.name: p.read_bytes() for p in adr.iterdir()} == before
+
+
+def test_supersede_names_the_predecessor_when_preparing_it_fails(tmp_path, monkeypatch):
+    from adrpy.core import lifecycle
+
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    path = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    def failing(*_args, **_kwargs):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(supersede, "prepare_mark_superseded", failing)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(path), "--title", "Next", "--refdate", "2026-01-03"])
+
+    assert excinfo.value.data["failed_file"] == str(path)
+
+
+def test_reject_names_the_successor_when_preparing_its_own_rewrite_fails(tmp_path, monkeypatch):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    first = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    approve.run(["--file", str(first), "--refdate", "2026-01-02"])
+    successor = Path(supersede.run(["--file", str(first), "--title", "Next", "--refdate", "2026-01-03"])["created"])
+    real = reject.prepare_status_field_rewrite
+    calls = {"n": 0}
+
+    def second_fails(path, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(5, "I/O error")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(reject, "prepare_status_field_rewrite", second_fails)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.data["failed_file"] == str(successor)
+
+
+@pytest.mark.parametrize("command", [version, revise])
+def test_version_and_revise_of_a_long_named_file_are_not_refused_for_the_name_they_never_rewrite(tmp_path, command):
+    # Both leave --file as it is and name the new file from the header's
+    # title ("Short"): the source's own name length does not matter.
+    path = _long_named(tmp_path, accepted=True)
+    from adrpy.cli import config
+    config.run(["--path", str(tmp_path), "--lenrevision", "2"])
+
+    result = command.run(["--file", str(path), "--refdate", "2026-01-03"])
+
+    assert Path(result["created"]).name.endswith("-short.md")
+
+
+def test_supersede_names_the_successor_when_creating_it_fails(tmp_path, monkeypatch):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    path = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    def failing(*_args, **_kwargs):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(supersede, "commit_in_order", failing)
+
+    with pytest.raises(CommandError) as excinfo:
+        supersede.run(["--file", str(path), "--title", "Next", "--refdate", "2026-01-03"])
+
+    assert excinfo.value.code == "supersede-successor-write-failed"
+    assert excinfo.value.data["failed_file"] == excinfo.value.data["intended_successor"]
+
+
+def test_reject_names_the_predecessor_when_reverting_it_fails(tmp_path, monkeypatch):
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    first = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    approve.run(["--file", str(first), "--refdate", "2026-01-02"])
+    successor = Path(supersede.run(["--file", str(first), "--title", "Next", "--refdate", "2026-01-03"])["created"])
+
+    def failing(*_args, **_kwargs):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr(reject, "commit_in_order", failing)
+
+    with pytest.raises(CommandError) as excinfo:
+        reject.run(["--file", str(successor), "--refdate", "2026-01-04"])
+
+    assert excinfo.value.code == "reject-predecessor-write-failed"
+    assert excinfo.value.data == {"failed_file": str(first)}

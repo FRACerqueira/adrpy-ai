@@ -37,3 +37,29 @@ def test_ascii_digits_int_is_none_for_anything_else(text):
 def test_strip_leading_boms_removes_only_a_leading_run():
     assert strip_leading_boms("\ufeff\ufeffa\ufeffb") == "a\ufeffb"
     assert strip_leading_boms("plain") == "plain"
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [
+        (".", "."),
+        ("doc/adr", "doc/adr"),
+        ("my repo", '"my repo"'),
+        ("C:\\Users\\me\\repo", '"C:\\Users\\me\\repo"'),
+        ("a&b", '"a&b"'),
+    ],
+)
+def test_shell_argument_quotes_only_what_needs_it(value, shown):
+    from adrpy.core.text import shell_argument
+
+    assert shell_argument(value) == shown
+
+
+@pytest.mark.parametrize("value", ['a"b', "C:\\x$y", "a`b", "%TEMP%\\repo", "/tmp/$(touch pwned)/repo", "a!b"])
+def test_shell_argument_never_prints_a_value_a_shell_would_expand_even_in_quotes(value):
+    # No single quoting keeps these literal in bash, cmd and PowerShell
+    # alike: the hint shows the placeholder instead of a command that could
+    # run something else.
+    from adrpy.core.text import shell_argument
+
+    assert shell_argument(value, "<path>") == "<path>"

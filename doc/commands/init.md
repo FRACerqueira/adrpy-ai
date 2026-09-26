@@ -103,7 +103,8 @@ above, a repository it writes a config into may still break a rule. Run
 # Initialize a new repository, seeded from the built-in default
 adrpy init --path .
 
-# Initialize with a specific language pack
+# Initialize with a specific language pack (only when this machine has no
+# install-level config: then that config seeds init instead)
 adrpy init --path . --language pt-br
 ```
 

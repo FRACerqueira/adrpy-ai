@@ -39,9 +39,6 @@ Deletes each requested (provider, skill) pair -- for agentsmd, only that skill's
 
 ```bash
 adrpy-skills remove --skill pre-release-audit --provider copilot
-
-# Remove the no-longer-shipped comment-audit skill an older version installed
-adrpy-skills remove --skill comment-audit
 ```
 
 ---

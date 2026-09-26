@@ -147,7 +147,7 @@ What is validated:
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
 
-`check` and `explore` also warn, without failing, about a file in the
+`check` and `explore` also warn, without failing, about a `.md` in the
 decision-log folder (`folderlog`) that is not an entry (`INDEX.md` and
 `CYCLES.md` are the log's own): `adrpy log` refuses to write while it is
 there.

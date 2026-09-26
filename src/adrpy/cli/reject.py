@@ -19,6 +19,7 @@ from adrpy.core.consistency import SUPERSEDED
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.family import is_successor
 from adrpy.core.header import status_row
+from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, reject_too_long_filename
 from adrpy.core.lifecycle import (
     commit_in_order,
     discard_prepared,
@@ -68,7 +69,7 @@ def describe():
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
                 FailureCodes.REFDATE_IN_FUTURE: "--refdate is after today.",
                 FailureCodes.REFDATE_BEFORE_HISTORY: "--refdate is before this decision's own creation date.",
-                FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made.",
+                FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED: "Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made (data.failed_file names the file whose write failed).",
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; the repository is then inconsistent until this decision is marked Rejected by hand, with the exact row in data.repair.",
                 FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the predecessor's Superseded status was reverted but before this decision was marked Rejected -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). Once both are written, data.applied names both, data.pending is empty and there is no data.repair (the repository is consistent). What was written is read from the disk, so an interrupt right after a write counts it. An interrupt before the first write is reported without data.",
             },
@@ -148,6 +149,7 @@ def _revert_then_reject(ctx, predecessor):
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
     warnings = ctx.warnings
     pred_parsed, pred_header, pred_path = predecessor
+    reject_too_long_filename(pred_path.name, REWRITE_TOO_LONG_REMEDY, warnings=warnings)
     prepared = []
     try:
         # pred_header already comes from the validated snapshot's own
@@ -172,6 +174,7 @@ def _revert_then_reject(ctx, predecessor):
         raise CommandError(
             FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
             f"{error}. No write was made.",
+            data={"failed_file": str(pred_path if not prepared else path)},
             warnings=warnings,
         ) from error
 
@@ -195,5 +198,6 @@ def _revert_then_reject(ctx, predecessor):
         raise CommandError(
             FailureCodes.REJECT_PREDECESSOR_WRITE_FAILED,
             f"{pred_path}: {error}. No write was made.",
+            data={"failed_file": str(pred_path)},
             warnings=warnings,
         ) from error

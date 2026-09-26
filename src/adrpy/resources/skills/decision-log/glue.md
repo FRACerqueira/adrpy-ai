@@ -93,10 +93,11 @@ adrpy log --path . --classification audit-finding --scope io --slug retry-loop-o
   --summary "Retry loop stopped one attempt short" --body "Details of the fix." \
   --front "test-adequacy audit" --severity Medium --resolution Direct
 
-# A second finding in that SAME round: pass --round explicitly to reuse it
+# A second finding in that SAME round: pass --round with the number the
+# first call's warning named (here 1), or it would open the next round
 adrpy log --path . --classification audit-finding --scope config --slug off-by-one-here-too \
   --summary "The same off-by-one, in a second module" --body "Details of the fix." \
-  --front "test-adequacy audit" --severity Low --resolution Direct --round 12
+  --front "test-adequacy audit" --severity Low --resolution Direct --round 1
 
 # deferred: --reopenwhen required instead
 adrpy log --path . --classification deferred --scope security --slug posix-symlink-coverage \

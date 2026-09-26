@@ -67,7 +67,9 @@ def test_supersede_failing_to_prepare_either_file_writes_nothing(tmp_path, monke
         supersede.run(["--file", str(path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "supersede-successor-write-failed"
-    assert excinfo.value.data == {"intended_successor": str(folder / "ADR002V01-first-decision--001.md")}
+    successor = folder / "ADR002V01-first-decision--001.md"
+    # The successor is prepared first, then the predecessor: data names the one that failed.
+    assert excinfo.value.data == {"intended_successor": str(successor), "failed_file": str(successor if n == 1 else path)}
     assert _snapshot(folder) == before
 
 
@@ -105,6 +107,8 @@ def test_reject_of_a_successor_failing_to_prepare_either_file_writes_nothing(tmp
 
     assert excinfo.value.code == "reject-predecessor-write-failed"
     assert _snapshot(path.parent) == before
+    # The predecessor is prepared first, then the successor itself.
+    assert excinfo.value.data == {"failed_file": str(path if n == 1 else successor)}
 
 
 def test_reject_of_a_successor_failing_after_the_revert_names_what_was_written(tmp_path, monkeypatch):

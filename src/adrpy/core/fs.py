@@ -44,10 +44,11 @@ _HAS_REPARSE_POINTS = os.name == "nt"
 # uuid4's hex digits; earlier builds used all 32); the orphan sweeps below
 # match only those exact shapes, so no other *.tmp a user keeps in the
 # same folder is ever mistaken for one of these. The folder sweep also
-# needs a `.md` target name: this tool writes nothing else in the
-# decisions and decision-log folders.
+# needs a `.md` target name, in any case (Windows reads `.MD` as a
+# decision too): this tool writes nothing else in the decisions and
+# decision-log folders.
 _OWN_TEMP_SUFFIX = r"\.(?:[0-9a-f]{16}|[0-9a-f]{32})\.tmp"
-_OWN_TEMP_NAME = re.compile(r".+\.md" + _OWN_TEMP_SUFFIX)
+_OWN_TEMP_NAME = re.compile(r".+(?i:\.md)" + _OWN_TEMP_SUFFIX)
 
 # The longest name this tool writes: one name's limit on NTFS, ext4 and
 # APFS (255, counted in UTF-8 bytes, which are never fewer than NTFS's

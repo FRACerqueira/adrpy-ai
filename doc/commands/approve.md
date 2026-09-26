@@ -36,6 +36,7 @@ Marks a Proposed decision (or a migrated placeholder) Accepted. The whole reposi
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
 | `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
+| `filename-too-long` | The name of a file this command would rewrite (--file; for reject of a successor, also the predecessor it reverts) is longer than the 234 bytes this tool can rewrite (data.filename) -- nothing was written; rename it by hand to a shorter title part, keeping its number, version, revision and any --NNN suffix. |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `family-member-superseded` | Another member of the same family has already been superseded. |
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |

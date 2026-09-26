@@ -284,3 +284,18 @@ def test_the_folderlog_warning_also_comes_with_a_failing_check(tmp_path, capsys)
 
     assert code == EXIT_FAILURE
     assert len(_log_warnings(payload["warnings"])) == 1
+
+
+def test_check_warns_about_a_decision_name_too_long_to_rewrite(tmp_path):
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "Short", "--refdate", "2026-01-01"])
+    short = tmp_path / "doc" / "adr" / "ADR001V01-short.md"
+    long = short.with_name(f"ADR001V01-{'b' * 227}.md")
+    short.rename(long)
+
+    result = check.run(["--path", str(tmp_path)])
+
+    assert result["decisions"] == 1
+    assert any(long.name in warning and "234" in warning for warning in result["warnings"])

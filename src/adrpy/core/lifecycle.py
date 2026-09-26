@@ -5,6 +5,7 @@ mechanics every status-transition command
 concern, not copies."""
 
 import codecs
+import os
 from dataclasses import dataclass, replace as replace_fields
 from datetime import date as date_cls
 from pathlib import Path
@@ -44,9 +45,9 @@ from adrpy.core.fs import (
     prepare_write,
     scan_tree,
 )
-from adrpy.core.naming import parse_any_filename
+from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, parse_any_filename, reject_too_long_filename
 from adrpy.core.output import explain
-from adrpy.core.text import ascii_digits_int
+from adrpy.core.text import ascii_digits_int, shell_argument
 from adrpy.core.security import (
     is_within,
     reject_embedded_delimiter,
@@ -387,9 +388,12 @@ def find_by_unique_title(title, config, decisions):
 def find_repo_root(file_path):
     """Walks up from the file's own directory looking for
     adr-config.adrplus. Returns the config file's Path, or None if never
-    found. A relative path is made absolute first: its own parents stop
-    at '.'."""
-    directory = Path(file_path).absolute().parent
+    found. The path is made absolute with `..` collapsed but no link
+    followed (os.path.abspath): a relative path's own parents stop at '.',
+    an uncollapsed `..` walks through folders that are not the file's
+    ancestors, and following a link would let a path under one repository
+    find another (the boundary checks then refuse a link out of it)."""
+    directory = Path(os.path.abspath(file_path)).parent
     while True:
         candidate = directory / "adr-config.adrplus"
         if candidate.is_file():
@@ -525,6 +529,12 @@ SHARED_FAILURE_CODES = {
     FailureCodes.TARGET_OUTSIDE_FOLDERADR: "--file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header).",
     FailureCodes.REPOSITORY_INCONSISTENT: "The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
     FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
+    FailureCodes.FILENAME_TOO_LONG: (
+        "The name of a file this command would rewrite (--file; for reject of a successor, also the "
+        "predecessor it reverts) is longer than the 234 bytes this tool can rewrite (data.filename) -- nothing "
+        "was written; rename it by hand to a shorter title part, keeping its number, version, revision and any "
+        "--NNN suffix."
+    ),
     FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
     FailureCodes.STILL_PROPOSED: "This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision.",
     FailureCodes.ALREADY_ACCEPTED: "This decision is already Accepted; run undo first to reconsider it.",
@@ -557,7 +567,7 @@ def resolve_target_and_config(path, *, require_config=True):
     if not config_path.is_file():
         raise CommandError(
             FailureCodes.CONFIG_NOT_FOUND,
-            f"No adr-config.adrplus found at: {config_path.absolute()} -- run `adrpy init --path {path}` to create "
+            f"No adr-config.adrplus found at: {config_path.absolute()} -- run `adrpy init --path {shell_argument(path, '<repository folder>')}` to create "
             "one, or give --path the repository's root.",
         )
     return target, config_path, load_repo_config(config_path)
@@ -973,7 +983,7 @@ def _resolve_file(fileadr):
         raise CommandError(
             FailureCodes.CANNOT_DETERMINE_ROOT_PATH,
             f"Cannot determine the repository root for: {fileadr} -- no adr-config.adrplus in its folder or any "
-            "folder above it (run `adrpy init` at the repository's root).",
+            "folder above it (run `adrpy init --path .` at the repository's root).",
         )
     config = load_repo_config(config_path)
     found = parse_any_filename(fileadr.name, config)
@@ -1042,6 +1052,11 @@ def prepare(command, fileadr, flags):
 
         target = _target_in(snapshot, path, parsed.number)
         filename_info, header = target.name, target.header
+        # A name past what this tool can rewrite fails the rewrite with a
+        # raw OSError: refused here, before anything is written, by the
+        # commands that rewrite --file (version and revise never do).
+        if row.numbering is None:
+            reject_too_long_filename(path.name, REWRITE_TOO_LONG_REMEDY)
         # ADR004V01: a marker/label disagreement on the target itself, not
         # on a sibling (that would misattribute it to this command).
         warning = marker_label_mismatch_warning(header)
@@ -1052,7 +1067,7 @@ def prepare(command, fileadr, flags):
             raise CommandError(
                 FailureCodes.REVISION_NOT_CONFIGURED,
                 "This repository's config has lenrevision == 0 (revisions are off). Turn them on with "
-                f"`adrpy config --path {root} --lenrevision 2`; the decisions created afterwards also carry a "
+                f"`adrpy config --path {shell_argument(root, '<repository root>')} --lenrevision 2`; the decisions created afterwards also carry a "
                 "revision in their names (R01).",
             )
 

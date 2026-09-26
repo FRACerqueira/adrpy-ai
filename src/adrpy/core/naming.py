@@ -276,7 +276,15 @@ def build_filename(config, record, too_long_remedy="pass a shorter --title"):
     return filename
 
 
-def reject_too_long_filename(filename, remedy):
+# The way out for an EXISTING name past MAX_NAME_BYTES: no command can
+# rewrite it, and only a rename that keeps its identity is safe.
+REWRITE_TOO_LONG_REMEDY = (
+    "rename the file by hand to a shorter title part, keeping its number, version, revision and any --NNN "
+    "suffix, then run the command again"
+)
+
+
+def reject_too_long_filename(filename, remedy, warnings=None):
     """A name longer than the filesystem allows once the temp file's suffix
     is added fails the write with a raw OSError (Errno 22 or 36), after the
     temp write was attempted: refused here, with `remedy` (what the caller's
@@ -289,4 +297,5 @@ def reject_too_long_filename(filename, remedy):
             "(255 bytes for one name, the strictest of NTFS, ext4 and APFS, less the suffix of the temp file "
             f"written first): {remedy}.",
             data={"filename": filename},
+            warnings=warnings,
         )

@@ -393,7 +393,7 @@ def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monk
         reject_module.run(["--file", str(successor_path)])
 
     assert excinfo.value.code == "reject-predecessor-write-failed"
-    assert excinfo.value.data is None
+    assert excinfo.value.data == {"failed_file": str(adr_path)}
     assert adr_path.read_text(encoding="utf-8") == predecessor_text_before  # untouched
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 

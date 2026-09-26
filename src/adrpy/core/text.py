@@ -36,3 +36,24 @@ def strip_leading_boms(text):
     was added by an editor (or PowerShell 5.1's -Encoding UTF8) and is not
     content -- left in, it hides what the file starts with."""
     return text.lstrip("\ufeff")
+
+
+# Characters a shell would split on, plus the backslash (bash drops it
+# outside quotes): double quotes keep these literal in bash, cmd and
+# PowerShell alike.
+_NEEDS_QUOTES = re.compile(r"[\s'&|;<>()*?\[\]{}^,#~\\]")
+# Characters one of those shells still expands inside double quotes ($ and
+# ` in bash and PowerShell, % in cmd, ! in an interactive bash) or that
+# ends them ("): no single quoting keeps them literal in all three.
+_UNQUOTABLE = re.compile(r"[\"$`%!]")
+
+
+def shell_argument(value, placeholder="<path>"):
+    """`value` as a hint shows it inside a command to copy: as is when no
+    shell would change it, in double quotes when only splitting is the
+    risk, and `placeholder` when a shell would expand part of it even in
+    quotes -- a printed command never runs something else."""
+    value = str(value)
+    if _UNQUOTABLE.search(value):
+        return placeholder
+    return f'"{value}"' if _NEEDS_QUOTES.search(value) else value

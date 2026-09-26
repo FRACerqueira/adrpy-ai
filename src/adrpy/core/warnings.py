@@ -109,6 +109,23 @@ def encoding_repaired_warning(path):
     )
 
 
+def names_too_long_to_rewrite_warning(paths):
+    """A decision whose name is past core/fs.MAX_NAME_BYTES reads fine but
+    cannot be rewritten (its temp file's name would pass one name's limit):
+    every command that changes it refuses with filename-too-long. None when
+    no such name exists."""
+    from adrpy.core.fs import MAX_NAME_BYTES
+
+    names = sorted(path.name for path in paths if len(path.name.encode("utf-8")) > MAX_NAME_BYTES)
+    if not names:
+        return None
+    return (
+        f"{len(names)} decision name(s) are longer than the {MAX_NAME_BYTES} bytes this tool can rewrite: "
+        "a command that changes them refuses with filename-too-long. Rename each by hand to a shorter title "
+        f"part, keeping its number, version, revision and any --NNN suffix: {', '.join(names)}."
+    )
+
+
 def excluded_candidate_warning(paths):
     """`core.security.is_within` deliberately never raises over a
     candidate whose real path escapes the repository boundary (e.g. a

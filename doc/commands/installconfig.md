@@ -111,7 +111,8 @@ adrpy installconfig --separator _
 
 # Seed every future `init` on this machine with a language pack. This replaces
 # the whole file: the --separator set above goes back to the default (a
-# warning names it). Set field flags after --language, not before.
+# warning names it). Field flags cannot be combined with --language: set them
+# in a later call.
 adrpy installconfig --language pt-br
 ```
 
