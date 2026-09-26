@@ -120,7 +120,9 @@ def excluded_candidate_warning(paths):
     physically listable in the folder."""
     if not paths:
         return None
-    names = ", ".join(str(path) for path in paths)
+    # Sorted: a scan finds them in the folder's listing order, which
+    # differs between filesystems.
+    names = ", ".join(sorted(str(path) for path in paths))
     return (
         f"{len(paths)} candidate file(s) or folder(s) were excluded from this scan because their real path "
         f"escapes the repository boundary (e.g. a symlink/junction): {names}."

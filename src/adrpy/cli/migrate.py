@@ -479,11 +479,17 @@ def run(args):
                 warnings=warnings,
             )
 
-        candidates = [
-            (parsed, candidate_path)
-            for parsed, candidate_path, header in entries
-            if header.status_create is None and not header.is_migrated and not header.is_valid
-        ]
+        # By name, not in the order the folder lists them (by name on NTFS
+        # and APFS, in hash order on ext4): the results, and what an
+        # interrupt leaves migrated, are the same on every system.
+        candidates = sorted(
+            (
+                (parsed, candidate_path)
+                for parsed, candidate_path, header in entries
+                if header.status_create is None and not header.is_migrated and not header.is_valid
+            ),
+            key=lambda item: item[1].relative_to(folder).parts,
+        )
         if not candidates:
             raise CommandError(FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE, "No files need migration.", warnings=warnings)
 

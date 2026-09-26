@@ -6,7 +6,8 @@ on disk count as not written. Every write that reports what it wrote
 prepared write whose digest matches the target counts as applied.
 
 The interrupt is simulated exactly there: the real os.replace/os.rename
-runs, then KeyboardInterrupt is raised, once, for the chosen target."""
+(or os.link, an exclusive create on POSIX) runs, then KeyboardInterrupt
+is raised, once, for the chosen target."""
 
 import json
 import os
@@ -19,7 +20,7 @@ from adrpy.core import fs, lifecycle
 
 def _interrupt_after_moving_onto(monkeypatch, is_target):
     fired = {"done": False}
-    for name in ("replace", "rename"):
+    for name in ("replace", "rename", "link"):
         real = getattr(os, name)
 
         def moved_then_interrupted(src, dst, *args, _real=real, **kwargs):
@@ -134,7 +135,7 @@ def test_log_interrupted_right_after_writing_the_entry_names_the_entry(tmp_path,
 def test_log_interrupted_before_the_entry_lands_does_not_name_it(tmp_path, monkeypatch, capsys):
     init.run(["--path", str(tmp_path)])
     entry = tmp_path / "doc" / "decision-log" / "2026-09-18--scope-note--lock--x.md"
-    for name in ("replace", "rename"):
+    for name in ("replace", "rename", "link"):
         real = getattr(os, name)
 
         def interrupted_instead(src, dst, *args, _real=real, **kwargs):
@@ -210,7 +211,7 @@ def _fail_next_read_of(monkeypatch, name, error):
 
 
 def _interrupt_after_moving_onto_then(monkeypatch, is_target, then):
-    for name in ("replace", "rename"):
+    for name in ("replace", "rename", "link"):
         real = getattr(os, name)
 
         def moved_then_interrupted(src, dst, *args, _real=real, **kwargs):
@@ -258,6 +259,30 @@ def _repo_with_two_legacy_files(tmp_path):
     second = first.parent / "0002Second.md"
     second.write_bytes(b"# Second\n")
     return first, second
+
+
+def test_migrate_processes_the_files_in_name_order_whatever_order_the_folder_lists_them(tmp_path, monkeypatch, capsys):
+    # NTFS and APFS list a folder by name, ext4 in hash order: the
+    # results, and what an interrupt leaves migrated, must not depend on it.
+    first, second = _repo_with_two_legacy_files(tmp_path)
+    real_scandir = os.scandir
+
+    class Listing(list):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def reversed_listing(*args, **kwargs):
+        with real_scandir(*args, **kwargs) as listing:
+            return Listing(sorted(listing, key=lambda entry: entry.name, reverse=True))
+
+    monkeypatch.setattr(fs.os, "scandir", reversed_listing)
+
+    response = _run(capsys, "migrate", "--path", str(tmp_path))
+
+    assert response["data"]["migrated"] == [str(first), str(second)]
 
 
 def test_migrate_keeps_its_results_when_a_second_interrupt_arrives_while_reading_back(tmp_path, monkeypatch, capsys):

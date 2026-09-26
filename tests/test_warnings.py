@@ -119,3 +119,11 @@ def test_excluded_candidate_warning_counts_and_joins_multiple_excluded_paths():
     assert "b.md" in warning
     assert "c.md" in warning
     assert "a.md, b.md, c.md" in warning
+
+
+def test_excluded_candidate_warning_names_the_paths_in_the_same_order_whatever_order_the_scan_found_them():
+    # A scan lists a folder by name on NTFS and APFS, in hash order on
+    # ext4: the warning's text must not depend on it.
+    warning = excluded_candidate_warning([Path("c.md"), Path("a.md"), Path("b.md")])
+
+    assert "a.md, b.md, c.md" in warning
