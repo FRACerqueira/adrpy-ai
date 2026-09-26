@@ -19,6 +19,14 @@ suspicion, or a one-off process exception. If you are looking for the
 the decision log's own [`INDEX.md`](decision-log/INDEX.md) header --
 this page does not repeat it, so the two never drift apart.
 
+**Who reads the log.** A decision log is written first for tooling and
+for an AI agent recovering a project's history or calibrating a review --
+that is why its fields are structured and its vocabulary is closed. People
+read it too (each `Escalated` entry records a choice the owner made), but
+to understand the design they read the ADRs. Treat an entry as a pointer,
+not the final word: before acting on one, check the commit, test or file
+it names.
+
 ## Step 1: is this actually an ADR?
 
 Ask one question before anything else: **does this change a choice among
