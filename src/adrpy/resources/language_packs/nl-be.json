@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Voorgesteld",
+  "statusacc": "Goedgekeurd",
+  "statusrej": "Afgekeurd",
+  "statussup": "Vervangen",
+  "headerdisclaimer": "Verwijder deze opmerking, lijnen en tabel niet",
+  "headertitlefile": "Titel van het md-bestand",
+  "headerversion": "Versie",
+  "headerrevision": "Revisie",
+  "headerscope": "Bereik",
+  "headerdomain": "Domein",
+  "headertitlestatuscreated": "Aangemaakt",
+  "headertitlestatuschanged": "Gewijzigd",
+  "headertitlestatussuperseded": "Vervangen",
+  "headertablefields": "Velden",
+  "headertablevalues": "Waarden",
+  "headermigrated": "Gemigreerd",
+  "template": "<!-- Machine-translated; pending native-speaker review. See TRANSLATIONS.md. -->\n---\n# [Korte titel van de beslissing]\n\n## Beslissers\n\n* Beslissers: [noem iedereen die betrokken is bij de beslissing] <!-- optioneel -->\n\nTechnisch verhaal: [beschrijving | URL van ticket/issue] <!-- optioneel -->\n\n## Context en probleemstelling\n\n[Beschrijf de context en de probleemstelling, bijvoorbeeld in vrije vorm met twee tot drie zinnen. Je kunt het probleem eventueel formuleren als een vraag.]\n\n## Beslissingsfactoren <!-- optioneel -->\n\n* [factor 1, bijv. een kracht, een aandachtspunt, …]\n* [factor 2, bijv. een kracht, een aandachtspunt, …]\n* … <!-- het aantal factoren kan variëren -->\n\n## Overwogen opties\n\n* [optie 1]\n* [optie 2]\n* [optie 3]\n* … <!-- het aantal opties kan variëren -->\n\n## Beslissingsresultaat\n\nGekozen optie: \"[optie 1]\", omdat [rechtvaardiging, bijv. enige optie die voldoet aan het knock-outcriterium van de beslissingsfactor | die de kracht kracht oplost | … | het beste uit de bus komt (zie hieronder)].\n\n### Positieve gevolgen <!-- optioneel -->\n\n* [bijv. verbetering van de tevredenheid met een kwaliteitsattribuut, vervolgbeslissingen vereist, …]\n* …\n\n### Negatieve gevolgen <!-- optioneel -->\n\n* [bijv. compromis in kwaliteitsattribuut, vervolgbeslissingen vereist, …]\n* …\n\n## Voor- en nadelen van de opties <!-- optioneel -->\n\n### [optie 1]\n\n[voorbeeld | beschrijving | verwijzing naar meer informatie | …] <!-- optioneel -->\n\n* Goed, omdat [argument a]\n* Goed, omdat [argument b]\n* Slecht, omdat [argument c]\n* … <!-- het aantal voor- en nadelen kan variëren -->\n\n### [optie 2]\n\n[voorbeeld | beschrijving | verwijzing naar meer informatie | …] <!-- optioneel -->\n\n* Goed, omdat [argument a]\n* Goed, omdat [argument b]\n* Slecht, omdat [argument c]\n* … <!-- het aantal voor- en nadelen kan variëren -->\n\n### [optie 3]\n\n[voorbeeld | beschrijving | verwijzing naar meer informatie | …] <!-- optioneel -->\n\n* Goed, omdat [argument a]\n* Goed, omdat [argument b]\n* Slecht, omdat [argument c]\n* … <!-- het aantal voor- en nadelen kan variëren -->\n\n## Links <!-- optioneel -->\n\n* [Linktype] [Link naar ADR] <!-- voorbeeld: Verfijnd door [ADR-0005](0005-voorbeeld.md) -->\n* … <!-- het aantal links kan variëren -->\n"
+}

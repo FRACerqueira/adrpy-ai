@@ -1,0 +1,1 @@
+This repo is adopting adrpy. Try migrationpattern N00:04T05 and tell me what it reads from each file; don't migrate or change anything yet.

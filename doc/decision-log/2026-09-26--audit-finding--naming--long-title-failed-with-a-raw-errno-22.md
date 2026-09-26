@@ -1,0 +1,5 @@
+# A long title failed with a raw Errno 22: the temp file's name passed one name's limit
+
+**Front:** Round 47: first use from outside | **Severity:** Medium | **Resolution:** Escalated | **Round:** 47
+
+A 209-character title made a 222-byte name, and the temp file written next to it (`.<32 hex>.tmp`, 37 bytes) passed 255, failing with io-error. The owner chose both fixes: the temp suffix is now 16 hex digits (21 bytes; the sweeps recognize 16 and 32), and a name the tool would create past 234 bytes in UTF-8 (the strictest of NTFS, ext4 and APFS) is refused with the new filename-too-long, before writing, by new, supersede, version, revise and log. On NTFS this refuses some CJK titles the filesystem would take, accepted as the portable bound. The independent diff review found two follow-ups, fixed before commit: version and revise, which have no --title, now say to supersede with a shorter title, and log names --scope or --slug; the folder sweep only takes a .md's temp, so a user's x.<16 hex>.tmp is never removed (d3e900f).

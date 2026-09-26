@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Vorgeschlagen",
+  "statusacc": "Angenommen",
+  "statusrej": "Abgelehnt",
+  "statussup": "Ersetzt",
+  "headerdisclaimer": "Diesen Kommentar, die Zeilen und die Tabelle nicht entfernen",
+  "headertitlefile": "Dateititel md",
+  "headerversion": "Version",
+  "headerrevision": "Revision",
+  "headerscope": "Scope",
+  "headerdomain": "Domäne",
+  "headertitlestatuscreated": "Erstellt",
+  "headertitlestatuschanged": "Geändert",
+  "headertitlestatussuperseded": "Ersetzt",
+  "headertablefields": "Felder",
+  "headertablevalues": "Werte",
+  "headermigrated": "Migriert",
+  "template": "<!-- Machine-translated; pending native-speaker review. See TRANSLATIONS.md. -->\n---\n# [Kurzer Titel der Entscheidung]\n\n## Entscheidungsträger\n\n* Entscheidungsträger: [alle an der Entscheidung beteiligten Personen auflisten] <!-- optional -->\n\nTechnische Story: [Beschreibung | Ticket-/Issue-URL] <!-- optional -->\n\n## Kontext und Problemstellung\n\n[Beschreiben Sie den Kontext und die Problemstellung, z. B. in freier Form mit zwei bis drei Sätzen. Sie können das Problem auch in Form einer Frage formulieren.]\n\n## Entscheidungstreiber <!-- optional -->\n\n* [Treiber 1, z. B. eine Kraft, ein zu berücksichtigendes Anliegen, …]\n* [Treiber 2, z. B. eine Kraft, ein zu berücksichtigendes Anliegen, …]\n* … <!-- die Anzahl der Treiber kann variieren -->\n\n## Betrachtete Optionen\n\n* [Option 1]\n* [Option 2]\n* [Option 3]\n* … <!-- die Anzahl der Optionen kann variieren -->\n\n## Ergebnis der Entscheidung\n\nGewählte Option: \"[Option 1]\", weil [Begründung, z. B. einzige Option, die das K.-o.-Kriterium des Entscheidungstreibers erfüllt | die eine Kraft auflöst | … | am besten abschneidet (siehe unten)].\n\n### Positive Konsequenzen <!-- optional -->\n\n* [z. B. Verbesserung der Erfüllung eines Qualitätsattributs, erforderliche Folgeentscheidungen, …]\n* …\n\n### Negative Konsequenzen <!-- optional -->\n\n* [z. B. Beeinträchtigung eines Qualitätsattributs, erforderliche Folgeentscheidungen, …]\n* …\n\n## Vor- und Nachteile der Optionen <!-- optional -->\n\n### [Option 1]\n\n[Beispiel | Beschreibung | Hinweis auf weitere Informationen | …] <!-- optional -->\n\n* Gut, weil [Argument a]\n* Gut, weil [Argument b]\n* Schlecht, weil [Argument c]\n* … <!-- die Anzahl der Vor- und Nachteile kann variieren -->\n\n### [Option 2]\n\n[Beispiel | Beschreibung | Hinweis auf weitere Informationen | …] <!-- optional -->\n\n* Gut, weil [Argument a]\n* Gut, weil [Argument b]\n* Schlecht, weil [Argument c]\n* … <!-- die Anzahl der Vor- und Nachteile kann variieren -->\n\n### [Option 3]\n\n[Beispiel | Beschreibung | Hinweis auf weitere Informationen | …] <!-- optional -->\n\n* Gut, weil [Argument a]\n* Gut, weil [Argument b]\n* Schlecht, weil [Argument c]\n* … <!-- die Anzahl der Vor- und Nachteile kann variieren -->\n\n## Links <!-- optional -->\n\n* [Link-Typ] [Link zum ADR] <!-- Beispiel: Verfeinert durch [ADR-0005](0005-beispiel.md) -->\n* … <!-- die Anzahl der Links kann variieren -->"
+}

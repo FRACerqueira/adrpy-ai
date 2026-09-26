@@ -1,0 +1,5 @@
+# an ADR name requires the configured prefix and a V<version>; prefix becomes a guarded config field
+
+**Front:** Round 43: validator vs specification (independent oracle, Fable) and Round 43: contract and docs of the new surfaces | **Severity:** Medium | **Resolution:** Escalated | **Round:** 43
+
+Found by two fronts independently: the current scheme accepted any letters as prefix (or none) and an optional V, so 2024-01-15-meeting.md or v1-notes.md in the decisions folder counted as decisions (blocking every command as no-header), and with a header a dated note hijacked numbering (new created ADR2025V01). Owner decision: the current scheme requires the configured prefix (ASCII case-insensitive) and a V; legacy names only through migrationpattern. prefix joins the blanket config guard with its own adoption check (prefix-change-would-adopt-unrelated-files), run per naming field and for prefix+separator together (the pre-commit re-verification found a combined re-seed adopting a file that neither change alone would). Contract change, noted in CHANGELOG and ADR004V02. Fixed in c7331d0.

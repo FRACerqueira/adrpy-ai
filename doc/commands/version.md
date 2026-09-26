@@ -1,0 +1,106 @@
+<img src="../../src/adrpy/icon.png" width="160" alt="adrpy-ai icon">
+
+[← Command Reference](INDEX.md)
+
+# `adrpy version`
+
+Creates a new major version of an `Accepted`/`Rejected` decision.
+
+<!-- generated:start -->
+<!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
+
+## Description
+
+Creates a new major version of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, in the same family; scope and domain default to the target's. The whole repository and the family rules in doc/lifecycle.md are checked first, and the new version number must fit lenversion; nothing is written when a rule fails.
+
+## Arguments
+
+| Argument | Alias | Required | Type | Description |
+|---|---|---|---|---|
+| `--file` | `-f` | yes | string | Path to the decision file. A bare name with no extension gets '.md' appended. |
+| `--domain` | `-d` | no | string | Domain for the new version; defaults to this decision's own value. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--scope` | `-s` | no | string | Scope for the new version; defaults to this decision's own value. Cannot contain '\|' or a line-break-like character (field-contains-forbidden-character), or be blank (field-is-blank). |
+| `--refdate` | `-r` | no | string | Reference date (YYYY-MM-DD); defaults to today. Must not be in the future or before this decision's own last update date (or creation date, if never updated) (refdate-invalid-format/refdate-in-future/refdate-before-history). |
+| `--empty` | `-e` | no | switch | Start from the default template instead of carrying the source's content forward. Presence-only: pass just '--empty' with no value; do not pass '--empty true/false'. |
+
+## Failure codes
+
+| Code | Condition |
+|---|---|
+| `still-proposed` | This decision's status does not allow this command: undo needs it Accepted or Rejected, version and revise Accepted or Rejected (or a migrated placeholder), supersede Accepted (or a migrated placeholder). Whether to accept or reject it is the user's decision. |
+| `already-superseded` | This decision has already been superseded. |
+| `family-not-found` | This decision's own family could not be resolved. |
+| `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
+| `refdate-in-future` | --refdate is after today. |
+| `refdate-before-history` | --refdate is before this decision's own last update date (or creation date, if never updated). |
+| `field-contains-forbidden-character` | --scope or --domain contains '\|' or a line-break-like character. |
+| `field-is-blank` | --scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace. |
+| `file-already-exists` | The new version's filename is already taken on disk (e.g. created by another process after this call's scan) -- data.file names it. |
+| `lenversion-too-small-for-new-version` | The next version number does not fit in the configured lenversion width. |
+| `filename-too-long` | The new version's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title. |
+| `title-produces-unrecognizable-filename` | The new version's own title, once case-transformed, would produce a filename this tool could never recognize again. |
+| `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
+| `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
+| `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
+| `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
+| `repository-inconsistent` | The decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
+| `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
+| `path-outside-repository` | A resolved path escapes the repository boundary. |
+| `family-member-superseded` | Another member of the same family has already been superseded. |
+| `family-member-pending` | Another member of the same family is still unresolved (Proposed). |
+| `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
+| `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
+| `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
+| `config-file-too-large` | The config file exceeds the 64KB size limit. |
+| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
+| `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
+| `config-missing-field` | The config is missing one or more required fields. |
+| `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
+| `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
+| `config-lenversion-too-small` | lenversion is below its configured minimum (2). |
+| `config-lenversion-too-large` | lenversion is above its configured maximum (4). |
+| `config-lenrevision-negative` | lenrevision is below its configured minimum (0). |
+| `config-lenrevision-too-large` | lenrevision is above its configured maximum (3). |
+| `config-separator-invalid` | separator is not one of ('-', '_', '.'). |
+| `config-casetransform-invalid` | casetransform is not one of the recognized case-transform names. |
+| `config-field-empty` | A field that must be non-empty is an empty string. |
+| `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
+| `config-folderadr-too-long` | folderadr exceeds 50 characters. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-too-long` | folderlog exceeds 50 characters. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
+| `config-template-too-long` | template exceeds 10000 characters. |
+| `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
+| `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
+| `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
+| `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
+| `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
+| `config-headerversion-too-long` | headerversion exceeds 40 characters. |
+| `config-headerrevision-too-long` | headerrevision exceeds 40 characters. |
+| `config-headerscope-too-long` | headerscope exceeds 40 characters. |
+| `config-headerdomain-too-long` | headerdomain exceeds 40 characters. |
+| `config-headertitlestatuscreated-too-long` | headertitlestatuscreated exceeds 40 characters. |
+| `config-headertitlestatuschanged-too-long` | headertitlestatuschanged exceeds 40 characters. |
+| `config-headertitlestatussuperseded-too-long` | headertitlestatussuperseded exceeds 40 characters. |
+| `config-headertablefields-too-long` | headertablefields exceeds 40 characters. |
+| `config-headertablevalues-too-long` | headertablevalues exceeds 40 characters. |
+| `config-headermigrated-too-long` | headermigrated exceeds 40 characters. |
+| `config-statusnew-too-long` | statusnew exceeds 25 characters. |
+| `config-statusacc-too-long` | statusacc exceeds 25 characters. |
+| `config-statusrej-too-long` | statusrej exceeds 25 characters. |
+| `config-statussup-too-long` | statussup exceeds 25 characters. |
+<!-- generated:end -->
+
+## Example
+
+```bash
+adrpy version --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md --empty
+```
+
+---
+
+The Description, Arguments and Failure codes sections are generated from the command's own `describe()` contract (the same JSON `adrpy help version` returns at runtime) by `scripts/generate_command_docs.py`; the example is written by hand.

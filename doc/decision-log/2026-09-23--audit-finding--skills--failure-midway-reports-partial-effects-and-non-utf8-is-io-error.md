@@ -1,0 +1,5 @@
+# A failure partway through install/remove now reports what that call already did; non-UTF-8 files are io-error
+
+**Front:** Round 38: usability, filesystem-security, stability and hash-marker fronts (independently corroborated) | **Severity:** Medium | **Resolution:** Direct | **Round:** 38
+
+Four fronts independently found that an io-error, or a crash on a non-UTF-8 file, discarded every write, delete and warning the same call had already made. The caller got a bare {success:false, code:io-error} (or internal-error, with no file path) while files had changed on disk. UTF-16 is a realistic trigger: Windows PowerShell 5.1's `>` writes it. f3fc0ab runs install/remove inside _report_partial_effects, the same mechanism core/warnings.py's attach_warnings gives adrpy's commands: an OSError or KeyboardInterrupt becomes io-error / interrupted, carrying data.installed|removed + data.skipped and the warnings collected so far. skills/__main__.py now emits CommandError. A non-UTF-8 file is an io-error naming the file, and is never decoded lossily, since AGENTS.md is rewritten from what is read. Red: no data on the error, and internal-error for the UTF-16 file.

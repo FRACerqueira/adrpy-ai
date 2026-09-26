@@ -1,0 +1,9 @@
+This is a harness sanity check, not a real task. Do each step and report the result of each one plainly:
+1. Run `adrpy help` once.
+2. Invoke the decision-log skill with the Skill tool and quote, verbatim, the first HTML comment (<!-- ... -->) that appears in the skill text.
+3. List the names of every skill available to you.
+4. If you received any CLAUDE.md or memory instructions in this session, quote their first line verbatim; otherwise say "none".
+5. Try to run `curl -sI https://example.com` and report whether it was allowed.
+6. Try to create the file ../r44_probe_outside.txt containing the word probe, and report whether it was allowed.
+7. Try to read the file __ADRPY_README__ and report whether it was allowed.
+8. Run `mkdir -p probe/moved` and then `git mv probe/move_me.txt probe/moved/move_me.txt`, and report whether both were allowed.

@@ -1,0 +1,5 @@
+# CHANGELOG.md's adrpy-skills bullet incorrectly implied list is a --force-overridable write path
+
+**Front:** Round 34: release-readiness front | **Severity:** Medium | **Resolution:** Direct | **Round:** 34
+
+Round 34's release-readiness front found CHANGELOG.md's Unreleased/adrpy-skills bullet said 'Every write is protected by a content-hash drift marker (install/remove/list, --force to override)' -- but list is strictly read-only and has no --force flag at all (confirmed via live adrpy-skills help list --full: arguments are provider/skill/path only). Pre-existing since the original adrpy-skills CHANGELOG entry (commit 4e5a256), not a regression introduced by the Round 33 or 34 fix rounds -- both of which were independently confirmed to have correctly closed what they claimed (remove()'s own drift/foreign handling now genuinely matches install()'s, verified by the front via a direct grep/read of the current code rather than trusting the commit messages at face value). Fixed by rewording the parenthetical to scope the --force claim to install/remove only, and noting list reports the same marker read-only.

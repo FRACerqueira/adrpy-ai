@@ -1,0 +1,5 @@
+# a BOM no longer breaks a decision, migrate never stamps a second header, revise never reuses a number
+
+**Front:** Round 39: narrow re-verification and pre-commit reviews | **Severity:** Medium | **Resolution:** Direct | **Round:** 39
+
+Found while evaluating the invalid-files rule, fixed in b4d6d4c, red/green for each. A decision an editor saved with a BOM (PowerShell 5.1 -Encoding UTF8) failed every command with adr-header-comment-not-found; any run of leading BOMs is now ignored and the next rewrite drops it, and migrate strips every leading BOM from a migrated body. migrate picked every not-valid, not-migrated file as a candidate, so a damaged tool header got a second header written over it; it now refuses the whole run (migration-invalid-headers-exist, data.files). revise numbers from the target's own revision (reference-tool fidelity), and only an identical filename was checked, so after a hand-edited title it created a second revision with the same number; version and revise now refuse with file-already-exists when any file of the family holds the number they would create.

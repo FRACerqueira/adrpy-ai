@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(adrpy:*)",
+      "Bash(adrpy-skills:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git mv:*)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(rm:*)",
+      "Bash(rmdir:*)",
+      "Bash(git push:*)",
+      "Bash(git config:*)",
+      "Bash(claude:*)",
+      "Read(__ADRPY_REPO__/**)",
+      "Read(~/.claude/**)",
+      "Edit(~/.claude/**)"
+    ]
+  },
+  "disableAllHooks": true
+}

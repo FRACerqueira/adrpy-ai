@@ -1,0 +1,7 @@
+# lifecycle refusals name the file to act on, check the target's status first, and give advice that works
+
+**Front:** Round 41: recoverability front | **Severity:** Medium | **Resolution:** Escalated | **Round:** 41
+
+The recoverability front followed every refusal's advice literally. Fixed in 075cb80: family-member-superseded (data.superseded_file, data.successor_number), family-member-pending (data.pending_file) and rejected-successor-is-final (data.successor_file, data.predecessor_number) name the file to act on (H5a); version and revise check the target's own status before the family rules, like undo and supersede (H4a); supersede-write-failed says to run --resume, reject-own-write-failed-after-predecessor-reverted says to run reject again, not-proposed says the repair is manual, unexpected-status says undo clears the Changed cell, and approve's already-rejected no longer sends a rejected successor to an undo that refuses; a stale 'reject then undo a successor' path was removed from supersede's text. The two partial-failure messages are pinned by tests.
+
+Architectural review (Round 43): four of the messages reworded here belong to codes that no longer exist: supersede-write-failed and reject-own-write-failed-after-predecessor-reverted (a failed second commit now reports multi-file-write-partially-applied with data.repair, and there is no --resume), not-proposed and unexpected-status (a status combination outside the closed set is now the validator's invalid-status-combination). The other items stand.

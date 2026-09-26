@@ -1,0 +1,2 @@
+# The harness runs under Git Bash and diffs these tables byte for byte: keep LF on every checkout.
+* text eol=lf

@@ -1,0 +1,3 @@
+# ADR010V01 implemented: failure JSON carries detail on stdout, stderr keeps the same text
+
+Implementation of 2026-09-23's ADR010V01, decided by the project owner (two channels). In da9410a, core/output.py's emit_failure and emit_usage_failure add `detail` to the stdout JSON whenever a failure has an explanation, and still write the same text to stderr from the same call, so the two can't diverge. The change is additive: code, data and warnings are unchanged. Red: no detail key on either entry point. 40db94d accepted the ADR and documented detail in README and doc/architecture.md: it is for people, not to parse; callers decide on code and data; the stderr copy is outside the contract.

@@ -1,0 +1,5 @@
+# installer.py's writes now go through core/atomic_write.py, closing the project's one exception
+
+**Front:** Round 33: stability front | **Severity:** Medium | **Resolution:** Direct | **Round:** 33
+
+A project-wide grep confirmed installer.py was the only mutating writer under src/adrpy/ that bypassed core/atomic_write.py -- 4 sites used raw path.write_text() (AGENTS.md on install, the per-provider full/stub file on install, the shared doc on install, AGENTS.md on remove). Reproduced: simulating an interrupted write left a 0-byte AGENTS.md; the next plain install saw 'absent' and silently wrote a fresh block over the loss, success:true, with no warning anything had been lost. Fixed by routing all 4 sites through atomic_write_text (temp file + os.replace, same guarantee every other writer in the project already has). Verified atomic_write_text round-trips through check_drift as clean and doesn't change the pre-existing newline-rewrite behavior. A source-level regression test (TestAtomicWrites) asserts installer.py contains no remaining '.write_text(' call, so a future raw write can't silently reintroduce this gap.

@@ -1,0 +1,7 @@
+# Install-level config module now exists -- migrate's deferred fallback entry's condition is met
+
+This does not retract `2026-09-15--deferred--migrate--no-install-level-fallback-for-migrationpattern.md`'s own reasoning or classification at the time it was written -- deferring was the correct call with no install-level config module in the codebase yet. This records that its own named `Reopen-when` condition ("an install-level/app-config module exists in adrpy-ai") is now met, so the item is no longer an active pendency, without editing that entry in place (decision-log entries are never edited after the fact, per the skill's own rule).
+
+**What changed:** ADR002V01 ("Install-level config is a per-user file that seeds init and migrate instead of an install-directory template") was accepted and implemented in full -- `core/install_config.py` (path resolver + validated read), `init`/`migrate` consuming it (`init` seeds from it when present; `migrate` falls back to it when the repository's own `migrationpattern` is empty, persisting the found value back into the repository's own config), and the new `installconfig` command to manage it. adrpy-ai commits: `dce4703` (ADR002V01 accepted), `2f89c7e` (core module), `567aaf0` (init/migrate consumption), `bbbff8b` (installconfig command).
+
+`migrate` no longer refuses immediately with `migration-pattern-not-configured` for every freshly-init'd repository that has never had `migrationpattern` set directly -- only when both the repository's own value and the install-level config's own are empty.

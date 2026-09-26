@@ -1,0 +1,5 @@
+# two rejected attempts locked the accepted member for good; rejected attempts now never lock
+
+**Front:** Round 41: state-space exploration (two independent instances) and recoverability fronts | **Severity:** Medium | **Resolution:** Escalated | **Round:** 41
+
+Found independently by both state-space instances and the recoverability front: with V01 Accepted and V02 and V03 both Rejected, the Round 40 exception (a single Rejected newer member) left V01 locked for good, the line continuing only from rejected text; the same path gave an interrupted supersede's orphan a dead end. H1a, decided by the owner, fixed in 075cb80: an older member stays alive while every newer one (per versions, per revisions of its version) is Rejected, and a supersede is settled while the successor has a newer member that is not Rejected. Background result of the round: two state-space instances on different models (Fable 5.1, Opus), about 55,000 random steps over four configurations with injected write failures, found no broken invariant and no internal-error.

@@ -1,0 +1,7 @@
+# Round 6's two new folderadr-related error codes are now documented in describe()
+
+**Front:** Calibration (no dedicated audit front -- found via grep before proposing round 7) | **Severity:** Low | **Round:** 7
+
+Calibration finding (found via a grep before proposing round 7, not a dedicated audit pass -- confirms the calibration's own standing recommendation that Usability should react whenever Stability changes something structural, not on a fixed cadence): `folderadr-changed-after-lock-acquired` (all 9 write commands plus `init`'s `--seed`-on-existing-repo path) and `folderadr-change-scan-incomplete` (`config` and `init`, the only two callers of the guard that can raise it) were introduced by round 6's own fixes but never documented in any `describe()` -- an agent had no way to learn either code exists short of reading `core/lifecycle.py`'s own source.
+
+**Fix**: both codes added to the relevant commands' `describe()` text, matching the same pattern already used for `repository-locked`/`lock-lost` (round 5, Usability Finding 1). Two new cross-command tests (`test_help.py`) confirm every command that can raise each code documents it.

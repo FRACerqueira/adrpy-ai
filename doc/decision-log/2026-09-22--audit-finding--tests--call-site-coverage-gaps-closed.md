@@ -1,0 +1,5 @@
+# 4 test-coverage gaps closed: every retry-warning prefix, reject's disclosed false positive, shared-doc-blocked scope
+
+**Front:** Round 37: test-adequacy front | **Severity:** High | **Resolution:** Direct | **Round:** 37
+
+No production bug; the test-adequacy front found behavior asserted through one representative call site only. (1) HIGH: 3 of installer.py's 4 retry_warning identity prefixes (shared-doc write, agentsmd write in install and in remove) had zero tests -- grep for 'agentsmd/' and 'shared-doc/' across tests/ matched nothing, so losing the identity the round-36 fix added would stay green. (2) MEDIUM: reject's single-member 'already reverted' shortcut had its disclosed false positive documented only in a code comment. (3) LOW/MEDIUM: shared-doc-blocked was proven only via agentsmd, never copilot, and never that the block stays scoped to the one skill whose shared doc was corrupted. (4) LOW: the shared-doc force-overwrite warning text was exercised but never asserted. All 4 closed in 2f281e4.

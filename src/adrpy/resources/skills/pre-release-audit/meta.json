@@ -1,0 +1,4 @@
+{
+  "name": "pre-release-audit",
+  "description": "Full protocol for a pre-release or hardening review -- calibrate against prior-round history, propose review angles and get confirmation, run independent passes, merge findings without silently reconciling disagreement, fix via red/green or escalate trade-offs, and know when the audit ends. Use only before a release or when explicitly asked for a release-readiness/hardening review -- never automatically for routine changes."
+}

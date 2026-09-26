@@ -1,0 +1,5 @@
+# 10 guarantees a mutation could break with the suite green are now pinned by tests
+
+**Front:** Round 38: test-adequacy front | **Severity:** High | **Resolution:** Direct | **Round:** 38
+
+The test-adequacy front applied mutations in a scratch copy and found 12 that survived the full suite. The most serious: changing _read_text's `except FileNotFoundError` to `except OSError` made install replace a user's whole AGENTS.md with a lone generated block when the file could not be read. The others: the 10MB cap bounding bytes read (unbounded-loop and cap*4 mutants); lone-CR line endings; a blocked shared doc over-blocking full-mode providers; a stub write reporting the shared doc's retry count under its own name (agentsmd and copilot); orphan-cleanup warnings not wired through; the crossed-block boundary off by one; and the temp-name match ({32,} and fullmatch->match). f534cdb adds a test for each, and all 12 mutants were re-applied and confirmed killed. supersede's multi-orphan and status_change clauses were pinned by the C1 change instead.

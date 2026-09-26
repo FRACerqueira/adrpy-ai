@@ -1,0 +1,20 @@
+{
+  "prefix": "ADR",
+  "statusnew": "Proposé",
+  "statusacc": "Accepté",
+  "statusrej": "Rejeté",
+  "statussup": "Remplacé",
+  "headerdisclaimer": "Ne supprimez pas ce commentaire, ces lignes et ce tableau",
+  "headertitlefile": "Titre du fichier md",
+  "headerversion": "Version",
+  "headerrevision": "Révision",
+  "headerscope": "Portée",
+  "headerdomain": "Domaine",
+  "headertitlestatuscreated": "Créé",
+  "headertitlestatuschanged": "Modifié",
+  "headertitlestatussuperseded": "Remplacé",
+  "headertablefields": "Champs",
+  "headertablevalues": "Valeurs",
+  "headermigrated": "Migré",
+  "template": "<!-- Machine-translated; pending native-speaker review. See TRANSLATIONS.md. -->\n---\n# [Titre bref de la décision]\n\n## Décideurs\n\n* Décideurs : [lister toutes les personnes impliquées dans la décision] <!-- optionnel -->\n\nHistoire technique : [description | URL du ticket/issue] <!-- optionnel -->\n\n## Contexte et énoncé du problème\n\n[Décrivez le contexte et l'énoncé du problème, par exemple sous forme libre en deux ou trois phrases. Vous pouvez vouloir formuler le problème sous la forme d'une question.]\n\n## Facteurs de décision <!-- optionnel -->\n\n* [facteur 1, par exemple, une force, une préoccupation à affronter, …]\n* [facteur 2, par exemple, une force, une préoccupation à affronter, …]\n* … <!-- le nombre de facteurs peut varier -->\n\n## Options envisagées\n\n* [option 1]\n* [option 2]\n* [option 3]\n* … <!-- le nombre d'options peut varier -->\n\n## Résultat de la décision\n\nOption choisie : « [option 1] », car [justification. par exemple, seule option qui répond au critère éliminatoire du facteur de décision | qui résout la force force | … | s'avère la meilleure (voir ci-dessous)].\n\n### Conséquences positives <!-- optionnel -->\n\n* [par exemple, amélioration de la satisfaction d'un attribut de qualité, décisions de suivi nécessaires, …]\n* …\n\n### Conséquences négatives <!-- optionnel -->\n\n* [par exemple, compromis sur un attribut de qualité, décisions de suivi nécessaires, …]\n* …\n\n## Avantages et inconvénients des options <!-- optionnel -->\n\n### [option 1]\n\n[exemple | description | référence vers plus d'informations | …] <!-- optionnel -->\n\n* Bon, car [argument a]\n* Bon, car [argument b]\n* Mauvais, car [argument c]\n* … <!-- le nombre d'avantages et d'inconvénients peut varier -->\n\n### [option 2]\n\n[exemple | description | référence vers plus d'informations | …] <!-- optionnel -->\n\n* Bon, car [argument a]\n* Bon, car [argument b]\n* Mauvais, car [argument c]\n* … <!-- le nombre d'avantages et d'inconvénients peut varier -->\n\n### [option 3]\n\n[exemple | description | référence vers plus d'informations | …] <!-- optionnel -->\n\n* Bon, car [argument a]\n* Bon, car [argument b]\n* Mauvais, car [argument c]\n* … <!-- le nombre d'avantages et d'inconvénients peut varier -->\n\n## Liens <!-- optionnel -->\n\n* [Type de lien] [Lien vers l'ADR] <!-- exemple : Affiné par [ADR-0005](0005-exemple.md) -->\n* … <!-- le nombre de liens peut varier -->\n"
+}

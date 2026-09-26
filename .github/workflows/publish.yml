@@ -1,0 +1,117 @@
+name: Publish
+
+on:
+  push:
+    # A release tag only (v1.2.3): a pre-release tag such as v1.2.3rc1 or
+    # v1.2.3.dev1 does not publish.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+# Least privilege: read-only by default; only the two publish jobs add
+# id-token: write, for Trusted Publishing.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # also needed here so main's full history is available below
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install adrpy-ai (dev)
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Verify the tag points to a commit on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Tag '${{ github.ref_name }}' does not point to a commit on main -- refusing to publish."
+            exit 1
+          fi
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # hatch-vcs needs full history + tags to derive the version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Check the built version is the tag's
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test -f "dist/adrpy_ai-${version}-py3-none-any.whl" && test -f "dist/adrpy_ai-${version}.tar.gz" || {
+            echo "the build is not version ${version} (tag ${GITHUB_REF_NAME}):"; ls dist; exit 1
+          }
+
+      - name: Install the built wheel into a clean venv and smoke-test both console scripts
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install dist/*.whl
+          /tmp/smoke-venv/bin/adrpy --version
+          /tmp/smoke-venv/bin/adrpy-skills --version
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # required for PyPI Trusted Publishing (OIDC) -- no API token stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # A re-run of the same tag (e.g. after PyPI itself failed) must
+          # not stop at TestPyPI, which already has these files.
+          skip-existing: true
+
+  publish-pypi:
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # required for PyPI Trusted Publishing (OIDC) -- no API token stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A re-run of the same tag after a partial upload (e.g. the
+          # wheel went up, the sdist did not) must not fail on the files
+          # PyPI already has.
+          skip-existing: true

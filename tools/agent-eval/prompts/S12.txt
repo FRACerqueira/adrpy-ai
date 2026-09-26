@@ -1,0 +1,1 @@
+This repo is adopting adrpy. Use migrationpattern N00:04T02 and bring these records under adrpy.
