@@ -56,6 +56,13 @@ jobs:
           python -m pip install build
           python -m build
 
+      - name: Check the built version is the tag's
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test -f "dist/adrpy_ai-${version}-py3-none-any.whl" && test -f "dist/adrpy_ai-${version}.tar.gz" || {
+            echo "the build is not version ${version} (tag ${GITHUB_REF_NAME}):"; ls dist; exit 1
+          }
+
       - name: Install the built wheel into a clean venv and smoke-test both console scripts
         run: |
           python -m venv /tmp/smoke-venv

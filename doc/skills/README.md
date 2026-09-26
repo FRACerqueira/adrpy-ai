@@ -42,9 +42,10 @@ pieces, concatenated in this order:
 3. **`glue.md`** (decision-log only) -- the adrpy-specific instantiation:
    which `adrpy` commands to actually run, and when. This is
    [`doc/decision-log-workflow.md`](../decision-log-workflow.md), reused
-   verbatim -- it already only references `adrpy log`, `doc/decision-log/`,
-   and `doc/adr/`, adrpy's own fixed paths on every repository it
-   initializes, so it needs no per-project rewriting.
+   verbatim. It names the folders by their config fields (`folderadr`,
+   `folderlog`), with `doc/adr/` and `doc/decision-log/` only as the
+   defaults, and says to read the repository's own values with
+   `adrpy config --path .`, so it needs no per-project rewriting.
 
 ## Delivery differs by provider, not by skill
 

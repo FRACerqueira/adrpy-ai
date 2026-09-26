@@ -13,7 +13,8 @@ from adrpy.core.atomic_write import (
 )
 from adrpy.core.fs import cleanup_orphaned_temp_files
 
-# The uuid4-hex shape atomic_write's own temp files carry.
+# The 32-hex shape of the temp files earlier builds wrote, still swept; the
+# current one is its first 16 hex digits.
 OWN_TEMP_HEX = "0123456789abcdef0123456789abcdef"
 
 
@@ -477,3 +478,50 @@ def test_a_commit_retry_does_not_run_the_chunk_factory_again(tmp_path, monkeypat
     assert calls == {"factory": 1, "replace": 2}
     assert attempts == 2
     assert target.read_bytes() == b"content"
+
+
+def test_cleanup_removes_an_orphan_with_the_short_suffix_prepare_write_now_uses(tmp_path):
+    orphan = tmp_path / f"0001-decision.md.{OWN_TEMP_HEX[:16]}.tmp"
+    orphan.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(orphan, (old_time, old_time))
+
+    removed = cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30)
+
+    assert removed == [orphan]
+
+
+@pytest.mark.parametrize("width", [15, 17, 31])
+def test_cleanup_never_removes_a_tmp_file_with_a_hex_part_of_another_width(tmp_path, width):
+    foreign = tmp_path / f"0001-decision.md.{(OWN_TEMP_HEX * 2)[:width]}.tmp"
+    foreign.write_text("user data")
+    old_time = time.time() - 60
+    os.utime(foreign, (old_time, old_time))
+
+    assert cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30) == []
+    assert foreign.exists()
+
+
+@pytest.mark.parametrize("name", ["notes.0123456789abcdef.tmp", "report.pdf.0123456789abcdef.tmp"])
+def test_the_folder_sweep_never_removes_a_16_hex_tmp_that_is_not_a_decision_s(tmp_path, name):
+    # Every file this tool writes in the decisions and decision-log folders
+    # is a .md: a 16-hex temp of any other name is the user's.
+    foreign = tmp_path / name
+    foreign.write_text("user data")
+    old_time = time.time() - 60
+    os.utime(foreign, (old_time, old_time))
+
+    assert cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30) == []
+    assert foreign.exists()
+
+
+def test_the_named_files_sweep_removes_a_16_hex_orphan_of_its_file(tmp_path):
+    from adrpy.core.fs import cleanup_orphaned_temp_files_for
+
+    target = tmp_path / "adr-config.adrplus"
+    orphan = tmp_path / f"adr-config.adrplus.{OWN_TEMP_HEX[:16]}.tmp"
+    orphan.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(orphan, (old_time, old_time))
+
+    assert cleanup_orphaned_temp_files_for([target], max_age_seconds=30) == [orphan]

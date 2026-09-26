@@ -518,7 +518,7 @@ def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope,
     """Sweeps the temp files an earlier interrupted write of this same
     request could have left behind, like the 8 core `adrpy` mutating
     commands do for their own folder -- but only the exact
-    `<name>.<uuid4 hex>.tmp` next to each file this call writes, never a
+    `<name>.<16 or 32 hex>.tmp` next to each file this call writes, never a
     folder-wide scan: every folder written here (the repository root,
     `.github/instructions/`, `~/.claude/skills/`) also holds content
     this tool never wrote."""

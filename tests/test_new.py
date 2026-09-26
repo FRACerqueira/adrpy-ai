@@ -397,3 +397,14 @@ def test_new_says_when_lenseq_cannot_be_widened_any_further(tmp_path):
 
     assert excinfo.value.code == "lenseq-too-small-for-new-number"
     assert "maximum (6)" in excinfo.value.detail
+
+
+def test_a_long_title_whose_name_fits_is_written(tmp_path):
+    # 209 characters: the name (222 bytes) fits; with the old 37-byte temp
+    # suffix the temp file's name did not (Errno 22).
+    init.run(["--path", str(tmp_path)])
+    title = " ".join(f"word{i:02d}" for i in range(30))
+
+    result = new.run(["--path", str(tmp_path), "--title", title, "--refdate", "2026-01-01"])
+
+    assert Path(result["created"]).is_file()

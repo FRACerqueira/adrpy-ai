@@ -589,3 +589,16 @@ def test_a_reservation_that_cannot_be_removed_is_not_taken_for_someone_elses_fil
     assert excinfo.value.filename == str(target)
     assert target.read_bytes() == b""
     assert _temps(tmp_path) == []
+
+
+def test_prepare_write_names_its_temp_with_a_16_hex_suffix(tmp_path):
+    target = tmp_path / "x.md"
+
+    prepared = fs.prepare_write(target, b"data")
+    try:
+        suffix = prepared.temp_path.name[len(target.name):]
+        assert len(suffix) == 21
+        assert suffix.startswith(".") and suffix.endswith(".tmp")
+        assert all(char in "0123456789abcdef" for char in suffix[1:-4])
+    finally:
+        fs.discard_write(prepared)

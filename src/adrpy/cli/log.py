@@ -191,6 +191,7 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "summary/front/reopenwhen is non-empty but blank after stripping whitespace.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content, or (checked only when this call's own --classification is audit-finding/doc-drift) is an audit-finding/doc-drift entry whose Round is missing or not a plain integer -- Round/INDEX.md can't be safely computed while it's present.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under folderlog could not be scanned.",
+                FailureCodes.FILENAME_TOO_LONG: "The entry's file name (date, classification, scope and slug) is longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --scope or --slug.",
                 FailureCodes.LOG_ENTRY_ALREADY_EXISTS: "An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails).",
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED: "The entry itself was written, but regenerating INDEX.md afterward failed.",
                 FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the entry was written but before INDEX.md was regenerated; data.file names the entry. An interrupt before the entry is written is reported without data.",

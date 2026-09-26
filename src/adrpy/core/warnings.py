@@ -90,8 +90,8 @@ def no_install_level_config_warning():
     itself)."""
     return (
         "No per-machine install-level config found -- seeded from the built-in default. "
-        "Run `adrpy installconfig` once to set your own defaults for future repositories on "
-        "this machine (see `adrpy help installconfig`)."
+        "Run `adrpy installconfig --<field> <value>` (e.g. `adrpy installconfig --language pt-br`) to set your "
+        "own defaults for future repositories on this machine (see `adrpy help installconfig`)."
     )
 
 

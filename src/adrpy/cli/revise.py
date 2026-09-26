@@ -58,6 +58,7 @@ def describe():
                 FailureCodes.FILE_ALREADY_EXISTS: "The new revision's own resulting filename already exists on disk (data.file names it).",
                 FailureCodes.LENREVISION_TOO_SMALL_FOR_NEW_REVISION: "The next revision number does not fit in the configured lenrevision width.",
                 FailureCodes.REVISION_NOT_CONFIGURED: "This repository's config has lenrevision == 0.",
+                FailureCodes.FILENAME_TOO_LONG: "The new revision's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
         ),
@@ -83,7 +84,11 @@ def run(args):
             date_create=ctx.refdate,
         )
 
-        filename = build_filename(config, record)
+        filename = build_filename(
+            config,
+            record,
+            too_long_remedy="the title cannot be changed here: supersede the decision with `adrpy supersede --title` and a shorter title",
+        )
         new_path = resolve_within(folder, filename)
 
         # ADR006V01: streams the source's own body straight from

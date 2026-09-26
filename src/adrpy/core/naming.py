@@ -27,6 +27,7 @@ from dataclasses import dataclass
 
 from adrpy.core.casing import to_case
 from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.fs import MAX_NAME_BYTES
 from adrpy.core.text import is_ascii_digits
 
 # re.ASCII: \d must mean 0-9 only -- other scripts' digits would read as the
@@ -228,7 +229,7 @@ def parse_any_filename(filename, config):
     return None
 
 
-def build_filename(config, record):
+def build_filename(config, record, too_long_remedy="pass a shorter --title"):
     """The supersede suffix is unconditional -- never a
     collision-disambiguator."""
     base = f"{config.prefix or ''}{record.number:0{config.lenseq}d}"
@@ -271,4 +272,21 @@ def build_filename(config, record):
             "this same decision when read back, which would permanently orphan it.",
             data={"filename": filename},
         )
+    reject_too_long_filename(filename, too_long_remedy)
     return filename
+
+
+def reject_too_long_filename(filename, remedy):
+    """A name longer than the filesystem allows once the temp file's suffix
+    is added fails the write with a raw OSError (Errno 22 or 36), after the
+    temp write was attempted: refused here, with `remedy` (what the caller's
+    own flags allow) as the way out."""
+    size = len(filename.encode("utf-8"))
+    if size > MAX_NAME_BYTES:
+        raise CommandError(
+            FailureCodes.FILENAME_TOO_LONG,
+            f"The file name would be {size} bytes in UTF-8, over the {MAX_NAME_BYTES} this tool can write "
+            "(255 bytes for one name, the strictest of NTFS, ext4 and APFS, less the suffix of the temp file "
+            f"written first): {remedy}.",
+            data={"filename": filename},
+        )

@@ -7,6 +7,7 @@ from adrpy.core.warnings import (
     attach_warnings,
     encoding_repaired_warning,
     excluded_candidate_warning,
+    no_install_level_config_warning,
     orphan_cleanup_warning,
     retry_warning,
 )
@@ -127,3 +128,8 @@ def test_excluded_candidate_warning_names_the_paths_in_the_same_order_whatever_o
     warning = excluded_candidate_warning([Path("c.md"), Path("a.md"), Path("b.md")])
 
     assert "a.md, b.md, c.md" in warning
+
+
+def test_the_no_install_level_config_warning_shows_a_command_that_sets_something():
+    # A bare `adrpy installconfig` only reads.
+    assert "`adrpy installconfig --" in no_install_level_config_warning()

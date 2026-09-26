@@ -318,7 +318,7 @@ sequenceDiagram
     Main->>Cmd: command.run(args)
     Cmd->>Cmd: parse_flags(args, ...) -- reuses core/args.py
     Cmd->>Inst: install(providers, skills, target, path, force)
-    Inst->>FS: remove orphaned <name>.<uuid4>.tmp next to each target path (older than 30s)
+    Inst->>FS: remove orphaned <name>.<hex>.tmp next to each target path (older than 30s)
     Inst->>Prov: resolve file path + wrap content for this provider
     Inst->>FS: read existing file (core/fs.py) to classify drift state
     FS-->>Inst: current content, or none

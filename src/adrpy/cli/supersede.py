@@ -83,9 +83,9 @@ def describe():
                 "type": "string",
                 "required": False,
                 "description": (
-                    "Title for the successor; defaults to the predecessor's own filename-segment title "
-                    "(unlike --scope/--domain, this default is NOT re-editable via the header's prose title "
-                    "-- see the description above). Cannot contain '|' or a line-break-like character, or a "
+                    "Title for the successor; defaults to the predecessor's title as its file name spells it "
+                    "(unlike --scope/--domain, which default to the header's values, editing the header does "
+                    "not change this default). Cannot contain '|' or a line-break-like character, or a "
                     "filesystem-unsafe character (`<>:\"/\\|?*` or a control character -- title lands inside "
                     "an actual filename component, not just a header-table cell); also cannot consist "
                     "entirely of whitespace/'_'/'-' (e.g. '-' or '---') -- the case-transform step falls "
@@ -105,6 +105,7 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER: "The successor's number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. Nothing was written.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
+                FailureCodes.FILENAME_TOO_LONG: "The successor's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --title.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.applied names it, data.pending the predecessor); the repository is then inconsistent until repaired by hand (remove the successor and supersede again, or mark the predecessor Superseded with the exact row in data.repair).",
                 FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the successor was created but before the predecessor was marked Superseded -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). Once both are written, data.applied names both, data.pending is empty and there is no data.repair (the repository is consistent). What was written is read from the disk, so an interrupt right after a write counts it. An interrupt before the first write is reported without data.",

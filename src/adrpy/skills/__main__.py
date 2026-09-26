@@ -39,7 +39,7 @@ def main(argv=None):
     verb, rest = argv[0], argv[1:]
     command = COMMANDS.get(verb)
     if command is None:
-        return emit_usage_failure("unknown-command", f"Unknown command: {verb}")
+        return emit_usage_failure("unknown-command", f"Unknown command: {verb} (see `adrpy-skills help` for the list).")
 
     try:
         data = command.run(rest)
@@ -47,7 +47,10 @@ def main(argv=None):
         if error.unknown in ("--help", "-h"):
             # `adrpy-skills <command> --help` is `adrpy-skills help <command>`.
             return emit_success(COMMANDS["help"].run([verb]))
-        return emit_usage_failure("usage-error", str(error))
+        detail = str(error)
+        if error.code == "usage-error":
+            detail = f"{detail.rstrip('.')} (see `adrpy-skills help {verb}`)."
+        return emit_usage_failure(error.code, detail)
     except CommandError as error:
         return emit_failure(error.code, error.detail, error.data, error.warnings)
     except OSError as error:

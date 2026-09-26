@@ -31,7 +31,7 @@ adrpy-ai is the reference implementation of the ADR lifecycle it shares with [Ad
 ## Why adrpy-ai
 
 - **No wizard, ever.** Every command is fully driven by flags. Nothing waits for a keypress, so it's safe to script and safe for an agent to call without a human in the loop.
-- **JSON in, JSON out.** Every response is a single JSON object on stdout (`{"success": true/false, "data"/"code": ...}`), with a fixed, documented set of failure codes per command — no output your own tooling has to guess the shape of. A failure also carries `detail`, a human-readable explanation to show a person; decide on `code`/`data`, not on `detail`'s wording. The same text is copied to stderr for terminal use, outside the contract.
+- **JSON in, JSON out.** Every response is a single JSON object on stdout (`{"success": true/false, "data"/"code": ...}`), with a fixed, documented set of failure codes per command — no output your own tooling has to guess the shape of. A failure also carries `detail`, a human-readable explanation to show a person; decide on `code`/`data`, not on `detail`'s wording. The same text is copied to stderr for terminal use, outside the contract. The exit code is 0 on success, 1 on a failure and 2 on a malformed call (`usage-error`, `unknown-command`). The one exception to JSON is `--version` (`adrpy --version`, `adrpy-skills --version`), which prints plain text for a person.
 - **Self-documenting.** `adrpy help <command>` returns the exact same structured contract (arguments, types, failure codes) this README describes — the documentation and the code can't silently drift apart, because they're the same artifact.
 - **Zero runtime dependencies.** `pip install adrpy-ai` (or install from source) pulls in nothing else.
 - **A full lifecycle, not just file creation.** `init`, `new`, `approve`, `reject`, `undo`, `supersede`, `version`, `revise`, `migrate`, `check`, `config`, `installconfig` — the whole decision lifecycle, not a one-shot generator.
@@ -45,7 +45,7 @@ pip install adrpy-ai
 adrpy help
 ```
 
-Requires Python 3.11+. The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project.
+Requires Python 3.11+. The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project. Don't install both in the same environment: on Windows and macOS their import folders (`adrpy` and `ADRpy`) are the same folder, and their files mix.
 
 To install from source instead — for development, or to run a specific commit:
 
@@ -55,6 +55,8 @@ cd adrpy-ai
 pip install .
 adrpy help
 ```
+
+The source install needs a git clone: the version is read from git, so a folder from GitHub's "Download ZIP" does not install. On Windows, some file names under `doc/` are long; if `git clone` reports "Filename too long", clone with `git clone -c core.longpaths=true https://github.com/FRACerqueira/adrpy-ai.git`.
 
 For development (running the test suite), see [Contributing](#contributing).
 
@@ -178,9 +180,6 @@ adrpy has no concurrency control, by design:
 - **One adrpy command at a time on a working copy.** Don't run adrpy (or `adrpy-skills`) commands in parallel on the same working copy: nothing locks it, and the last command to write a file wins.
 - **What is still guaranteed.** Every file write is atomic (a reader sees the old file or the new one, never a partial one), a new decision is never created over an existing file (`file-already-exists`), and temp files left behind by an interrupted write are cleaned up later.
 - **Detects, does not prevent.** A repository left inconsistent — by a hand edit, a merge, parallel commands, or a multi-file write that stopped halfway — is refused by every lifecycle command until it is repaired, and reported by `adrpy check`.
-
-Earlier development versions of adrpy created a `.adrpy.lock` file in the decisions and decision-log folders. It is no longer used: a leftover one is harmless and can be deleted.
-
 ## Using adrpy-ai with AI Coding Agents
 
 adrpy-ai was designed for this from the start, not adapted to it afterward:
@@ -191,7 +190,7 @@ adrpy-ai was designed for this from the start, not adapted to it afterward:
 - `adrpy help <command>` is the same machine-readable contract an agent can fetch at runtime, instead of relying on documentation baked into its own training data (which can drift out of date).
 - No command ever blocks on a prompt. An agent driving `adrpy` through a shell tool never has to detect and answer an interactive question.
 
-**Working with an AI agent.** To have an agent follow these rules without repeating them in every prompt, install the `adrpy` skill in the repository: `adrpy-skills install --skill adrpy` (add `--provider claude`, `cursor`, `copilot` or `agentsmd` to pick one). It tells the agent to run `adrpy help` and `adrpy check --path .` before touching the decisions folder, to follow each error's `hint`, to change decision files only through the commands (never renaming, hand-writing or hand-editing them, and never removing a successor's `--NNN` suffix), and to run one command at a time. See [Installing the judgment layer](#installing-the-judgment-layer-adrpy-skills).
+**Working with an AI agent.** To have an agent follow these rules without repeating them in every prompt, install the `adrpy` skill in the repository for your assistant: `adrpy-skills install --skill adrpy --provider claude` (or `cursor`, `copilot`, `agentsmd`; without `--provider` it writes files for every provider). It tells the agent to run `adrpy help` and `adrpy check --path .` before touching the decisions folder, to follow each error's `hint`, to change decision files only through the commands (never renaming, hand-writing or hand-editing them, and never removing a successor's `--NNN` suffix), and to run one command at a time. See [Installing the judgment layer](#installing-the-judgment-layer-adrpy-skills).
 
 `adrpy` itself is deliberately mechanical: it manages the ADR/decision-log *record*, never the judgment (when a decision needs recording, when a hardening review is due, when to close a review cycle). That judgment layer ships separately, as `adrpy-skills` — see [ADR009V01](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) and [`doc/skills/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/skills/README.md).
 
@@ -200,8 +199,9 @@ adrpy-ai was designed for this from the start, not adapted to it afterward:
 A separate console script, installed by the same `pip install adrpy-ai` — opt-in, and never called by `adrpy` itself. It installs three vendor-neutral skills for whichever AI coding assistants you use: `adrpy` (how an agent drives the CLI itself), `decision-log` and `pre-release-audit`:
 
 ```bash
-adrpy-skills install                          # every bundled skill, every supported provider
+adrpy-skills install --provider claude         # every bundled skill, for one assistant
 adrpy-skills install --skill decision-log --provider claude,cursor
+adrpy-skills install                           # every bundled skill, every supported provider
 adrpy-skills list                             # what's installed where, and whether any of it has drifted
 ```
 

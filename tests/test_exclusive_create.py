@@ -183,3 +183,47 @@ def test_init_refuses_a_config_that_appears_before_its_commit(tmp_path, monkeypa
     assert excinfo.value.code == "config-already-exists"
     assert target.read_bytes() == PLANTED
     assert _no_temp_left(tmp_path)
+
+
+def test_log_refuses_an_entry_name_too_long_for_the_filesystem(tmp_path):
+    init.run(["--path", str(tmp_path)])
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run([
+            "--path", str(tmp_path), "--classification", "scope-note", "--scope", "lock",
+            "--slug", "a" * 202, "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
+        ])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert "--slug" in excinfo.value.detail
+
+
+@pytest.mark.parametrize("command", [revise, version])
+def test_a_revision_or_version_too_long_for_the_filesystem_says_to_supersede(tmp_path, command):
+    # Neither command takes --title: the way out is a supersede with a
+    # shorter one.
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "a" * 221, "--refdate", "2026-01-01"])
+    path = tmp_path / "doc" / "adr" / f"ADR001V01-{'a' * 221}.md"
+    approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+    from adrpy.cli import config
+    config.run(["--path", str(tmp_path), "--lenrevision", "2"])
+
+    with pytest.raises(CommandError) as excinfo:
+        command.run(["--file", str(path), "--refdate", "2026-01-03"])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert "adrpy supersede" in excinfo.value.detail and "--title" in excinfo.value.detail
+
+
+def test_log_too_long_names_both_flags_that_make_up_the_name(tmp_path):
+    init.run(["--path", str(tmp_path)])
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run([
+            "--path", str(tmp_path), "--classification", "scope-note", "--scope", "a" * 210,
+            "--slug", "x", "--summary", "x", "--body", "x", "--refdate", "2026-09-18",
+        ])
+
+    assert excinfo.value.code == "filename-too-long"
+    assert "--scope" in excinfo.value.detail and "--slug" in excinfo.value.detail

@@ -36,6 +36,37 @@ def test_revision_not_configured_carries_the_marker_label_warning(tmp_path):
     assert any("marker" in w for w in (excinfo.value.warnings or []))
 
 
+def test_revision_not_configured_names_the_command_that_turns_revisions_on(tmp_path):
+    adr_path = _repo_with_mismatched_label(tmp_path)
+
+    with pytest.raises(CommandError) as excinfo:
+        revise.run(["--file", str(adr_path)])
+
+    assert f"adrpy config --path {tmp_path} --lenrevision" in excinfo.value.detail
+
+
+@pytest.mark.parametrize(
+    ("cwd", "relative"),
+    [
+        (("doc", "adr"), "ADR001V01-first-decision.md"),
+        (("doc", "adr"), "./ADR001V01-first-decision.md"),
+        (("doc", "adr"), "../adr/ADR001V01-first-decision.md"),
+        (("doc",), "adr/ADR001V01-first-decision.md"),
+    ],
+)
+def test_a_file_given_relative_to_the_current_directory_finds_its_repository(tmp_path, monkeypatch, cwd, relative):
+    # The walk up for adr-config.adrplus starts from the file's real
+    # folder, not from the relative path's own parent ('.', whose parent
+    # is '.').
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision", "--refdate", "2026-01-01"])
+    monkeypatch.chdir(tmp_path.joinpath(*cwd))
+
+    result = approve.run(["--file", relative, "--refdate", "2026-01-02"])
+
+    assert result["status"] == "Accepted"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_a_decisions_folder_escaping_the_repository_is_refused_before_the_target_is_read(tmp_path):
     """folderadr is a junction to a directory outside the repository, and

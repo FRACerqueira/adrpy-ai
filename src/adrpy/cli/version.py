@@ -88,6 +88,7 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The new version's filename is already taken on disk (e.g. created by another process after this call's scan) -- data.file names it.",
                 FailureCodes.LENVERSION_TOO_SMALL_FOR_NEW_VERSION: "The next version number does not fit in the configured lenversion width.",
+                FailureCodes.FILENAME_TOO_LONG: "The new version's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title.",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The new version's own title, once case-transformed, would produce a filename this tool could never recognize again.",
             },
         ),
@@ -132,7 +133,11 @@ def run(args):
             date_create=ctx.refdate,
         )
 
-        filename = build_filename(config, record)
+        filename = build_filename(
+            config,
+            record,
+            too_long_remedy="the title cannot be changed here: supersede the decision with `adrpy supersede --title` and a shorter title",
+        )
         new_path = resolve_within(folder, filename)
 
         # ADR006V01: --empty uses config.template (schema-bounded, safe

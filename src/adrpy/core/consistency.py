@@ -304,6 +304,10 @@ def _status_cells(header):
 # The no-header hint for an empty file with a legacy-scheme name: the
 # tool only ever creates current-scheme names, so it is never an
 # interrupted create's, and the user decides whether it goes.
+# The no-header hint for a file with content: its first sentence (an
+# empty file is an interrupted create's) does not apply.
+_NON_EMPTY_NO_HEADER_HINT = HINTS[FailureCodes.NO_HEADER].split(": remove it. ", 1)[1]
+
 _EMPTY_LEGACY_NO_HEADER_HINT = (
     "The file is empty (0 bytes) and has a legacy-scheme name, which this tool never creates: it is "
     "the user's file, not a name reservation of this tool -- ask the user before removing it, never "
@@ -406,8 +410,9 @@ def _read_decisions(names, config, errors):
                 if has_header_shape(lines):
                     errors.append(_error(FailureCodes.INVALID_HEADER, path, detail=describe_header_error(header)))
                 else:
-                    detail, hint = None, None
+                    detail, hint = None, _NON_EMPTY_NO_HEADER_HINT
                     if not lines and is_zero_bytes(path):
+                        hint = None
                         if scheme == "legacy":
                             detail = "0-byte file with a legacy-scheme name (the user's file: this tool never creates one)."
                             hint = _EMPTY_LEGACY_NO_HEADER_HINT

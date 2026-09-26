@@ -31,7 +31,7 @@ Is there a way to close the unbounded-read/write class for the body the same way
 * `migrate.py`'s own write is already defined as a byte-for-byte pass-through with no transformation -- streaming it (read a chunk from the source, write the same chunk to the destination, repeat) is a pure mechanical change with zero behavior difference from today's whole-buffer copy.
 * `approve`/`reject`/`undo`/`supersede`/`version`/`revise` all rewrite a file's body through `read_body`, which normalizes the body's line endings to this host's `os.linesep` (matching the reference tool's own behavior) -- a real transformation, not a pass-through, so streaming this path is a materially larger change than migrate's.
 * Every one of these commands already writes through `core/atomic_write.py`'s temp-file-then-`os.replace` mechanism (the atomic write per file, ADR001) for crash safety -- any streaming design has to preserve that guarantee, not trade it away for a smaller memory footprint.
-* This project's own established discipline (this session, rounds 22-28) is to close a bug class structurally once a bounded fix for one instance of it is found to have a sibling with a materially different shape, rather than pattern-matching the same narrow fix onto a case it doesn't actually fit.
+* This project's own established discipline (rounds 22-28) is to close a bug class structurally once a bounded fix for one instance of it is found to have a sibling with a materially different shape, rather than pattern-matching the same narrow fix onto a case it doesn't actually fit.
 
 ## Considered Options
 
@@ -82,4 +82,4 @@ This also fixes a related, smaller bug found while designing the fix: `_read_hea
 ## Links
 
 * Closes: the two round-28 (2026-09-21) `audit-finding` decision-log entries covering `read_target`/`read_lines_with_report` and `cli/migrate.py`'s own candidate read.
-* Related: `doc/adr/ADR001V01-...md` (the atomic write per file this refactor must preserve), `doc/adr/ADR005V01-...md` (the same session's other "found the same class was broader than the first fix" decision).
+* Related: `doc/adr/ADR001V01-...md` (the atomic write per file this refactor must preserve), `doc/adr/ADR005V01-...md` (the other "found the same class was broader than the first fix" decision).

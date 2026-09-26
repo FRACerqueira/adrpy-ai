@@ -33,6 +33,7 @@ Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a
 | `file-already-exists` | The new revision's own resulting filename already exists on disk (data.file names it). |
 | `lenrevision-too-small-for-new-revision` | The next revision number does not fit in the configured lenrevision width. |
 | `revision-not-configured` | This repository's config has lenrevision == 0. |
+| `filename-too-long` | The new revision's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title. |
 | `title-produces-unrecognizable-filename` | The new revision's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
@@ -92,9 +93,15 @@ Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a
 
 ## Example
 
+Revisions are off until the repository's `lenrevision` is set (it is 0 by default):
+
 ```bash
-adrpy revise --file doc/adr/ADR001V01R01-use-postgre-sql-for-the-primary-datastore.md
+adrpy config --path . --lenrevision 2
+adrpy revise --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
+
+This creates `ADR001V01R01-use-postgre-sql-for-the-primary-datastore.md`. Once `lenrevision` is set, the
+decisions the tool creates afterwards carry a revision in their names too (`ADR002V01R01-...`).
 
 ---
 

@@ -12,7 +12,7 @@ adrpy-ai is pre-1.0 (currently `0.1.0`). Only the latest released version is sup
 2. Click **"Report a vulnerability"** (GitHub Private Vulnerability Reporting).
 3. Include: affected version, reproduction steps, impact, and any suggested mitigation.
 
-If private vulnerability reporting is unavailable for any reason, contact the maintainer, [@FRACerqueira](https://github.com/FRACerqueira), directly through GitHub.
+If private vulnerability reporting is unavailable for any reason, open an issue asking the maintainer, [@FRACerqueira](https://github.com/FRACerqueira), for a private channel — without any detail of the vulnerability in it.
 
 This is a small, early-stage project maintained by one person — there's no formal SLA, but reports will be acknowledged and investigated as promptly as possible.
 

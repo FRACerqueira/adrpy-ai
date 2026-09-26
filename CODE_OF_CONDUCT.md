@@ -20,7 +20,7 @@ We are committed to providing a welcoming, respectful, and harassment-free exper
 
 ## Reporting
 
-If you experience or witness unacceptable behavior in this project, please report it by contacting the maintainer, [@FRACerqueira](https://github.com/FRACerqueira), directly through GitHub. This is a small, early-stage project without a dedicated reporting channel yet — reports will be handled as promptly and privately as possible.
+If you experience or witness unacceptable behavior in this project, please open an issue asking the maintainer, [@FRACerqueira](https://github.com/FRACerqueira), for a private channel — without any detail of what happened in it; the report itself is then made there. This is a small, early-stage project without a dedicated reporting channel yet — reports will be handled as promptly and privately as possible.
 
 ## Enforcement
 

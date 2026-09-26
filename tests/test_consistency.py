@@ -760,3 +760,14 @@ def test_superseded_not_live_hint_gives_the_literal_rows_to_move_the_cell(tmp_pa
     _replace_row(repo.paths[1], "Substituicao", moved)
     _replace_row(repo.paths[0], "Substituicao", "|Substituicao||")
     assert _errors(repo) == []
+
+
+def test_a_non_empty_file_with_no_header_is_not_told_it_was_an_interrupted_create(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo.folder / "ADR001V01-first.md").write_bytes(b"# First\n\nWritten by hand.\n")
+
+    _snapshot, errors = check_repository(repo.folder, repo.config)
+
+    assert [error["code"] for error in errors] == [FailureCodes.NO_HEADER]
+    assert "interrupted create" not in errors[0]["hint"]
+    assert "migrate" in errors[0]["hint"]

@@ -37,6 +37,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 | `field-is-blank` | --scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace. |
 | `file-already-exists` | The new version's filename is already taken on disk (e.g. created by another process after this call's scan) -- data.file names it. |
 | `lenversion-too-small-for-new-version` | The next version number does not fit in the configured lenversion width. |
+| `filename-too-long` | The new version's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title. |
 | `title-produces-unrecognizable-filename` | The new version's own title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |

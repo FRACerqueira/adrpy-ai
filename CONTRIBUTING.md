@@ -30,6 +30,8 @@ pip install -e ".[dev]"
 adrpy help
 ```
 
+On Windows, some file names under `doc/` are long: if `git clone` reports "Filename too long", clone with `git clone -c core.longpaths=true https://github.com/FRACerqueira/adrpy-ai.git`.
+
 The version comes from git (hatch-vcs), so build from a git checkout. A source tree without `.git` — e.g. one exported with `git archive` — fails to build with "unable to detect version"; set the version explicitly there, e.g. `SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 python -m build`.
 
 `adrpy-ai` has zero runtime dependencies by design (`dependencies = []` in `pyproject.toml`) — a pull request adding one is a significant decision on its own and should be discussed in an issue first, not just implemented.
@@ -40,7 +42,7 @@ The version comes from git (hatch-vcs), so build from a git checkout. A source t
 pytest
 ```
 
-At the time of writing this suite has about 1,500 tests. A handful are platform-specific and will `skip` (not fail) on the wrong host — for example, tests exercising real POSIX symlinks skip on Windows, and vice versa for Windows junctions. That's expected; a skip is not a failure.
+A handful of the tests are platform-specific and will `skip` (not fail) on the wrong host — for example, tests exercising real POSIX symlinks skip on Windows, and vice versa for Windows junctions. That's expected; a skip is not a failure.
 
 The command reference pages under `doc/commands/` and `doc/skills/` are generated from each command's `describe()`: after changing a command's description, arguments or failure codes, run `python scripts/generate_command_docs.py`, or `tests/test_command_docs.py` fails.
 
@@ -81,8 +83,10 @@ Focus on *why*, not just *what*. "Fix revise numbering" says less than a message
 1. Fork the repository and create a branch from `main`.
 2. Make your change, following the guidelines above.
 3. Run `pytest` and confirm everything passes (skips are fine, failures aren't).
-4. Open a pull request describing what changed and why. Link any related issue.
+4. Open a pull request against `main`, describing what changed and why. Link any related issue.
 5. Be responsive to review feedback — this project prefers a few rounds of small, focused changes over one large diff that's hard to review.
+
+`main` only receives releases; day-to-day work happens on `develop`. Once a pull request is accepted, the maintainer applies the change on `develop` and closes the pull request when the release that ships it is merged into `main`.
 
 ## Reporting Bugs
 

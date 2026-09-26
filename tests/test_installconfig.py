@@ -207,3 +207,35 @@ def test_an_integer_field_takes_only_plain_ascii_digits(value):
         installconfig.run(["--lenseq", value])
 
     assert excinfo.value.code == "field-not-an-integer"
+
+
+def test_language_over_an_existing_file_warns_which_earlier_values_it_replaced(tmp_path):
+    installconfig.run(["--separator", "_"])
+
+    result = installconfig.run(["--language", "pt-br"])
+
+    assert any("replaced" in warning and "separator" in warning for warning in result["warnings"])
+
+
+def test_seed_over_an_existing_file_warns_which_earlier_values_it_replaced(tmp_path):
+    installconfig.run(["--prefix", "XYZ"])
+
+    result = installconfig.run(["--seed", FIXTURE_PATH])
+
+    assert any("replaced" in warning and "prefix" in warning for warning in result["warnings"])
+
+
+def test_language_on_a_first_write_has_nothing_to_warn_about(tmp_path):
+    result = installconfig.run(["--language", "pt-br"])
+
+    assert not any("replaced" in warning for warning in result["warnings"])
+
+
+def test_the_replaced_values_warning_names_the_fields_without_their_long_values(tmp_path):
+    installconfig.run(["--language", "pt-br"])
+
+    result = installconfig.run(["--language", "en-us"])
+
+    warning = next(warning for warning in result["warnings"] if "replaced" in warning)
+    assert "template" in warning
+    assert len(warning) < 600

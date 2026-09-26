@@ -110,7 +110,7 @@ def _field_description(field):
             "(N##:##T##[V##:##][R##:##][P##:##]); one that reads part of a name twice (its T starts inside "
             "its N/V/R/P range, or two of those ranges overlap) is refused with "
             "config-migrationpattern-invalid, here and in --seed. The stored value may be empty, but this flag can't set "
-            "it to an empty string here (parse_flags rejects any empty optional value outright) -- use "
+            "it to an empty string here (an empty value for this flag is refused as a usage error) -- use "
             "`installconfig --seed` for that."
         )
     if field == "template":
@@ -118,14 +118,14 @@ def _field_description(field):
             f"Default template content a newly init'd repository using this as its seed will get, max "
             f"{config_schema.TEMPLATE_MAX_LENGTH} characters; a too-long value fails with "
             "config-template-too-long. The stored value may be empty, but this flag can't set it to an "
-            "empty string here (parse_flags rejects any empty optional value outright) -- use "
+            "empty string here (an empty value for this flag is refused as a usage error) -- use "
             "`installconfig --seed` for that."
         )
     if field == "prefix":
         return (
             f"ASCII letters only, max {config_schema.PREFIX_MAX_LENGTH} characters; the stored value may "
-            "be empty, but this flag can't set it to an empty string here (parse_flags rejects any empty "
-            "optional value outright) -- use `installconfig --seed` for that."
+            "be empty, but this flag can't set it to an empty string here (an empty value for this flag is "
+            "refused as a usage error) -- use `installconfig --seed` for that."
         )
     if field == "separator":
         return f"One of {config_schema.VALID_SEPARATORS}."
@@ -200,7 +200,8 @@ def describe():
                     "this also covers importing AdrPlus's own "
                     "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
                     "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "
-                    "combination (--seed with --language)."
+                    "combination (--seed with --language). Over an existing file, a warning names the "
+                    "fields whose earlier values the replace dropped."
                 ),
             },
             {
@@ -215,7 +216,8 @@ def describe():
                     "wholesale, same as --seed -- cannot be combined with --seed or with any individual "
                     "field flag in the same call; usage-error either way, same rule --seed already applies "
                     "to a co-passed field flag. Unlike `init --language`, this one is never blocked by an "
-                    "existing install-level config -- writing that config IS what this command is for."
+                    "existing install-level config -- writing that config IS what this command is for. Over "
+                    "an existing file, a warning names the fields whose earlier values the replace dropped."
                 ),
             },
             *[
@@ -260,6 +262,23 @@ def run(args):
         attempts = atomic_write_text(target, text)
         return [*sweep_warnings, *filter(None, [swept, retry_warning(attempts)])]
 
+    def _replaced_values_warning(text):
+        """--seed and --language replace the whole file: the earlier values
+        they drop (a field set before with its own flag) are named, since
+        nothing else would say so. None on a first write, or when the
+        current file does not parse (it is replaced either way)."""
+        if not target.is_file():
+            return None
+        try:
+            current = parse_repo_config(read_config_text(target))
+        except (CommandError, OSError):
+            return None
+        new = parse_repo_config(text)
+        changed = [field for field in _EDITABLE_FIELDS if getattr(current, field) != getattr(new, field)]
+        if not changed:
+            return None
+        return f"The existing install-level config was replaced as a whole; these fields changed value: {', '.join(changed)}."
+
     if seed_arg is not None:
         # Decision-log: 2026-09-18--audit-finding--install-config--seed-
         # plus-field-flag-misreports-updated-fields.md -- a co-passed
@@ -278,10 +297,11 @@ def run(args):
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
         reject_overlapping_migration_pattern(parse_repo_config(seed_text).migrationpattern)  # validates before writing
+        replaced = _replaced_values_warning(seed_text)
         return {
             "file": str(target),
             "updated_fields": list(_EDITABLE_FIELDS),
-            "warnings": _write(seed_text),
+            "warnings": [*_write(seed_text), *filter(None, [replaced])],
         }
 
     if language_arg is not None:
@@ -297,10 +317,11 @@ def run(args):
             )
         language_text = default_repo_config_text_for_language(language_arg)
         parse_repo_config(language_text)  # validates before writing
+        replaced = _replaced_values_warning(language_text)
         return {
             "file": str(target),
             "updated_fields": list(_EDITABLE_FIELDS),
-            "warnings": _write(language_text),
+            "warnings": [*_write(language_text), *filter(None, [replaced])],
         }
 
     if not any(field in flags for field in _EDITABLE_FIELDS):

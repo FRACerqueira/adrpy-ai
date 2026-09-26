@@ -40,11 +40,19 @@ _IS_WINDOWS = os.name == "nt"
 # junction detection.
 _HAS_REPARSE_POINTS = os.name == "nt"
 
-# prepare_write names its temp file `<target name>.<uuid4 hex>.tmp`; the
-# orphan sweeps below match only that exact shape, so no other *.tmp a
-# user keeps in the same folder is ever mistaken for one of these.
-_OWN_TEMP_SUFFIX = r"\.[0-9a-f]{32}\.tmp"
-_OWN_TEMP_NAME = re.compile(r".+" + _OWN_TEMP_SUFFIX)
+# prepare_write names its temp file `<target name>.<16 hex>.tmp` (16 of a
+# uuid4's hex digits; earlier builds used all 32); the orphan sweeps below
+# match only those exact shapes, so no other *.tmp a user keeps in the
+# same folder is ever mistaken for one of these. The folder sweep also
+# needs a `.md` target name: this tool writes nothing else in the
+# decisions and decision-log folders.
+_OWN_TEMP_SUFFIX = r"\.(?:[0-9a-f]{16}|[0-9a-f]{32})\.tmp"
+_OWN_TEMP_NAME = re.compile(r".+\.md" + _OWN_TEMP_SUFFIX)
+
+# The longest name this tool writes: one name's limit on NTFS, ext4 and
+# APFS (255, counted in UTF-8 bytes, which are never fewer than NTFS's
+# UTF-16 units), less the suffix of the temp file written next to it.
+MAX_NAME_BYTES = 255 - len(".0123456789abcdef.tmp")
 
 
 def retry_on_permission(fn, *, attempts, delay, exponential=False):
@@ -143,7 +151,7 @@ def prepare_write(path, data):
     factory again from the start; any failure removes the temp file
     before propagating."""
     path = Path(path)
-    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex[:16]}.tmp")
 
     def _write_temp():
         # A fresh digest per attempt: a retry rewrites the temp from the start.
@@ -505,7 +513,7 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
 def cleanup_orphaned_temp_files_for(paths, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None):
     """Same sweep as `cleanup_orphaned_temp_files`, but scoped to the temp
     files a write to one of `paths` could have left behind -- only
-    `<name>.<uuid4 hex>.tmp` in each path's own parent folder, never a
+    `<name>.<16 or 32 hex>.tmp` in each path's own parent folder, never a
     recursive scan. For a caller whose write surface is a handful of
     known files inside folders it doesn't own (a user's repository root,
     `.github/instructions/`, `~/.claude/skills/`), where sweeping the

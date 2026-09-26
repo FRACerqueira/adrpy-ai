@@ -57,7 +57,7 @@ class TestCliDispatch:
     def test_unknown_verb_is_a_usage_error(self, capsys):
         exit_code, out = _run(["frobnicate"], capsys)
         assert exit_code == 2
-        assert out == {"success": False, "code": "unknown-command", "detail": "Unknown command: frobnicate"}
+        assert out == {"success": False, "code": "unknown-command", "detail": "Unknown command: frobnicate (see `adrpy-skills help` for the list)."}
 
     def test_unknown_flag_is_a_usage_error(self, tmp_path, capsys):
         exit_code, out = _run(["install", "--bogus", "x"], capsys)
@@ -342,3 +342,26 @@ class TestAnEmptyErrorMessageStillExplainsItself:
 
         assert out["code"] == code
         assert out["detail"] == type(error).__name__
+
+
+def test_an_unknown_verb_points_to_adrpy_skills_help(capsys):
+    exit_code, out = _run(["frobnicate"], capsys)
+
+    assert exit_code == 2
+    assert out["code"] == "unknown-command"
+    assert "`adrpy-skills help`" in out["detail"]
+
+
+def test_help_for_an_unknown_command_exits_2_like_an_unknown_verb(capsys):
+    exit_code, out = _run(["help", "nosuch"], capsys)
+
+    assert exit_code == 2
+    assert out["code"] == "unknown-command"
+
+
+def test_an_unknown_argument_points_to_the_adrpy_skills_command_s_help(capsys):
+    exit_code, out = _run(["install", "--bogus", "x"], capsys)
+
+    assert exit_code == 2
+    assert out["code"] == "usage-error"
+    assert "`adrpy-skills help install`" in out["detail"]

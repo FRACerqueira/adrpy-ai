@@ -431,3 +431,34 @@ def test_a_unicode_fold_of_a_prefix_letter_is_not_the_prefix():
 
     assert parse_filename("kb001V01-x.md", config).number == 1
     assert parse_filename("\u212aB001V01-x.md", config) is None
+
+
+# The longest name this tool writes: one name's 255-byte limit (NTFS, ext4
+# and APFS) less the suffix of the temp file prepare_write writes next to it
+# first (`.<16 hex>.tmp`, 21 bytes).
+def test_build_filename_accepts_the_longest_name_that_fits_with_its_temp_file():
+    config = load_repo_config(FIXTURE_PATH)
+
+    filename = build_filename(config, DecisionRecord(number=1, title="a" * 221, version=1))
+
+    assert len(filename.encode("utf-8")) == 234
+
+
+def test_build_filename_refuses_a_name_one_byte_too_long():
+    config = load_repo_config(FIXTURE_PATH)
+
+    with pytest.raises(CommandError) as excinfo:
+        build_filename(config, DecisionRecord(number=1, title="a" * 222, version=1))
+
+    assert excinfo.value.code == "filename-too-long"
+    assert "--title" in excinfo.value.detail
+
+
+def test_build_filename_counts_the_name_in_bytes_not_characters():
+    # 124 characters, 235 bytes in UTF-8: ext4 and APFS count bytes.
+    config = load_repo_config(FIXTURE_PATH)
+
+    with pytest.raises(CommandError) as excinfo:
+        build_filename(config, DecisionRecord(number=1, title="ã" * 111, version=1))
+
+    assert excinfo.value.code == "filename-too-long"

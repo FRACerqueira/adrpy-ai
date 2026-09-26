@@ -37,6 +37,7 @@ Creates a new decision, status Proposed, in a new family under the number after 
 | `title-already-exists` | Another decision already has this title, once both are normalized by the configured case transform. |
 | `lenseq-too-small-for-new-number` | The next number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. |
 | `file-already-exists` | The resulting filename already exists on disk. |
+| `filename-too-long` | The title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --title. |
 | `title-produces-unrecognizable-filename` | The title, once case-transformed, would produce a filename this tool could never recognize again. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |

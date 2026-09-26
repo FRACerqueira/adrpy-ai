@@ -8,7 +8,8 @@ from adrpy.skills import installer
 
 import pytest
 
-# The uuid4-hex shape atomic_write's own temp files carry.
+# The 32-hex shape of the temp files earlier builds wrote, still swept; the
+# current one is its first 16 hex digits.
 OWN_TEMP_HEX = "0123456789abcdef0123456789abcdef"
 
 

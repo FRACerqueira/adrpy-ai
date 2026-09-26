@@ -23,6 +23,7 @@ from pathlib import Path
 
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
+from adrpy.core.naming import reject_too_long_filename
 from adrpy.core.header import read_header_lines
 from adrpy.core.fs import scan_tree
 from adrpy.core.warnings import excluded_candidate_warning
@@ -165,7 +166,9 @@ def validate_round_not_regressing(round_, current_max):
 
 
 def build_filename(refdate, classification, scope, slug):
-    return f"{refdate.isoformat()}--{classification}--{scope}--{slug}.md"
+    filename = f"{refdate.isoformat()}--{classification}--{scope}--{slug}.md"
+    reject_too_long_filename(filename, "shorten --scope or --slug")
+    return filename
 
 
 def build_entry_content(summary, body, *, front=None, severity=None, resolution=None, round_=None, reopen_when=None):

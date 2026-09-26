@@ -954,3 +954,24 @@ def test_prepare_still_checks_a_flag_value_and_a_filename_segment(tmp_path, monk
     prepare("supersede", str(repo.paths[0]), {"scope": "Data"})
 
     assert checked == ["scope", "title"]
+
+
+def test_config_not_found_says_how_to_create_one(tmp_path):
+    with pytest.raises(CommandError) as excinfo:
+        resolve_target_and_config(tmp_path)
+
+    assert "adrpy init --path" in excinfo.value.detail
+    assert str(tmp_path) in excinfo.value.detail
+
+
+def test_cannot_determine_root_path_says_what_is_missing(tmp_path):
+    orphan_dir = tmp_path / "no-repo-here"
+    orphan_dir.mkdir()
+    target = orphan_dir / "ADR001V01-orphan.md"
+    target.write_text("not a real decision", encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        prepare("approve", target, {})
+
+    assert "adr-config.adrplus" in excinfo.value.detail
+    assert "adrpy init" in excinfo.value.detail

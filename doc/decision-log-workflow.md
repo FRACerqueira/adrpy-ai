@@ -4,16 +4,19 @@
 
 # Writing a decision-log entry
 
-This page is the step-by-step workflow for adding an entry to
-[`doc/decision-log/`](decision-log/INDEX.md): the lighter-weight sibling
-of [`doc/adr/`](adr/), for events that are worth recording but are not an
+This page is the step-by-step workflow for adding an entry to the
+[decision log](decision-log/INDEX.md) -- the folder `folderlog` names in
+the repository's `adr-config.adrplus` (`doc/decision-log/` by default;
+`adrpy config --path .` shows the repository's own value): the
+lighter-weight sibling of the decisions folder (`folderadr`,
+[`doc/adr/`](adr/) by default), for events that are worth recording but are not an
 architectural decision -- an audit finding, a retracted verdict, a
 documentation-drift correction, a confirmed divergence from the reference
 tool, a deferred item, an accepted trade-off, a checked-and-refuted
 suspicion, or a one-off process exception. If you are looking for the
 *full* classification vocabulary and the extra columns some entries carry
 (`Front`/`Severity`/`Resolution`/`Round`), that lives in
-[`doc/decision-log/INDEX.md`](decision-log/INDEX.md)'s own header --
+the decision log's own [`INDEX.md`](decision-log/INDEX.md) header --
 this page does not repeat it, so the two never drift apart.
 
 ## Step 1: is this actually an ADR?
@@ -34,7 +37,7 @@ to confirm -- that's a `scope-note` entry, not a new ADR.
 
 Classification is a closed vocabulary -- pick the one row below that
 matches what actually happened. Full definitions (with edge cases) live
-in [`doc/decision-log/INDEX.md`](decision-log/INDEX.md)'s own header;
+in the decision log's own [`INDEX.md`](decision-log/INDEX.md) header;
 this table is the quick lookup.
 
 | Classification | Use it when... |

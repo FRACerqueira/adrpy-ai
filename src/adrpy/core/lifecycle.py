@@ -387,8 +387,9 @@ def find_by_unique_title(title, config, decisions):
 def find_repo_root(file_path):
     """Walks up from the file's own directory looking for
     adr-config.adrplus. Returns the config file's Path, or None if never
-    found."""
-    directory = file_path.parent
+    found. A relative path is made absolute first: its own parents stop
+    at '.'."""
+    directory = Path(file_path).absolute().parent
     while True:
         candidate = directory / "adr-config.adrplus"
         if candidate.is_file():
@@ -554,7 +555,11 @@ def resolve_target_and_config(path, *, require_config=True):
     if not require_config:
         return target, config_path, None
     if not config_path.is_file():
-        raise CommandError(FailureCodes.CONFIG_NOT_FOUND, f"No adr-config.adrplus found at: {config_path}")
+        raise CommandError(
+            FailureCodes.CONFIG_NOT_FOUND,
+            f"No adr-config.adrplus found at: {config_path.absolute()} -- run `adrpy init --path {path}` to create "
+            "one, or give --path the repository's root.",
+        )
     return target, config_path, load_repo_config(config_path)
 
 
@@ -966,7 +971,9 @@ def _resolve_file(fileadr):
     config_path = find_repo_root(fileadr)
     if config_path is None:
         raise CommandError(
-            FailureCodes.CANNOT_DETERMINE_ROOT_PATH, f"Cannot determine the repository root for: {fileadr}"
+            FailureCodes.CANNOT_DETERMINE_ROOT_PATH,
+            f"Cannot determine the repository root for: {fileadr} -- no adr-config.adrplus in its folder or any "
+            "folder above it (run `adrpy init` at the repository's root).",
         )
     config = load_repo_config(config_path)
     found = parse_any_filename(fileadr.name, config)
@@ -1042,7 +1049,12 @@ def prepare(command, fileadr, flags):
             warnings.append(warning)
 
         if row.revision_required and config.lenrevision == 0:
-            raise CommandError(FailureCodes.REVISION_NOT_CONFIGURED, "This repository's config has lenrevision == 0.")
+            raise CommandError(
+                FailureCodes.REVISION_NOT_CONFIGURED,
+                "This repository's config has lenrevision == 0 (revisions are off). Turn them on with "
+                f"`adrpy config --path {root} --lenrevision 2`; the decisions created afterwards also carry a "
+                "revision in their names (R01).",
+            )
 
         # A specific reason code, not one collapsed not-eligible-for-*,
         # so the caller knows which recovery action applies.

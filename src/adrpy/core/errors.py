@@ -31,12 +31,14 @@ class UsageError(Exception):
     """A malformed invocation. `unknown`: the argument that was not
     recognized (`adrpy <command> --help` is answered as `adrpy help
     <command>`); `missing`: the required flags left out (the answer shows
-    an example)."""
+    an example); `code`: the failure code (`unknown-command` for a
+    command name that does not exist)."""
 
-    def __init__(self, message, *, unknown=None, missing=()):
+    def __init__(self, message, *, unknown=None, missing=(), code="usage-error"):
         super().__init__(message)
         self.unknown = unknown
         self.missing = tuple(missing)
+        self.code = code
 
 
 class FailureCodes:
@@ -71,6 +73,7 @@ class FailureCodes:
 
     # src/adrpy/core/naming.py
     TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME = "title-produces-unrecognizable-filename"
+    FILENAME_TOO_LONG = "filename-too-long"
 
     # src/adrpy/core/security.py
     PATH_INVALID = "path-invalid"

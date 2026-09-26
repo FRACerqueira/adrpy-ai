@@ -481,12 +481,10 @@ def test_command_error_omits_warnings_key_when_there_are_none(capsys, monkeypatc
 
 
 def test_help_unknown_command_reports_structured_failure(capsys):
-    from adrpy.core.output import EXIT_FAILURE
-
     exit_code = main(["help", "nope"])
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == EXIT_FAILURE
+    assert exit_code == EXIT_USAGE_ERROR
     assert payload["success"] is False
     assert payload["code"] == "unknown-command"
 
@@ -610,7 +608,7 @@ def test_help_answers_any_dash_token_as_an_unknown_argument(capsys):
     code, response = _main_json(capsys, ["help", "-x"])
 
     assert code == EXIT_USAGE_ERROR
-    assert response == {"success": False, "code": "usage-error", "detail": "Unknown argument: -x"}
+    assert response == {"success": False, "code": "usage-error", "detail": "Unknown argument: -x (see `adrpy help help`)."}
 
 
 def test_a_missing_required_flag_shows_an_example_and_where_to_read_more(capsys):
@@ -620,3 +618,40 @@ def test_a_missing_required_flag_shows_an_example_and_where_to_read_more(capsys)
     assert response["code"] == "usage-error"
     assert "e.g. `adrpy check --path .`" in response["detail"]
     assert "see `adrpy help check`" in response["detail"]
+
+
+# ------------------------------------------- a next step in usage errors --
+
+
+def test_an_unknown_command_points_to_the_list_of_commands(capsys):
+    code, response = _main_json(capsys, ["aprove"])
+
+    assert code == EXIT_USAGE_ERROR
+    assert response["code"] == "unknown-command"
+    assert "`adrpy help`" in response["detail"]
+
+
+def test_help_for_an_unknown_command_is_a_usage_error_like_an_unknown_verb(capsys):
+    # The same mistake (a command name that does not exist) exits 2 both ways.
+    code, response = _main_json(capsys, ["help", "nosuch"])
+
+    assert code == EXIT_USAGE_ERROR
+    assert response["code"] == "unknown-command"
+    assert "`adrpy help`" in response["detail"]
+
+
+@pytest.mark.parametrize("argv", [["new", "--path", ".", "--titel", "X"], ["approve", "doc/adr/X.md"]])
+def test_an_unknown_argument_points_to_the_command_s_own_help(capsys, argv):
+    code, response = _main_json(capsys, argv)
+
+    assert code == EXIT_USAGE_ERROR
+    assert response["code"] == "usage-error"
+    assert f"`adrpy help {argv[0]}`" in response["detail"]
+
+
+def test_a_usage_error_ending_in_a_period_gets_no_second_one(capsys):
+    code, response = _main_json(capsys, ["init", "--path", ".", "--seed", "x", "--language", "pt-br"])
+
+    assert code == EXIT_USAGE_ERROR
+    assert ". (" not in response["detail"]
+    assert "`adrpy help init`" in response["detail"]
