@@ -1,0 +1,3 @@
+# Who reads the decision log: tooling and AI agents first; the ADRs explain the design
+
+The owner set the decision log's primary audience: it is written first for tooling and for AI agents recovering a project's history or calibrating a review, which is why its fields are structured and its vocabulary is closed. People read it too (each Escalated entry records a choice the owner made), but the design is explained by the ADRs, and a contributor does not need to read the log. An entry is a pointer, not the final word: before acting on one, check the commit, test or file it names. Stated once in each place the log is introduced: CONTRIBUTING, doc/decision-log-workflow.md, the decision-log skill's glue.md and the README (0bc650d).
