@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-28
+
 The first release of adrpy-ai.
 
 ### Added
@@ -48,4 +50,5 @@ The first release of adrpy-ai.
 - `adrpy-skills install`/`remove` refuse to write or delete through a junction or symlink that leads outside the target (`path-outside-repository`) unless `--allow-external-links` is given, and cap every file read at 10 MB. `remove` never deletes a file the user wrote at a shared-doc path that no installed stub points at.
 - Orphaned-temp-file cleanup deletes only this tool's own temp-file names (`<name>.<16-hex>.tmp`, and the 32-hex form too; in the decisions and decision-log folders only a `.md`'s, in any case), never another `*.tmp` of the user's, and never follows a link out of the folder it cleans.
 
-[Unreleased]: https://github.com/FRACerqueira/adrpy-ai/commits/main
+[Unreleased]: https://github.com/FRACerqueira/adrpy-ai/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/FRACerqueira/adrpy-ai/releases/tag/v0.1.0
