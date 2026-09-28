@@ -44,15 +44,28 @@ _HAS_REPARSE_POINTS = os.name == "nt"
 # uuid4's hex digits; earlier builds used all 32); the orphan sweeps below
 # match only those exact shapes, so no other *.tmp a user keeps in the
 # same folder is ever mistaken for one of these. The folder sweep also
-# needs a `.md` target name: this tool writes nothing else in the
-# decisions and decision-log folders.
+# needs a `.md` target name, in any case (Windows reads `.MD` as a
+# decision too): this tool writes nothing else in the decisions and
+# decision-log folders.
 _OWN_TEMP_SUFFIX = r"\.(?:[0-9a-f]{16}|[0-9a-f]{32})\.tmp"
-_OWN_TEMP_NAME = re.compile(r".+\.md" + _OWN_TEMP_SUFFIX)
+_OWN_TEMP_NAME = re.compile(r".+(?i:\.md)" + _OWN_TEMP_SUFFIX)
 
 # The longest name this tool writes: one name's limit on NTFS, ext4 and
 # APFS (255, counted in UTF-8 bytes, which are never fewer than NTFS's
 # UTF-16 units), less the suffix of the temp file written next to it.
 MAX_NAME_BYTES = 255 - len(".0123456789abcdef.tmp")
+
+
+def name_bytes(name):
+    """A file name's length as the filesystem stores it: os.fsencode, so a
+    byte that is not UTF-8 (a lone surrogate in the name Python gives us)
+    counts as what is on disk instead of raising UnicodeEncodeError. A lone
+    surrogate the filesystem encoding cannot map (one that did not come from
+    a name on disk, on POSIX) counts as UTF-8 with surrogatepass."""
+    try:
+        return len(os.fsencode(name))
+    except UnicodeEncodeError:
+        return len(name.encode("utf-8", "surrogatepass"))
 
 
 def retry_on_permission(fn, *, attempts, delay, exponential=False):
@@ -334,13 +347,25 @@ def remove_created_dirs(folder, top):
 class TreeScan:
     """What scan_tree found under one folder: the `.md` and `.tmp` files
     inside its real boundary, the candidates excluded for escaping it
-    (through a junction or a file symlink), and the directories that
-    could not be listed."""
+    (through a junction or a file symlink), the directories that could
+    not be listed, and the `.md` files inside that are symbolic links
+    (no command writes through one)."""
 
     markdown: tuple
     temp: tuple
     excluded: tuple
     unreadable: tuple
+    links: tuple = ()
+
+
+def _is_file_link(entry):
+    """A file entry that is a symbolic link; one that cannot be inspected
+    counts as one. Unlike _is_link, another reparse point (a cloud-storage
+    placeholder, say) is not: only a link would be replaced by a write."""
+    try:
+        return entry.is_symlink()
+    except OSError:
+        return True
 
 
 def _is_link(entry):
@@ -394,7 +419,7 @@ def scan_tree(folder):
         resolved = folder.resolve()
     except (OSError, ValueError):
         resolved = None
-    excluded, unreadable = [], []
+    excluded, unreadable, links = [], [], []
     # real path -> the path found; a file reached twice (through a junction
     # inside the folder) is kept once, under the path that needs no link.
     found = {".md": {}, ".tmp": {}}
@@ -443,6 +468,8 @@ def scan_tree(folder):
             if not inside:
                 excluded.append(candidate)
                 continue
+            if kind == ".md" and _is_file_link(entry):
+                links.append(candidate)
             known = found[kind].get(real)
             if known is None or os.path.normcase(str(candidate.relative_to(folder))) == os.path.normcase(
                 str(real.relative_to(resolved))
@@ -466,7 +493,9 @@ def scan_tree(folder):
                 through_links.append((path, real_sub))
             else:
                 pending.append((path, real_sub))
-    return TreeScan(tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable))
+    return TreeScan(
+        tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links)
+    )
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):

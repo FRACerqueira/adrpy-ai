@@ -40,9 +40,9 @@ pieces, concatenated in this order:
 2. **`body.md`** -- the skill's own vendor-neutral mechanics: the *how*,
    once the gate (if any) says this is allowed to run.
 3. **`glue.md`** (decision-log only) -- the adrpy-specific instantiation:
-   which `adrpy` commands to actually run, and when. This is
-   [`doc/decision-log-workflow.md`](../decision-log-workflow.md), reused
-   verbatim. It names the folders by their config fields (`folderadr`,
+   which `adrpy` commands to actually run, and when. It is adapted from
+   [`doc/decision-log-workflow.md`](../decision-log-workflow.md) (links
+   removed, a few sentences reworded for an agent). It names the folders by their config fields (`folderadr`,
    `folderlog`), with `doc/adr/` and `doc/decision-log/` only as the
    defaults, and says to read the repository's own values with
    `adrpy config --path .`, so it needs no per-project rewriting.
@@ -178,7 +178,8 @@ you, not this command.
 
 One deliberate exception: before doing anything else, `install` and
 `remove` delete temp files an earlier interrupted `adrpy-skills` write
-left behind -- only files named exactly `<target name>.<32-hex uuid4>.tmp`,
+left behind -- only files named exactly `<target name>.<16-hex>.tmp` (or the
+32-hex form earlier builds wrote),
 older than 30 seconds, in the same folder as a file this call itself
 would write (never a folder-wide or recursive scan). Each removal is
 reported in `warnings`. No other file is ever deleted without `--force`.
@@ -260,6 +261,8 @@ own page, in its `## Failure codes` table -- the same structured
 `failure_codes` field `adrpy-skills help <command>` returns at runtime,
 rendered into the page by `scripts/generate_command_docs.py` (see the
 [Command Reference](../commands/INDEX.md) for how that is kept in step).
-Two codes can come from any command without being listed
-on its page: `unknown-command` (the verb itself isn't recognized) and
-`internal-error` (an unexpected bug in the tool -- please report it).
+Four codes can come from any command without being listed
+on its page: `unknown-command` (the verb itself isn't recognized),
+`io-error` (an OS error no more specific code covers), `interrupted`
+(Ctrl+C) and `internal-error` (an unexpected bug in the tool -- please
+report it).

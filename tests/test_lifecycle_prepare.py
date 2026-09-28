@@ -42,7 +42,9 @@ def test_revision_not_configured_names_the_command_that_turns_revisions_on(tmp_p
     with pytest.raises(CommandError) as excinfo:
         revise.run(["--file", str(adr_path)])
 
-    assert f"adrpy config --path {tmp_path} --lenrevision" in excinfo.value.detail
+    from adrpy.core.text import shell_argument
+
+    assert f"adrpy config --path {shell_argument(tmp_path)} --lenrevision" in excinfo.value.detail
 
 
 @pytest.mark.parametrize(
@@ -65,6 +67,50 @@ def test_a_file_given_relative_to_the_current_directory_finds_its_repository(tmp
     result = approve.run(["--file", relative, "--refdate", "2026-01-02"])
 
     assert result["status"] == "Accepted"
+
+
+def test_a_relative_file_through_dot_dot_is_not_given_the_current_directory_s_repository(tmp_path, monkeypatch):
+    # From repository A, `--file ../B/...` names a folder with no config
+    # anywhere above it: the walk goes up from the file's real folder, not
+    # through A (the unresolved path's parents include A itself).
+    repo_a = tmp_path / "A"
+    repo_a.mkdir()
+    init.run(["--path", str(repo_a)])
+    new.run(["--path", str(repo_a), "--title", "First decision", "--refdate", "2026-01-01"])
+    other = tmp_path / "B" / "doc" / "adr"
+    other.mkdir(parents=True)
+    source = repo_a / "doc" / "adr" / "ADR001V01-first-decision.md"
+    (other / source.name).write_bytes(source.read_bytes())
+    monkeypatch.chdir(repo_a)
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", f"../B/doc/adr/{source.name}", "--refdate", "2026-01-02"])
+
+    assert excinfo.value.code == "cannot-determine-root-path"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
+def test_a_file_reached_through_a_junction_to_another_repository_is_not_acted_on(tmp_path):
+    # The walk up normalizes `..` but follows no link: a junction inside A
+    # to B's decisions folder does not make a path under A act on B.
+    repo_b = tmp_path / "B"
+    repo_b.mkdir()
+    init.run(["--path", str(repo_b)])
+    new.run(["--path", str(repo_b), "--title", "In B", "--refdate", "2026-01-01"])
+    repo_a = tmp_path / "A"
+    repo_a.mkdir()
+    init.run(["--path", str(repo_a)])
+    shared = repo_a / "doc" / "adr" / "shared"
+    result = subprocess.run(["cmd", "/c", "mklink", "/J", str(shared), str(repo_b / "doc" / "adr")], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    target_in_b = repo_b / "doc" / "adr" / "ADR001V01-in-b.md"
+    before = target_in_b.read_bytes()
+
+    with pytest.raises(CommandError) as excinfo:
+        approve.run(["--file", str(shared / target_in_b.name), "--refdate", "2026-01-02"])
+
+    assert excinfo.value.code == "target-outside-folderadr"
+    assert target_in_b.read_bytes() == before
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")

@@ -248,7 +248,7 @@ def test_exclusive_commit_refuses_a_dangling_symlink_instead_of_writing_through_
     assert not outside.exists()
 
 
-@pytest.mark.parametrize("err", [errno.EPERM, errno.EOPNOTSUPP])
+@pytest.mark.parametrize("err", [errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.ENOSYS])
 def test_exclusive_commit_falls_back_to_o_excl_where_hard_links_are_unsupported(tmp_path, monkeypatch, err):
     # exFAT, FAT and some network shares refuse hard links; the create is
     # still exclusive (an O_EXCL reservation) and atomic (os.replace onto it).

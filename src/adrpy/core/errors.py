@@ -74,6 +74,7 @@ class FailureCodes:
     # src/adrpy/core/naming.py
     TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME = "title-produces-unrecognizable-filename"
     FILENAME_TOO_LONG = "filename-too-long"
+    TARGET_IS_A_LINK = "target-is-a-link"
 
     # src/adrpy/core/security.py
     PATH_INVALID = "path-invalid"

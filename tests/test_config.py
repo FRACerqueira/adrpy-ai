@@ -833,3 +833,22 @@ def test_the_pt_br_language_pack_spells_arquivo():
     from adrpy.core.config import load_language_pack
 
     assert load_language_pack("pt-br")["headertitlefile"].endswith(" do arquivo md")
+
+
+@pytest.mark.parametrize("text", ["[" * 30000 + "]" * 30000, '{"lenseq": ' + "9" * 5000 + "}"], ids=["deep-nesting", "huge-integer"])
+def test_parse_repo_config_reports_json_it_cannot_finish_decoding_as_invalid_json(text):
+    from adrpy.core.config import parse_repo_config
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(text)
+
+    assert excinfo.value.code == "config-invalid-json"
+
+
+def test_config_invalid_json_says_to_repair_the_file_by_hand():
+    from adrpy.core.config import parse_repo_config
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config("{not json")
+
+    assert "repair it by hand" in excinfo.value.detail

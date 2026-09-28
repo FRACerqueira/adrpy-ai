@@ -14,6 +14,14 @@ some entries carry (`Front`/`Severity`/`Resolution`/`Round`), that lives in
 the decision log's own `INDEX.md` header -- this page does not repeat it,
 so the two never drift apart.
 
+**Who reads the log.** A decision log is written first for tooling and
+for an AI agent recovering a project's history or calibrating a review --
+that is why its fields are structured and its vocabulary is closed. People
+read it too (each `Escalated` entry records a choice the owner made), but
+to understand the design they read the ADRs. Treat an entry as a pointer,
+not the final word: before acting on one, check the commit, test or file
+it names.
+
 ## Step 1: is this actually an ADR?
 
 Ask one question before anything else: **does this change a choice among
@@ -93,10 +101,11 @@ adrpy log --path . --classification audit-finding --scope io --slug retry-loop-o
   --summary "Retry loop stopped one attempt short" --body "Details of the fix." \
   --front "test-adequacy audit" --severity Medium --resolution Direct
 
-# A second finding in that SAME round: pass --round explicitly to reuse it
+# A second finding in that SAME round: pass --round with the number the
+# first call's warning named (here 1), or it would open the next round
 adrpy log --path . --classification audit-finding --scope config --slug off-by-one-here-too \
   --summary "The same off-by-one, in a second module" --body "Details of the fix." \
-  --front "test-adequacy audit" --severity Low --resolution Direct --round 12
+  --front "test-adequacy audit" --severity Low --resolution Direct --round 1
 
 # deferred: --reopenwhen required instead
 adrpy log --path . --classification deferred --scope security --slug posix-symlink-coverage \

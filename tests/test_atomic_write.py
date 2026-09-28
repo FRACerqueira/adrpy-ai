@@ -525,3 +525,14 @@ def test_the_named_files_sweep_removes_a_16_hex_orphan_of_its_file(tmp_path):
     os.utime(orphan, (old_time, old_time))
 
     assert cleanup_orphaned_temp_files_for([target], max_age_seconds=30) == [orphan]
+
+
+@pytest.mark.parametrize("extension", ["MD", "Md"])
+def test_the_folder_sweep_removes_an_orphan_of_a_decision_with_an_upper_case_extension(tmp_path, extension):
+    # Windows reads ADR001V01-x.MD as a decision and writes its temp next to it.
+    orphan = tmp_path / f"ADR001V01-x.{extension}.{OWN_TEMP_HEX[:16]}.tmp"
+    orphan.write_text("stale")
+    old_time = time.time() - 60
+    os.utime(orphan, (old_time, old_time))
+
+    assert cleanup_orphaned_temp_files(tmp_path, max_age_seconds=30) == [orphan]

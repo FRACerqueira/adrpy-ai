@@ -105,11 +105,11 @@ def describe():
                 FailureCodes.FIELD_IS_BLANK: "--scope or --domain is a raw, non-empty flag value that is blank after stripping whitespace.",
                 FailureCodes.LENSEQ_TOO_SMALL_FOR_NEW_NUMBER: "The successor's number (data.new_number) has more digits than lenseq (data.lenseq); detail gives the `adrpy config --lenseq` that widens it, or says it is already at its maximum. Nothing was written.",
                 FailureCodes.FILE_ALREADY_EXISTS: "The successor's own resulting filename already exists on disk.",
-                FailureCodes.FILENAME_TOO_LONG: "The successor's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --title.",
+                FailureCodes.FILENAME_TOO_LONG: "The successor's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --title. Also when --file's own name is longer than the 234 bytes this tool can rewrite (then rename it by hand to a shorter title part, keeping its number, version, revision and any --NNN suffix).",
                 FailureCodes.TITLE_PRODUCES_UNRECOGNIZABLE_FILENAME: "The successor's own title, once case-transformed, would produce a filename this tool could never recognize again.",
                 FailureCodes.MULTI_FILE_WRITE_PARTIALLY_APPLIED: "The predecessor's own write (marking it Superseded, the SECOND of the two writes) failed -- the successor already exists (data.applied names it, data.pending the predecessor); the repository is then inconsistent until repaired by hand (remove the successor and supersede again, or mark the predecessor Superseded with the exact row in data.repair).",
                 FailureCodes.INTERRUPTED: "Interrupted (Ctrl+C) after the successor was created but before the predecessor was marked Superseded -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). Once both are written, data.applied names both, data.pending is empty and there is no data.repair (the repository is consistent). What was written is read from the disk, so an interrupt right after a write counts it. An interrupt before the first write is reported without data.",
-                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "Preparing either file, or creating the successor (the FIRST of the two commits), failed -- no decision was changed (data.intended_successor names the file that would have been created). If the empty reservation of that name could not be removed, it is left as a 0-byte file that check names: remove it.",
+                FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED: "Preparing either file, or creating the successor (the FIRST of the two commits), failed -- no decision was changed (data.intended_successor names the file that would have been created, data.failed_file the one whose write failed). If the empty reservation of that name could not be removed, it is left as a 0-byte file that check names: remove it.",
             },
         ),
     }
@@ -180,7 +180,7 @@ def run(args):
             raise CommandError(
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
                 f"{error}. Nothing was written.",
-                data={"intended_successor": str(successor_path)},
+                data={"intended_successor": str(successor_path), "failed_file": str(path if prepared else successor_path)},
                 warnings=warnings,
             ) from error
 
@@ -226,7 +226,7 @@ def run(args):
             raise CommandError(
                 FailureCodes.SUPERSEDE_SUCCESSOR_WRITE_FAILED,
                 f"{successor_path}: {error}",
-                data={"intended_successor": str(successor_path)},
+                data={"intended_successor": str(successor_path), "failed_file": str(successor_path)},
                 warnings=warnings,
             ) from error
         note_shared_numbers(

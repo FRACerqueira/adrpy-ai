@@ -56,7 +56,7 @@ graph TD
     CALLER["Caller<br/>(human or AI agent)"] --> MAIN
     MAIN["__main__.py<br/>entry point + dispatch"] --> CLI
     CLI["cli/*.py<br/>15 thin command modules,<br/>one per adrpy verb"] --> CORE
-    CORE["core/*.py<br/>18 shared modules, grouped by<br/>concern in the table below"] --> FS[("Filesystem")]
+    CORE["core/*.py<br/>19 shared modules: 18 grouped by<br/>concern in the table below,<br/>plus hashing.py"] --> FS[("Filesystem")]
 ```
 
 No single command uses every `core/` module -- Dispatch & contract's four
@@ -79,7 +79,9 @@ Every write command (`init`, `new`, `approve`, `reject`, `undo`,
 `supersede`, `version`, `revise`, `migrate`, `config`, `installconfig`,
 `log`) touches Storage; every command that reasons about existing
 decision files touches Decision file mechanics and the repository model; `init`/`config`/`migrate`/`installconfig`
-touch Configuration; only `log` touches Decision log; every command
+touch Configuration; `log` writes through Decision log, `check` and `explore` read it for the
+warning about a file there that is not an entry, and `init` and `config` use it to guard a
+`folderlog` change; every command
 touches Dispatch & contract.
 
 `core/` has one additional module not in this table: `hashing.py`, the
@@ -148,8 +150,10 @@ What the tool keeps, and why each is enough on its own:
   complete content goes to a temp file next to the target first, then an
   atomic move puts it in place, so a reader sees the old file or the new
   one, never a partial one. A crash between the two steps leaves at most
-  a temp file, which a later scanning command (`new`, the file commands,
-  `migrate`) removes once it is older than 30 s (`fs.cleanup_orphaned_temp_files`).
+  a temp file, which a later command writing there removes once it is older than
+  30 s: `new`, the file commands and `migrate` in the decisions folder, `log` in the
+  decision-log folder, `init`, `config` and `migrate` for `adr-config.adrplus`, and
+  `installconfig` for the install-level config (`fs.cleanup_orphaned_temp_files`).
 - **Exclusive create.** A file is never created over an existing one:
   the move itself fails when the name is taken, leaving the original
   intact -- a decision by `new`, `supersede`, `version` or `revise`
@@ -365,7 +369,8 @@ an `io-error` or `interrupted` caught at the entry point, and failures
 raised before that point (a missing file, no repository found) -- see the
 `adrpy-skills` subsystem section above for how that entry point's own
 envelope differs. An `interrupted` the command raises itself, once it
-has written something, carries them, with `data` naming what was
+has written something -- on Ctrl+C, or on any unexpected error from that
+point on -- carries them, with `data` naming what was
 written: `migrate` once it has persisted a fallback migrationpattern or
 started migrating (`data.migrationpattern_persisted`, `data.results`), `supersede` and `reject` after their
 first file (`data.applied`, `data.pending`, `data.repair`), and `log`

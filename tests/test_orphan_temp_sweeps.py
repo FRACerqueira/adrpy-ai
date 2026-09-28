@@ -15,7 +15,7 @@ from adrpy.cli import config, init, installconfig, log, migrate
 
 
 def _orphan(path, age):
-    temp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    temp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:16]}.tmp")
     temp.write_bytes(b"partial")
     stamp = time.time() - age
     os.utime(temp, (stamp, stamp))
@@ -126,7 +126,7 @@ def test_the_known_files_sweep_never_removes_a_link_named_like_its_own_temp(tmp_
     os.utime(outside, (stamp, stamp))
     config_path = tmp_path / "repo" / "adr-config.adrplus"
     config_path.parent.mkdir()
-    link = config_path.with_name(f"{config_path.name}.{uuid.uuid4().hex}.tmp")
+    link = config_path.with_name(f"{config_path.name}.{uuid.uuid4().hex[:16]}.tmp")
     if sys.platform == "win32":
         subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)], check=True, capture_output=True)
     else:
