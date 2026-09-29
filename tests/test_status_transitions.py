@@ -1048,7 +1048,7 @@ def test_a_version_is_locked_once_a_newer_version_is_alive(tmp_path, command):
     assert excinfo.value.code == "not-latest-version"
     assert excinfo.value.data["latest_file"] == str(v02)
     assert v01.read_text(encoding="utf-8") == before
-    assert sorted(p.name for p in adr.glob("*.md")) == [v01.name, v02.name]
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == [v01.name, v02.name]
 
 
 def test_a_single_rejected_newer_version_leaves_the_older_one_alive(tmp_path):
@@ -1128,7 +1128,7 @@ def test_a_rejected_successor_is_final(tmp_path, command):
 
     assert excinfo.value.code == "rejected-successor-is-final"
     assert succ.read_text(encoding="utf-8") == before
-    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name])
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == sorted([pred.name, succ.name])
 
 
 @pytest.mark.parametrize("command", ["approve", "supersede"])
@@ -1155,7 +1155,7 @@ def test_a_hand_made_member_in_a_rejected_successors_family_refuses_the_reposito
     assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
         ("rejected-successor-family-not-final", str(v02.resolve()))
     ]
-    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name, v02.name])
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == sorted([pred.name, succ.name, v02.name])
 
 
 def test_a_rejected_decision_that_is_not_a_successor_can_still_be_undone(tmp_path):

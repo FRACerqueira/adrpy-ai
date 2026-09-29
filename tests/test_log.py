@@ -286,7 +286,7 @@ def test_log_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
         )
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    assert list(folderadr_dir.glob("*.md")) == []
+    assert [p for p in folderadr_dir.glob("*.md") if p.name != "INDEX.md"] == []
 
 
 def test_log_refdate_defaults_to_today(tmp_path):

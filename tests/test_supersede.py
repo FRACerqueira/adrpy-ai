@@ -554,7 +554,7 @@ def test_a_retry_after_a_partial_supersede_refuses_instead_of_guessing(tmp_path,
     # The hint is a repair by hand: reject itself refuses this repository.
     assert "by hand" in excinfo.value.data["errors"][0]["hint"].lower()
     assert adr_path.read_text(encoding="utf-8") == before
-    assert len(list((tmp_path / "doc" / "adr").glob("*.md"))) == 2
+    assert len([p for p in (tmp_path / "doc" / "adr").glob("*.md") if p.name != "INDEX.md"]) == 2
 
 
 def test_an_undone_rejected_successor_is_not_silently_resumed_onto(tmp_path):

@@ -407,7 +407,9 @@ def scan_tree(folder):
     `folder` is excluded as a whole, not entered. A directory symlink is
     neither entered nor reported in `excluded`, wherever it points. The extension match follows the OS's own case
     rule (os.path.normcase), as rglob's does. A missing `folder` is
-    reported as unreadable.
+    reported as unreadable. The folder's own INDEX.md is not listed: it is
+    the page adrpy generates there (ADR0013V01R01, and the decision log's
+    own index).
 
     Only a link is resolved: a file or directory reached from the
     resolved folder through plain directories has the real path of its
@@ -493,9 +495,9 @@ def scan_tree(folder):
                 through_links.append((path, real_sub))
             else:
                 pending.append((path, real_sub))
-    return TreeScan(
-        tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links)
-    )
+    index = os.path.normcase(str(folder / "INDEX.md"))
+    markdown = tuple(path for path in found[".md"].values() if os.path.normcase(str(path)) != index)
+    return TreeScan(markdown, tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links))
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):

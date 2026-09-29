@@ -19,6 +19,7 @@ import contextlib
 from dataclasses import asdict
 from pathlib import Path
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, normalize_newlines
 from adrpy.core.fs import (
@@ -33,6 +34,7 @@ from adrpy.core.fs import (
 )
 from adrpy.core.config import (
     SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    load_repo_config,
     parse_repo_config,
     reject_overlapping_migration_pattern,
     serialize_repo_config,
@@ -587,6 +589,9 @@ def run(args):
 
         migrated = [entry["file"] for entry in results]
 
+    # The config as migrate left it: a persisted migrationpattern is what
+    # recognizes the files it migrated under their legacy names.
+    adr_index.regenerate(target, load_repo_config(config_path), warnings)
     result = {"migrated": migrated, "warnings": warnings}
     if persisted["pattern"] is not None:
         result["migrationpattern_persisted"] = persisted["pattern"]

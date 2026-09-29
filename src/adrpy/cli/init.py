@@ -3,6 +3,7 @@
 from dataclasses import asdict
 from pathlib import Path
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import (
@@ -249,9 +250,11 @@ def run(args):
             created = _validate_and_write(
                 target, config_path, config_text, config, warnings, old_config=old_config
             )
+        adr_index.regenerate(target, config, warnings)
         return {"created": created, "warnings": warnings}
 
     created = _validate_and_write(target, config_path, config_text, config, warnings)
+    adr_index.regenerate(target, config, warnings)
     return {"created": created, "warnings": warnings}
 
 

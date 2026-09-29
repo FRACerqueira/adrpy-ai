@@ -3,6 +3,7 @@
 new transition.
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.lifecycle import failure_codes, prepare, rewrite_status_field
 from adrpy.core.warnings import attach_warnings, encoding_repaired_warning, retry_warning
@@ -56,4 +57,5 @@ def run(args):
     # migrated decision's Created cell is blank, so clearing Changed
     # returns it to the placeholder (null, like explore's status_create).
     status = "Proposed" if ctx.header.status_create is not None else None
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     return {"file": str(path), "status": status, "warnings": warnings}

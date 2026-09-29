@@ -1,5 +1,6 @@
 """`approve` command: marks a Proposed decision as Accepted."""
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.errors import FailureCodes
 from adrpy.core.lifecycle import failure_codes, prepare, rewrite_status_field
@@ -71,4 +72,5 @@ def run(args):
 
     # Canonical keyword, matching explore's own status_create/status_update
     # -- not the repo's configured status label.
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     return {"file": str(path), "status": "Accepted", "warnings": warnings}

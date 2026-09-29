@@ -210,7 +210,7 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     assert excinfo.value.data["latest_file"] == str(r2_path)
     assert excinfo.value.data["latest_revision"] == 2
     assert excinfo.value.data["latest_status"] == "Accepted"
-    assert sorted(p.name for p in r2_path.parent.glob("*.md")) == [adr_path.name, r2_path.name]
+    assert sorted(p.name for p in r2_path.parent.glob("*.md") if p.name != "INDEX.md") == [adr_path.name, r2_path.name]
 
 
 def test_revise_branching_off_an_older_revision_takes_the_next_free_number(tmp_path):

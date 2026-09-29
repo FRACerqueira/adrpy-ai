@@ -14,6 +14,7 @@ failure up to and including that write leaves nothing committed at all,
 safely retryable from scratch.
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.consistency import SUPERSEDED
 from adrpy.core.errors import CommandError, FailureCodes
@@ -132,6 +133,7 @@ def run(args):
                 warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}
 
 

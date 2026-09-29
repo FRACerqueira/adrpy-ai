@@ -4,6 +4,7 @@ fill later: adrpy-ai is args-in/JSON-out for a non-interactive caller,
 with no session to hand an opened editor back to.
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
@@ -201,4 +202,5 @@ def run(args):
     # The canonical keyword, not the repo's configured label -- `explore`
     # reports status_create the same way for the same file, and the two
     # must agree even when statusnew is customized.
+    adr_index.regenerate(target, config, warnings)
     return {"created": str(file_path), "status": "Proposed", "warnings": warnings}

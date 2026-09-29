@@ -6,6 +6,7 @@ not the latest member's. --open is permanently not implemented (see
 `new.py`'s note).
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.consistency import note_shared_numbers
 from adrpy.core.errors import CommandError, FailureCodes
@@ -117,4 +118,5 @@ def run(args):
             warnings.append(warning)
 
     # Canonical keyword, not the repo's configured status label.
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

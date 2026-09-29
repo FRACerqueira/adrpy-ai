@@ -261,7 +261,7 @@ def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_
 
     assert excinfo.value.code == "field-contains-forbidden-character"
     adr_dir = tmp_path / "doc" / "adr"
-    assert list(adr_dir.iterdir()) == []  # no orphan left behind
+    assert [p for p in adr_dir.iterdir() if p.name != "INDEX.md"] == []  # no orphan left behind
 
 
 @pytest.mark.parametrize("value", ["-", "---", "___", "- _ -"])
@@ -283,7 +283,7 @@ def test_new_rejects_a_title_made_only_of_separator_characters(tmp_path, value):
 
     assert excinfo.value.code == "field-contains-forbidden-character"
     adr_dir = tmp_path / "doc" / "adr"
-    assert list(adr_dir.iterdir()) == []  # no orphan left behind
+    assert [p for p in adr_dir.iterdir() if p.name != "INDEX.md"] == []  # no orphan left behind
 
 
 def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):

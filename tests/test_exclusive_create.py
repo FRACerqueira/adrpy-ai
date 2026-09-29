@@ -267,7 +267,7 @@ def test_supersede_of_an_existing_name_too_long_to_rewrite_is_refused_before_wri
         supersede.run(["--file", str(path), "--title", "Next", "--refdate", "2026-01-03"])
 
     assert excinfo.value.code == "filename-too-long"
-    assert sorted(p.name for p in path.parent.iterdir()) == [path.name]
+    assert sorted(p.name for p in path.parent.iterdir() if p.name != "INDEX.md") == [path.name]
 
 
 def test_reject_of_a_successor_whose_predecessor_name_is_too_long_is_refused_before_writing(tmp_path):

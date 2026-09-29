@@ -842,5 +842,5 @@ def test_a_decision_in_a_new_repository_is_named_with_the_shipped_defaults(tmp_p
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
 
-    names = [path.name for path in (tmp_path / "doc" / "adr").glob("*.md")]
+    names = [path.name for path in (tmp_path / "doc" / "adr").glob("*.md") if path.name != "INDEX.md"]
     assert len(names) == 1 and names[0].startswith("ADR0001V01R01-")
