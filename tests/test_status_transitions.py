@@ -1365,3 +1365,20 @@ def test_undo_on_a_migrated_decision_reports_the_placeholder_it_returns_to(tmp_p
     assert result["status"] is None
     text = repo.paths[0].read_text(encoding="utf-8")
     assert "|Created||" in text and "|Changed||" in text
+
+
+
+def test_a_write_rewrites_the_fields_row_in_the_current_form(tmp_path):
+    """Every write rebuilds the header: a fields row with more than the
+    label in its first cell comes back as the label alone."""
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(1)])
+    path = repo.paths[0]
+    lines = path.read_text(encoding="utf-8").split("\n")
+    lines[1] = "|Legacy Fields|Values|"
+    path.write_bytes("\n".join(lines).encode("utf-8"))
+
+    approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    assert path.read_text(encoding="utf-8").splitlines()[1] == "|Fields|Values|"

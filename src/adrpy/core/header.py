@@ -1,7 +1,8 @@
-"""Decision-file header: the 12-line format adrpy shares with AdrPlus
-1.0.0. The header is always exactly 12 lines, addressed
-positionally -- the row *label* text is never inspected on read, only its
-position and the surrounding pipe characters.
+"""Decision-file header: always exactly 12 lines, addressed positionally.
+A row's label text is never inspected on read, only its position and the
+surrounding pipe characters -- except the fields row (line 2), whose first
+cell must hold the configured `headertablefields`: it is what tells this
+header apart from any other table.
 """
 
 import re
@@ -114,7 +115,7 @@ def build_header(config, record, migrated=False):
 
     lines = [
         disclaimer,
-        f"|Adr-Plus {config.headertablefields}|{values_label}{migrated_marker}|",
+        f"|{config.headertablefields}|{values_label}{migrated_marker}|",
         "|--|--|",
         f"|{config.headertitlefile}|{record.title}|",
         (
@@ -202,7 +203,7 @@ def parse_header(lines, config):
         return result
     result.disclaimer = lines[0].replace("<!-- ", "").replace(" -->", "").strip()
 
-    if not lines[1].startswith("|Adr-Plus "):
+    if not _is_fields_row(lines[1], config):
         result.error = FailureCodes.ADR_HEADER_INVALID_FORMAT
         return result
     if lines[1].rstrip().endswith(" -->|") and "<!-- " in lines[1]:
@@ -408,18 +409,28 @@ def describe_header_error(header):
     return header.error
 
 
-def has_header_shape(lines):
+def _is_fields_row(line, config):
+    """Whether `line` is the header's fields row: a table row whose first
+    cell holds the configured label (a header written with more around it
+    in that cell is still read; every write puts the label alone)."""
+    cells = line.split("|")
+    return line.startswith("|") and len(cells) > 2 and config.headertablefields in cells[1]
+
+
+def has_header_shape(lines, config):
     """True when any of the first HEADER_LINE_COUNT lines carries a row
-    only this tool's header writes (`|Adr-Plus ` field row, or exactly
-    the `|--|--|` separator). Tells a damaged header apart from no header at all --
+    only this tool's header writes (the fields row exactly as written,
+    `|{headertablefields}|` -- a hand-written table has spaces around its
+    cells -- or exactly the `|--|--|` separator). Tells a damaged header
+    apart from no header at all --
     looking past the first two lines, so a line inserted or deleted at
-    the top doesn't hide it. Both markers are plain ASCII, so a lossy
-    decode never removes them. A NUL byte also counts: it means the file
+    the top doesn't hide it. A NUL byte also counts: it means the file
     was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
     which splits the markers apart -- a damaged header, not a missing one
     (decided by the project owner)."""
     return any(
-        "|Adr-Plus " in line or line.rstrip() == "|--|--|" or "\x00" in line for line in lines[:HEADER_LINE_COUNT]
+        line.startswith(f"|{config.headertablefields}|") or line.rstrip() == "|--|--|" or "\x00" in line
+        for line in lines[:HEADER_LINE_COUNT]
     )
 
 

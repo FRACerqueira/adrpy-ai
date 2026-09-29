@@ -745,7 +745,7 @@ def test_a_legacy_file_with_an_ordinary_markdown_table_is_still_migrated(tmp_pat
     result = migrate.run(["--path", str(tmp_path)])
 
     assert result["migrated"] == [str(legacy)]
-    assert legacy.read_text(encoding="utf-8").count("|Adr-Plus ") == 1
+    assert legacy.read_text(encoding="utf-8").count("|Fields|") == 1
 
 
 def test_an_interrupt_mid_run_reports_the_files_already_migrated(tmp_path, monkeypatch):
@@ -823,7 +823,7 @@ def test_a_damaged_tool_header_is_recognized_past_line_two_and_by_its_separator(
     if damage == "lines-above":
         lines = ["", "notes", "more notes"] + lines
     else:
-        lines = [line.replace("|Adr-Plus Fields|", "|Fields|") for line in lines]
+        lines = [line.replace("|Fields|", "|Name|") for line in lines]
     damaged = tmp_path / "doc" / "adr" / "0002Second.md"
     damaged.write_bytes(("\n".join(lines) + "# body\n").encode("utf-8"))
 
@@ -1115,3 +1115,16 @@ def test_migrate_reports_a_legacy_name_too_long_to_rewrite_and_migrates_the_rest
     assert results[long.name]["status"] == "failed"
     assert "rename" in results[long.name]["error"]
     assert long.read_bytes() == b"# Long\n"
+
+
+def test_a_legacy_table_whose_first_cell_names_the_label_is_still_migrated(tmp_path):
+    """Adversarial positive control: a hand-written table whose first
+    header cell holds the fields label ("| Fields | ... |") is not this
+    tool's header -- only the row as the tool writes it, `|Fields|`, marks
+    a damaged one."""
+    tmp_path = _init_repo_with_pattern(tmp_path)
+    legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n\n| Fields | Description |\n|---|---|\n| a | b |\n")
+
+    result = migrate.run(["--path", str(tmp_path)])
+
+    assert result["migrated"] == [str(legacy)]

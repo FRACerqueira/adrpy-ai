@@ -510,7 +510,7 @@ def test_explore_header_state_of_every_kind_of_file(tmp_path):
         tmp_path,
         files=[
             D(1),
-            D(2, content="|Adr-Plus | broken\n# body\n"),
+            D(2, content="|Fields| broken\n# body\n"),
             D(3, content="# just a body\n"),
             D(4, content="<<<<<<< ours\n# body\n"),
         ],

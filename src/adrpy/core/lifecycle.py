@@ -105,7 +105,8 @@ def validate_refdate_not_before(refdate, not_before):
 # current-scheme file can never be reclassified legacy by a
 # migrationpattern change. `prefix` is blanket for the same reason as
 # separator: every current-scheme name starts with it.
-_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator", "prefix")
+# headertablefields too: the header's fields row is recognized by it.
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator", "prefix", "headertablefields")
 # The naming fields whose change alone can make an unrecognized file
 # parse as a decision, each with its own refusal code.
 _ADOPTION_CODES = {

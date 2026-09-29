@@ -225,7 +225,7 @@ def _is_unheadered(lines, config):
     return (
         not _has_conflict_markers(lines)
         and not parse_header(lines, config).is_valid
-        and not has_header_shape(lines)
+        and not has_header_shape(lines, config)
     )
 
 
@@ -407,7 +407,7 @@ def _read_decisions(names, config, errors):
             header = parse_header(lines, config)
             state = None
             if not header.is_valid:
-                if has_header_shape(lines):
+                if has_header_shape(lines, config):
                     errors.append(_error(FailureCodes.INVALID_HEADER, path, detail=describe_header_error(header)))
                 else:
                     detail, hint = None, _NON_EMPTY_NO_HEADER_HINT

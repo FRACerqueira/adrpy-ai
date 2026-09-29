@@ -215,7 +215,7 @@ def _build_entry(path, config, not_a_decision=False):
     header_lines, encoding_repaired = read_header_lines_with_report(path)
     header = parse_header(header_lines, config)
     # "adulterated": this tool's header, damaged; "no-header": none.
-    header_state = "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines) else "no-header")
+    header_state = "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines, config) else "no-header")
     return _entry(path, scheme, parsed, header, header_state, encoding_repaired)
 
 

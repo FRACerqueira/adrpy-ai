@@ -1340,3 +1340,23 @@ def test_a_folder_that_cannot_be_created_leaves_none_of_its_new_parents(tmp_path
         config.run(["--path", str(tmp_path), "--folderadr", "zz/a/b"])
 
     assert not (tmp_path / "zz").exists()
+
+
+
+def test_a_header_label_change_is_blocked_by_existing_decisions(tmp_path):
+    """The fields row is recognized by the configured label: changing it
+    with decisions in place would make every header unreadable."""
+    tmp_path = _init_repo(tmp_path)
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path), "--headertablefields", "Campos"])
+
+    assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
+    assert excinfo.value.data["changed_fields"] == ["headertablefields"]
+
+
+def test_a_header_label_change_is_allowed_before_any_decision(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+    config.run(["--path", str(tmp_path), "--headertablefields", "Campos"])
+    assert "Campos" in (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")

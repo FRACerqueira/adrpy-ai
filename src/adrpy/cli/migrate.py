@@ -132,7 +132,7 @@ def _existing_headers(scan, config):
         except OSError:
             continue
         header = parse_header(lines, config)
-        if not header.is_valid and has_header_shape(lines):
+        if not header.is_valid and has_header_shape(lines, config):
             damaged.append(str(candidate))
         elif header.is_valid and not header.is_migrated:
             not_written_by_migrate.append(str(candidate))
@@ -142,7 +142,7 @@ def _existing_headers(scan, config):
 def _refuse_damaged_headers(files, warnings):
     raise CommandError(
         FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
-        f"{len(files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
+        f"{len(files)} file(s) look like they carry this tool's header (its fields row or "
         f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
         f"byte there, e.g. UTF-16), and no header parses: "
         f"{', '.join(files)}. Repair or remove them by hand, then run migrate again.",
@@ -197,7 +197,7 @@ def describe():
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (its fields row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",
@@ -391,7 +391,7 @@ def run(args):
                     (empty_legacy_files if scheme == "legacy" else empty_files).append(candidate)
                     continue
                 header = parse_header(lines, config)
-                if not header.is_valid and has_header_shape(lines):
+                if not header.is_valid and has_header_shape(lines, config):
                     adulterated_files.append(str(candidate))
                 entries.append((parsed, candidate, header))
 

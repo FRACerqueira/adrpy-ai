@@ -60,7 +60,7 @@ def test_build_header_matches_real_adrplus_output():
 
     expected_lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
-        "|Adr-Plus Fields|Values|",
+        "|Fields|Values|",
         "|--|--|",
         "|File title md|Fixture parity check|",
         "|Version|01|",
@@ -94,7 +94,7 @@ def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
 
     header = build_header(config, record)
 
-    assert header.split(os.linesep)[1] == "|Adr-Plus Fields|Values|"
+    assert header.split(os.linesep)[1] == "|Fields|Values|"
 
 
 def test_build_then_parse_round_trips_the_record():
@@ -375,7 +375,7 @@ def test_a_damaged_migrated_header_is_marked_migrated_but_not_valid():
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
-        "|Adr-Plus Fields|Values Migrated <!-- Migrated -->|",
+        "|Fields|Values Migrated <!-- Migrated -->|",
         "|--|--|",
         "|File title md|Legacy decision|",
         "not a valid version row",
@@ -545,3 +545,43 @@ def test_a_header_row_without_an_extra_cell_still_parses():
     result = parse_header(lines, config)
 
     assert result.is_valid and result.scope == "core"
+
+
+
+def test_the_fields_row_is_the_configured_label():
+    config = load_repo_config(FIXTURE_PATH)
+    assert _valid_header_lines(config)[1] == f"|{config.headertablefields}|{config.headertablevalues}|"
+
+
+@pytest.mark.parametrize("row", ["|Fields|Values|", "|Legacy Fields|Values|", "|Fields |Values|"])
+def test_a_fields_row_is_valid_when_its_first_cell_holds_the_label(row):
+    """A header written before the row held the label alone is still
+    read: the first cell only has to contain it."""
+    config = load_repo_config(FIXTURE_PATH)
+    assert parse_header(_replaced(_valid_header_lines(config), 1, row), config).is_valid
+
+
+@pytest.mark.parametrize("row", ["|Name|Value|", "Fields|Values|", "|Values|Fields|", "|Fields"])
+def test_a_fields_row_without_the_label_in_its_first_cell_is_invalid(row):
+    config = load_repo_config(FIXTURE_PATH)
+    parsed = parse_header(_replaced(_valid_header_lines(config), 1, row), config)
+    assert parsed.error == "adr-header-invalid-format"
+
+
+def test_the_fields_row_follows_the_repository_label():
+    config = dataclasses.replace(load_repo_config(FIXTURE_PATH), headertablefields="Campos", headertablevalues="Valores")
+    lines = _valid_header_lines(config)
+    assert lines[1] == "|Campos|Valores|"
+    assert parse_header(_replaced(lines, 1, "|Antigo Campos|Valores|"), config).is_valid
+    assert not parse_header(_replaced(lines, 1, "|Fields|Values|"), config).is_valid
+
+
+def test_a_damaged_header_is_told_apart_by_its_fields_row_alone():
+    """has_header_shape tells a damaged header from none: the fields row
+    alone is enough, and an ordinary markdown table is not a header."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _replaced(_valid_header_lines(config), 2, "|-|-|")
+    assert has_header_shape(lines, config)
+    assert not has_header_shape(["# Notes", "| Name | Value |", "|---|---|", "text"] + [""] * 8, config)
