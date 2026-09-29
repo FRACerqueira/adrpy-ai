@@ -31,7 +31,7 @@ def test_build_header_writes_the_twelve_line_header_byte_for_byte():
     alone, the Values label carries no "Migrated" word on a file that was
     not migrated (decision-log:
     2026-09-16--scope-note--header--migrated-word-only-when-migrated.md),
-    and every status cell ends with its hidden canonical marker (ADR004V01),
+    and every status cell ends with its hidden canonical marker (ADR0004V01),
     after the date's closing `)`, where the parser ignores trailing text.
     """
     config = load_repo_config(FIXTURE_PATH)
@@ -109,7 +109,7 @@ def test_build_then_parse_round_trips_the_record():
 
 
 def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
-    """ADR004V01's own core promise, exercised directly against
+    """ADR0004V01's own core promise, exercised directly against
     build_header/parse_header -- deliberately NOT going through the
     `config` command (which the new existing-decisions guard would
     correctly refuse once a decision exists, exactly the scenario this
@@ -149,7 +149,7 @@ def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
 
 
 def test_status_falls_back_to_label_text_when_no_marker_is_present():
-    """The pre-ADR004V01 file shape (any file written by an older version
+    """The pre-ADR0004V01 file shape (any file written by an older version
     of this tool, or by hand) has
     none -- must still resolve via the original label-text match, the
     same as before this feature existed."""
@@ -169,7 +169,7 @@ def test_status_falls_back_to_label_text_when_no_marker_is_present():
 def test_marker_wins_over_a_hand_edited_disagreeing_label_and_reports_the_mismatch():
     """A marker-carrying file whose VISIBLE word was hand-edited afterward
     (label now resolves to a different, but still valid, status than the
-    marker) -- the marker remains authoritative (ADR004V01's whole point:
+    marker) -- the marker remains authoritative (ADR0004V01's whole point:
     recognition never depends on the label once a marker exists), but
     this disagreement is real and reported, unlike the routine stale-
     label case above."""
@@ -328,10 +328,10 @@ def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
 
 
 def test_marker_matches_case_insensitively():
-    """ADR004V02: a hand-edited marker with different case (e.g. someone
+    """ADR0004V02: a hand-edited marker with different case (e.g. someone
     retyped it) must still resolve via the marker, not silently fall
     back to label-text matching with zero signal -- confirmed as a real
-    gap during the ADR004V01 audit. The label is deliberately corrupted
+    gap during the ADR0004V01 audit. The label is deliberately corrupted
     to something no configured status matches, so `status_create` can
     ONLY come from a successful case-insensitive marker match --
     without this, the label's own unrelated match against the current
@@ -356,8 +356,7 @@ def test_a_damaged_migrated_header_is_marked_migrated_but_not_valid():
     """`is_migrated` is set from row 2 alone, before the rest of the header
     is parsed, and survives an early return caused by a later row failing
     to parse. Such a header no longer counts as a family member (Round 39:
-    status is read only from headers that parse); the reference tool
-    counted it."""
+    status is read only from headers that parse)."""
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",

@@ -286,7 +286,7 @@ def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path,
     Without the fix, a transient blip here permanently misclassifies the
     candidate as "failed" instead of retrying transparently like its
     sibling read already would -- in a one-time, largely irreversible
-    operation. ADR006V01: the write-phase read is now a stream opened via
+    operation. ADR0006V01: the write-phase read is now a stream opened via
     Path.open, sharing atomic_write_chunks' own single retry loop with
     the destination write -- each retried ATTEMPT re-opens the source
     fresh, so this still recovers from a transient PermissionError on the
@@ -313,7 +313,7 @@ def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path,
 
 
 def test_migrate_write_does_not_read_the_whole_candidate_into_memory(tmp_path):
-    """ADR006V01: without streaming, migrate's write phase would read
+    """ADR0006V01: without streaming, migrate's write phase would read
     the WHOLE candidate file into memory (`candidate_path.read_bytes()`)
     before concatenating a header onto it and writing the result -- a
     150MB candidate would measure a ~300MB peak-memory read. The header is already
@@ -350,7 +350,7 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
     text = legacy_path.read_text(encoding="utf-8")
     assert "<!-- Migrated -->" in text
     assert "|File title md|UsePostgreSQL|" in text
-    assert "|Created||" in text  # StatusCreate stays Unknown, per the reference tool
+    assert "|Created||" in text  # a migrated decision has no creation status
     assert "# Use PostgreSQL\n\n## Context\n\nWe need a database.\n" in text
     # No test pinned the exact
     # empty-list value on a genuine happy path, only that the key exists.
@@ -360,7 +360,7 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
 def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
-    migrate.py calls atomic_write_CHUNKS (ADR006V01), not atomic_write_text."""
+    migrate.py calls atomic_write_CHUNKS (ADR0006V01), not atomic_write_text."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001UsePostgreSQL.md", "# Use PostgreSQL\n")
     real_commit_write = migrate.commit_write
@@ -377,9 +377,7 @@ def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
-    """Regression, confirmed against a real run of the reference tool's
-    own `migrate` command: the
-    original body's own line endings (here, bare LF, unlike the header's
+    """Regression: the original body's own line endings (here, bare LF, unlike the header's
     host os.linesep) must pass through completely untouched -- only the
     header is new text. This is what caught the bug: an early version
     routed the concatenated content through atomic_write_text's newline
@@ -396,11 +394,9 @@ def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
 
 
 def test_migrate_strips_a_leading_utf8_bom(tmp_path):
-    """Confirmed against the reference tool's own live behavior: it discards a
-    leading UTF-8 BOM when reading the legacy file, so the migrated result
-    never has one; this port preserved the raw bytes including the BOM, which
-    landed it in the MIDDLE of the file (after the new header, before the
-    body) instead of not existing at all."""
+    """A leading UTF-8 BOM of the legacy file is dropped, so the migrated
+    result never has one: kept as raw bytes, it landed in the MIDDLE of the
+    file (after the new header, before the body)."""
     tmp_path = _init_repo_with_pattern(tmp_path)
     body_without_bom = "# BOM file\n"
     legacy_path = _write_legacy_file(tmp_path, "0001WithBom.md", body_without_bom)
@@ -436,7 +432,7 @@ def test_migrate_rejects_when_pattern_not_configured(tmp_path):
 
 
 def test_migrate_rejects_when_install_level_config_exists_but_its_own_pattern_is_empty(tmp_path, monkeypatch):
-    """ADR002V01 part 3's own stated precondition: "if migrationpattern
+    """ADR0002V01 part 3's own stated precondition: "if migrationpattern
     is empty in BOTH places" -- distinct from the install-level config
     not existing at all (test_migrate_rejects_when_pattern_not_configured
     only exercises the latter, via conftest.py's default)."""

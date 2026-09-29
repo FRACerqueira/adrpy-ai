@@ -33,7 +33,7 @@ def test_every_path_based_command_documents_target_directory_not_found():
 
 
 def test_every_failure_code_is_documented_somewhere():
-    """ADR008V01: the actual payoff ADR005V01 named as its own Positive
+    """ADR0008V01: the actual payoff ADR0005V01 named as its own Positive
     Consequence -- a single, grep-able registry makes 'every code is
     documented' a property this test can check mechanically, instead of
     a claim that has to be re-audited by hand every few months. Checks
@@ -84,7 +84,7 @@ def test_every_failure_codes_entry_has_a_non_empty_condition():
 
 
 def test_field_is_blank_is_only_claimed_by_commands_that_can_actually_reach_it():
-    """ADR008V01 verification round: field-is-blank was over-claimed by
+    """ADR0008V01 verification round: field-is-blank was over-claimed by
     approve/reject/undo/revise/migrate -- each of them only ever calls
     reject_embedded_delimiter on a value already `.strip()`-ed upstream
     (header.title/scope/domain via core/header.py's own _extract_cell;
@@ -104,7 +104,7 @@ def test_field_is_blank_is_only_claimed_by_commands_that_can_actually_reach_it()
 
 
 def test_installconfig_documents_io_error():
-    """ADR008V01 verification round: installconfig.py's own 3
+    """ADR0008V01 verification round: installconfig.py's own 3
     atomic_write_text call sites are never wrapped in attach_warnings (or
     any other OSError-catching mechanism, unlike every other write
     command) -- a raw OSError (e.g. a PermissionError exhausting
@@ -574,7 +574,7 @@ def test_keyboard_interrupt_still_emits_json_on_stdout(capsys, monkeypatch):
 
 
 def test_an_adrpy_failure_carries_its_detail_on_stdout_and_the_same_text_on_stderr(tmp_path, capsys):
-    # ADR010V01, on adrpy's own entry point.
+    # ADR0010V01, on adrpy's own entry point.
     from adrpy.__main__ import main as adrpy_main
 
     adrpy_main(["frobnicate"])

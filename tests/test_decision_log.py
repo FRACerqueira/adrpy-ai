@@ -23,7 +23,7 @@ import pytest
 
 
 def test_decision_log_dir_for_resolves_configs_own_folderlog(tmp_path):
-    """ADR007V01: resolved from config.folderlog (independently
+    """ADR0007V01: resolved from config.folderlog (independently
     configurable), via resolve_within -- no longer derived from
     folderadr's own path at all."""
     from types import SimpleNamespace
@@ -81,7 +81,7 @@ def test_build_filename_matches_this_projects_own_date_first_convention():
     decision-log skill's classification-first convention -- confirmed
     against scripts/generate_decision_log_index.py's own parsing and
     every real entry in doc/decision-log/ (caught as a factual error in
-    ADR003V01's first draft, fixed before implementation started)."""
+    ADR0003V01's first draft, fixed before implementation started)."""
     from datetime import date
 
     filename = build_filename(date(2026, 9, 18), "audit-finding", "lock", "some-bug")
@@ -126,7 +126,7 @@ def test_next_round_is_1_when_no_entry_carries_a_round(tmp_path):
 
 
 def test_next_round_is_the_max_existing_round_plus_one_across_scopes(tmp_path):
-    """Round is project-wide, never per-scope (ADR003V01/the decision-log
+    """Round is project-wide, never per-scope (ADR0003V01/the decision-log
     skill's own definition) -- two entries under DIFFERENT scopes still
     share the same increasing sequence."""
     log_dir = tmp_path / "decision-log"
@@ -166,7 +166,7 @@ def test_regenerate_index_content_matches_build_entry_contents_own_structured_li
 
 
 def test_regenerate_index_and_max_existing_round_are_recursive(tmp_path):
-    """ADR007V01: folderlog's own scan is now recursive (rglob, matching
+    """ADR0007V01: folderlog's own scan is now recursive (rglob, matching
     folderadr's own convention) -- an entry placed in a subfolder (e.g. a
     human organizing past entries by year) must still be picked up, not
     silently invisible to round allocation/INDEX.md the way it would

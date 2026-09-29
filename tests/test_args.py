@@ -26,9 +26,8 @@ def test_flag_missing_value_is_usage_error():
 
 
 def test_short_flag_alias_is_equivalent_to_the_long_flag():
-    """The reference tool documents a short alias for every argument on every
-    command (-p/--path, -t/--title, ...); this port only ever accepted
-    the long form."""
+    """Every argument of every command has a short alias (-p/--path,
+    -t/--title, ...), equivalent to the long form."""
     values = parse_flags(
         ["-p", "/repo", "-t", "Hello"],
         required=("path", "title"),
@@ -55,12 +54,10 @@ def test_unknown_short_flag_is_usage_error():
 
 
 def test_flag_with_empty_string_value_is_usage_error():
-    """Confirmed against the reference tool's own live behavior: `new --title
-    ""` refuses with "Missing value for argument", the same class of
-    failure as omitting the flag entirely. This port accepted an empty
-    string as a real value, which for --domain/--scope on `version` even
-    let an omitted-vs-explicitly-cleared distinction do something the
-    reference tool has no way to express (erasing an inherited value)."""
+    """`new --title ""` refuses with "Missing value for argument", the same
+    class of failure as omitting the flag entirely. An empty string once
+    passed as a real value, and for --domain/--scope on `version` even
+    erased an inherited value."""
     with pytest.raises(UsageError):
         parse_flags(["--title", ""], required=("title",))
 

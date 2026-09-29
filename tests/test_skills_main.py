@@ -307,7 +307,7 @@ class TestCliErgonomics:
 
 
 class TestFailureDetailOnStdout:
-    """ADR010V01: a failure's human-readable explanation is in the stdout
+    """ADR0010V01: a failure's human-readable explanation is in the stdout
     JSON as `detail`, and stderr keeps the same text as a copy."""
 
     def test_a_usage_error_carries_its_detail_on_stdout_and_the_same_text_on_stderr(self, tmp_path, capsys):

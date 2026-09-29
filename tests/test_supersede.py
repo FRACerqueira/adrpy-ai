@@ -154,8 +154,7 @@ def test_supersede_happy_path(tmp_path):
 
     successor_text = successor_path.read_text(encoding="utf-8")
     # Title comes from the predecessor's FILENAME segment (already
-    # case-transformed), not its header's prose title -- confirmed
-    # against the reference tool's own live `supersede` run.
+    # case-transformed), not its header's prose title.
     assert "|File title md|use-postgre-sql|" in successor_text
     assert "|Domain|Backend|" in successor_text  # scope/domain inherited
     assert "|Scope|Data|" in successor_text

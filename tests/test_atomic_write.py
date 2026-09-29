@@ -143,7 +143,7 @@ def test_atomic_write_bytes_cleans_up_orphan_on_a_non_oserror_mid_write(tmp_path
 
 
 def test_atomic_write_chunks_cleans_up_orphan_when_the_chunk_producer_raises_a_non_oserror(tmp_path):
-    """ADR006V01's chunk producer can raise something other than an
+    """ADR0006V01's chunk producer can raise something other than an
     OSError from inside the generator -- it never hits the `except
     OSError` cleanup branch. Any exception escaping the chunk producer,
     not just OSError, must still leave no orphan behind."""
@@ -364,13 +364,12 @@ def test_normalize_then_write_never_doubles_a_cr(tmp_path):
     ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
 )
 def test_normalize_newlines_does_not_treat_unicode_separators_as_line_breaks(separator):
-    """Confirmed live against the reference tool's own .NET runtime (approve
-    on a body containing each of these mid-line): none is treated as a
-    line break there -- the body survives byte-for-byte, same line count
-    before and after. Only str.splitlines()'s much broader definition of
+    """A body containing each of these mid-line must survive approve
+    byte-for-byte, same line count before and after: none is a line break
+    to a reader of the file. Only str.splitlines()'s much broader definition of
     "line boundary" treats these as breaks -- a genuine behavioral gap,
     not a deliberate choice (unlike invalid-UTF-8-byte replacement on
-    rewrite, separately confirmed live to match the reference tool exactly)."""
+    rewrite)."""
     text = f"before{separator}after"
     assert normalize_newlines(text) == text
 

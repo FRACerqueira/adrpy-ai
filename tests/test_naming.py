@@ -282,7 +282,7 @@ def test_build_filename_rejects_a_title_that_collides_with_a_dot_separator(tmp_p
     """Confirmed live: with separator='.', a title starting with (or consisting
     only of) a '.' survives to_case almost verbatim under every
     casetransform (the word-splitter only consumes whitespace/'_'/'-',
-    never '.'), producing a filename like 'ADR001V01..x.md' --
+    never '.'), producing a filename like 'ADR0001V01..x.md' --
     naming.parse_filename's own double-separator supersede-suffix split
     treats the leading '..' as that suffix marker, and the remainder
     isn't all-digits, so the file build_filename just wrote can never be

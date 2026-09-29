@@ -341,8 +341,8 @@ def test_new_end_to_end_through_main(tmp_path):
 
 
 def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """The reference tool's -p/-t/-d/-s/-r; end-to-end
-    through main(), not just parse_flags in isolation."""
+    """-p/-t/-d/-s/-r, end-to-end through main(), not just parse_flags in
+    isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 

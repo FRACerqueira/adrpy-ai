@@ -83,7 +83,7 @@ def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
 
 
 def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
-    """ADR004V01: end-to-end through a real write command (approve is
+    """ADR0004V01: end-to-end through a real write command (approve is
     representative of all 6 -- read_target's own warning is shared code),
     not just core/header.py's own unit test for this scenario. A hand-
     edited visible label that disagrees with the hidden marker must
@@ -200,7 +200,7 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
     encoding-repair warning, and new.py's happy path, were ever checked
     for warnings content at all). approve/reject/undo write through
     core.lifecycle.rewrite_status_field, which calls atomic_write_chunks
-    (ADR006V01) from ITS OWN module namespace -- patching approve.py's own
+    (ADR0006V01) from ITS OWN module namespace -- patching approve.py's own
     (absent) reference would silently no-op."""
     from adrpy.core import lifecycle
 
@@ -486,9 +486,8 @@ def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
     """A body containing
     a Unicode line-separator character that is NOT a real line terminator
     (form feed, NEL, LINE SEPARATOR, ...) must survive a status rewrite
-    byte-for-byte. Confirmed live against the reference tool: none of these
-    is treated as a line break there, so the body's line count and content
-    are unchanged by `approve`."""
+    byte-for-byte: none of these is a line break, so the body's line count
+    and content are unchanged by `approve`."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     exotic_body = "Body line one.\x0cAfter form-feed.\nNEL here:After NEL.\nLS here: After LS.\n"
     with open(adr_path, "a", encoding="utf-8", newline="") as handle:
@@ -504,14 +503,12 @@ def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
     assert text_after.count("\n") == body_lines_before
 
 
-def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_path):
-    """Not a bug: confirmed live against the reference tool (approve on a
-    body containing raw invalid UTF-8 bytes) that it ALSO replaces them
-    with U+FFFD on rewrite, byte-for-byte identical to this port. Recorded
-    as a permanent test so this doesn't get re-investigated as a suspected
-    data-loss bug -- tolerating invalid bytes on read Was already
-    confirmed fidelity; this confirms the read-then-rewrite round trip is
-    too, not an extra liberty this port took on its own."""
+def test_approve_replaces_invalid_utf8_bytes_in_body_with_the_replacement_character(tmp_path):
+    """Not a bug: approve on a body containing raw invalid UTF-8 bytes
+    replaces them with U+FFFD on rewrite, with a warning. Recorded as a
+    permanent test so this doesn't get re-investigated as a suspected
+    data-loss bug: the read tolerates the bytes, and the rewrite replaces
+    them, on purpose."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     with open(adr_path, "ab") as handle:
         handle.write(b"\r\nInvalid UTF-8 marker: \xa4\xe9\xe8 end.\r\n")
@@ -991,8 +988,8 @@ def test_status_transitions_end_to_end_through_main(tmp_path):
 
 
 def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """The reference tool's -f/-r; end-to-end through
-    main(), not just parse_flags in isolation."""
+    """-f/-r, end-to-end through main(), not just parse_flags in
+    isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 

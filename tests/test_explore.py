@@ -140,8 +140,8 @@ def test_explore_reports_encoding_repair_for_a_file_with_invalid_utf8_bytes(tmp_
 
 
 def test_explore_exposes_scope_and_domain(tmp_path):
-    """The reference tool's own report has Scope/Domain columns; this port's
-    JSON dropped both entirely."""
+    """Every decision's entry carries its scope and domain: the JSON once
+    dropped both entirely."""
     config_dict = _default_config_dict()
     _write_repo(
         tmp_path,
@@ -188,7 +188,7 @@ def test_explore_reports_no_marker_label_mismatch_for_an_ordinary_decision(tmp_p
 
 
 def test_explore_reports_a_marker_label_mismatch(tmp_path):
-    """ADR004V01: end-to-end through `explore`, not just core/header.py's
+    """ADR0004V01: end-to-end through `explore`, not just core/header.py's
     own unit tests -- a hand-edited visible label that now disagrees with
     the hidden marker must be visible in this report, per-file, since
     explore lists every decision rather than acting on one specific
@@ -442,8 +442,7 @@ def test_explore_end_to_end_through_main(tmp_path):
 
 
 def test_explore_accepts_short_flag_end_to_end_through_main(tmp_path):
-    """The reference tool's -p; end-to-end through main(), not just
-    parse_flags in isolation."""
+    """-p, end-to-end through main(), not just parse_flags in isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 

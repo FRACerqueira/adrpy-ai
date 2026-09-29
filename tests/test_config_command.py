@@ -197,9 +197,9 @@ def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tm
     """Confirmed live: pointing folderadr at
     a directory that already has an unrelated file matching the naming
     scheme silently adopted it as a decision, corrupting the next `new`
-    call's own number allocation (ADR008V01 instead of ADR001V01 in the
+    call's own number allocation (ADR0008V01 instead of ADR0001V01 in the
     live reproduction). Same shape guard as --separator's own
-    adoption-check (ADR004V02)."""
+    adoption-check (ADR0004V02)."""
     tmp_path = _init_repo(tmp_path)
     new_folder = tmp_path / "unrelated-docs"
     new_folder.mkdir(parents=True)
@@ -244,7 +244,7 @@ def test_config_folderlog_change_fails_closed_when_a_subdirectory_is_unreadable(
 
 
 def test_config_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
-    """ADR007V01: the folderlog counterpart to
+    """ADR0007V01: the folderlog counterpart to
     test_config_rejects_a_folderadr_change_when_decisions_already_exist
     above -- an existing decision-log entry would become invisible at
     its old, still-real path."""
@@ -351,7 +351,7 @@ def test_config_allows_a_folderadr_change_onto_a_directory_with_no_matching_cont
 
 
 def test_config_rejects_a_status_label_change_when_decisions_already_exist(tmp_path):
-    """ADR004V01: a status label change on a repository that already has
+    """ADR0004V01: a status label change on a repository that already has
     recognized decisions can break a marker-less status cell's text
     match -- same shape guard as folderadr's own, confirmed live before
     this existed (changing --statusnew made an existing decision
@@ -370,7 +370,7 @@ def test_config_rejects_a_status_label_change_when_decisions_already_exist(tmp_p
 
 
 def test_config_rejects_a_separator_change_when_decisions_already_exist(tmp_path):
-    """ADR004V01: a separator change on a repository that already has
+    """ADR0004V01: a separator change on a repository that already has
     recognized decisions breaks filename recognition entirely, with no
     marker option available for it at all (unlike status labels) -- this
     guard is `separator`'s only protection, permanently, once any
@@ -401,7 +401,7 @@ def test_config_rejects_multiple_guarded_fields_changed_at_once_naming_all_of_th
 
 
 def test_config_rejects_separator_and_migrationpattern_together_on_a_mixed_scheme_repo(tmp_path):
-    """ADR004V02: the guard's blanket check (separator, among others) and
+    """ADR0004V02: the guard's blanket check (separator, among others) and
     its legacy-scoped check (migrationpattern) must be evaluated
     independently, not short-circuited against each other -- mutating
     the two checks into an if/elif chain (so the legacy check is
@@ -484,10 +484,10 @@ def test_config_migrationpattern_only_block_counts_only_legacy_scheme_decisions(
 
 
 def test_config_allows_a_migrationpattern_change_when_only_current_scheme_decisions_exist(tmp_path):
-    """ADR004V02: migrationpattern is only ever read by naming.py's
+    """ADR0004V02: migrationpattern is only ever read by naming.py's
     parse_legacy_filename -- a repository with only current-scheme
     decisions has nothing that a migrationpattern change could break.
-    This was ADR004V01's own gap: a blanket guard would have refused
+    This was ADR0004V01's own gap: a blanket guard would have refused
     this harmless change for no reason (confirmed via mutation testing)."""
     tmp_path = _init_repo(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "First decision"])
@@ -545,7 +545,7 @@ def test_config_refuses_to_clear_migrationpattern_while_a_legacy_decision_exists
 
 
 def test_config_rejects_a_separator_change_when_only_legacy_scheme_decisions_exist(tmp_path):
-    """ADR004V02 (corrected): separator is only ever READ by naming.py's
+    """ADR0004V02 (corrected): separator is only ever READ by naming.py's
     parse_filename (the current scheme), but that is not enough to scope
     the guard to current-scheme decisions only -- parse_any_filename
     tries the current scheme FIRST, so a separator value that happens to
@@ -693,7 +693,7 @@ def test_config_migrationpattern_change_still_intentionally_adopts_legacy_files(
     """The new adoption guard is deliberately scoped to `separator`
     only -- migrationpattern recognizing a previously-unrecognized
     legacy file is that field's own documented, intentional purpose
-    (ADR002V01), not the bug this guard exists to close. A
+    (ADR0002V01), not the bug this guard exists to close. A
     migrationpattern change that newly recognizes an existing
     hand-written file (with no other guarded field changing, and no
     already-recognized decision at risk) must still succeed."""
@@ -846,7 +846,7 @@ def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_pa
     root and every subsequent write would land next to
     .adrpy.json itself.
 
-    ADR007V01: '.' now fails EARLIER and via a different, also-correct
+    ADR0007V01: '.' now fails EARLIER and via a different, also-correct
     code -- folderadr='.' has zero path components, which is a prefix of
     ANY folderlog value by construction, so the schema-level
     folderadr/folderlog containment guard (config-folderadr-folderlog-

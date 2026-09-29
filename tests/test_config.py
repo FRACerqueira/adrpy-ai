@@ -189,7 +189,7 @@ def test_relative_folderadr_is_accepted(folderadr):
 
 
 def test_folderlog_defaults_to_folderadrs_own_sibling_when_omitted():
-    """ADR007V01: the concrete proof of the backward-compatibility
+    """ADR0007V01: the concrete proof of the backward-compatibility
     promise -- an .adrpy.json written before folderlog existed
     (no key at all, exactly what _valid_config_dict/the shared test
     fixture already look like) must keep parsing unchanged, with
@@ -250,7 +250,7 @@ def test_absolute_folderlog_is_rejected(folderlog):
     ],
 )
 def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
-    """ADR007V01's containment guard -- both directories are
+    """ADR0007V01's containment guard -- both directories are
     independently configurable and each recursively scanned, so either
     one nesting inside (or equaling) the other would make each scan see
     the other's files."""
@@ -346,7 +346,7 @@ def test_template_at_exactly_the_limit_is_accepted():
     ],
 )
 def test_every_too_long_field_raises_its_own_matching_code(field, too_long_length):
-    """ADR005V01: these 15 codes used to be built as f"config-{name}-too-long"
+    """ADR0005V01: these 15 codes used to be built as f"config-{name}-too-long"
     at raise time; now looked up from core.config's _TOO_LONG_CODES mapping
     instead. Covers all 15 (11 header-label fields + 4 status-label fields),
     the concrete regression guard for the lookup-mapping migration itself
@@ -570,8 +570,7 @@ def test_field_names_are_case_insensitive():
     ],
 )
 def test_invalid_migrationpattern_is_rejected(pattern):
-    """Confirmed against the reference tool's own long-standing validation:
-    a malformed migrationpattern must be rejected outright, not accepted
+    """A malformed migrationpattern must be rejected outright, not accepted
     as any string would be."""
     data = _valid_config_dict()
     data["migrationpattern"] = pattern

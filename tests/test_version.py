@@ -287,7 +287,7 @@ def test_version_happy_path(tmp_path):
 def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
-    ADR006V01: version's own (non---empty) write goes through
+    ADR0006V01: version's own (non---empty) write goes through
     atomic_write_chunks, not atomic_write_text."""
     from adrpy.cli import version as version_module
 

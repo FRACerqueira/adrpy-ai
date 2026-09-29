@@ -46,7 +46,7 @@ def _no_real_home(tmp_path_factory, monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_install_level_config_by_default(monkeypatch):
     """`init`/`migrate` both consult the per-user install-level config
-    (ADR002V01) by default. Every test in this suite must be
+    (ADR0002V01) by default. Every test in this suite must be
     deterministic regardless of whatever the real machine running them
     happens to have at its own per-user install-config path -- patched
     here, once, for every test, at the name each command module actually

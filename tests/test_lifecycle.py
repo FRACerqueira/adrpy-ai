@@ -189,12 +189,11 @@ def test_prepare_reports_no_encoding_repair_for_a_clean_file(tmp_path):
 
 def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(tmp_path):
     """Reading a file with invalid UTF-8 bytes WITHIN its 12-line header
-    (Fase 4: tolerated, confirmed live to match the reference tool)
-    silently replaces them with U+FFFD -- nothing told the caller this
+    (tolerated) silently replaces them with U+FFFD -- nothing told the caller this
     happened, even though it's a real, permanent loss of the original
     bytes the moment the file is rewritten.
 
-    ADR006V01: prepare reads ONLY the bounded header
+    ADR0006V01: prepare reads ONLY the bounded header
     (never the body) -- invalid bytes WITHIN THE BODY are no longer
     detectable from this call alone; that signal now comes from
     stream_normalized_body_chunks' own `report["encoding_repaired"]` at
@@ -222,7 +221,7 @@ def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(
 
 def _reference_body(path):
     """The whole-file read stream_normalized_body_chunks replaced
-    (ADR006V01), kept as its reference: the file decoded as UTF-8
+    (ADR0006V01), kept as its reference: the file decoded as UTF-8
     (invalid bytes replaced, reported), leading BOMs dropped, split on
     real line terminators, and the lines past the header rejoined with
     this host's separator plus one trailing terminator."""
@@ -256,7 +255,7 @@ _BODY_MATRIX_CASES = [
 
 @pytest.mark.parametrize("body_bytes", _BODY_MATRIX_CASES)
 def test_stream_normalized_body_chunks_matches_the_whole_file_read_byte_for_byte(tmp_path, body_bytes):
-    """ADR006V01: the streaming replacement must reproduce
+    """ADR0006V01: the streaming replacement must reproduce
     whole-file read's output (_reference_body) byte-for-byte, including
     its encoding_repaired signal, for every line-ending combination and
     invalid-UTF-8 placement -- verified against that reference
@@ -311,7 +310,7 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
 
 
 def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(tmp_path):
-    """ADR006V01's own reason for existing: a 20MB body must
+    """ADR0006V01's own reason for existing: a 20MB body must
     never be assembled as one in-memory bytes/str object."""
     import tracemalloc
 
@@ -787,8 +786,8 @@ def test_validate_config_change_folderadr_rejects_a_new_folder_that_would_adopt_
     unrelated pre-existing file that happens to match the naming scheme.
     Confirmed live: pointing folderadr at such a directory silently
     adopted the file as a decision, corrupting the next `new` call's own
-    number allocation (ADR008V01 instead of ADR001V01). Same shape hazard
-    as --separator's own adoption-check (ADR004V02), just triggered by a
+    number allocation (ADR0008V01 instead of ADR0001V01). Same shape hazard
+    as --separator's own adoption-check (ADR0004V02), just triggered by a
     folder move instead of a naming-rule change."""
     config = load_repo_config(FIXTURE_PATH)
     old_folder = tmp_path / config.folderadr

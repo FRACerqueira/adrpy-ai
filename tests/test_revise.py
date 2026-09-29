@@ -99,7 +99,7 @@ def test_revise_happy_path(tmp_path):
 def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
     """retry_warning's own
     "succeeded only after N attempts" message had no end-to-end coverage.
-    ADR006V01: revise's own write goes through atomic_write_chunks, not
+    ADR0006V01: revise's own write goes through atomic_write_chunks, not
     atomic_write_text."""
     from adrpy.cli import revise as revise_module
 

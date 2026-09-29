@@ -118,7 +118,7 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 
 
 def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
-    """ADR007V01: the folderlog counterpart to
+    """ADR0007V01: the folderlog counterpart to
     test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist
     -- --seed changing folderlog on an already-existing repository can
     orphan existing decision-log entries the same way."""
@@ -226,7 +226,7 @@ def test_init_seed_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file
 
 
 def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_already_exist(tmp_path):
-    """ADR004V01: --seed replacing an already-existing repository's config
+    """ADR0004V01: --seed replacing an already-existing repository's config
     is exactly as capable of breaking status-label/separator recognition
     of existing decisions as `config` is -- same shared guard."""
     init.run(["--path", str(tmp_path)])
@@ -247,7 +247,7 @@ def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_alr
 
 
 def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_already_exists(tmp_path):
-    """ADR004V02: the guard's own call site wiring, not just the shared
+    """ADR0004V02: the guard's own call site wiring, not just the shared
     function's internals -- --seed changing migrationpattern is exactly
     as capable of breaking legacy-scheme recognition as `config` is. The
     legacy decision is a migrated one (a hand-written file with no header
@@ -297,7 +297,7 @@ def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unre
 
 
 def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(tmp_path, monkeypatch):
-    """ADR004V02: reject_status_or_separator_change_if_decisions_exist
+    """ADR0004V02: reject_status_or_separator_change_if_decisions_exist
     runs BEFORE _max_existing_numbers inside _validate_and_write -- when
     a seed both changes a guarded field AND has an unreadable
     subdirectory, status-or-separator-change-scan-incomplete wins, never
@@ -584,12 +584,9 @@ def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
 
 
 def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
-    """The reference tool's own `language` app setting doesn't just affect
-    interactive UI text -- it also picks the DEFAULT header/status labels
-    and template content baked into a newly init'd repo (read from a
-    per-culture resource file; the default template file is swapped for
-    a per-culture variant). Extracted verbatim from the reference tool's
-    own resources, never hand-translated."""
+    """`--language` picks the DEFAULT header/status labels and template
+    content baked into a newly init'd repo, from the bundled language
+    pack (the default template is swapped for its per-language variant)."""
     result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
     config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
@@ -646,7 +643,7 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
     own root. The existing-decisions guard never engages either, since a
     fresh repo has zero decisions.
 
-    ADR007V01: '.' has zero path components, a prefix of any folderlog
+    ADR0007V01: '.' has zero path components, a prefix of any folderlog
     value (explicit or computed-default) by construction -- the schema-
     level folderadr/folderlog containment guard now catches this even
     earlier than resolve_within's own path-outside-repository check."""
