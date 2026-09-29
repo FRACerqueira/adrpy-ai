@@ -3,11 +3,9 @@ hand-written decision files. Refuses outright if ANY file already has a
 valid, non-migrated header (current-scheme, tool-created) -- migration is
 a one-time operation for repositories with only manually-created
 decisions. Rewrites only the header in place, and the filename is never
-changed; the file's own content passes through byte-for-byte after the
-new header, with the one confirmed exception (see the BOM-stripping
-comment below) of a leading UTF-8 BOM, which is discarded rather than
-carried through -- "preserved verbatim" refers to the body's own line
-endings and bytes otherwise, not literally its every byte.
+changed; the file's own content (line endings included) passes through
+byte-for-byte after the new header, except that any run of leading UTF-8
+BOMs is discarded (see _stream_migrated_candidate).
 
 If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
@@ -73,14 +71,11 @@ from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orp
 
 
 def _stream_migrated_candidate(candidate_path, header_text):
-    """ADR0006V01: the candidate's own content has no schema-imposed size
-    bound (unlike a header) -- the new header (already fully built,
-    schema-bounded), followed by the candidate's own content streamed
-    through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
-    the source file into the destination temp file (via
-    core/fs.prepare_write), never assembled as one in-memory bytes object
-    -- except any run of leading UTF-8 BOMs, stripped from the very first chunk
-    only (see this module's own docstring)."""
+    """ADR0006V01: the new header (schema-bounded), then the candidate's
+    own content (no size bound) streamed unmodified in STREAM_CHUNK_SIZE
+    pieces into the destination temp file (via core/fs.prepare_write),
+    never assembled as one in-memory bytes object -- except any run of
+    leading UTF-8 BOMs, stripped from the very first chunk only."""
     yield header_text.encode("utf-8")
     with Path(candidate_path).open("rb") as source:
         first_chunk = True
@@ -342,7 +337,7 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        entries = []  # (ParsedFileName, Path, HeaderParseResult)
+        entries = []
         adulterated_files = []
         # 0-byte files, never a decision to migrate: with a current-scheme
         # name, an interrupted create's name reservation; with a legacy
@@ -370,14 +365,9 @@ def run(args):
                     # the whole candidate.
                     lines, _encoding_repaired = read_header_lines_with_report(candidate)
                 except OSError as error:
-                    # This scan-phase read must not run outside a
-                    # try/except: a real failure here (permission
-                    # denied, a locked file, a network-drive hiccup)
-                    # would otherwise escape as a raw OSError,
-                    # discarding the orphan-cleanup warning already
-                    # appended above and skipping the deterministic
-                    # per-file reporting the best-effort design
-                    # otherwise guarantees.
+                    # A raw OSError here (permission denied, a locked
+                    # file, a network-drive hiccup) would discard the
+                    # warnings already collected above.
                     raise CommandError(
                         FailureCodes.MIGRATION_SCAN_FAILED,
                         f"{candidate}: {error}",
@@ -385,10 +375,9 @@ def run(args):
                         warnings=warnings,
                     ) from error
                 # Deliberately does not surface header.marker_label_
-                # mismatches (ADR0004V01) here -- this scan is a bulk
-                # eligibility pass over every candidate, not a report
-                # on one specific target file the way prepare's
-                # own warning already covers.
+                # mismatches (ADR0004V01): this scan is a bulk
+                # eligibility pass, not a report on one target file
+                # (prepare's own warning covers that).
                 if not lines and is_zero_bytes(candidate):
                     (empty_legacy_files if scheme == "legacy" else empty_files).append(candidate)
                     continue
@@ -415,15 +404,12 @@ def run(args):
             warning = excluded_candidate_warning(excluded)
             if warning:
                 warnings.append(warning)
-            # A subdirectory the scan could not list fails closed
-            # instead of warning -- unlike explore's own best-effort
-            # listing, this scan feeds already-tool-created-adrs-exist
-            # below, a real safety decision (a hidden already-migrated
-            # file could make that check silently answer "no" when the
-            # true answer is "yes"). Same fail-closed treatment this
-            # command already gives an unreadable FILE
-            # (migration-scan-failed) -- a directory it can't enter is
-            # the identical risk, just one level up.
+            # A subdirectory the scan could not list fails closed,
+            # unlike explore's own best-effort listing: this scan feeds
+            # already-tool-created-adrs-exist below, which a hidden
+            # already-migrated file could make answer "no" when the
+            # true answer is "yes" -- the same risk as an unreadable
+            # FILE (migration-scan-failed).
             unreadable_dirs = list(scan.unreadable)
             if unreadable_dirs:
                 raise CommandError(
@@ -514,8 +500,7 @@ def run(args):
                 # Unlike every other command's own title, this one is
                 # sourced from a raw, untrusted legacy filename, sliced
                 # positionally with zero character filtering
-                # (naming.parse_legacy_filename) -- never validated
-                # before, so a hostile legacy file's own name could embed
+                # (naming.parse_legacy_filename): it could embed
                 # '|'/a line-break (forging the header table this write
                 # is about to build) or a filesystem-unsafe character
                 # (e.g. ':', an NTFS Alternate-Data-Stream separator,
@@ -529,18 +514,13 @@ def run(args):
                 reject_too_long_filename(candidate_path.name, REWRITE_TOO_LONG_REMEDY)
                 record = DecisionRecord(number=parsed.number, title=title, version=0)
                 header_text = build_header(config, record, migrated=True)
-                # ADR0006V01: streams the candidate's own content
-                # straight from disk into the destination temp file --
-                # never assembled as one in-memory bytes object (the
-                # original content's own line endings, and anything
-                # else about its bytes, still pass through completely
-                # untouched; only the header text is new). A transient
-                # PermissionError on EITHER the source read or the temp
-                # write retries the whole temp write, the chunk
-                # generator included, from one shared budget; the
-                # commit that follows has its own and never reads the
-                # source again. Each candidate is prepared and committed
-                # on its own: best-effort per file.
+                # ADR0006V01: streamed from disk into the temp file,
+                # never held in memory. A transient PermissionError on
+                # EITHER the source read or the temp write retries the
+                # whole temp write, the chunk generator included, from
+                # one shared budget; the commit that follows has its own
+                # and never reads the source again. Each candidate is
+                # prepared and committed on its own: best-effort per file.
                 prepared = prepare_write(
                     candidate_path,
                     lambda: _stream_migrated_candidate(candidate_path, header_text),
@@ -559,13 +539,10 @@ def run(args):
                     warnings.append(warning)
             except (OSError, UnicodeError, CommandError) as error:
                 # UnicodeError (e.g. a UnicodeEncodeError from a title
-                # containing a lone surrogate) is not an OSError, but is
-                # just as plausible here as a real per-file failure --
-                # catching only OSError would let it escape the whole
-                # loop, discarding every result already collected.
-                # CommandError is the title-validation check just above
-                # (a hostile legacy filename) -- same per-file treatment,
-                # not a whole-batch abort.
+                # containing a lone surrogate) is not an OSError;
+                # CommandError is the title validation above (a hostile
+                # legacy filename). Both are per-file failures: escaping
+                # the loop would discard every result already collected.
                 persisted["in_flight"] = None
                 results.append({"file": str(candidate_path), "status": "failed", "error": explain(error)})
 

@@ -35,11 +35,7 @@ def read_install_config_text(path=None):
     """Returns the install-level config's raw text, validated against
     the same schema as a repository's own .adrpy.json, or None if
     the file doesn't exist -- the normal state for any installation that
-    has never run `installconfig` (ADR0002V01), not an error condition.
-    Shared by every consumer of this file (`init`'s default seed,
-    `migrate`'s migrationpattern fallback) so "does it exist, and is it
-    valid" is answered identically everywhere, not reimplemented per
-    caller."""
+    has never run `installconfig` (ADR0002V01), not an error condition."""
     target = path or resolve_install_config_path()
     if not target.is_file():
         return None

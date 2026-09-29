@@ -52,13 +52,11 @@ def _write_legacy_file(tmp_path, filename, content):
 
 
 def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Unlike an unreadable FILE
-    (migration-scan-failed, already fail-closed), an unreadable
-    subdirectory must get the same fail-closed treatment as its
-    file-level sibling, not merely a warning -- this scan feeds
-    already-tool-created-adrs-exist, a real safety decision (a hidden
-    already-migrated file inside it could make that check silently
-    answer "no" when the true answer is "yes")."""
+    """An unreadable subdirectory gets the same fail-closed treatment as an
+    unreadable file (migration-scan-failed), not merely a warning: this scan
+    feeds already-tool-created-adrs-exist, a real safety decision (a hidden
+    already-migrated file inside it could make that check silently answer
+    "no" when the true answer is "yes")."""
     tmp_path = _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001T01.md", "Legacy content\n")
     adr_dir = tmp_path / "doc" / "adr"
@@ -81,22 +79,18 @@ def test_migrate_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
 
 def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path, monkeypatch):
-    """The
-    initial directory scan's own read (building `entries`, used to decide
-    eligibility) ran outside the per-candidate try/except entirely -- an
-    OSError there (permission denied, a locked file, a network-drive
-    hiccup) escaped as a raw OSError, discarding the orphan-cleanup
-    warning already appended and skipping the deterministic per-file
-    `results` reporting the whole best-effort redesign exists to
-    guarantee."""
+    """An OSError in the initial scan's read (building `entries`, which decides
+    eligibility) -- permission denied, a locked file, a network-drive hiccup
+    -- is a structured migration-scan-failed naming the file, never a raw
+    OSError that discards the warnings already collected."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
 
-    # The scan-phase read now goes through
-    # read_header_lines_with_report, a bounded read via a raw `open()`
-    # handle, not Path.read_bytes/read_text -- patch the function itself
-    # instead of the I/O primitive it happens to use internally.
+    # The scan-phase read goes through read_header_lines_with_report, a bounded
+    # read via a raw `open()` handle, not Path.read_bytes/read_text -- patch
+    # the function itself instead of the I/O primitive it happens to use
+    # internally.
     real_read_header_lines_with_report = migrate.read_header_lines_with_report
 
     def flaky_read_header_lines_with_report(path, *args, **kwargs):
@@ -114,12 +108,10 @@ def test_migrate_scan_phase_read_failure_is_a_structured_command_error(tmp_path,
 
 
 def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result_entry(tmp_path, monkeypatch):
-    """The
-    per-candidate loop only caught OSError -- a plausible non-OSError
-    failure while building a candidate's new header (e.g. a
-    UnicodeEncodeError from a title containing a lone surrogate) escaped
-    the whole loop, discarding the results already collected for every
-    file migrated successfully before it."""
+    """A non-OSError failure while building a candidate's new header (e.g. a
+    UnicodeEncodeError from a title containing a lone surrogate) is a
+    per-file failure: it must not escape the loop and discard the results
+    already collected for the files migrated before it."""
     _init_repo_with_pattern(tmp_path)
     good_path = _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
@@ -146,19 +138,17 @@ def test_migrate_non_oserror_failure_inside_the_write_loop_still_yields_a_result
 
 
 def test_migrate_rejects_a_title_with_a_filesystem_unsafe_character_as_a_per_file_failure(tmp_path, monkeypatch):
-    """migrate's title is sourced from a raw,
-    untrusted legacy filename, sliced positionally with zero character
-    filtering (naming.parse_legacy_filename) -- unlike every other
-    command's own title, it was never validated at all. A hostile legacy
-    filename's own name could embed a filesystem-unsafe character (e.g.
-    ':', an NTFS Alternate-Data-Stream separator, confirmed live via
-    `new`/`version`/`revise`/`supersede` to leave a permanent orphan) --
-    but such a character can't be embedded in a REAL filename on this
-    platform (creating it collapses into a stream, confirmed live), so
-    this drives the exact code path a hostile POSIX-sourced filename
-    would, via a monkeypatched parse result, the same technique already
-    used above for a non-OSError mid-loop failure. Must be a per-file
-    failure (migrate is best-effort), not a whole-batch abort."""
+    """migrate's title comes from a raw, untrusted legacy filename, sliced
+    positionally with no character filtering (naming.parse_legacy_filename),
+    so it is validated like every other command's title. A hostile legacy
+    filename could embed a filesystem-unsafe character (e.g. ':', an NTFS
+    Alternate-Data-Stream separator, which leaves a permanent orphan behind)
+    -- but such a character can't be embedded in a real filename on this
+    platform (creating it collapses into a stream), so this drives the code
+    path a hostile POSIX-sourced filename would, via a monkeypatched parse
+    result, the same technique as the non-OSError mid-loop failure above.
+    Must be a per-file failure (migrate is best-effort), not a whole-batch
+    abort."""
     _init_repo_with_pattern(tmp_path)
     good_path = _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     bad_path = _write_legacy_file(tmp_path, "0002Bad.md", "# Bad\n")
@@ -232,12 +222,12 @@ def test_migrate_rejects_a_title_made_only_of_separator_characters_as_a_per_file
 
 
 def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, monkeypatch):
-    """Design decision (2026-09-15), superseding the earlier fail-fast fix:
-    migrate is best-effort per file -- one file's OSError must not block
-    the rest, and the failure response must carry a deterministic
-    per-file result array (every candidate, migrated or failed) instead
-    of forcing the caller to infer what was never attempted from a
-    migrated/failed_file pair that only covers the files seen so far."""
+    """migrate is best-effort per file (decision-log:
+    2026-09-15--scope-note--migrate--best-effort-per-file-not-fail-fast.md):
+    one file's OSError must not block the rest, and the failure response
+    carries a deterministic per-file result array (every candidate, migrated
+    or failed) instead of leaving the caller to infer what was never
+    attempted."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     _write_legacy_file(tmp_path, "0002Second.md", "# Second\n")
@@ -268,8 +258,6 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
     assert statuses[processed[0]] == "migrated"
     assert statuses[processed[1]] == "failed"
     assert statuses[processed[2]] == "migrated"
-    # Was only `assert results[1]["error"]`
-    # (truthiness), which would pass even with the wrong error text.
     assert "simulated disk failure" in results[1]["error"]
 
     # The files that succeeded really were migrated on disk, despite the
@@ -279,18 +267,15 @@ def test_migrate_continues_past_a_failed_file_and_reports_each_result(tmp_path, 
 
 
 def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """The write-phase read
-    of a candidate's own bytes had no retry tolerance, unlike this
-    command's own SCAN-phase read of the exact same file a few dozen
-    lines earlier (read_header_lines_with_report, already retried).
-    Without the fix, a transient blip here permanently misclassifies the
-    candidate as "failed" instead of retrying transparently like its
-    sibling read already would -- in a one-time, largely irreversible
-    operation. ADR0006V01: the write-phase read is now a stream opened via
-    Path.open, sharing atomic_write_chunks' own single retry loop with
-    the destination write -- each retried ATTEMPT re-opens the source
-    fresh, so this still recovers from a transient PermissionError on the
-    source open, just via one combined budget instead of two."""
+    """The write-phase read of a candidate tolerates a transient
+    PermissionError, like the scan-phase read of the same file
+    (read_header_lines_with_report): otherwise a transient blip permanently
+    misclassifies the candidate as "failed", in a one-time, largely
+    irreversible operation. ADR0006V01: the write-phase read is a stream
+    opened via Path.open, sharing atomic_write_chunks' single retry loop
+    with the destination write -- each retried attempt re-opens the source
+    fresh, so a transient PermissionError on the source open is recovered
+    from, via one combined budget."""
     _init_repo_with_pattern(tmp_path)
     target = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
 
@@ -313,12 +298,11 @@ def test_migrate_write_phase_read_retries_a_transient_permission_error(tmp_path,
 
 
 def test_migrate_write_does_not_read_the_whole_candidate_into_memory(tmp_path):
-    """ADR0006V01: without streaming, migrate's write phase would read
-    the WHOLE candidate file into memory (`candidate_path.read_bytes()`)
-    before concatenating a header onto it and writing the result -- a
-    150MB candidate would measure a ~300MB peak-memory read. The header is already
-    known to be schema-bounded (a few KB at most); only the candidate's
-    own body content, unbounded, needs to stream."""
+    """ADR0006V01: migrate's write phase must not read the whole candidate file
+    into memory (`candidate_path.read_bytes()`) before concatenating a
+    header onto it -- a 150MB candidate would peak near 300MB. The header is
+    schema-bounded (a few KB at most); only the candidate's own body,
+    unbounded, needs to stream."""
     from unittest.mock import patch
 
     _init_repo_with_pattern(tmp_path)
@@ -352,15 +336,13 @@ def test_migrate_happy_path_preserves_original_content(tmp_path):
     assert "|File title md|UsePostgreSQL|" in text
     assert "|Created||" in text  # a migrated decision has no creation status
     assert "# Use PostgreSQL\n\n## Context\n\nWe need a database.\n" in text
-    # No test pinned the exact
-    # empty-list value on a genuine happy path, only that the key exists.
     assert result["warnings"] == []
 
 
 def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage.
-    migrate.py calls atomic_write_CHUNKS (ADR0006V01), not atomic_write_text."""
+    """retry_warning's "succeeded only after N attempts" message reaches
+    migrate's result; the attempt count comes from migrate's own
+    commit_write."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001UsePostgreSQL.md", "# Use PostgreSQL\n")
     real_commit_write = migrate.commit_write
@@ -377,11 +359,11 @@ def test_migrate_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
-    """Regression: the original body's own line endings (here, bare LF, unlike the header's
-    host os.linesep) must pass through completely untouched -- only the
-    header is new text. This is what caught the bug: an early version
-    routed the concatenated content through atomic_write_text's newline
-    normalization, which converted the body's LF into CRLF too."""
+    """Regression: the original body's line endings (here, bare LF, unlike the
+    header's host os.linesep) must pass through untouched -- only the header
+    is new text. Routing the concatenated content through
+    atomic_write_text's newline normalization would convert the body's LF
+    into CRLF too."""
     tmp_path = _init_repo_with_pattern(tmp_path)
     body = "line one\nline two\n"
     legacy_path = _write_legacy_file(tmp_path, "0001LineEndings.md", body)
@@ -395,8 +377,8 @@ def test_migrate_preserves_original_line_endings_byte_for_byte(tmp_path):
 
 def test_migrate_strips_a_leading_utf8_bom(tmp_path):
     """A leading UTF-8 BOM of the legacy file is dropped, so the migrated
-    result never has one: kept as raw bytes, it landed in the MIDDLE of the
-    file (after the new header, before the body)."""
+    result never has one: kept as raw bytes, it would land in the MIDDLE of
+    the file (after the new header, before the body)."""
     tmp_path = _init_repo_with_pattern(tmp_path)
     body_without_bom = "# BOM file\n"
     legacy_path = _write_legacy_file(tmp_path, "0001WithBom.md", body_without_bom)
@@ -432,10 +414,10 @@ def test_migrate_rejects_when_pattern_not_configured(tmp_path):
 
 
 def test_migrate_rejects_when_install_level_config_exists_but_its_own_pattern_is_empty(tmp_path, monkeypatch):
-    """ADR0002V01 part 3's own stated precondition: "if migrationpattern
-    is empty in BOTH places" -- distinct from the install-level config
-    not existing at all (test_migrate_rejects_when_pattern_not_configured
-    only exercises the latter, via conftest.py's default)."""
+    """ADR0002V01's stated precondition: "if migrationpattern is empty in BOTH
+    places" -- distinct from the install-level config not existing at all
+    (test_migrate_rejects_when_pattern_not_configured only exercises the
+    latter, via conftest.py's default)."""
     tmp_path = _init_repo_with_pattern(tmp_path, pattern="")
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
     fallback_text = json.dumps(_seed_config_with_pattern(""))
@@ -486,21 +468,18 @@ def test_migrate_rejects_when_tool_created_adr_already_exists(tmp_path):
 
 
 def test_migrate_refuses_when_a_scanned_file_has_a_lossy_encoding(tmp_path):
-    """The scan-phase
-    read used `errors="replace"` with no signal at all -- a single
-    invalid UTF-8 byte in an otherwise-valid, already-tool-created
-    header's status-label cell made parse_header see it as invalid,
-    bypassing the already-tool-created-adrs-exist safety check below and
-    letting the file get a SECOND header stamped onto it (real,
-    reproduced corruption -- the command reported success with
-    warnings: [] and gave no indication anything was abnormal)."""
+    """An invalid UTF-8 byte in an already-tool-created header's status-label
+    cell must not make the scan treat the file as having no header: that
+    would bypass the already-tool-created-adrs-exist safety check and stamp
+    a SECOND header onto the file, with the command reporting success and
+    warnings: []."""
     _init_repo_with_pattern(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "Already tool created"])
     target = tmp_path / "doc" / "adr" / "ADR001V01-already-tool-created.md"
     original_bytes = target.read_bytes()
 
-    # Corrupt one byte inside the "Created" row's own status-label cell
-    # (the exact class the audit reproduced), leaving the rest intact.
+    # Corrupt one byte inside the "Created" row's status-label cell, leaving
+    # the rest intact.
     corrupted = original_bytes.replace(b"Proposed", b"Propos\xa4d", 1)
     assert corrupted != original_bytes
     target.write_bytes(corrupted)
@@ -508,9 +487,9 @@ def test_migrate_refuses_when_a_scanned_file_has_a_lossy_encoding(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         migrate.run(["--path", str(tmp_path)])
 
-    # Round 39: a lossy byte only matters when it breaks the header. Here
-    # the canonical marker still decides the status, so the header parses
-    # and the already-tool-created check refuses -- still never touched.
+    # A lossy byte only matters when it breaks the header. Here the canonical
+    # marker still decides the status, so the header parses and the
+    # already-tool-created check refuses -- still never touched.
     assert excinfo.value.code == "already-tool-created-adrs-exist"
     assert target.read_bytes() == corrupted  # never touched
 
@@ -564,9 +543,8 @@ def test_migrate_end_to_end_through_main(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Migrate's own scan used to
-    drop an is_within-excluded candidate with zero signal, same as
-    scan_decisions/explore."""
+    """An is_within-excluded candidate is reported in `warnings`, as explore
+    reports its own, not dropped silently."""
     _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001Good.md", "# Good\n")
     outside_dir = tmp_path / "outside"
@@ -587,11 +565,9 @@ def test_migrate_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
-    """Reading a candidate's ENTIRE content (read_lines_with_report) just to
-    parse its 12-line header and check its encoding would be wasteful --
-    the same class of waste already closed for family_members. Wired
-    instead to core.header.read_header_lines_with_report, the
-    bounded equivalent."""
+    """The scan reads a candidate's 12-line header through the bounded
+    core.header.read_header_lines_with_report, not its entire content, as
+    family_members does."""
     _init_repo_with_pattern(tmp_path)
     legacy_path = _write_legacy_file(tmp_path, "0001Decision.md", "# Decision\n")
 
@@ -614,19 +590,17 @@ def test_migrate_scan_phase_uses_the_bounded_header_read(tmp_path, monkeypatch):
 
 
 def test_migrate_describe_documents_the_migrationpattern_precondition():
-    """Migrate fails with migration-pattern-not-
-    configured on any freshly-init'd repository (100% of the time, not an
-    edge case) -- describe() never said so, so an agent only discovered
-    this by trial and error."""
+    """Migrate fails with migration-pattern-not-configured on any freshly
+    init'd repository, so describe() says so: an agent must not discover it
+    by trial and error."""
     assert "migrationpattern" in migrate.describe()["description"]
 
 
 def test_migrate_describe_documents_the_persist_back_write_survives_a_later_failure():
-    """The persist-back write commits before
-    the scan/eligibility checks and is never rolled back if one of them
-    later refuses the run -- describe() must say so explicitly, not just
-    "no file is touched," which would misleadingly imply
-    .adrpy.json itself was untouched too."""
+    """The persist-back write commits before the scan/eligibility checks and is
+    never rolled back if one of them later refuses the run -- describe()
+    must say so explicitly, not just "no file is touched," which would
+    misleadingly imply .adrpy.json itself was untouched too."""
     description = migrate.describe()["description"]
     assert "survives" in description
     assert "no decision file is touched" in description
@@ -857,9 +831,9 @@ def test_an_interrupt_before_anything_was_written_propagates_as_is(tmp_path, mon
 
 
 def test_migrate_refuses_files_that_already_claim_to_be_successors(tmp_path):
-    # Round 41 (H2): a supersede chain is a concept this tool creates; a
-    # file claiming to be a successor before migration (a --NNN suffix) is
-    # refused, naming every such file, and nothing is written.
+    # A supersede chain is a concept this tool creates; a file claiming to be a
+    # successor before migration (a --NNN suffix) is refused, naming every such
+    # file, and nothing is written.
     tmp_path = _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "ADR004V01-delta.md", "# Delta\n")
     successor = _write_legacy_file(tmp_path, "ADR005V01-epsilon--004.md", "# Epsilon\n")

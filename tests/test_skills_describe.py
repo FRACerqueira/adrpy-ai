@@ -49,11 +49,11 @@ def test_short_flag_aliases_are_documented_in_describe():
 
 
 def test_describe_arguments_match_what_run_actually_accepts_via_parse_flags():
-    """Round 32, Class I: cross-checks describe()'s documented arguments
-    against the flags parse_flags(...) actually declares inside run(), via
-    a source-level scan of each command module -- so the two can never
-    silently drift apart (e.g. a new flag added to parse_flags but never
-    documented, or vice versa)."""
+    """Cross-checks describe()'s documented arguments against the flags
+    parse_flags(...) actually declares inside run(), via a source-level scan
+    of each command module -- so the two can never silently drift apart
+    (e.g. a new flag added to parse_flags but never documented, or vice
+    versa)."""
     import ast
     import inspect
 

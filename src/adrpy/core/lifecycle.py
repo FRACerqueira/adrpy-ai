@@ -1,8 +1,7 @@
 """Shared lifecycle-transition helpers: date-reference validation,
 title-uniqueness/next-number resolution, and the read-mutate-rewrite
 mechanics every status-transition command
-(approve/reject/undo/supersede/version/revise) shares -- one function per
-concern, not copies."""
+(approve/reject/undo/supersede/version/revise) shares."""
 
 import codecs
 import os
@@ -174,8 +173,8 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
     legacy_scheme_fields_changed = [field for field in _LEGACY_SCHEME_GUARD_FIELDS if field in changed]
     status_fields_changed = blanket_fields_changed + legacy_scheme_fields_changed
     if scan is None and ("folderadr" in changed or status_fields_changed):
-        # A missing folder is reported unreadable, as before (config
-        # creates it first; init --seed does not).
+        # A missing folder is reported unreadable (config creates it
+        # first; init --seed does not).
         scan = scan_tree(old_folder)
 
     if "folderadr" in changed:
@@ -411,9 +410,8 @@ def _body_start_offset(header_buffer, count):
     -- the end of the `count`-th real line terminator within
     `header_buffer` (a byte-exact prefix of that file, from
     _read_header_bytes). None if `header_buffer` doesn't contain that
-    many real terminators (the file is too-short/malformed -- the same
-    condition parse_header's own existing check already handles; no new
-    handling needed here)."""
+    many real terminators (a too-short file, which parse_header already
+    rejects)."""
     matches = list(_REAL_NEWLINE_BYTES.finditer(header_buffer))
     if len(matches) < count:
         return None
@@ -425,8 +423,8 @@ _BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
 
 def stream_normalized_body_chunks(source_path, report):
     """Streams `source_path`'s own BODY (everything past its 12-line
-    header), reproducing the whole-file read it replaced byte-for-byte
-    (ADR0006V01; tests/test_lifecycle.py keeps that read as its reference) -- every real line
+    header), byte for byte what a whole-file read would give (ADR0006V01;
+    tests/test_lifecycle.py keeps that read as its reference) -- every real line
     terminator converted to this host's os.linesep, invalid UTF-8 bytes
     replaced with U+FFFD, exactly one trailing terminator ensured for a
     non-empty body -- without ever holding the whole body in memory. The
@@ -556,11 +554,11 @@ SHARED_FAILURE_CODES = {
 
 
 def resolve_target_and_config(path, *, require_config=True):
-    """The path-rooted counterpart to prepare's --file resolution below:
-    check/config/explore/log/migrate/new all take a repository --path directly
-    (rather than a decision file to walk up from), and each used to
-    hand-roll the identical target-directory-not-found/config-not-found
-    checks. `require_config=False` (init's own case) skips the
+    """The path-rooted counterpart to prepare's --file resolution below,
+    for check/config/explore/log/migrate/new, which take a repository
+    --path directly (rather than a decision file to walk up from):
+    target-directory-not-found, then config-not-found.
+    `require_config=False` (init's own case) skips the
     config-not-found check and the load entirely -- a missing config is
     init's normal, expected state, not an error, and init decides for
     itself, from `config_path.exists()`, whether this is a fresh

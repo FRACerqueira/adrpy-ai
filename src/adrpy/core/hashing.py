@@ -33,16 +33,12 @@ def _leading_marker(text):
 
 
 def compute_hash(content):
-    """sha256 hex digest of content, encoded as UTF-8. Canonicalizes
-    newlines to bare "\\n" first (any "\\r\\n" or lone "\\r" collapses to
-    "\\n"): `content` is hashed before
-    atomic_write_text's own newline normalization (to the host's
-    os.linesep) ever runs, so without this the hash would depend on
-    whatever newline convention `content` happened to arrive in, not on
-    the bytes actually written to disk. Canonicalizing here, on both the
-    write side (via build_marker) and the read side (via check_drift),
-    keeps the two in agreement regardless of host OS or input
-    convention."""
+    """sha256 hex digest of `content` encoded as UTF-8, with newlines
+    canonicalized to bare "\\n" first: `content` is hashed before
+    atomic_write_text converts it to the host's os.linesep, so without
+    this the hash would depend on the convention it arrived in. Both
+    build_marker (write side) and check_drift (read side) hash through
+    here, so they agree on any host."""
     canonical = content.replace("\r\n", "\n").replace("\r", "\n")
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

@@ -110,13 +110,10 @@ def run(args):
         # version never rewrites its own source (only its BODY is
         # carried into a newly created file) -- encoding_repaired_
         # source_warning's "the file has been rewritten" claim is never
-        # true here. ADR0006V01: the body is no longer read at all
-        # unless/until the write below actually streams it, so this
-        # warning (which is specifically about the BODY's own decode,
-        # not just the header's) can only be finalized once that
-        # streamed write has happened -- combined with `encoding_
-        # repaired` (the header's own flag, already known here) right
-        # after the write, not right away.
+        # true here. ADR0006V01: the body is read only when the write
+        # below streams it, so that warning is decided after the write,
+        # combining the body's decode with `encoding_repaired` (the
+        # header's own flag, already known here).
 
         # Unlike `new`, an omitted --scope/--domain defaults to this
         # decision's own current value, not empty (prepare's
@@ -141,11 +138,9 @@ def run(args):
         new_path = resolve_within(folder, filename)
 
         # ADR0006V01: --empty uses config.template (schema-bounded, safe
-        # in memory, unchanged); otherwise the SOURCE's own body is
-        # streamed straight from `path` into the new file, without
-        # ever holding it in memory. body_encoding_repaired stays
-        # False (the default a fresh report dict would carry) when
-        # --empty means the body is never read at all.
+        # in memory) and never reads the body; otherwise the SOURCE's
+        # own body is streamed straight from `path` into the new file,
+        # without ever holding it in memory.
         header_text = build_header(config, record)
         try:
             if flags.get("empty"):
@@ -174,6 +169,6 @@ def run(args):
         if warning:
             warnings.append(warning)
 
-    # Canonical keyword, not the repo's configured status label.
     adr_index.regenerate(ctx.root, ctx.config, warnings)
+    # Canonical keyword, not the repo's configured status label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

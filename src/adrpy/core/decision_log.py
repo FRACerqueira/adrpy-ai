@@ -6,16 +6,12 @@ formatting, and index regeneration -- never the judgment (classification,
 wording) that produces the values passed in; see
 doc/decision-log-workflow.md for that authoring process.
 
-Filename convention is this project's own, date-first, established
-independently of ADR003 (see doc/decision-log/INDEX.md's own header and
-every real entry): {ISO date}--{classification}--{scope}--{slug}.md.
+Filename convention, date first:
+{ISO date}--{classification}--{scope}--{slug}.md.
 
-ADR0007V01 (superseding ADR0003V01's own driver on this point): the
-decision-log directory lives at `config.folderlog`, an independently
-configurable, recursively-scanned field -- no longer a fixed, non-
-recursive sibling of `folderadr`. Defaults to that exact sibling
-location ('decision-log' next to folderadr) when a repository's own
-config predates this field (see core/config.py's own parse_repo_config).
+ADR0007V01: the decision-log directory is `config.folderlog`, scanned
+recursively. It defaults to 'decision-log' next to folderadr when the
+config has no folderlog (core/config.py's parse_repo_config).
 """
 
 import re
@@ -61,8 +57,8 @@ _REOPEN_WHEN_RE = re.compile(r"^\*\*Reopen-when:\*\*\s*(.+?)\s*$")
 
 _INDEX_FILENAME = "INDEX.md"
 _NON_ENTRY_FILES = {_INDEX_FILENAME, "CYCLES.md"}
-# Said with every refusal over a file that is not an entry: a real agent
-# once moved such a note away silently to get the entry written.
+# Said with every refusal over a file that is not an entry, so an agent
+# does not silently move the user's note away to get its entry written.
 _USERS_FILE = (
     " It was not written by adrpy: it is the user's file -- ask where it belongs before moving it, "
     "and never delete it."
@@ -71,8 +67,7 @@ _USERS_FILE = (
 
 def decision_log_dir_for(target, config):
     """ADR0007V01: resolved from `config.folderlog`, the same way
-    `folderadr` itself is resolved everywhere else (`resolve_within`) --
-    no longer derived from `folderadr`'s own path."""
+    `folderadr` is resolved everywhere else (`resolve_within`)."""
     return resolve_within(target, config.folderlog)
 
 
@@ -101,11 +96,7 @@ def validate_scope(value):
     `\\`, and an embedded `--` are not just cosmetically wrong -- `/`/`\\`
     would be read as real path separators once joined onto the decision-log
     directory, and `--` would desynchronize every consumer that splits the
-    filename on that delimiter (`_parse_entry` below, and
-    scripts/generate_decision_log_index.py's own predecessor logic).
-    Real scope values already in this project's own decision log (`lock`,
-    `config`, `install-config`, ...) are already kebab-case, so this is not
-    a new constraint in practice, only one now actually enforced."""
+    filename on that delimiter (`_parse_entry` below)."""
     if not _KEBAB_RE.match(value):
         raise CommandError(
             FailureCodes.LOG_SCOPE_INVALID,
@@ -150,11 +141,9 @@ def parse_round(value):
 
 
 def validate_round_not_regressing(round_, current_max):
-    """Round is a single, project-wide, ever-increasing integer (never
-    resets, per doc/decision-log/INDEX.md's own header) -- reusing the
-    current max (the common case: another finding in the same
-    already-open round) is fine; anything below it would violate that
-    invariant outright."""
+    """Round is a single, project-wide, ever-increasing integer that never
+    resets: reusing the current max (the common case: another finding in
+    the same already-open round) is fine; anything below it is refused."""
     if round_ < current_max:
         raise CommandError(
             FailureCodes.LOG_ROUND_TOO_LOW,
@@ -197,35 +186,24 @@ def _parse_entry(path):
         ) from error
     if classification not in CLASSIFICATIONS:
         # Same failure as an unparseable filename shape, not a softer one:
-        # an unrecognized classification means the structured-line gate
-        # below can't know whether to look for Front/Severity/Round or
-        # Reopen-when, so it would otherwise silently treat the entry as
-        # carrying neither -- reopening the exact duplicate-Round risk
-        # this gate exists to close, just via a typo'd classification
-        # (e.g. "audit-findings") instead of a coincidentally-structured
-        # non-structured entry.
+        # with an unrecognized classification (e.g. a typo'd
+        # "audit-findings") the structured-line gate below can't know
+        # whether to look for Front/Severity/Round or Reopen-when, and
+        # would treat the entry as carrying neither -- risking a
+        # duplicate Round.
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has an unrecognized classification ('{classification}') -- cannot safely "
             "compute the next Round or regenerate INDEX.md while this file is present." + _USERS_FILE,
             data={"file": path.name},
         )
-    # Reading the ENTIRE entry file (path.read_text().splitlines()) would
-    # be wasteful -- only lines[0] (heading) and, for a structured
-    # classification, lines[1:5] are ever used. No field written via
-    # `log` has a length limit, so a single oversized --body persisted
-    # once would make every future `log` call re-pay the cost of reading
-    # it in full, for every entry in the directory, on every
-    # classification. Uses the same bounded read every scan elsewhere in
-    # this codebase already relies on for exactly this reason
-    # (core/lifecycle.py's own header reads).
+    # Bounded read: only lines[0] (heading) and lines[1:5] are used, and
+    # no field written via `log` has a length limit, so one oversized
+    # --body would otherwise be read in full by every later `log` call.
     lines = read_header_lines(path, count=5)
     if not lines:
-        # Same fail-closed treatment as an unparseable filename shape or
-        # an unrecognized classification above -- an empty (or otherwise
-        # heading-less) file is just as unsafe to guess past, the exact
-        # bug class this function's other two guards already exist to
-        # close.
+        # Fails closed like the two guards above: an empty (or otherwise
+        # heading-less) file is just as unsafe to guess past.
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
             f"{path.name} has no content -- cannot safely compute the next Round or regenerate "
@@ -267,12 +245,12 @@ def _parse_entry(path):
 
 
 def _existing_entries(decision_log_dir, *, warnings=None):
-    """ADR0007V01: recursive, now that `folderlog` is independently
-    placeable and no longer guaranteed flat by construction. Walked with
-    core/fs.scan_tree, the decisions folder's own scan. Fails closed on an
-    unreadable subdirectory instead of silently under-reporting -- every
-    real caller of this function makes a safety decision from the result
-    (Round allocation, index correctness, the change guard below). A file
+    """ADR0007V01: recursive, since `folderlog` is independently placeable
+    and so not flat by construction. Walked with core/fs.scan_tree, the
+    decisions folder's own scan. Fails closed on an unreadable
+    subdirectory instead of silently under-reporting -- every caller makes
+    a safety decision from the result (Round allocation, index
+    correctness, the change guard below). A file
     whose real path escapes the folder (through a junction) is excluded
     and reported in `warnings`, once per command."""
     decision_log_dir = Path(decision_log_dir)
@@ -349,20 +327,17 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
     validate_config_change (ADR0007V01), which calls it -- changing
     folderlog on a repository that already has decision-log entries makes
     every one of them invisible at their old, still-real path. Unlike the
-    folderadr guard, no separate scan-incomplete code is needed here:
-    _existing_entries above already fails closed on an unreadable
-    subdirectory (LOG_SCAN_INCOMPLETE) or an unrecognized filename
-    (LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE) on its own, and those
-    errors propagate through this function unchanged -- exactly the
-    fail-closed behavior the folderadr guard's own separate code exists
-    to provide there.
+    folderadr guard, no separate scan-incomplete code is needed:
+    _existing_entries already fails closed on an unreadable subdirectory
+    (LOG_SCAN_INCOMPLETE) or an unrecognized filename
+    (LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE), and those errors
+    propagate through this function unchanged.
 
-    Also guards the opposite direction, the same adoption hazard
-    ADR0004V02/the folderadr guard already close: `new_folderlog` may
-    already hold unrelated content that would silently become
-    recognized decision-log history (round allocation, INDEX.md) the
-    moment anything scans it. Skipped entirely when the new directory
-    does not exist yet."""
+    Also guards the opposite direction, as the folderadr guard does
+    (ADR0004V02): `new_folderlog` may already hold unrelated content that
+    would silently become recognized decision-log history (round
+    allocation, INDEX.md) the moment anything scans it. Skipped when the
+    new directory does not exist yet."""
     if new_folderlog == old_folderlog:
         return
     existing = _existing_entries(old_log_dir, warnings=warnings)
@@ -391,16 +366,14 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
 
 def max_existing_round(decision_log_dir, *, warnings=None):
     """0 if no audit-finding/doc-drift entry carries a Round yet, else the
-    highest one found -- the single source of truth both next_round's own
-    default and an explicit --round's own lower-bound check are built on.
+    highest one found -- what both next_round's default and an explicit
+    --round's lower-bound check are built on.
 
     Fails closed (rather than silently skipping) on a structured entry
     whose Round is missing or not a plain integer -- e.g. a hand-written
-    entry with no structured line at all, or one written "5 (tentative)".
-    Silently skipping it would let this function under-report the real
-    max, and a later call could then allocate a Round that duplicates the
-    one already on that file -- the same risk an unrecognized
-    classification poses, just triggered by a malformed Round instead."""
+    entry with no structured line at all, or one written "5 (tentative)":
+    skipping it would under-report the real max, and a later call could
+    allocate a Round that duplicates the one on that file."""
     rounds = []
     for entry in _existing_entries(decision_log_dir, warnings=warnings):
         if entry["classification"] not in STRUCTURED_CLASSIFICATIONS:
@@ -503,11 +476,8 @@ def regenerate_index(decision_log_dir, *, warnings=None):
         )
     lines.append("")
 
-    # Atomic, like every other writer in this project (core/atomic_write.py):
-    # a plain write_text() truncates on open, so a concurrent reader (or a
-    # process that dies mid-write) can observe -- or permanently leave on
-    # disk -- an empty INDEX.md. atomic_write_text normalizes to THIS host's
-    # own os.linesep, matching every other CRLF-on-Windows doc in this
-    # project instead of a hardcoded LF regardless of host OS.
+    # Atomic: a plain write_text() truncates on open, so a concurrent
+    # reader (or a process that dies mid-write) could see or leave an
+    # empty INDEX.md. atomic_write_text writes THIS host's os.linesep.
     atomic_write_text(decision_log_dir / _INDEX_FILENAME, "\n".join(lines))
     return len(entries)

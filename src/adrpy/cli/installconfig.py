@@ -153,10 +153,7 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    # Same fail-loud guard as config.py's own _field_description, and for
-    # the same reason: a newly added schema field with no matching branch
-    # here must be caught immediately, not silently fall through to a
-    # tautological message.
+    # Same fail-loud guard as config.py's own _field_description.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
@@ -266,12 +263,11 @@ def run(args):
         return f"The existing install-level config was replaced as a whole; these fields changed value: {', '.join(changed)}."
 
     if seed_arg is not None:
-        # Decision-log: 2026-09-18--audit-finding--install-config--seed-
-        # plus-field-flag-misreports-updated-fields.md -- a co-passed
-        # field flag must be rejected outright, matching init's own
-        # precedent for its incompatible flag combination (--seed +
-        # --language): silently ignoring it while still reporting it in
-        # updated_fields would misrepresent what was actually applied.
+        # A co-passed field flag is rejected outright, as init rejects
+        # --seed + --language: ignoring it while reporting it in
+        # updated_fields would misrepresent what was applied
+        # (decision-log: 2026-09-18--audit-finding--install-config--seed-
+        # plus-field-flag-misreports-updated-fields.md).
         conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
         if conflicting:
             raise UsageError(
@@ -291,10 +287,7 @@ def run(args):
         }
 
     if language_arg is not None:
-        # Same rule as --seed above -- a co-passed field flag is rejected
-        # outright, not silently ignored or silently overridden, since a
-        # full replace reporting every field in updated_fields would
-        # misrepresent what was actually applied otherwise.
+        # Same rule as --seed above: a co-passed field flag is rejected.
         conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
         if conflicting:
             raise UsageError(

@@ -1,5 +1,5 @@
 """Shared `--flag value` argument parsing: every command's CLI args follow
-the same shape, so this is one function, not N near-copies."""
+the same shape."""
 
 from adrpy.core.errors import UsageError
 
@@ -17,10 +17,9 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None, allow
     value (e.g. clearing a field) rather than a missing one. `aliases`
     maps a single-letter short form (without `-`, e.g. "p") to the long
     flag name it stands for (e.g. "path") -- `-p value` is then exactly
-    equivalent to `--path value`. Returns a dict keyed
-    by the LONG flag name --
-    switches map to True when present, and are simply absent from the
-    dict otherwise. Raises UsageError for an unknown flag, a value-flag
+    equivalent to `--path value`. Returns a dict keyed by the LONG flag
+    name; a switch maps to True when present and is absent otherwise.
+    Raises UsageError for an unknown flag, a value-flag
     missing its value or given an empty one (or another of this command's
     own flags in its place), a flag given more than once, or a missing
     required flag.
@@ -55,8 +54,6 @@ def parse_flags(args, required=(), optional=(), switches=(), aliases=None, allow
             # swallowed as if it were one.
             raise UsageError(f"--{name} requires a value (got the flag {value})")
         if value == "" and name not in allow_empty:
-            # An empty string is treated the same as an omitted value,
-            # not as a real (if unusual) one.
             raise UsageError(f"--{name} requires a non-empty value")
         values[name] = value
         i += 1

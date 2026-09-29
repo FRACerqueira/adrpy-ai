@@ -68,13 +68,11 @@ def test_init_does_not_recommend_installconfig_when_install_level_config_exists(
 
 
 def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
-    """Verified live: this escapes as a clean `io-error`, not a generic
-    `internal-error`, since FileExistsError is an OSError subclass
-    __main__.py already catches. Distinct from the config's own race
-    (closed by creating it exclusively -- tests/test_exclusive_create.py):
-    that one has genuinely conflicting content between two calls; this
-    one doesn't -- both processes want the exact same end state (the
-    folder exists), so there's nothing to lose by closing it outright."""
+    """Both processes want the exact same end state (the folder exists),
+    so there's nothing to lose by accepting the one created first.
+    Distinct from the config's own race (closed by creating it exclusively
+    -- tests/test_exclusive_create.py): that one has genuinely conflicting
+    content between two calls; this one doesn't."""
     real_mkdir = init.Path.mkdir
     triggered = {"done": False}
 
@@ -102,8 +100,8 @@ def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_fold
 
 
 def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage."""
+    """retry_warning's own "succeeded only after N attempts" message, end
+    to end."""
     real_atomic_write_text = init.atomic_write_text
 
     def flaky_atomic_write_text(*args, **kwargs):
@@ -168,9 +166,8 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
 
 
 def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Folderadr-change-scan-
-    incomplete was only ever tested at the core/lifecycle level, never
-    through this real CLI command (init's own --seed path shares the
+    """folderadr-change-scan-incomplete through this real CLI command, not
+    only at the core/lifecycle level (init's own --seed path shares the
     same guard as config's own --folderadr)."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
@@ -276,8 +273,7 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
 
 
 def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecognized_file(tmp_path):
-    """Call-site wiring proof for the deferred finding closed alongside
-    ADR004V0x -- --seed changing separator can silently adopt an
+    """Call-site wiring: --seed changing separator can silently adopt an
     unrelated file exactly the same way `config` can."""
     init.run(["--path", str(tmp_path)])
     adr_dir = tmp_path / "doc" / "adr"
@@ -303,9 +299,7 @@ def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(t
     subdirectory, status-or-separator-change-scan-incomplete wins, never
     init-existing-numbers-scan-incomplete. Pins this order so a future
     reordering of the two checks can't silently swap which code callers
-    see with no test failure; also the first test of this guard's own
-    scan-incomplete path through `init --seed` at all (previously
-    exercised only through `config`)."""
+    see with no test failure."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
     adr_dir = tmp_path / "doc" / "adr"
@@ -430,11 +424,10 @@ def test_init_refuses_when_config_already_exists_without_file(tmp_path):
 
 
 def test_init_with_seed_overwrites_using_custom_config(tmp_path):
-    """Usability backlog item B2: init's own --file was renamed --seed --
-    everywhere else in the CLI, --file means "the decision file to
-    mutate"; here it meant "a config JSON to seed the repo with", a
-    naming collision an agent generalizing across commands could
-    reasonably get wrong (decision-log:
+    """The flag is --seed, not --file: everywhere else in the CLI, --file
+    means "the decision file to mutate"; here it would mean "a config JSON
+    to seed the repo with", a naming collision an agent generalizing
+    across commands could reasonably get wrong (decision-log:
     2026-09-15--scope-note--init--file-flag-renamed-to-seed.md)."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "decisions"
@@ -512,9 +505,9 @@ def test_init_rejects_digit_overflow_against_existing_decisions(tmp_path):
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "lenseq-too-small-for-existing-decisions"
-    # The real number was only ever in `detail`
-    # (stderr, free text) -- an agent automating "bump lenseq until it
-    # fits" would have had to parse that text instead of reading `data`.
+    # The real number is in `data`, not only in `detail` (stderr, free
+    # text) -- an agent automating "bump lenseq until it fits" must not
+    # have to parse that text.
     assert excinfo.value.data == {"max_number": 1234, "lenseq": 3}
 
 
@@ -572,8 +565,8 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
 
 
 def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
-    """A second call site of the same class: init's own --seed read used
-    a bare read_text(encoding="utf-8") too."""
+    """init's own --seed read turns invalid UTF-8 bytes into a
+    CommandError too, not a bare read_text(encoding="utf-8") error."""
     file_path = tmp_path / "custom-config.json"
     file_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
@@ -645,7 +638,7 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
 
     ADR0007V01: '.' has zero path components, a prefix of any folderlog
     value (explicit or computed-default) by construction -- the schema-
-    level folderadr/folderlog containment guard now catches this even
+    level folderadr/folderlog containment guard catches this even
     earlier than resolve_within's own path-outside-repository check."""
     from importlib import resources
 

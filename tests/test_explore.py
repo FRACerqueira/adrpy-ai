@@ -111,11 +111,9 @@ def test_explore_lists_recognized_and_unrecognized_files(tmp_path):
 
 
 def test_explore_reports_encoding_repair_for_a_file_with_invalid_utf8_bytes(tmp_path):
-    """Explore already tolerates invalid UTF-8 bytes
-    But never told the
-    caller a file needed repair -- the most natural place for this,
-    since explore's whole purpose is giving an agent visibility into
-    repository state."""
+    """Explore tolerates invalid UTF-8 bytes, and also tells the caller a
+    file needs repair -- the most natural place for this, since explore's
+    whole purpose is giving an agent visibility into repository state."""
     config_dict = _default_config_dict()
     config = _write_repo(
         tmp_path,
@@ -267,12 +265,11 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Explore's own docstring
-    promises "a file matching neither [naming scheme] still appears in
-    the report, never dropped silently" -- but a file excluded via
-    is_within (e.g. behind a junction escaping the folder) genuinely was
-    dropped silently from that same report, by a different mechanism the
-    promise didn't cover."""
+    """Explore promises "a file matching neither [naming scheme] still
+    appears in the report, never dropped silently" -- which must also hold
+    for a file excluded via is_within (e.g. behind a junction escaping the
+    folder), dropped by a different mechanism than the one the promise was
+    first written for."""
     config = _write_repo(tmp_path, _default_config_dict(), {})
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
@@ -296,17 +293,13 @@ def test_explore_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 
 
 def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_path, monkeypatch):
-    """`_build_entry`'s own bounded header read
-    has no tolerance at all, transient or persistent -- unlike every other
-    decision-file read in this codebase, which retries a transient
-    PermissionError via the shared read-retry helper (core/fs.py). One genuinely
-    unreadable file (locked by an editor, backup tool, or antivirus --
-    an ordinary occurrence in a folder of Markdown files people also
-    open by hand) must not kill the ENTIRE inventory with a bare
-    io-error, discarding every other, perfectly readable file too --
+    """One genuinely unreadable file (locked by an editor, backup tool, or
+    antivirus -- an ordinary occurrence in a folder of Markdown files
+    people also open by hand) must not kill the ENTIRE inventory with a
+    bare io-error, discarding every other, perfectly readable file too --
     the same failure class already guarded against for unreadable
-    *subdirectories*; explore should be just as best-effort about a
-    single unreadable *file*."""
+    *subdirectories*; explore is just as best-effort about a single
+    unreadable *file*."""
     config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
     _write_repo(
         tmp_path,
@@ -337,12 +330,11 @@ def test_explore_is_best_effort_when_one_file_is_persistently_unreadable(tmp_pat
 
 
 def test_explore_retries_a_transient_permission_error_instead_of_skipping_the_file(tmp_path, monkeypatch):
-    """Does TWO
-    things -- retries a TRANSIENT PermissionError, and treats a
-    PERSISTENT one as a skippable, warned file. The Test above
-    only proves the second half; this proves the first: a file that
-    fails twice then succeeds must appear normally in `decisions`, with
-    no warning at all, not be silently skipped."""
+    """The header read retries a TRANSIENT PermissionError, and treats a
+    PERSISTENT one as a skippable, warned file. The test above proves the
+    second half; this proves the first: a file that fails twice then
+    succeeds must appear normally in `decisions`, with no warning at all,
+    not be silently skipped."""
     config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
     _write_repo(
         tmp_path,
@@ -383,16 +375,13 @@ def test_explore_does_not_read_the_whole_file(tmp_path, monkeypatch):
     (path.read_bytes()) would be wasteful, and explore is the natural
     "safe first look" an AI agent would run against an unfamiliar/
     external repository, with no indication a matching file could be
-    huge. Confirmed live: an 800MB matching file drove peak traced
-    memory to ~2.5GB for that single candidate when read whole. Uses
-    the same bounded header read every other bulk scan in this
-    codebase already relies on -- same technique as read_header_lines' own
-    test_read_header_lines_does_not_read_the_whole_file (test_lifecycle.py):
-    Path.read_bytes/read_text must never be called at all, not merely
-    "called with a small size" (a size-based guard alone would not
-    catch a regression back to path.read_bytes(), which bypasses
-    builtins.open entirely and would otherwise slip past a
-    read-size-only check unnoticed)."""
+    huge (an 800MB matching file drove peak traced memory to ~2.5GB for
+    that single candidate when read whole). Same technique as
+    read_header_lines' own test_read_header_lines_does_not_read_the_whole_file
+    (test_lifecycle.py): Path.read_bytes/read_text must never be called at
+    all, not merely "called with a small size" (a size-based guard alone
+    would not catch a regression back to path.read_bytes(), which bypasses
+    builtins.open entirely)."""
     config_for_text = parse_repo_config(json.dumps(_default_config_dict()))
     _write_repo(
         tmp_path,

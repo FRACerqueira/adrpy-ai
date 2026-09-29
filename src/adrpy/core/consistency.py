@@ -301,13 +301,13 @@ def _status_cells(header):
     return f"Created: {created}; Changed: {changed}; Superseded: {superseded}."
 
 
-# The no-header hint for an empty file with a legacy-scheme name: the
-# tool only ever creates current-scheme names, so it is never an
-# interrupted create's, and the user decides whether it goes.
 # The no-header hint for a file with content: its first sentence (an
 # empty file is an interrupted create's) does not apply.
 _NON_EMPTY_NO_HEADER_HINT = HINTS[FailureCodes.NO_HEADER].split(": remove it. ", 1)[1]
 
+# The no-header hint for an empty file with a legacy-scheme name: the
+# tool only ever creates current-scheme names, so it is never an
+# interrupted create's, and the user decides whether it goes.
 _EMPTY_LEGACY_NO_HEADER_HINT = (
     "The file is empty (0 bytes) and has a legacy-scheme name, which this tool never creates: it is "
     "the user's file, not a name reservation of this tool -- ask the user before removing it, never "

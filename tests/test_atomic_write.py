@@ -43,9 +43,9 @@ def test_atomic_write_bytes_returns_the_attempt_count(tmp_path):
 
 
 def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_path, monkeypatch):
-    """The retry count was computed but never
-    returned to the caller, so nothing (not even the command's own
-    result) could tell whether a write needed contention-driven retries."""
+    """The retry count reaches the caller: without it nothing (not even
+    the command's own result) could tell whether a write needed
+    contention-driven retries."""
     target = tmp_path / "decision.md"
     real_replace = os.replace
     calls = {"n": 0}
@@ -66,11 +66,9 @@ def test_atomic_write_reports_more_than_one_attempt_after_transient_retry(tmp_pa
 
 
 def test_atomic_write_raises_the_last_error_after_exhausting_all_retries(tmp_path, monkeypatch):
-    """No existing test forced ALL
-    RETRY_ATTEMPTS to fail -- only 2 of 3, succeeding on the 3rd. A
-    persistent PermissionError (outlasting the whole retry budget) must
-    propagate as the real error, not hang or swallow it, and the orphaned
-    temp file must still be cleaned up on every attempt along the way."""
+    """A PermissionError that outlasts the whole RETRY_ATTEMPTS budget
+    propagates as the real error -- no hang, not swallowed -- and the
+    orphaned temp file is still cleaned up on every attempt along the way."""
     from adrpy.core.fs import RETRY_ATTEMPTS
 
     target = tmp_path / "decision.md"
@@ -100,11 +98,10 @@ def test_atomic_write_text_also_returns_the_attempt_count(tmp_path):
 
 
 def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monkeypatch):
-    """Only PermissionError triggered the orphan-temp cleanup; any other
-    OSError (ENOSPC, a missing parent directory) left
-    the temp file behind forever. Confirmed there is nothing transient
-    about these -- retrying wouldn't help -- so they must fail fast (no
-    retry budget wasted) but still never leak the temp file."""
+    """Any OSError, not only PermissionError, cleans up the temp file (an
+    ENOSPC or a missing parent directory once left it behind forever).
+    Nothing about these is transient, so they fail fast, spending no retry
+    budget."""
     target = tmp_path / "decision.md"
 
     def boom(*_args, **_kwargs):
@@ -119,15 +116,11 @@ def test_atomic_write_cleans_up_orphan_on_non_permission_oserror(tmp_path, monke
 
 
 def test_atomic_write_bytes_cleans_up_orphan_on_a_non_oserror_mid_write(tmp_path, monkeypatch):
-    """Round 35 resilience front: a KeyboardInterrupt (or any other
-    non-OSError) raised during the write or the os.replace call bypassed
-    the existing `except OSError` cleanup entirely, leaking the temp file
-    -- reproduced live against adrpy-skills' installer.py (patched
-    os.replace to raise KeyboardInterrupt, found the .tmp file left behind
-    in the target directory, permanently, until a human deleted it by
-    hand). Any exception escaping mid-write, not just OSError, must still
-    leave no orphan behind -- same fix shape as atomic_write_chunks's own
-    chunk-producer case above."""
+    """A KeyboardInterrupt (or any other non-OSError) raised during the
+    write or the os.replace call bypassed the `except OSError` cleanup and
+    left the .tmp file in the target directory until someone deleted it by
+    hand. Any exception escaping mid-write, not just OSError, must still
+    leave no orphan behind."""
     target = tmp_path / "decision.md"
 
     def boom(*_args, **_kwargs):
@@ -231,12 +224,11 @@ def test_cleanup_removes_only_old_temp_files(tmp_path):
 
 
 def test_cleanup_finds_orphaned_temp_files_inside_subfolders_too(tmp_path):
-    """Every other scan in this
-    codebase (scan_decisions, migrate, explore, init's own numbering) uses
-    rglob to also cover subfolders under folderadr; this one used a
-    non-recursive glob, so an orphan left inside a subfolder was never
-    found or reported -- a housekeeping leak, not a correctness issue
-    (temp files never collide by name and are never read by anything)."""
+    """Every other scan (scan_decisions, migrate, explore, init's own
+    numbering) uses rglob to cover subfolders under folderadr, and so does
+    this one: a non-recursive glob never found an orphan inside a subfolder
+    -- a housekeeping leak, not a correctness issue (temp files never
+    collide by name and are never read by anything)."""
     subfolder = tmp_path / "nested"
     subfolder.mkdir()
     old_temp = subfolder / f"old.md.{OWN_TEMP_HEX}.tmp"
@@ -297,8 +289,8 @@ def test_cleanup_reports_a_warning_instead_of_raising_when_a_candidate_cannot_be
 )
 def test_cleanup_never_removes_a_tmp_file_atomic_write_could_not_have_created(tmp_path, name):
     # atomic_write_bytes/atomic_write_chunks name their temp file
-    # `<target name>.<uuid4 hex>.tmp` -- any other *.tmp in the same folder
-    # is the user's, however old.
+    # `<target name>.<16 hex>.tmp` (earlier builds: 32 hex, still swept) --
+    # any other *.tmp in the same folder is the user's, however old.
     foreign = tmp_path / name
     foreign.write_text("user data")
     old_time = time.time() - 60
@@ -349,7 +341,7 @@ def test_normalize_newlines_is_idempotent():
 def test_normalize_then_write_never_doubles_a_cr(tmp_path):
     """Regression: this exact shape (already-terminated content, written
     with the wrong newline mode) doubled every CR into "\\r\\r\\n" in the
-    `new` command before atomic_write_text started normalizing itself."""
+    `new` command; atomic_write_text normalizes it itself."""
     target = tmp_path / "decision.md"
     already_crlf_content = "line1\r\nline2\r\n" + "template body\r\n"
 

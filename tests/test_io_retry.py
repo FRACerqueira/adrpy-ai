@@ -17,9 +17,8 @@ def test_succeeds_immediately_when_the_read_never_fails():
 
 
 def test_retries_a_transient_permission_error_and_then_succeeds():
-    """Nothing anywhere proved
-    this shared helper's own contract directly -- every exercise of it
-    was indirect, through one specific caller's own test."""
+    """The shared helper's own contract, directly -- not only through one
+    specific caller's own test."""
     calls = {"count": 0}
 
     def read():

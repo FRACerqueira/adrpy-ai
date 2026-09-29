@@ -236,10 +236,8 @@ def run(args):
             raise UsageError(f"--reopenwhen is not valid when --classification is '{classification}'.")
         validate_severity(flags["severity"])
         validate_resolution(flags["resolution"])
-        # front is the only one of the three still free text -- severity/
-        # resolution are already constrained to a closed set above, which
-        # can never contain a delimiter, so checking them here would be
-        # dead code.
+        # Only front is free text: severity/resolution are a closed set
+        # (validated above) that can never contain a delimiter.
         reject_embedded_delimiter(flags["front"], "front")
         explicit_round = parse_round(flags["round"]) if provided_round else None
     elif classification == DEFERRED_CLASSIFICATION:
@@ -273,10 +271,9 @@ def run(args):
     warnings = []
     with attach_warnings(warnings):
         # The schema-time containment guard (core/config.py's
-        # own parse_repo_config) can never see a junction/symlink
-        # planted inside the repo tree -- this re-checks against the
-        # REAL, resolved directories, right before folderlog is
-        # actually used.
+        # parse_repo_config) can never see a junction/symlink planted
+        # inside the repo tree -- re-checked against the REAL, resolved
+        # directories, right before folderlog is used.
         reject_aliased_repo_folders(target, config)
         log_dir = decision_log_dir_for(target, config)
         # folderlog is this tool's own folder: every temp an interrupted
@@ -313,12 +310,9 @@ def run(args):
                     )
 
         filename = build_filename(refdate, classification, scope, slug)
-        # Second, independent layer of defense beyond validate_scope's
-        # own kebab-case check: a future weakening of that regex, e.g.
-        # reusing reject_embedded_delimiter instead, must not silently
-        # let scope escape log_dir -- the same real-path-resolution
-        # guard new.py's own file_path already goes through, not just
-        # a stricter regex.
+        # A second, independent defense beyond validate_scope's own
+        # kebab-case check: real-path resolution (as new.py's file_path
+        # gets), so a weakened regex can never let scope escape log_dir.
         file_path = resolve_within(log_dir, filename)
 
         content = build_entry_content(
@@ -331,10 +325,8 @@ def run(args):
             reopen_when=flags.get("reopenwhen"),
         )
 
-        # Same TOCTOU reasoning as init's own folder creation: two
-        # concurrent first-ever `log` calls both want this directory to
-        # exist, with no conflicting content to lose -- exist_ok=True
-        # closes the race outright.
+        # exist_ok=True: two concurrent first-ever `log` calls want the
+        # same end state (as in init's own folder creation).
         log_dir.mkdir(parents=True, exist_ok=True)
         prepared = prepare_write(file_path, normalize_newlines(content).encode("utf-8"))
         try:
@@ -371,16 +363,14 @@ def run(args):
                 warnings.append(warning)
             regenerate_index(log_dir, warnings=warnings)
         except (OSError, CommandError) as error:
-            # The entry above is already committed to disk for real --
-            # `data.file` names that partial success explicitly, the
-            # same shape reject/supersede already use for their own
-            # second-write failures. CommandError here is either
-            # log-directory-contains-unrecognized-file or (ADR0007V01,
-            # folderlog now recursively scanned) log-scan-incomplete
-            # -- both are the only ones regenerate_index itself can
-            # raise, and each one's own detail text already names the
-            # offending file/subdirectory, so it isn't duplicated into
-            # `data` alongside the entry's own path.
+            # The entry above is already committed to disk --
+            # `data.file` names that partial success, the same shape
+            # reject/supersede use for their own second-write failures.
+            # The only CommandErrors regenerate_index raises
+            # (log-directory-contains-unrecognized-file, and
+            # log-scan-incomplete for the recursive scan of ADR0007V01)
+            # already name the offending file/subdirectory in their
+            # detail, so `data` doesn't repeat it.
             raise CommandError(
                 FailureCodes.LOG_INDEX_REGENERATION_FAILED,
                 f"{file_path}: entry written, but regenerating INDEX.md failed: {error}",

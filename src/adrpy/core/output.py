@@ -38,12 +38,10 @@ def emit_failure(code, detail=None, data=None, warnings=None):
         payload["detail"] = detail
     if data:
         payload["data"] = data
-    # `if warnings:` would treat an explicitly empty list (a command's own
-    # attach_warnings region genuinely started, nothing to report yet) the
-    # same as None (never started at all) -- contradicting the "warnings
-    # always present" guarantee on the success side. `is not None`
-    # distinguishes the two; a raw OSError/internal-error caught in
-    # __main__ before any command's own region began still omits the key.
+    # `is not None`, not truthiness: an empty list means the command's
+    # attach_warnings region started, so the key is present as on success;
+    # None means it never did (a raw error caught in __main__), and the
+    # key is omitted.
     if warnings is not None:
         payload["warnings"] = warnings
     print(json.dumps(payload))
@@ -53,11 +51,10 @@ def emit_failure(code, detail=None, data=None, warnings=None):
 
 
 def emit_usage_failure(code, detail=None):
-    """Same JSON-envelope contract as emit_failure, but for a malformed CLI
-    invocation itself (unknown verb, unknown flag, missing required value)
-    -- exit code 2, not 1. A UsageError printing free text to stderr with
-    NOTHING on stdout would force an agent to parse two different shapes
-    of failure depending on which layer caught the mistake."""
+    """Same JSON envelope as emit_failure, for a malformed CLI invocation
+    (unknown verb, unknown flag, missing required value), with exit code
+    2 instead of 1 -- one failure shape on stdout, whichever layer caught
+    the mistake."""
     payload = {"success": False, "code": code}
     if detail:
         payload["detail"] = detail

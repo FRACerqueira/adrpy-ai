@@ -33,9 +33,8 @@ def _installed_path(tmp_path, provider, skill_name="pre-release-audit"):
 class TestInstallBasic:
     def test_install_writes_all_four_providers(self, tmp_path):
         result = installer.install(str(tmp_path), ["all"], ["pre-release-audit"], "project", False)
-        # "shared-doc" is its own row now too -- copilot and agentsmd both
-        # need it, but it's written (and reported) once per skill, not once
-        # per provider.
+        # "shared-doc" is its own row -- copilot and agentsmd both need it, but
+        # it's written (and reported) once per skill, not once per provider.
         assert {row["provider"] for row in result["installed"]} == {"claude", "cursor", "copilot", "agentsmd", "shared-doc"}
         assert result["skipped"] == []
         assert (tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
@@ -77,9 +76,9 @@ class TestMarkerRoundTrip:
         }
 
     def test_marker_is_placed_after_frontmatter_not_before(self, tmp_path):
-        # Round 32, Class I: the marker's exact position was never asserted
-        # directly (only that the round-trip hash is "clean", which would
-        # still pass if the marker were misplaced but self-consistent).
+        # The marker's exact position, asserted directly: a "clean" round-trip
+        # hash would still pass if the marker were misplaced but
+        # self-consistent.
         installer.install(str(tmp_path), ["claude"], ["pre-release-audit"], "project", False)
         content = (tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").read_text(encoding="utf-8")
         assert not content.startswith("<!-- adrpy-skills:")
@@ -87,11 +86,10 @@ class TestMarkerRoundTrip:
         assert content[frontmatter_end:].startswith("<!-- adrpy-skills:")
 
     def test_unicode_content_round_trips_through_the_hash_and_agentsmd_tag_scan(self, tmp_path):
-        # Round 35, Test-Adequacy front: no test exercised non-ASCII content
-        # through the hash/marker round-trip or the AGENTS.md tag scan.
-        # Confirms compute_hash's explicit UTF-8 encoding and the tag
-        # regex's `[^:\n]+` name group both handle it correctly, not just
-        # ASCII skill bodies.
+        # Non-ASCII content through the hash/marker round-trip and the
+        # AGENTS.md tag scan: compute_hash's explicit UTF-8 encoding and the
+        # tag regex's `[^:\n]+` name group must both handle it, not just ASCII
+        # skill bodies.
         installer.install(str(tmp_path), ["claude", "agentsmd"], ["pre-release-audit"], "project", False)
 
         claude_path = tmp_path / ".claude" / "skills" / "pre-release-audit" / "SKILL.md"
@@ -166,11 +164,10 @@ class TestDriftProtection:
         assert "drifted" in reasons
 
     def test_hand_edited_shared_doc_is_skipped_via_agentsmd_too(self, tmp_path):
-        # Round 35, Test-Adequacy front: every shared-doc drift/foreign test
-        # above used copilot -- agentsmd is the other stub-mode provider,
-        # with its own, more complex reference-counting via
-        # _other_stub_providers_reference, and had never triggered a
-        # drift/foreign shared-doc scenario in any test.
+        # The same drift/foreign shared-doc scenario through agentsmd, the
+        # other stub-mode provider, which has its own, more complex
+        # reference-counting via _other_stub_providers_reference (the tests
+        # above use copilot).
         installer.install(str(tmp_path), ["agentsmd"], ["adrpy"], "project", False)
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.write_text(shared.read_text(encoding="utf-8") + "\nHAND EDITED\n", encoding="utf-8")
@@ -359,9 +356,9 @@ class TestList:
         assert scopes == {"project", "global"}
 
     def test_list_always_returns_a_warnings_key(self, tmp_path):
-        # Round 32, Class E: every response -- including this read-only one
-        # -- carries `warnings`, even empty, matching the cross-command
-        # guarantee cli/explore.py and cli/help.py already document.
+        # Every response -- including this read-only one -- carries `warnings`,
+        # even empty, matching the cross-command guarantee cli/explore.py and
+        # cli/help.py document.
         result = installer.list_installed(str(tmp_path), ["all"], ["all"])
         assert result["warnings"] == []
 
@@ -375,10 +372,9 @@ class TestList:
         assert by_skill["decision-log"]["drifted"] is None
 
     def test_list_includes_a_shared_doc_row_when_a_stub_mode_provider_is_requested(self, tmp_path):
-        # Round 37, Class P7: install/remove already report a "shared-doc"
-        # row under `installed`/`removed`; list never did, even though a
-        # blocked/drifted shared doc is exactly what would later cause
-        # install's own "shared-doc-blocked" skip.
+        # list reports a "shared-doc" row, as install/remove do under
+        # `installed`/`removed`: a blocked/drifted shared doc is exactly what
+        # would later cause install's own "shared-doc-blocked" skip.
         installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         rows = installer.list_installed(str(tmp_path), ["copilot"], ["adrpy"])["skills"]
         shared_rows = [r for r in rows if r["provider"] == "shared-doc"]
@@ -460,12 +456,11 @@ class TestUnknownValues:
 
 
 class TestRemoveForeignProtection:
-    """Round 32, Class A: remove() must refuse to touch a 'foreign' file
-    or block (no adrpy-skills marker at all) exactly like install() already
-    does -- previously it only checked for 'drifted', so a hand-written
-    file colliding with a skill's install path (e.g. a real, hand-authored
-    ~/.claude/skills/<name>/SKILL.md predating any adrpy-skills install)
-    was deleted unconditionally, with no warning, even without --force."""
+    """remove() must refuse to touch a 'foreign' file or block (no adrpy-skills
+    marker at all) exactly like install() does, not only a 'drifted' one: a
+    hand-written file colliding with a skill's install path (e.g. a real,
+    hand-authored ~/.claude/skills/<name>/SKILL.md predating any
+    adrpy-skills install) must never be deleted without --force."""
 
     def test_remove_skips_foreign_file_without_force(self, tmp_path):
         target = tmp_path / ".cursor" / "rules" / "pre-release-audit.mdc"
@@ -487,10 +482,9 @@ class TestRemoveForeignProtection:
         assert not target.exists()
 
     def test_remove_global_claude_skips_hand_written_file_without_force(self, tmp_path, monkeypatch):
-        # Reproduces the release-blocking scenario found by the Round 32
-        # filesystem-security front: `adrpy-skills remove --provider claude
-        # --target global` with no other flags must never delete a real,
-        # hand-authored ~/.claude/skills/<name>/SKILL.md.
+        # `adrpy-skills remove --provider claude --target global` with no other
+        # flags must never delete a real, hand-authored
+        # ~/.claude/skills/<name>/SKILL.md.
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", lambda: home)
@@ -549,11 +543,11 @@ class TestRemoveForeignProtection:
 
 
 class TestAgentsmdMalformedBlocks:
-    """Round 32, Class C: AGENTS.md block parsing must recognize -- and
-    refuse to silently touch -- a truncated block (a 'start' tag with no
-    matching 'end') and a duplicated block (more than one complete pair
-    for the same skill), instead of either silently appending a second,
-    conflicting block or only ever touching the first of two copies."""
+    """AGENTS.md block parsing must recognize -- and refuse to silently touch
+    -- a truncated block (a 'start' tag with no matching 'end') and a
+    duplicated block (more than one complete pair for the same skill),
+    instead of either silently appending a second, conflicting block or only
+    ever touching the first of two copies."""
 
     def test_truncated_block_is_reported_as_malformed_by_install(self, tmp_path):
         agents_md = tmp_path / "AGENTS.md"
@@ -593,8 +587,8 @@ class TestAgentsmdMalformedBlocks:
         result = installer.install(str(tmp_path), ["agentsmd"], ["pre-release-audit"], "project", False)
         assert "agentsmd" not in {row["provider"] for row in result["installed"]}
         assert result["skipped"][0]["reason"] == "malformed"
-        # Neither copy was touched -- an untested "fix" that patched only
-        # the first match would have left the second permanently stale.
+        # Neither copy was touched -- a "fix" that patched only the first match
+        # would leave the second permanently stale.
         assert agents_md.read_text(encoding="utf-8") == block
 
     def test_malformed_block_can_still_be_overwritten_with_force(self, tmp_path):
@@ -611,10 +605,10 @@ class TestAgentsmdMalformedBlocks:
         assert check_drift(inner) == "clean"
 
     def test_force_cleanup_of_truncated_block_never_deletes_another_skills_valid_block(self, tmp_path):
-        # Round 34, re-verification finding: _agentsmd_force_strip_all used to
-        # use a greedy regex from the orphaned :start tag to end-of-file when
-        # no :end existed anywhere for that skill -- deleting everything past
-        # it, including another skill's own still-valid, unrelated block.
+        # _agentsmd_force_strip_all must not strip from an orphaned :start tag
+        # to end-of-file when no :end exists anywhere for that skill (a greedy
+        # regex does) -- that deletes everything past it, including another
+        # skill's own still-valid, unrelated block.
         installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
         agents_md = tmp_path / "AGENTS.md"
         before_decision_log = agents_md.read_text(encoding="utf-8")
@@ -641,9 +635,9 @@ class TestAgentsmdMalformedBlocks:
         assert check_drift(inner) == "clean"
 
     def test_force_cleanup_of_duplicated_block_never_deletes_an_interleaved_skills_block(self, tmp_path):
-        # Same root cause, the other malformed shape: a greedy start-to-LAST-end
-        # regex used to swallow any other skill's block sitting between two
-        # duplicate copies of the same skill's own block.
+        # The other malformed shape: a greedy start-to-LAST-end regex would
+        # swallow any other skill's block sitting between two duplicate copies
+        # of the same skill's own block.
         duplicated = (
             "<!-- adrpy:skills:pre-release-audit:start -->\nfirst copy\n"
             "<!-- adrpy:skills:pre-release-audit:end -->\n"
@@ -662,11 +656,9 @@ class TestAgentsmdMalformedBlocks:
         assert "adrpy:skills:decision-log" in after
 
     def test_two_different_skills_malformed_in_the_same_call_are_detected_independently(self, tmp_path):
-        # Round 35, Test-Adequacy front: every existing malformed-block test
-        # uses a file containing only ONE skill's own (malformed) block --
-        # this exercises detection for two DIFFERENT skills, both malformed,
-        # in the same install() call, confirming AGENTS.md is re-read fresh
-        # per skill_name rather than a status computed once and reused.
+        # Two DIFFERENT skills, both malformed, in the same install() call:
+        # AGENTS.md must be re-read fresh per skill_name rather than a status
+        # computed once and reused.
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(
             "<!-- adrpy:skills:pre-release-audit:start -->\nno matching end tag here\n"
@@ -744,11 +736,11 @@ class TestAgentsmdMalformedBlocks:
 
 
 class TestGlobalScopeValidatedBeforeAnyWrite:
-    """Round 32, Class D: --target global's per-provider validity check
-    must run for every requested provider BEFORE any write begins -- not
-    inside the per-provider loop, where an earlier provider in iteration
-    order could already have written (install) or deleted (remove)
-    something before a later provider triggers the usage-error."""
+    """--target global's per-provider validity check must run for every
+    requested provider BEFORE any write begins -- not inside the
+    per-provider loop, where an earlier provider in iteration order could
+    already have written (install) or deleted (remove) something before a
+    later provider triggers the usage-error."""
 
     def test_install_validates_every_provider_before_writing_any(self, tmp_path, monkeypatch):
         home = tmp_path / "home"
@@ -773,11 +765,11 @@ class TestGlobalScopeValidatedBeforeAnyWrite:
 
 
 class TestAtomicWrites:
-    """Round 32, Class B1: installer.py must not bypass the project-wide
-    atomic_write.py convention -- a raw Path.write_text() call can leave a
-    torn/empty file behind if interrupted mid-write, silently swallowed by
-    the next `install` (which would see "absent" and write a fresh file
-    over the loss without ever reporting it)."""
+    """installer.py must not bypass the project-wide atomic_write.py convention
+    -- a raw Path.write_text() call can leave a torn/empty file behind if
+    interrupted mid-write, silently swallowed by the next `install` (which
+    would see "absent" and write a fresh file over the loss without ever
+    reporting it)."""
 
     def test_installer_never_calls_raw_write_text(self):
         import inspect
@@ -787,12 +779,12 @@ class TestAtomicWrites:
 
 
 class TestRemoveTolerateVanishingFile:
-    """Round 32, Class B2: remove()'s generic-provider branch must not
-    raise if the target file disappears between the read (used for the
-    drift check) and the unlink -- a classic check-then-use window that,
-    before this fix, would abort the whole command (including any other
-    (provider, skill) pairs still queued in the same call) instead of
-    behaving like the rest of the project's best-effort-per-item writers."""
+    """remove()'s generic-provider branch must not raise if the target file
+    disappears between the read (used for the drift check) and the unlink --
+    a classic check-then-use window that would abort the whole command
+    (including any other (provider, skill) pairs still queued in the same
+    call) instead of behaving like the rest of the project's
+    best-effort-per-item writers."""
 
     def test_remove_tolerates_file_vanishing_between_read_and_unlink(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
@@ -811,11 +803,10 @@ class TestRemoveTolerateVanishingFile:
         assert result["removed"] == [{"provider": "cursor", "skill": "pre-release-audit", "file": str(path)}]
 
     def test_shared_doc_unlink_tolerates_file_vanishing_between_read_and_unlink(self, tmp_path, monkeypatch):
-        # Round 35, Test-Adequacy front: the generic-provider branch's
-        # missing_ok=True (above) has a red/green test; the shared-doc
-        # branch's own, separate read-then-unlink sequence (installer.py's
-        # `remove()`, the "still_referenced" block) never did, despite the
-        # identical TOCTOU shape.
+        # The shared-doc branch's own, separate read-then-unlink sequence
+        # (installer.py's `remove()`, the "still_referenced" block) has the
+        # same TOCTOU shape as the generic-provider branch's missing_ok=True
+        # above.
         installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         original_read_text = Path.read_text
@@ -835,22 +826,19 @@ class TestRemoveTolerateVanishingFile:
 
 
 class TestAgentsmdAdversarialContentStaysLinearTime:
-    """Round 34, Security front: the prior per-skill DOTALL-based block
-    regexes (`.*`/`.*?` scanning for a matching `:end`) cost O(n^2) against
-    adversarial content with many `:start` tags and no matching `:end`
-    anywhere -- measured ~9.5s against a 771KB crafted file, reachable even
-    by the read-only `list` command (default --provider all includes
-    agentsmd). The fix replaces per-skill DOTALL spans with one linear tag
-    scan (no `.*`/DOTALL at all), so this must stay fast regardless of how
-    many near-miss tags an adversarial AGENTS.md contains."""
+    """Per-skill DOTALL block regexes (`.*`/`.*?` scanning for a matching
+    `:end`) cost O(n^2) against adversarial content with many `:start` tags
+    and no matching `:end` anywhere -- reachable even by the read-only
+    `list` command (default --provider all includes agentsmd). The parse is
+    one linear tag scan (no `.*`/DOTALL at all), so this must stay fast
+    regardless of how many near-miss tags an adversarial AGENTS.md contains."""
 
     def test_many_unmatched_start_tags_stays_fast(self, tmp_path):
-        # Same shape as the front's own repro: repeated :start tags for a
-        # real skill name, no :end anywhere. A quadratic implementation
-        # would already take several seconds at this size; a linear one
-        # finishes near-instantly -- the threshold below is generous
-        # specifically to avoid machine-speed flakiness while still being
-        # far below what O(n^2) would need at this size.
+        # Repeated :start tags for a real skill name, no :end anywhere. A
+        # quadratic implementation would already take several seconds at this
+        # size; a linear one finishes near-instantly -- the threshold below is
+        # generous specifically to avoid machine-speed flakiness while still
+        # being far below what O(n^2) would need at this size.
         content = ("<!-- adrpy:skills:decision-log:start -->\n" + "x" * 200) * 3000
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text(content, encoding="utf-8")
@@ -865,15 +853,13 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
         assert row["drifted"] is True  # malformed: many starts, zero ends
 
     def test_time_scales_linearly_not_quadratically_with_tag_count(self, tmp_path):
-        # Round 35, Test-Adequacy front: the absolute-threshold test above
-        # only reliably catches a full revert to the old catastrophic-
-        # backtracking regex -- a "mild" quadratic reintroduction built from
-        # fast C-level primitives (str.find/str.count in a loop) measured
+        # The absolute-threshold test above only reliably catches a full revert
+        # to a catastrophic-backtracking regex -- a "mild" quadratic built from
+        # fast C-level primitives (str.find/str.count in a loop) runs
         # 0.14-0.78s at this same input size, comfortably under 3.0s despite
-        # being genuinely O(n^2). A scaling/ratio test catches the
-        # complexity CLASS regardless of the implementation's constant
-        # factor: linear growth scales ~8x for an 8x input increase;
-        # quadratic scales ~64x.
+        # being genuinely O(n^2). A scaling/ratio test catches the complexity
+        # CLASS regardless of the implementation's constant factor: linear
+        # growth scales ~8x for an 8x input increase; quadratic scales ~64x.
         def measure(target, n):
             target.mkdir()
             content = ("<!-- adrpy:skills:decision-log:start -->\n" + "x" * 200) * n
@@ -892,12 +878,11 @@ class TestAgentsmdAdversarialContentStaysLinearTime:
 
 
 class TestReadRetriesTransientPermissionError:
-    """Round 35 resilience front: installer.py's own reads never used the
-    project's shared read_with_permission_retry (core/fs.py), unlike
-    every other reader (core/config.py, core/lifecycle.py) --
-    a single transient PermissionError (a Windows "pending delete" window
-    under a concurrent reader) failed the whole install/remove/list call
-    outright instead of being absorbed."""
+    """installer.py's reads go through the project's shared
+    read_with_permission_retry (core/fs.py), like every other reader
+    (core/config.py, core/lifecycle.py): a single transient PermissionError
+    (a Windows "pending delete" window under a concurrent reader) must be
+    absorbed, not fail the whole install/remove/list call."""
 
     def test_install_absorbs_a_single_transient_permission_error_on_read(self, tmp_path, monkeypatch):
         installer.install(str(tmp_path), ["cursor"], ["pre-release-audit"], "project", False)
@@ -920,10 +905,9 @@ class TestReadRetriesTransientPermissionError:
 
 
 class TestWriteRetryVisibility:
-    """Round 35 resilience front: a write that only succeeded after
-    absorbing transient contention was silently discarded -- every core-CLI
-    write site captures atomic_write_text's own attempt count and surfaces
-    it via core.warnings.retry_warning; installer.py's 4 call sites didn't."""
+    """A write that only succeeded after absorbing transient contention is
+    reported: installer.py surfaces atomic_write_text's attempt count via
+    core.warnings.retry_warning, as every core-CLI write site does."""
 
     def test_install_reports_a_warning_after_absorbing_a_transient_write_retry(self, tmp_path, monkeypatch):
         def multi_attempt_write(path, content):
@@ -938,14 +922,12 @@ class TestWriteRetryVisibility:
 
 
 class TestSharedDocWrittenBeforeStubProviders:
-    """Round 35 resilience front: needs_shared_doc used to be discovered as
-    a side effect of the provider loop, and the shared doc was only written
-    AFTER the whole loop finished -- reproduced: interrupting install()
-    between two stub-mode providers left the first one's file referencing a
+    """needs_shared_doc is computed from the request alone (no I/O) and the
+    shared doc is written before the provider loop starts. Discovered inside
+    the loop and written after it, an install() interrupted between two
+    stub-mode providers would leave the first one's file referencing a
     doc/ai-skills/<name>.md that was never written, with list_installed()
-    reporting a false drifted: false the whole time. Fixed by computing
-    needs_shared_doc from the request alone (no I/O) and writing the shared
-    doc before the provider loop starts."""
+    reporting a false drifted: false the whole time."""
 
     def test_shared_doc_exists_before_any_stub_provider_is_written(self, tmp_path, monkeypatch):
         original_atomic_write_text = installer.atomic_write_text
@@ -964,25 +946,22 @@ class TestSharedDocWrittenBeforeStubProviders:
 
 
 class TestSharedDocReportingAndBlocking:
-    """Round 36 re-verification finding: two bugs in install() around the
-    shared doc's own success/blocked status."""
+    """install()'s reporting of the shared doc's own success/blocked status."""
 
     def test_shared_doc_write_appears_in_installed(self, tmp_path):
-        # High: a successful shared-doc write never appeared anywhere in
-        # the result, even in the plain happy path -- a caller checking
-        # `installed` for confirmation of what was actually written on
-        # disk would have missed it entirely.
+        # A successful shared-doc write appears in the result, even in the
+        # plain happy path -- a caller checking `installed` for confirmation of
+        # what was actually written on disk must see it.
         result = installer.install(str(tmp_path), ["copilot"], ["adrpy"], "project", False)
         shared_rows = [row for row in result["installed"] if row["provider"] == "shared-doc"]
         assert len(shared_rows) == 1
         assert shared_rows[0]["file"] == str(tmp_path / "doc" / "ai-skills" / "adrpy.md")
 
     def test_blocked_shared_doc_prevents_stub_provider_from_writing_a_stale_reference(self, tmp_path):
-        # High: a foreign/drifted shared doc, blocked without --force,
-        # used to have no effect on whether a stub-mode provider's own
-        # file still got written pointing at it -- reported as a clean
-        # install success while referencing content that was never
-        # actually verified or regenerated.
+        # A foreign/drifted shared doc, blocked without --force, also stops a
+        # stub-mode provider's own file pointing at it from being written --
+        # otherwise reported as a clean install success while referencing
+        # content that was never verified or regenerated.
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
@@ -1007,10 +986,8 @@ class TestSharedDocReportingAndBlocking:
         assert "USER-DOC-SENTINEL" not in shared.read_text(encoding="utf-8")
 
     def test_blocked_shared_doc_also_blocks_copilot_not_just_agentsmd(self, tmp_path):
-        # Round 37, Class P9: the sibling test above only ever exercised
-        # agentsmd -- copilot is the other stub-mode provider and shares
-        # the exact same shared_doc_blocked check, never independently
-        # confirmed.
+        # copilot is the other stub-mode provider and shares the exact same
+        # shared_doc_blocked check as agentsmd (the sibling test above).
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
@@ -1023,9 +1000,9 @@ class TestSharedDocReportingAndBlocking:
         assert not (tmp_path / ".github" / "instructions" / "adrpy.instructions.md").exists()
 
     def test_blocked_shared_doc_for_one_skill_does_not_leak_into_another_skills_install(self, tmp_path):
-        # Round 37, Class P9: shared_doc_blocked is a per-skill local inside
-        # the skill_name loop -- never actually proven not to leak across
-        # skills or providers in the same multi-skill call.
+        # shared_doc_blocked is a per-skill local inside the skill_name loop:
+        # it must not leak across skills or providers in the same multi-skill
+        # call.
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
@@ -1044,11 +1021,11 @@ class TestSharedDocReportingAndBlocking:
 
 
 class TestWarningIdentityAndWording:
-    """Round 36 re-verification finding: retry_warning's own message
-    carries no file identity, ambiguous in install()/remove() specifically
-    (the one place in the project that can write several files in one
-    call); and --force's "overwritten" wording overstates what happens to
-    a malformed agentsmd block's own orphaned body text."""
+    """retry_warning's message names the file that needed retries --
+    install()/remove() are the one place in the project that can write
+    several files in one call; and --force's wording must not overstate what
+    happens to a malformed agentsmd block's own orphaned body text (it is
+    not "overwritten")."""
 
     def test_retry_warning_identifies_which_file_needed_retries(self, tmp_path, monkeypatch):
         def multi_attempt_write(path, content):
@@ -1064,9 +1041,8 @@ class TestWarningIdentityAndWording:
         assert any(w.startswith("cursor/pre-release-audit: ") and "3 attempts" in w for w in result["warnings"])
 
     def test_shared_doc_retry_warning_carries_its_own_identity(self, tmp_path, monkeypatch):
-        # Round 37, Class P9: 3 of installer.py's 4 retry_warning call
-        # sites were never exercised for their own identity prefix -- only
-        # the generic/cursor site (above) was.
+        # Every retry_warning call site in installer.py carries its own
+        # identity prefix, not only the generic/cursor one above.
         def multi_attempt_write(path, content):
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text(content, encoding="utf-8")
@@ -1101,8 +1077,8 @@ class TestWarningIdentityAndWording:
         assert any(w.startswith("agentsmd/adrpy: ") and "3 attempts" in w for w in result["warnings"])
 
     def test_force_overwrite_of_a_foreign_shared_doc_produces_its_own_warning(self, tmp_path):
-        # Round 37, Class P9: exercised by TestSharedDocReportingAndBlocking's
-        # own force test, but the warning text itself was never asserted on.
+        # The warning text itself, which TestSharedDocReportingAndBlocking's
+        # own force test does not assert on.
         shared = tmp_path / "doc" / "ai-skills" / "adrpy.md"
         shared.parent.mkdir(parents=True)
         shared.write_text("hand-written doc, no marker at all", encoding="utf-8")
@@ -1124,18 +1100,13 @@ class TestWarningIdentityAndWording:
 
 
 class TestReadTextTOCTOUCollapse:
-    """Round 37, Class P2: the `path.exists()`-then-`_read_text(path)`
-    pattern was repeated 9 times across this file; two of the nine
-    (list_installed's own reads, and the shared-doc-removal check inside
-    remove()) had no protection at all against the file vanishing in
-    between, and could crash with a raw, uncaught FileNotFoundError --
-    reachable even from `list` (read-only), and from `remove()` AFTER it
-    had already committed a real deletion for an earlier (provider,
-    skill) pair in the same call, silently discarding that success from
-    the caller's view. Fixed by folding the existence check into
-    `_read_text` itself (returns None on FileNotFoundError) and removing
-    every separate `.exists()` guard, closing the whole class in one
-    pass instead of patching the two flagged sites alone."""
+    """`_read_text` folds the existence check in (returns None on
+    FileNotFoundError), so no caller keeps a separate
+    `path.exists()`-then-read window: a file vanishing in between must not
+    crash with a raw, uncaught FileNotFoundError -- reachable even from
+    `list` (read-only), and from `remove()` AFTER it already committed a
+    real deletion for an earlier (provider, skill) pair in the same call,
+    which would discard that success from the caller's view."""
 
     def test_read_text_returns_none_for_a_nonexistent_path(self, tmp_path):
         assert installer._read_text(tmp_path / "does-not-exist.md") is None
@@ -1177,11 +1148,9 @@ class TestReadTextTOCTOUCollapse:
 
 
 class TestReadTextSizeCap:
-    """Round 37, Class P5: _read_text had no size cap -- a front measured
-    an unbounded read of a planted 100MB file peaking process memory near
-    200MB. Every other full-content reader in the project already caps
-    (core/config.py's CONFIG_READ_MAX_BYTES); this was the one that
-    didn't."""
+    """_read_text is size-capped, like every other full-content reader in the
+    project (core/config.py's CONFIG_READ_MAX_BYTES): an unbounded read of a
+    planted 100MB file peaks process memory near 200MB."""
 
     def test_a_file_over_the_cap_raises_oserror_instead_of_loading_it_whole(self, tmp_path, monkeypatch):
         monkeypatch.setattr(installer, "_READ_TEXT_MAX_BYTES", 100)
@@ -1200,9 +1169,9 @@ class TestReadTextSizeCap:
 
 
 class TestTargetValidation:
-    """Round 37, Class P3: --provider/--skill both reject an unrecognized
-    value via _expand(); --target never did -- a typo silently fell
-    through to the 'project' branch instead of failing loudly."""
+    """--target rejects an unrecognized value, as --provider/--skill do via
+    _expand(): a typo must fail loudly, not fall through to the 'project'
+    branch."""
 
     def test_unknown_target_value_is_a_usage_error_on_install(self, tmp_path):
         with pytest.raises(UsageError):
@@ -1224,11 +1193,10 @@ class TestTargetValidation:
 
 
 class TestOrphanedTempFileCleanup:
-    """Round 37, Class P8: every one of the 8 core adrpy mutating commands
-    sweeps its own working folder for orphaned *.tmp files (left by an
-    earlier write interrupted between the temp write and os.replace)
-    before doing anything else -- adrpy-skills never did, despite
-    atomic_write_text leaving the exact same kind of orphan behind."""
+    """Like every core adrpy mutating command, adrpy-skills sweeps its own
+    working folder for orphaned *.tmp files (left by an earlier write
+    interrupted between the temp write and os.replace) before doing anything
+    else -- atomic_write_text leaves the same kind of orphan behind."""
 
     def test_install_cleans_up_an_orphaned_temp_file_in_the_project_target(self, tmp_path):
         orphan = tmp_path / ".cursor" / "rules" / f"adrpy.mdc.{OWN_TEMP_HEX}.tmp"
@@ -1987,10 +1955,10 @@ def _indent_block(block, prefix, tags_only):
 
 
 class TestAgentsmdOwnershipIsProvedByTheMarkerHash:
-    """Round 39, S1. Tags at 0-3 spaces are the tool's syntax. Below that,
-    only the marker's hash proves a block is the tool's: an indented pair
-    whose content still hashes clean is adopted in place; any other
-    indented copy is the user's text, never touched and never blocking."""
+    """Tags at 0-3 spaces are the tool's syntax. Below that, only the marker's
+    hash proves a block is the tool's: an indented pair whose content still
+    hashes clean is adopted in place; any other indented copy is the user's
+    text, never touched and never blocking."""
 
     def _installed(self, tmp_path):
         installer.install(str(tmp_path), ["agentsmd"], ["decision-log"], "project", False)
@@ -2074,10 +2042,10 @@ class TestAgentsmdOwnershipIsProvedByTheMarkerHash:
         assert any("edited" in w for w in result["warnings"])
 
     def test_a_verbatim_indented_copy_left_alone_is_adopted_as_the_tools_block(self, tmp_path):
-        # Accepted limitation (Round 39, S1): a verbatim, indented copy of the
-        # tool's block is byte-for-byte what an editor re-indenting that block
-        # produces, so it is treated as the tool's block. Pinned so a future
-        # change does not "fix" one reading by silently breaking the other.
+        # Accepted limitation: a verbatim, indented copy of the tool's block is
+        # byte-for-byte what an editor re-indenting that block produces, so it
+        # is treated as the tool's block. Pinned so a future change does not
+        # "fix" one reading by silently breaking the other.
         agents_md, _ = self._reindented(tmp_path, "    ", False)
         before = agents_md.read_text(encoding="utf-8")
         assert installer._agentsmd_block_state(before, "decision-log") == "clean"

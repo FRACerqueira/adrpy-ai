@@ -95,10 +95,9 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
 
 
 def test_prepare_reports_when_no_adr_config_is_found_above(tmp_path):
-    """Cannot-determine-root-path
-    (raised when find_repo_root walks all the way up without finding
-    .adrpy.json) had zero coverage -- reachable from every one of
-    the 6 status-transition commands via prepare."""
+    """cannot-determine-root-path: find_repo_root walks all the way up without
+    finding .adrpy.json. Every status-transition command reaches it through
+    prepare."""
     orphan_dir = tmp_path / "no-repo-here"
     orphan_dir.mkdir()
     target = orphan_dir / "ADR001V01-orphan.md"
@@ -188,19 +187,17 @@ def test_prepare_reports_no_encoding_repair_for_a_clean_file(tmp_path):
 
 
 def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(tmp_path):
-    """Reading a file with invalid UTF-8 bytes WITHIN its 12-line header
-    (tolerated) silently replaces them with U+FFFD -- nothing told the caller this
-    happened, even though it's a real, permanent loss of the original
-    bytes the moment the file is rewritten.
+    """Invalid UTF-8 bytes within the 12-line header are tolerated and replaced
+    with U+FFFD, and prepare says so: the original bytes are lost for good
+    the moment the file is rewritten.
 
-    ADR0006V01: prepare reads ONLY the bounded header
-    (never the body) -- invalid bytes WITHIN THE BODY are no longer
-    detectable from this call alone; that signal now comes from
-    stream_normalized_body_chunks' own `report["encoding_repaired"]` at
-    write time, combined by each CLI command with this header-level flag
-    (see test_status_transitions.py's own
-    test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool
-    for the end-to-end, body-corruption case)."""
+    ADR0006V01: prepare reads only the bounded header, never the body.
+    Invalid bytes in the body are reported at write time by
+    stream_normalized_body_chunks' `report["encoding_repaired"]`, which each
+    CLI command combines with this header-level flag
+    (test_status_transitions.py's
+    test_approve_replaces_invalid_utf8_bytes_in_body_with_the_replacement_character
+    covers the body case end to end)."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -320,7 +317,7 @@ def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(
     record = DecisionRecord(number=1, title="Big", version=1, status_create="Proposed")
     target = adr_dir / "ADR001V01-big.md"
     header_text = build_header(config, record)
-    huge_body = (b"line\n") * (4 * 1024 * 1024)  # ~20MB
+    huge_body = (b"line\n") * (4 * 1024 * 1024)
     with open(target, "wb") as handle:
         handle.write(header_text.encode("utf-8"))
         handle.write(huge_body)
@@ -343,9 +340,8 @@ def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(
 
 
 def test_rewrite_status_field_returns_the_write_attempt_count(tmp_path):
-    """rewrite_status_field discarded atomic_write_text's
-    own attempt count -- callers (approve/reject/undo) had no way to
-    surface a "this needed retries" warning."""
+    """rewrite_status_field returns the write's attempt count, so
+    approve/reject/undo can surface a "this needed retries" warning."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -384,10 +380,9 @@ def _header(**overrides):
     ],
 )
 def test_ineligibility_reason_for_approve_or_reject(header_kwargs, expected_reason):
-    """Replaces a single collapsed not-eligible-for-* boolean with the
-    SPECIFIC observed state -- an agent needs to know
-    whether a decision is already accepted, already rejected, or already
-    superseded, since each calls for a different recovery action."""
+    """The reason names the specific observed state -- already accepted,
+    already rejected or already superseded -- since each calls for a
+    different recovery action."""
     header = _header(**header_kwargs)
 
     assert ineligibility_reason_for_approve_or_reject(header) == expected_reason
@@ -439,10 +434,10 @@ def test_ineligibility_reason_for_version_or_revise(header_kwargs, expected_reas
 
 
 def test_read_header_lines_does_not_read_the_whole_file(tmp_path):
-    """Performance backlog item: family_members only ever needs the fixed
-    12-line header to decide membership -- reading a potentially huge
-    body just for that is wasted I/O, repeated for every sibling on every
-    lifecycle check (approve/reject/undo/version/revise/supersede)."""
+    """family_members only needs the fixed 12-line header to decide membership:
+    reading a potentially huge body would be wasted I/O, repeated for every
+    sibling on every lifecycle check
+    (approve/reject/undo/version/revise/supersede)."""
     header_lines = [f"line{i}" for i in range(12)]
     huge_body = "x" * (5 * 1024 * 1024)
     target = tmp_path / "big.md"
@@ -467,8 +462,8 @@ def test_read_header_lines_handles_a_file_shorter_than_the_header(tmp_path):
 
 
 def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
-    """Same bounded-read guarantee
-    as read_header_lines, now also used by migrate's own scan phase."""
+    """The same bounded-read guarantee as read_header_lines; migrate's scan
+    phase reads through this one."""
     header_lines = [f"line{i}" for i in range(12)]
     huge_body = "x" * (5 * 1024 * 1024)
     target = tmp_path / "big.md"
@@ -485,24 +480,18 @@ def test_read_header_lines_with_report_does_not_read_the_whole_file(tmp_path):
 
 
 def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_never_arrive(tmp_path):
-    """Without a cap, `_read_header_bytes`'s loop would re-scan the
-    ENTIRE accumulated buffer for newlines on every 4096-byte chunk
-    (O(n) regex work per chunk, O(n^2) total) and grow the buffer via
-    `buffer += more` (O(n) copy per chunk, also O(n^2) total). A file
-    that never accumulates `count` real newlines -- a single
-    unstructured blob, plausible for corrupted content or a file from
-    an untrusted migrated repo -- would make the loop run to EOF, so
-    this shared helper (used by family_members for every per-file
-    mutating command, AND by migrate's own scan phase, AND by explore)
-    would quadratically re-scan and re-copy the file's entire content.
-    Confirmed live (before this cap existed):
-    1MB=0.6s, 2MB=2.5s, 4MB=10.9s (~4x per doubling). Now bounded to a
-    fixed number of chunks regardless of newline count -- a genuine
-    header is always a few KB at most (the config schema's own
-    field-length limits keep it there), so this cap can never truncate a
-    real header, only a pathological one, which then correctly falls
-    through to parse_header's own existing adr-file-too-short handling."""
-    newline_free_blob = b"x" * (2 * 1024 * 1024)  # 2MB, well past the new cap, zero real newlines
+    """A file that never reaches `count` real newlines -- an unstructured blob,
+    plausible for corrupted content or a file from an untrusted migrated
+    repo -- must not make `_read_header_bytes` read to EOF: re-scanning the
+    accumulated buffer for newlines on every 4096-byte chunk and growing it
+    via `buffer += more` is O(n^2) in the file's size, and this helper
+    serves family_members for every per-file mutating command, migrate's
+    scan phase and explore. The read is capped at a fixed number of chunks.
+    A genuine header is a few KB at most (the config schema's field-length
+    limits keep it there), so the cap never truncates a real header, only a
+    pathological one, which then falls through to parse_header's
+    adr-file-too-short handling."""
+    newline_free_blob = b"x" * (2 * 1024 * 1024)  # 2MB, well past the cap, zero real newlines
     target = tmp_path / "pathological.md"
     target.write_bytes(newline_free_blob)
 
@@ -532,22 +521,18 @@ def test_read_header_lines_with_report_bounds_total_bytes_read_when_newlines_nev
     elapsed = time.time() - start
 
     assert total_read["bytes"] <= 64 * 1024  # generous cap, far below the 2MB blob
-    assert elapsed < 1.0  # would take several seconds under the old O(n^2) behavior
+    assert elapsed < 1.0  # a quadratic read would take several seconds
     assert len(lines) == 1  # no real newline anywhere in what was actually read
 
 
 def test_read_header_lines_handles_a_crlf_straddling_a_chunk_boundary(tmp_path):
-    """Without re-scanning the whole accumulated buffer, _read_header_bytes
-    would count real newlines within each freshly-read 4096-byte chunk
-    IN ISOLATION. A `\\r\\n` pair straddling
-    exactly on a chunk boundary (the `\\r` as the chunk's own last byte,
-    the `\\n` as the next chunk's own first byte) gets counted TWICE by
-    two separate isolated per-chunk scans -- once for the lone trailing
-    `\\r` in the first chunk's own scan, once more for the lone leading
-    `\\n` in the second chunk's own scan -- even though together they are
-    exactly ONE real terminator. This double-count can make the loop
-    believe it already found `count` real newlines one chunk-read too
-    early, stopping before the file's true 12th line is ever read."""
+    """_read_header_bytes must not count real newlines within each 4096-byte
+    chunk in isolation: a `\\r\\n` pair straddling a chunk boundary (the
+    `\\r` as one chunk's last byte, the `\\n` as the next chunk's first
+    byte) would be counted twice, once per chunk, although it is one real
+    terminator. The loop would then believe it found `count` real newlines
+    one chunk-read too early and stop before the file's true 12th line is
+    read."""
     chunk_size = 4096
     prefix_lines = b"".join(f"L{i}\n".encode() for i in range(9))  # 9 real newlines
     pad = b"x" * (4095 - len(prefix_lines))  # bring the prefix to exactly 4095 bytes
@@ -569,9 +554,9 @@ def test_read_header_lines_handles_a_crlf_straddling_a_chunk_boundary(tmp_path):
 
 
 def test_read_header_lines_unaffected_by_a_header_within_one_chunk(tmp_path):
-    """Positive control: the overwhelmingly common case (a real, schema-
-    bounded header, well under one 4096-byte chunk) must be unaffected by
-    the boundary fix above."""
+    """Positive control: the overwhelmingly common case (a real, schema-bounded
+    header, well under one 4096-byte chunk) is unaffected by the boundary
+    handling above."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -586,9 +571,8 @@ def test_read_header_lines_unaffected_by_a_header_within_one_chunk(tmp_path):
 
 
 def test_read_header_lines_handles_a_genuine_multi_chunk_header_with_no_straddle(tmp_path):
-    """Sanity check: a header that legitimately needs more than one
-    4096-byte chunk, with no CRLF anywhere near a chunk boundary, must
-    still return the correct 12 lines after the fix."""
+    """A header that legitimately needs more than one 4096-byte chunk, with no
+    CRLF anywhere near a chunk boundary, still returns the correct 12 lines."""
     lines_content = [f"line{i}-" + ("z" * 500) for i in range(11)]  # far over one chunk, lone \n only
     target = tmp_path / "multichunk.md"
     target.write_bytes(("\n".join(lines_content) + "\nREALLINE12\n").encode())
@@ -613,11 +597,10 @@ def test_read_header_lines_with_report_flags_a_lossy_decode_within_the_header(tm
 
 
 def test_read_header_lines_with_report_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """This read must tolerate a transient PermissionError, matching the
-    write side (atomic_write.py), which already retries this project's
-    own documented Windows "pending delete"/sharing-violation contention
-    window. Uses the shared helper (core/fs.py), not an independent
-    copy of the loop."""
+    """This read tolerates a transient PermissionError, matching the write side
+    (atomic_write.py), which retries the documented Windows "pending
+    delete"/sharing-violation contention window. It uses the shared helper
+    (core/fs.py), not its own copy of the loop."""
     target = tmp_path / "flaky.md"
     header_lines = [f"line{i}" for i in range(12)]
     target.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
@@ -711,13 +694,12 @@ def test_a_sibling_whose_lossy_decode_still_parses_stays_a_member(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_the_snapshot_ignores_files_reached_through_a_windows_junction(tmp_path):
-    """resolve_within only validates the repository
-    root; rglob("*.md") happily descends into a Windows junction planted
-    inside the decisions folder (no admin privilege required to create
-    one, and Path.is_symlink() does NOT detect it). Confirmed live:
-    `migrate` wrote a real header into a file OUTSIDE the repo
-    through exactly this, and `next_number` was poisoned by the outside
-    file's own (unrelated) sequence number."""
+    """resolve_within only validates the repository root; rglob("*.md")
+    descends into a Windows junction planted inside the decisions folder (no
+    admin privilege is needed to create one, and Path.is_symlink() does not
+    detect it). Through one, `migrate` would write a real header into a file
+    outside the repository, and `next_number` would take the outside file's
+    unrelated sequence number."""
     config = load_repo_config(FIXTURE_PATH)
     adr_dir = tmp_path / "repo" / config.folderadr
     adr_dir.mkdir(parents=True)
@@ -735,7 +717,7 @@ def test_the_snapshot_ignores_files_reached_through_a_windows_junction(tmp_path)
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert not junction.is_symlink()  # confirms the audit's premise: junctions aren't symlinks
+    assert not junction.is_symlink()  # junctions are not symlinks: is_symlink() misses them
 
     decisions = _recognized(adr_dir, config)
 
@@ -744,15 +726,13 @@ def test_the_snapshot_ignores_files_reached_through_a_windows_junction(tmp_path)
 
 
 def test_validate_config_change_folderadr_fails_closed_when_scan_incomplete(tmp_path, monkeypatch):
-    """Unlike scan_decisions'
-    own generic callers (a warning is enough there -- nothing unsafe
-    happens from an under-reported inventory), this specific guard
-    gates a real safety decision: whether a
-    folderadr change is allowed to proceed. If the scan it depends on
-    might have silently missed decisions hiding in an unreadable
-    subdirectory, `existing == []` can no longer be trusted to mean
-    "genuinely empty" -- fails closed instead of allowing an orphaning
-    it could not actually rule out."""
+    """Unlike the scan's generic callers (a warning is enough there -- nothing
+    unsafe happens from an under-reported inventory), this specific guard
+    gates a real safety decision: whether a folderadr change is allowed to
+    proceed. If the scan it depends on might have silently missed decisions
+    hiding in an unreadable subdirectory, `existing == []` can no longer be
+    trusted to mean "genuinely empty" -- fails closed instead of allowing an
+    orphaning it could not actually rule out."""
     config = load_repo_config(FIXTURE_PATH)
     old_folder = tmp_path / config.folderadr
     old_folder.mkdir(parents=True)
@@ -781,14 +761,13 @@ def test_validate_config_change_folderadr_fails_closed_when_scan_incomplete(tmp_
 def test_validate_config_change_folderadr_rejects_a_new_folder_that_would_adopt_an_unrelated_file(
     tmp_path,
 ):
-    """Every check above is keyed on the OLD
-    folder -- none of them catch the NEW folderadr already containing an
-    unrelated pre-existing file that happens to match the naming scheme.
-    Confirmed live: pointing folderadr at such a directory silently
-    adopted the file as a decision, corrupting the next `new` call's own
-    number allocation (ADR0008V01 instead of ADR0001V01). Same shape hazard
-    as --separator's own adoption-check (ADR0004V02), just triggered by a
-    folder move instead of a naming-rule change."""
+    """Every check above is keyed on the OLD folder -- none of them catch the
+    NEW folderadr already containing an unrelated file that happens to match
+    the naming scheme. Pointing folderadr at such a directory would adopt
+    the file as a decision and corrupt the next `new` call's number
+    allocation (ADR0008V01 instead of ADR0001V01). The same hazard as
+    --separator's adoption check (ADR0004V02), triggered by a folder move
+    instead of a naming-rule change."""
     config = load_repo_config(FIXTURE_PATH)
     old_folder = tmp_path / config.folderadr
     old_folder.mkdir(parents=True)
@@ -808,13 +787,12 @@ def test_validate_config_change_folderadr_rejects_a_new_folder_that_would_adopt_
 
 
 def test_validate_config_change_folderadr_allows_a_new_folder_that_does_not_exist_yet(tmp_path):
-    """Companion to the rejection test above: the overwhelmingly common
-    case -- pointing folderadr at a brand-new directory nothing has ever
-    written to -- must still go through. `scan_tree` treats a
-    nonexistent path as unreadable (confirmed directly), so the
-    new-folder check must skip entirely when the new folder does not
-    exist yet, the same way `scan_decisions` itself already treats a
-    missing folder as empty rather than an error."""
+    """Companion to the rejection test above: the overwhelmingly common case --
+    pointing folderadr at a brand-new directory nothing has ever written to
+    -- must still go through. `scan_tree` treats a nonexistent path as
+    unreadable, so the new-folder check must skip entirely when the new
+    folder does not exist yet, the same way validate_repository treats a
+    missing folder as an empty, consistent repository."""
     config = load_repo_config(FIXTURE_PATH)
     old_folder = tmp_path / config.folderadr
     old_folder.mkdir(parents=True)

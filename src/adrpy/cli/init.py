@@ -58,11 +58,9 @@ def describe():
                 "alias": "-s",
                 "type": "string",
                 "required": False,
-                # Named `seed`, not `file` -- every other command's
-                # `--file` means "the decision file to mutate"; this alone
-                # meant "a config JSON to seed the repo with", a naming
-                # collision an agent generalizing across commands could
-                # reasonably get wrong (decision-log:
+                # Named `seed`, not `file`: every other command's `--file`
+                # is the decision file to mutate, and an agent generalizing
+                # across commands would read it that way (decision-log:
                 # 2026-09-15--scope-note--init--file-flag-renamed-to-seed.md).
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the install-level "
@@ -199,16 +197,11 @@ def run(args):
         raise CommandError(FailureCodes.CONFIG_ALREADY_EXISTS, f"Configuration file already exists at: {config_path}")
 
     # ADR0002V01: an install-level config, when present, is an implicit
-    # seed -- the same reason --seed and --language are already mutually
-    # exclusive above applies here too (both are full content sources;
-    # the caller must pick one explicitly rather than have one silently
-    # win). Deliberately read here, not earlier: this is real file I/O
-    # plus schema validation against a file the caller never named, and on
-    # every path above this point it's either unreachable (seed_arg given,
-    # forces None below regardless) or would have already raised for an
-    # unrelated reason -- a corrupted install-level config must never mask
-    # target-directory-not-found or config-already-exists with an
-    # unrelated schema error.
+    # seed -- a full content source, so --language is refused alongside it
+    # as alongside --seed (the caller picks one; none silently wins).
+    # Deliberately read here, not earlier: a corrupted install-level
+    # config must never mask target-directory-not-found or
+    # config-already-exists with an unrelated schema error.
     install_config_text = None if seed_arg is not None else read_install_config_text()
 
     if language_arg is not None and install_config_text is not None:
@@ -264,12 +257,10 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     if old_config is None or config.migrationpattern != old_config.migrationpattern:
         reject_overlapping_migration_pattern(config.migrationpattern)
     if old_config is not None:
-        # --seed replacing an ALREADY-existing repository's config is
-        # exactly as capable of orphaning or unrecognizing existing
-        # decisions and decision-log entries as `config` is -- the same
-        # guard, over the pre-edit folder and config. `old_config` is None
-        # on the genuinely-fresh-bootstrap path (nothing existing to
-        # orphan there). init is exempt from repository validation.
+        # --seed over an existing repository can orphan or unrecognize
+        # existing decisions and decision-log entries just as `config`
+        # can -- the same guard, over the pre-edit folder and config.
+        # init is exempt from repository validation.
         old_folder = resolve_within(target, old_config.folderadr)
         validate_config_change(old_config, config, old_folder, target=target, warnings=warnings)
 
@@ -305,33 +296,28 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     # traversal is still relative -- resolve_within is real path
     # resolution, the actual containment guard.
     folder_adr = resolve_within(target, config.folderadr)
-    # check-then-create is a real TOCTOU -- a concurrent process creating
-    # this same directory between the check and the mkdir() call would
-    # otherwise raise a raw FileExistsError. Unlike the config itself
-    # (created exclusively below, refused if it appeared meanwhile), both
-    # processes here want the exact same end state, so there's no
-    # conflicting content to lose -- exist_ok=True closes it outright.
+    # exist_ok=True: a concurrent process creating this same directory
+    # between the check and the mkdir() wants the same end state, so there
+    # is no conflicting content to lose (unlike the config, created
+    # exclusively below).
     #
-    # Creating the folder here, ahead of the config commit below, means a
-    # failure creating it aborts cleanly with nothing yet written, instead
-    # of leaving config committed to a folderadr whose directory doesn't
-    # exist, with every subsequent command failing with a generic
-    # io-error until someone noticed.
+    # Created ahead of the config commit below: a failure creating it
+    # aborts with nothing written, never a committed config whose
+    # folderadr doesn't exist (every later command failing with a generic
+    # io-error).
     folder_already_existed = folder_adr.is_dir()
     folder_adr.mkdir(parents=True, exist_ok=True)
 
-    # ADR0007V01: same escape-path validation as folderadr above -- fails
-    # fast on a hostile/malformed folderlog at init time, rather than
-    # deferring to the first `adrpy log` call. Unlike folderadr, never
-    # eagerly created here -- `adrpy log` already creates it lazily on
-    # first write, and nothing else needs it to exist before then.
+    # ADR0007V01: same escape-path validation as folderadr above, at init
+    # time rather than at the first `adrpy log` call. Never created here:
+    # `adrpy log` creates it on first write, and nothing else needs it.
     resolve_within(target, config.folderlog)
-    # Catches a junction/symlink planted inside the repo tree
-    # BEFORE init ever runs, making folderadr and folderlog alias the
-    # same real directory despite configured strings sharing no path
-    # component -- the schema-time guard in core/config.py can never see
-    # this (it never touches the filesystem). This is the first point
-    # either folder's real, resolved location is knowable.
+    # A junction/symlink planted inside the repo tree before init can make
+    # folderadr and folderlog alias one real directory though their
+    # configured strings share no path component -- invisible to the
+    # schema-time guard in core/config.py, which never touches the
+    # filesystem. This is the first point either folder's real location
+    # is knowable.
     reject_aliased_repo_folders(target, config)
 
     # Written in the one form `config` rewrites it in

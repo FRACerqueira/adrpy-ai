@@ -199,8 +199,8 @@ def run(args):
         if warning:
             warnings.append(warning)
 
+    adr_index.regenerate(target, config, warnings)
     # The canonical keyword, not the repo's configured label -- `explore`
     # reports status_create the same way for the same file, and the two
     # must agree even when statusnew is customized.
-    adr_index.regenerate(target, config, warnings)
     return {"created": str(file_path), "status": "Proposed", "warnings": warnings}

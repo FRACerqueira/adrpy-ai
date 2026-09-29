@@ -56,21 +56,18 @@ def run(args):
         _record, body_encoding_repaired, attempts = rewrite_status_field(
             path, ctx.config, ctx.header, ctx.filename_info, field="update", status="Accepted", refdate=ctx.refdate
         )
-        # encoding_repaired_warning claims "the file has been rewritten
-        # ... bytes are now lost" -- only true once the write above has
-        # actually happened, not at read time (an eligibility check
-        # could still have failed first). ADR0006V01: combines the
-        # header's own flag (known since prepare, above) with the
-        # body's own (only known now, once the streamed write has
-        # actually read it) -- either half being lossy loses bytes on
-        # this rewrite.
+        # Accurate only because the write above already succeeded --
+        # the warning claims the file was rewritten. ADR0006V01:
+        # combines the header's own flag (known since prepare)
+        # with the body's own (only known now, from the streamed
+        # write).
         if ctx.encoding_repaired or body_encoding_repaired:
             warnings.append(encoding_repaired_warning(path))
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)
 
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     # Canonical keyword, matching explore's own status_create/status_update
     # -- not the repo's configured status label.
-    adr_index.regenerate(ctx.root, ctx.config, warnings)
     return {"file": str(path), "status": "Accepted", "warnings": warnings}

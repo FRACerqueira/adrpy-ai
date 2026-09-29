@@ -1,8 +1,7 @@
-"""Round 32, Class I: asserts each provider's wrap_* function content, not
-just that a file exists at the right path -- before this, swapping two
-wrap_* functions (e.g. wrap_claude for wrap_cursor) would have passed
-every existing end-to-end installer test, since none of them checked the
-generated content's actual shape."""
+"""Asserts each provider's wrap_* function content, not just that a file exists
+at the right path: swapping two wrap_* functions (e.g. wrap_claude for
+wrap_cursor) would pass every end-to-end installer test, since none of them
+checks the generated content's actual shape."""
 
 from adrpy.skills.providers import wrap_agentsmd_block, wrap_claude, wrap_copilot_stub, wrap_cursor
 

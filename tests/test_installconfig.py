@@ -58,11 +58,10 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
 
 
 def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
-    """Zero coverage existed for a --seed
-    file that exists and is readable but fails schema validation --
-    mutation-confirmed that removing installconfig.py's own
-    `parse_repo_config(seed_text)` validate-before-write call left every
-    existing test green."""
+    """A --seed file that exists and is readable but fails schema
+    validation is refused before anything is written -- removing
+    installconfig.py's own `parse_repo_config(seed_text)`
+    validate-before-write call leaves every other test green."""
     data = json.loads(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
     del data["lenseq"]
     bad_seed = tmp_path / "bad-seed.json"

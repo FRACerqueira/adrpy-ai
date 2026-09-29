@@ -67,8 +67,7 @@ def test_non_matching_filename_returns_none():
 
 
 def test_parse_migration_pattern_matches_the_migration_guide_example():
-    """"N00:04T04" is the literal example from MigrationGuide.md, matching
-    filenames like "0001UsePostgreSQL.md"."""
+    """"N00:04T04" matches filenames like "0001UsePostgreSQL.md"."""
     pattern = parse_migration_pattern("N00:04T04")
 
     assert pattern == {"N": (0, 4), "T": (4, 0)}
@@ -96,8 +95,7 @@ def test_parse_migration_pattern_takes_only_ascii_digits(pattern):
 
 
 def test_parses_the_migration_guide_example_filename():
-    """The literal example from MigrationGuide.md's "Example: Complete
-    Migration Workflow" section."""
+    """The typical legacy name: 'N00:04T04' on "0001UsePostgreSQL.md"."""
     config = _config_with_migration_pattern("N00:04T04")
 
     parsed = parse_legacy_filename("0001UsePostgreSQL.md", config)
@@ -128,11 +126,9 @@ def test_legacy_scheme_is_not_recognized_when_migrationpattern_is_empty():
 
 
 def test_parses_legacy_filename_with_version_revision_and_prefix_segments():
-    """Every existing
-    parse_legacy_filename test used only the N/T segments (the
-    MigrationGuide.md pattern example) -- the V/R/P segment-extraction
-    guards (length/isdigit checks) had zero coverage. Pattern below:
-    N at [0:2], T at [2:], V at [4:6], R at [6:8], P at [8:10]."""
+    """The V/R/P segment-extraction guards (length/isdigit checks), beyond the
+    N/T segments. Pattern below: N at [0:2], T at [2:], V at [4:6], R at
+    [6:8], P at [8:10]."""
     config = _config_with_migration_pattern("N00:02T02V04:02R06:02P08:02")
 
     parsed = parse_legacy_filename("01XX0203AB.md", config)
@@ -279,20 +275,19 @@ def test_build_filename_appends_supersede_suffix_unconditionally():
 
 
 def test_build_filename_rejects_a_title_that_collides_with_a_dot_separator(tmp_path):
-    """Confirmed live: with separator='.', a title starting with (or consisting
-    only of) a '.' survives to_case almost verbatim under every
-    casetransform (the word-splitter only consumes whitespace/'_'/'-',
-    never '.'), producing a filename like 'ADR0001V01..x.md' --
-    naming.parse_filename's own double-separator supersede-suffix split
-    treats the leading '..' as that suffix marker, and the remainder
-    isn't all-digits, so the file build_filename just wrote can never be
-    parsed again by ANY other command -- permanently orphaned, its
-    sequence number silently reallocated to the next decision. This is
-    one of several distinct collision shapes this class of check guards
-    against (alongside an all-separator title and an empty title) --
-    closed as a class, not a per-shape character blacklist:
-    build_filename re-parses its own output and refuses
-    to produce a filename that doesn't round-trip back to the same
+    """With separator='.', a title starting with (or consisting only of) a '.'
+    survives to_case almost verbatim under every casetransform (the
+    word-splitter only consumes whitespace/'_'/'-', never '.'), producing a
+    filename like 'ADR0001V01..x.md' -- naming.parse_filename's
+    double-separator supersede-suffix split treats the leading '..' as that
+    suffix marker, and the remainder isn't all-digits, so the file
+    build_filename just wrote could never be parsed again by ANY other
+    command -- permanently orphaned, its sequence number silently
+    reallocated to the next decision. This is one of several collision
+    shapes this check guards against (alongside an all-separator title and
+    an empty title) -- closed as a class, not a per-shape character
+    blacklist: build_filename re-parses its own output and refuses to
+    produce a filename that doesn't round-trip back to the same
     number/version/revision/superseded identity."""
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["separator"] = "."
@@ -306,17 +301,15 @@ def test_build_filename_rejects_a_title_that_collides_with_a_dot_separator(tmp_p
 
 
 def test_build_filename_rejects_an_empty_title(tmp_path):
-    """An empty title (reachable only
-    through migrate, whose title comes from parse_legacy_filename and
-    can genuinely be '' for a legacy filename with no title segment)
-    is not exempted by reject_title_with_no_case_transform_content's own
-    `if value and ...` guard, since it would otherwise collapse the
-    separator that normally precedes the title together with a
-    supersede suffix's own double-separator marker -- confirmed live
-    end-to-end: migrating such
-    a file then calling `supersede` on it produced 'ADR002V01---001.md',
-    unrecognized by either naming scheme, with `supersede` reporting
-    total success and no warning at all."""
+    """An empty title (reachable only through migrate, whose title comes from
+    parse_legacy_filename and can genuinely be '' for a legacy filename with
+    no title segment) is refused, as
+    reject_title_with_no_case_transform_content refuses it: it would
+    collapse the separator that normally precedes the title together with a
+    supersede suffix's double-separator marker. Migrating such a file and
+    then superseding it would produce 'ADR002V01---001.md', unrecognized by
+    either naming scheme, with `supersede` reporting total success and no
+    warning at all."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(number=2, title="", version=1, superseded=1)
 
@@ -327,11 +320,11 @@ def test_build_filename_rejects_an_empty_title(tmp_path):
 
 
 def test_build_filename_still_accepts_a_title_with_a_mid_word_dot():
-    """Companion to the rejection test above: an ordinary title that
-    happens to contain a '.' in the MIDDLE of otherwise-real content
-    (not at a position that could be mistaken for the separator
-    boundary) must still round-trip and succeed -- this fix must not
-    become a blanket refusal of any '.' in a title."""
+    """Companion to the rejection test above: an ordinary title that happens to
+    contain a '.' in the MIDDLE of otherwise-real content (not at a position
+    that could be mistaken for the separator boundary) must still round-trip
+    and succeed -- this check must not become a blanket refusal of any '.'
+    in a title."""
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["separator"] = "."
     config = parse_repo_config(json.dumps(data))

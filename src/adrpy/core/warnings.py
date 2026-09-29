@@ -1,14 +1,10 @@
-"""Builds the small set of human-readable warning strings for automatic,
-non-fatal actions a command's own dependencies may take silently
-otherwise: a retried write, orphaned temp-file cleanup, and invalid-byte
-encoding repair. Every
-mutating command's result carries these under "warnings" (an empty list
-when nothing happened) so an agent calling the CLI can see them without
-needing any external logging -- this is domain information that would
-otherwise be discarded before it ever reached anywhere a log could
-capture it, not a substitute for real operational logging (which stays
-the executor's responsibility, per the project's own args-in/JSON-out
-design)."""
+"""Human-readable warning strings for automatic, non-fatal actions a
+command's dependencies would otherwise take silently: a retried write,
+orphaned temp-file cleanup, invalid-byte encoding repair. Every mutating
+command's result carries them under "warnings" (an empty list when
+nothing happened), so a CLI caller sees them without external logging.
+This is domain information, not a substitute for operational logging,
+which stays the executor's responsibility (args in, JSON out)."""
 
 import contextlib
 
@@ -18,21 +14,16 @@ from adrpy.core.errors import CommandError, FailureCodes
 
 @contextlib.contextmanager
 def attach_warnings(warnings):
-    """A real side effect already accumulated in `warnings` must survive ANY
-    CommandError this same run goes on to raise afterward -- not just the
-    raise sites living directly in a command's own cli/ module (already
-    threaded explicitly at each site), but also one raised from a shared
-    core/ helper the command calls (parse_refdate, validate_refdate_*,
-    reject_embedded_delimiter, resolve_within). Wrap the
-    whole region of a command's `run()` from where `warnings` starts
-    accumulating onward.
+    """Wraps the region of a command's `run()` from where `warnings` starts
+    accumulating onward, so the side effects recorded there survive ANY
+    CommandError raised afterward -- including one from a shared core/
+    helper (parse_refdate, validate_refdate_*, reject_embedded_delimiter,
+    resolve_within), not only the raise sites in the command's own cli/
+    module.
 
-    Merges rather than overwrites: an error that already carries its own
-    warnings keeps
-    them, with this command's own accumulated warnings prepended -- unless
-    `error.warnings` is literally this same list (an explicit `warnings=
-    warnings` already passed at the raise site), in which case there is
-    nothing to merge."""
+    Merges rather than overwrites: an error's own warnings are kept, with
+    `warnings` prepended -- unless `error.warnings` is this same list
+    (already passed at the raise site)."""
     try:
         yield
     except CommandError as error:
@@ -42,18 +33,12 @@ def attach_warnings(warnings):
             error.warnings = list(warnings) + list(error.warnings)
         raise
     except OSError as error:
-        # A real write failure (permission denied, full disk, a
-        # PermissionError outlasting atomic_write's retry budget) would
-        # otherwise propagate as a bare OSError -- this context manager
-        # only catches CommandError on its own, so without this handler it
-        # would bypass the whole mechanism entirely, reaching __main__'s
-        # generic io-error with none of this run's
-        # accumulated warnings attached. This is the safety net for every
-        # write in the wrapped region; a site that needs to reveal a
-        # PARTICULAR partial mutation (e.g. supersede's predecessor
-        # already marked Superseded before its successor write failed)
-        # still handles its own OSError explicitly, with tailored `data`,
-        # before it would ever reach here.
+        # A bare OSError (permission denied, full disk, a PermissionError
+        # outlasting atomic_write's retry budget) would otherwise reach
+        # __main__'s generic io-error without this run's warnings. A site
+        # that must report a PARTICULAR partial mutation (e.g. supersede's
+        # predecessor already marked Superseded before its successor write
+        # failed) handles its own OSError, with tailored `data`, first.
         raise CommandError(FailureCodes.IO_ERROR, explain(error), warnings=list(warnings)) from error
 
 
@@ -82,12 +67,10 @@ def retry_warning(attempts):
 
 
 def no_install_level_config_warning():
-    """`init` calls this only on the one branch where it has no informed
-    source at all for the new config (no --seed, no --language, no
-    per-machine install-level config) -- a first-time user on a fresh
-    machine has no way to discover `installconfig` exists otherwise
-    (confirmed: it's undocumented anywhere outside `adrpy help`
-    itself)."""
+    """`init` calls this only when it has no informed source for the new
+    config (no --seed, no --language, no per-machine install-level
+    config): it points a first-time user on a fresh machine at
+    `installconfig`."""
     return (
         "No per-machine install-level config found -- seeded from the built-in default. "
         "Run `adrpy installconfig --<field> <value>` (e.g. `adrpy installconfig --language pt-br`) to set your "
@@ -96,13 +79,11 @@ def no_install_level_config_warning():
 
 
 def encoding_repaired_warning(path):
-    """Only accurate once `path` itself has genuinely been rewritten --
-    calling this before the write was even attempted (an ineligibility
-    check could still fail first), or on `path`s this
-    command never rewrites at all (version/revise's own source, which
-    only ever donates its BODY to a newly created file -- see
-    encoding_repaired_source_warning below). Callers append this only
-    after the write to this exact path has actually succeeded."""
+    """Only accurate once `path` itself has been rewritten: callers append
+    it only after the write to this exact path succeeded -- never before
+    the write (an ineligibility check could still fail first), and never
+    for a path the command does not rewrite (version/revise's source,
+    which only donates its BODY -- see encoding_repaired_source_warning)."""
     return (
         f"{path}: invalid UTF-8 bytes were replaced with U+FFFD while reading; "
         "the original bytes are now lost, since the file has been rewritten."
@@ -141,14 +122,12 @@ def linked_decisions_warning(paths):
 
 
 def excluded_candidate_warning(paths):
-    """`core.security.is_within` deliberately never raises over a
-    candidate whose real path escapes the repository boundary (e.g. a
-    Windows junction planted inside the decisions folder) -- a scan
-    should keep going, not fail over one. That's a decision about
-    raising, not about reporting: without this warning, a scan call site
-    would drop the exclusion with zero signal, leaving an agent no way to
-    learn why an inventory or a next-number looks off from what's
-    physically listable in the folder."""
+    """`core.fs.scan_tree` never fails over a candidate whose real path
+    escapes the folder (e.g. a Windows junction planted inside the
+    decisions folder): it excludes it and keeps going. This warning
+    reports the exclusion; without it an agent could not tell why an
+    inventory or a next number differs from what the folder physically
+    lists."""
     if not paths:
         return None
     # Sorted: a scan finds them in the folder's listing order, which
@@ -162,11 +141,10 @@ def excluded_candidate_warning(paths):
 
 def marker_label_mismatch_warning(header):
     """ADR0004V01: a hidden canonical status marker takes precedence over
-    the status cell's visible label text when both are present. If they
-    resolve to a valid but DIFFERENT status, that combination only
-    happens when the visible word was hand-edited after the marker was
-    written -- worth surfacing, since otherwise the marker's own
-    silent-override would leave zero signal that this happened."""
+    the status cell's visible label text. When both resolve to valid but
+    DIFFERENT statuses, the visible word was hand-edited after the marker
+    was written; without this warning the marker's override would leave
+    no signal."""
     if not header.marker_label_mismatches:
         return None
     names = ", ".join(header.marker_label_mismatches)

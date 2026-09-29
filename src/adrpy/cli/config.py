@@ -45,11 +45,9 @@ def _field_type(field):
 
 
 def _field_description(field):
-    """Cites the same constants core/config.py's own
-    validator enforces (never a hand-copied number), so a field's real
-    domain is discoverable via `help config` instead of only by
-    deliberately triggering the matching config-*-invalid/-too-long
-    error -- and the two can never silently drift apart."""
+    """A field's domain for `help config`, citing the constants
+    core/config.py's validator enforces (never a hand-copied number), so
+    the two can never drift apart."""
     if field == "folderadr":
         return (
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
@@ -108,11 +106,10 @@ def _field_description(field):
     if field == "casetransform":
         return f"One of {config_schema.VALID_CASE_TRANSFORMS}."
     # These 16 fields (4 status labels + 11 header labels +
-    # headerdisclaimer) all go through reject_embedded_delimiter
-    # (core/config.py's own validator) on top of their length bound -- an
-    # agent following only the stated domain (any string <= max length,
-    # non-empty) could otherwise still hit
-    # config-field-contains-forbidden-character with no prior warning.
+    # headerdisclaimer) also go through reject_embedded_delimiter
+    # (core/config.py) on top of their length bound, so each description
+    # states it -- else config-field-contains-forbidden-character comes
+    # with no prior warning.
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
@@ -145,11 +142,9 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    # Unreachable today -- every field in _EDITABLE_FIELDS hits a branch
-    # above. A silent, generic fallback here (a tautological "New value
-    # for '<field>'." an agent can't learn anything from) would return
-    # the moment a new field is ever added to _EDITABLE_FIELDS without a
-    # matching branch -- fail loudly instead.
+    # Unreachable while every field in _EDITABLE_FIELDS has a branch
+    # above: a new field without one fails loudly instead of getting a
+    # tautological generic description.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
@@ -212,15 +207,9 @@ def run(args):
     flags = parse_flags(args, required=("path",), optional=_EDITABLE_FIELDS, allow_empty=("migrationpattern",))
     target, config_path, config = resolve_target_and_config(flags["path"])
 
-    # Which fields (if any) this call would touch is knowable from the
-    # flags alone -- a pure read (no field flags) writes nothing,
-    # matching explore's own precedent.
+    # No field flags is a pure read: it returns the current config and
+    # must not rewrite (or reformat) the file.
     if not any(field in flags for field in _EDITABLE_FIELDS):
-        # There was no way to read the current config through the JSON
-        # contract at all, and calling this with no field flags -- the
-        # natural way an agent would try to "just look" -- still rewrote
-        # (and reformatted) the file as a side effect of what looks like a
-        # read-only call.
         current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
@@ -262,11 +251,8 @@ def run(args):
         # persisted to brick the repository.
         resolve_within(target, new_config.folderadr)
 
-        # The new folderlog can't escape the repository either, and the
-        # schema-time guard in core/config.py's own parse_repo_config can
-        # never see a junction/symlink planted inside the repo tree --
-        # re-checked here, against the real, resolved directories, before
-        # anything is created.
+        # Same for the new folderlog, before anything is created; nor may
+        # the two folders alias one real directory through a link.
         resolve_within(target, new_config.folderlog)
         reject_aliased_repo_folders(target, new_config)
 
@@ -284,10 +270,8 @@ def run(args):
             # of the pre-edit folder feeds both checks.
             if guarded_fields_changed(current, new_config):
                 # Nothing requires this directory to exist before `config`
-                # runs -- ensure it does, now that the new values are valid,
-                # matching init's own precedent: the folderadr/status/
-                # separator/prefix guards below scan it, and scan_tree treats
-                # a missing folder as unreadable.
+                # runs, but the guards below scan it and scan_tree treats a
+                # missing folder as unreadable.
                 created.append((folder, make_dirs(folder)))
                 scan = scan_tree(folder)
                 # no-header is tolerated: before its one migrate a repository
@@ -295,15 +279,11 @@ def run(args):
                 validate_repository(folder, current, scan=scan, tolerate=(FailureCodes.NO_HEADER,))
                 validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
 
-            # Creating the new folder here, BEFORE the config commits,
-            # means a failure creating it aborts cleanly with nothing yet
-            # written -- committing folderadr to disk first instead would
-            # leave the repository pointing at a directory that didn't
-            # exist, with no `data` naming that already-committed change,
-            # and every subsequent command failing with a generic io-error
-            # until someone noticed and retried. The folders are left
-            # if the write below still somehow fails afterward -- an
-            # unused empty folder, not a real cost.
+            # Created BEFORE the config commits: a failure creating it
+            # aborts with nothing written, never a committed folderadr
+            # pointing at a missing directory (every later command failing
+            # with a generic io-error). The folders are left if the write
+            # below still fails -- an unused empty folder, not a real cost.
             new_folder = resolve_within(target, new_config.folderadr)
             created.append((new_folder, make_dirs(new_folder)))
             # Before the write, so nothing that can fail runs once the

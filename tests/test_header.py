@@ -111,13 +111,13 @@ def test_build_then_parse_round_trips_the_record():
 def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
     """ADR0004V01's own core promise, exercised directly against
     build_header/parse_header -- deliberately NOT going through the
-    `config` command (which the new existing-decisions guard would
-    correctly refuse once a decision exists, exactly the scenario this
-    test needs to have already happened): a decision written under one
-    config must still resolve its status correctly when parsed under a
-    LATER config whose statusnew/statusacc/statusrej/statussup all
-    differ, including for the same status appearing in more than one row
-    (created AND changed) in the same file."""
+    `config` command (which the existing-decisions guard would correctly
+    refuse once a decision exists, exactly the scenario this test needs to
+    have already happened): a decision written under one config must still
+    resolve its status correctly when parsed under a LATER config whose
+    statusnew/statusacc/statusrej/statussup all differ, including for the
+    same status appearing in more than one row (created AND changed) in
+    the same file."""
     written_config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -150,9 +150,8 @@ def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
 
 def test_status_falls_back_to_label_text_when_no_marker_is_present():
     """The pre-ADR0004V01 file shape (any file written by an older version
-    of this tool, or by hand) has
-    none -- must still resolve via the original label-text match, the
-    same as before this feature existed."""
+    of this tool, or by hand) has no marker -- its status must still
+    resolve via the label-text match."""
     config = load_repo_config(FIXTURE_PATH)
     lines = _valid_header_lines(config)
     created_index = 8
@@ -191,12 +190,11 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_and_reports_the_mismat
 
 def test_status_change_row_also_resolves_after_a_label_change_thanks_to_the_marker():
     """Companion to test_status_still_resolves_after_every_label_changes_
-    thanks_to_the_marker above, which never set status_change at all --
-    without this, the Superseded row's own marker resolution was never
-    independently proven; every existing test that DOES build a
-    Superseded row always reads it back under the SAME config it was
-    written with, so the label fallback would silently carry it to
-    green even if marker resolution broke specifically for this row."""
+    thanks_to_the_marker above, which never sets status_change: every
+    other test that builds a Superseded row reads it back under the SAME
+    config it was written with, so the label fallback would silently carry
+    it to green even if marker resolution broke specifically for this
+    row."""
     written_config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -292,15 +290,12 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_superseded_row(
 
 
 def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
-    """Every existing mismatch test elsewhere in this file
-    hand-edits exactly ONE row at a time -- never two or three in the
-    same file. Mutation-confirmed real gap: changing `mismatches.append(
-    "status_create")` to `mismatches = ["status_create"]` (overwrite
-    instead of accumulate -- exactly the shape of bug that would drop an
-    earlier row's mismatch once a later row also mismatches) left the
-    full suite green. Hand-edits both the Created and Changed rows'
-    labels, leaving their markers untouched, and asserts BOTH survive in
-    `marker_label_mismatches`, in row order."""
+    """Mismatches on two rows of the same file are both reported: an
+    overwrite instead of an accumulate (`mismatches = ["status_create"]`
+    for `mismatches.append("status_create")`) would drop an earlier row's
+    mismatch once a later row also mismatches. Hand-edits both the Created
+    and Changed rows' labels, leaving their markers untouched, and asserts
+    BOTH survive in `marker_label_mismatches`, in row order."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -330,14 +325,12 @@ def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
 def test_marker_matches_case_insensitively():
     """ADR0004V02: a hand-edited marker with different case (e.g. someone
     retyped it) must still resolve via the marker, not silently fall
-    back to label-text matching with zero signal -- confirmed as a real
-    gap during the ADR0004V01 audit. The label is deliberately corrupted
-    to something no configured status matches, so `status_create` can
-    ONLY come from a successful case-insensitive marker match --
-    without this, the label's own unrelated match against the current
-    config could resolve to the right answer by coincidence, masking a
-    broken case-insensitive match entirely (confirmed: this is exactly
-    what happened on the first version of this test)."""
+    back to label-text matching with zero signal. The label is deliberately
+    corrupted to something no configured status matches, so
+    `status_create` can ONLY come from a successful case-insensitive marker
+    match -- without this, the label's own unrelated match against the
+    current config could resolve to the right answer by coincidence,
+    masking a broken case-insensitive match entirely."""
     config = load_repo_config(FIXTURE_PATH)
     lines = _valid_header_lines(config)
     created_index = 8
@@ -355,8 +348,8 @@ def test_marker_matches_case_insensitively():
 def test_a_damaged_migrated_header_is_marked_migrated_but_not_valid():
     """`is_migrated` is set from row 2 alone, before the rest of the header
     is parsed, and survives an early return caused by a later row failing
-    to parse. Such a header no longer counts as a family member (Round 39:
-    status is read only from headers that parse)."""
+    to parse. Such a header no longer counts as a family member (status is
+    read only from headers that parse)."""
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
@@ -388,12 +381,9 @@ def _replaced(lines, index, value):
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     [
-        # parse_header discriminates
-        # ~15 distinct error codes, only checked via `not parsed.is_valid`
-        # (or not at all) anywhere in this file -- an off-by-one that swaps
-        # two adjacent branches, or collapses two into a generic code, would
-        # ship undetected. One case per positional check, asserting the
-        # exact code.
+        # One case per positional check of parse_header, asserting the exact
+        # code: `not parsed.is_valid` alone would let an off-by-one that swaps
+        # two adjacent branches, or collapses two into a generic code, through.
         (lambda lines: [], "adr-file-empty"),
         (lambda lines: lines[:11], "adr-file-too-short"),
         (lambda lines: _replaced(lines, 0, "not a comment"), "adr-header-comment-not-found"),
