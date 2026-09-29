@@ -1,7 +1,18 @@
+from pathlib import Path
+
 import pytest
 
 from adrpy.cli import init, migrate
 from adrpy.core import install_config
+
+
+@pytest.fixture(autouse=True)
+def _no_real_home(tmp_path_factory, monkeypatch):
+    """A global-scope skill install or listing reads Path.home(): without
+    this, a skill installed on the machine running the suite showed up in
+    its results."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr(Path, "home", lambda: home)
 
 
 @pytest.fixture(autouse=True)
