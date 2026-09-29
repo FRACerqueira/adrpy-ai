@@ -1,8 +1,7 @@
 """`new` command: creates a new decision with status Proposed. There is
 no `--open` (launching an external editor), by design, not as a gap to
 fill later: adrpy-ai is args-in/JSON-out for a non-interactive caller,
-with no session to hand an opened editor back to (decision-log:
-accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
+with no session to hand an opened editor back to.
 """
 
 from adrpy.core.args import parse_flags

@@ -19,24 +19,24 @@
 
 Revision 01 (Round 46) keeps the decision and records what came with it afterwards: the refusal of a pattern that reads part of a name twice, and the exemption that keeps a partial adoption from being locked by it.
 
-Technical Story: `migrate` exists to bring a repository that did not use adrpy (or AdrPlus) under the tool, once, at adoption -- AdrPlus's own Migration Guide calls it "a one-time operation". In practice it kept shaping the repository long after: Round 45's real-agent runs and the findings of Rounds 43-45 kept returning to `migrationpattern` and its consequences.
+Technical Story: `migrate` exists to bring a repository that did not use adrpy under the tool, once, at adoption -- a one-time operation. In practice it kept shaping the repository long after: Round 45's real-agent runs and the findings of Rounds 43-45 kept returning to `migrationpattern` and its consequences.
 
 ## Context and Problem Statement
 
-`migrate` adds a header to each hand-written decision and never renames the file, in AdrPlus 1.0.0 and in adrpy alike: `0001-use-redis.md` stays `0001-use-redis.md`. Its number and title are read from the name through `migrationpattern`, so the pattern is needed for as long as the repository exists, and until now every file whose name it matches is a decision -- with or without a header. Three lasting effects followed:
+`migrate` adds a header to each hand-written decision and never renames the file: `0001-use-redis.md` stays `0001-use-redis.md`. Its number and title are read from the name through `migrationpattern`, so the pattern is needed for as long as the repository exists, and until now every file whose name it matches is a decision -- with or without a header. Three lasting effects followed:
 
 * a note added months later whose name the pattern happens to match (`2024-01-15-meeting.md` under `N00:04T05`) becomes decision 2024, reported as `no-header`, and every lifecycle command refuses the repository until someone notices;
 * the pattern cannot be changed once a migrated decision exists (the guard of `status-or-separator-change-blocked-by-existing-decisions`);
 * every rule, scan and listing carries the second naming scheme.
 
-adrpy must keep reading AdrPlus 1.0.0 repositories as they are, including files AdrPlus migrated under their legacy names, so reading legacy names cannot be dropped. The question is how much a legacy name keeps deciding after adoption.
+`migrate` never renames, so every migrated decision keeps its legacy name for good: reading legacy names cannot be dropped. The question is how much a legacy name keeps deciding after adoption.
 
 How can `migrate` stay a one-time onboarding step, without legacy names deciding what is a decision for the rest of the repository's life?
 
 ## Decision Drivers
 
 * `migrate` is an adoption step; after it, the repository should operate on decisions with headers only.
-* No regression for AdrPlus 1.0.0 repositories: every file AdrPlus or adrpy migrated keeps being a decision.
+* No regression for migrated repositories: every file `migrate` gave a header keeps being a decision.
 * The hand-written-header path must keep working: when a repository already has decisions the tool created, `migrate` refuses (`already-tool-created-adrs-exist`) and check's warning tells the user to give each legacy file a header by hand.
 * The adoption order must stay safe: before `migrate`, the files it will migrate must keep blocking the lifecycle commands, or a single `new` would create a tool-created decision and lock `migrate` out for good.
 * The smallest change to already-tested behavior.
@@ -55,18 +55,18 @@ How can `migrate` stay a one-time onboarding step, without legacy names deciding
 Chosen option: "A phase rule", because it removes the lasting effect where it arises -- after adoption -- and leaves the adoption flow exactly as it was.
 
 1. Before adoption, nothing changes: a legacy name without a header is a decision with `no-header`, check fails and every lifecycle command refuses until `migrate` runs.
-2. The repository is adopted once any file in the decisions folder has a valid header `migrate` did not write -- created by the tool or AdrPlus, or copied by hand -- which is exactly when `migrate` stops running (`already-tool-created-adrs-exist`). Headers `migrate` wrote do not end the adoption: after a partial run, the files left keep blocking every lifecycle command until `migrate` finishes them, so no `new` can lock them out. Once adopted, a legacy name without a header is not a decision for any rule, count or listing; a command given it as `--file` refuses it (`filename-not-recognized`), and `check`, `explore` and every lifecycle command report it in a warning (give it a header by hand after renaming it to a free number -- its number may already be a decision's -- or move it out of the folder). Its number and title are not reserved: a new decision may take them, and the warning names the number it now shares at that moment (it does not compare titles).
+2. The repository is adopted once any file in the decisions folder has a valid header `migrate` did not write -- created by the tool, or copied by hand -- which is exactly when `migrate` stops running (`already-tool-created-adrs-exist`). Headers `migrate` wrote do not end the adoption: after a partial run, the files left keep blocking every lifecycle command until `migrate` finishes them, so no `new` can lock them out. Once adopted, a legacy name without a header is not a decision for any rule, count or listing; a command given it as `--file` refuses it (`filename-not-recognized`), and `check`, `explore` and every lifecycle command report it in a warning (give it a header by hand after renaming it to a free number -- its number may already be a decision's -- or move it out of the folder). Its number and title are not reserved: a new decision may take them, and the warning names the number it now shares at that moment (it does not compare titles).
 3. A legacy name with a valid header is a decision in both phases; one with a header that looks like this tool's but does not parse stays an `invalid-header` error in both.
 4. `migrate` still finds every legacy name without a header, so a run after a partial one migrates what is left.
 5. A read-only preview comes with it: `adrpy explore --path . --migrationpattern <pattern>` shows what a pattern would read from each name before `adrpy config --migrationpattern` writes it.
 6. A pattern that reads part of a name twice (its title starting inside the number's range, as `N00:04T02` for `0001-title.md`, or two ranges overlapping) is refused wherever it is set and by `migrate` before writing, never when a config is loaded. Once a decision was migrated with the repository's own such pattern, the `migrationpattern` guard keeps it, so `migrate` finishes with it and warns that the titles begin with part of the number; refusing there would leave the rest of the adoption unmigratable.
 
-**Not done now: renaming during `migrate`.** Renaming would remove the second scheme for the repositories that go through it, but it breaks links to the old names from other documents, needs a rule for the `V` a name requires while a migrated header has a blank Version, and diverges from what AdrPlus 1.0.0 writes. It is deferred, not rejected. **Reopen when** a finding after this decision is again caused by a legacy-scheme name -- an `audit-finding` or `doc-drift` entry in the decision log whose cause is a legacy name: that would mean this rule was not enough, and renaming removes the cause itself.
+**Not done now: renaming during `migrate`.** Renaming would remove the second scheme for the repositories that go through it, but it breaks links to the old names from other documents, needs a rule for the `V` a name requires while a migrated header has a blank Version. It is deferred, not rejected. **Reopen when** a finding after this decision is again caused by a legacy-scheme name -- an `audit-finding` or `doc-drift` entry in the decision log whose cause is a legacy name: that would mean this rule was not enough, and renaming removes the cause itself.
 
 ### Positive Consequences
 
 * After adoption, a file added later is never a decision because of its name alone: no repository is locked by a note.
-* AdrPlus 1.0.0 repositories and hand-written headers keep working unchanged.
+* Migrated repositories and hand-written headers keep working unchanged.
 * `migrate` keeps its safe order: it cannot be skipped by accident before adoption.
 
 ### Negative Consequences
@@ -85,7 +85,7 @@ Chosen option: "A phase rule", because it removes the lasting effect where it ar
 
 ### Only the `<!-- Migrated -->` marker counts
 
-* Good, because the marker is on line 2 of every file AdrPlus or adrpy migrated.
+* Good, because the marker is on line 2 of every file `migrate` wrote.
 * Bad, because a header written by hand (the documented path when `migrate` cannot run) has no marker, so those decisions would stop being recognized.
 
 ### The header rule in every phase
@@ -108,7 +108,7 @@ The first draft of this rule ended the adoption at any valid header, migrated on
 ### Rename during `migrate`
 
 * Good, because a migrated repository would have one naming scheme and no pattern left.
-* Bad, because of broken links, the version rule it needs and the divergence from AdrPlus 1.0.0.
+* Bad, because of broken links and the version rule it needs.
 
 ## Links
 

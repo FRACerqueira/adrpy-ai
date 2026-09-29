@@ -17,7 +17,7 @@
 
 * Deciders: Fernando Cerqueira (repo owner), decided while closing round 28's systematic security-audit findings, in a follow-on architecture discussion about the decision-log directory's own location.
 
-Technical Story: while investigating whether `folderadr` and the decision-log directory should become independently configurable (previously `decision_log_dir_for` derived the decision-log directory as `Path(folderadr).parent / "decision-log"`, a fixed sibling with no independent config field), it became clear this directly reopens a driver ADR003V01 already settled: ADR003V01 explicitly decided the decision-log directory's own location "cannot be added to the shared `adr-config.adrplus` schema" to keep that schema identical to AdrPlus's. This ADR supersedes ADR003V01 to reverse that one driver -- deliberately adding a field AdrPlus 1.0.0 does not have -- while carrying forward everything else ADR003V01 decided (the `adrpy log` command's own mechanical-only scope, its fail-closed collision handling, and the project's "no wizard, ever" premise), none of which is affected by this change.
+Technical Story: while investigating whether `folderadr` and the decision-log directory should become independently configurable (previously `decision_log_dir_for` derived the decision-log directory as `Path(folderadr).parent / "decision-log"`, a fixed sibling with no independent config field), it became clear this directly reopens a driver ADR003V01 already settled: ADR003V01 explicitly decided the decision-log directory's own location "cannot be added to the `.adrpy.json` schema". This ADR supersedes ADR003V01 to reverse that one driver -- deliberately adding the field to `.adrpy.json` -- while carrying forward everything else ADR003V01 decided (the `adrpy log` command's own mechanical-only scope, its fail-closed collision handling, and the project's "no wizard, ever" premise), none of which is affected by this change.
 
 ## Context and Problem Statement
 
@@ -31,17 +31,16 @@ Should the decision-log directory become an independently configurable location,
 * `folderadr`'s own scan is already recursive; making the decision-log directory recursive too (instead of leaving the asymmetry in place) is the only option that doesn't leave a real, freshly-relevant inconsistency unaddressed the moment both directories become independently placeable.
 * Recursive scanning turns "the two directories can now point anywhere" into a real containment hazard: if `folderlog` (the new field) equals, or nests inside, `folderadr` (or vice versa), each directory's own recursive scan would start seeing the other's files -- the same class of adoption/misrecognition hazard ADR004V02 already closed for `--separator`, applied here to a directory-placement change instead of a naming-rule change.
 * The project's own established discipline (ADR005V01, ADR006V01): when closing one gap reveals the underlying constraint is broader than first scoped, the broader shape gets its own ADR rather than a narrow patch bolted onto the original fix.
-* adrpy is the reference for the config schema and AdrPlus will mirror it. Adding `folderlog`, a field AdrPlus 1.0.0 does not have, is a deliberate choice here (confirmed explicitly by the repo owner), not an oversight -- ADR002V01 already established that adrpy-ai's own config layer can carry settings AdrPlus 1.0.0 has no equivalent for; this extends that to `adr-config.adrplus` itself rather than confining it to the install-level config ADR002V01 introduced.
 
 ## Considered Options
 
-* Leave the decision-log directory as a fixed sibling of `folderadr`, permanently -- reaffirm ADR003V01's own driver as-is; no new field, no containment risk, no fidelity loss.
-* Add `folderlog` as a new field inside `adr-config.adrplus` itself, independently configurable, recursively scanned like `folderadr`, with a mutual containment guard between the two -- adding a field AdrPlus 1.0.0's config schema does not have.
-* Add `folderlog` to a NEW, adrpy-ai-only, per-repository config file, separate from `adr-config.adrplus` -- gets independence and recursion without touching the schema shared with AdrPlus at all, preserving ADR003V01's original driver exactly as written.
+* Leave the decision-log directory as a fixed sibling of `folderadr`, permanently -- reaffirm ADR003V01's own driver as-is; no new field, no containment risk.
+* Add `folderlog` as a new field inside `.adrpy.json` itself, independently configurable, recursively scanned like `folderadr`, with a mutual containment guard between the two.
+* Add `folderlog` to a NEW, separate per-repository config file, alongside `.adrpy.json` -- gets independence and recursion without touching `.adrpy.json` at all, preserving ADR003V01's original driver exactly as written.
 
 ## Decision Outcome
 
-Chosen option: **add `folderlog` directly to `adr-config.adrplus`**, independently configurable and recursively scanned, with a mutual containment guard against `folderadr` -- because the repo owner explicitly confirmed adding the field to the shared schema, and a single shared config file is simpler for every command that already resolves repository config once, at the top of every invocation, than introducing a second, adrpy-ai-only config file alongside it. This formally **supersedes ADR003V01**'s own driver 4 and Decision Outcome item 3 ("any new... path setting... never merged into the shared `adr-config.adrplus` schema") -- everything else ADR003V01 decided (the `adrpy log` command's mechanical-only scope, its fail-closed collision handling on a same-day/scope/slug clash, and staying flag-driven with no interactive prompt) is unaffected and remains in force; this ADR does not reopen or relitigate any of it.
+Chosen option: **add `folderlog` directly to `.adrpy.json`**, independently configurable and recursively scanned, with a mutual containment guard against `folderadr` -- because the repo owner explicitly confirmed adding the field to `.adrpy.json`, and a single config file is simpler for every command that already resolves repository config once, at the top of every invocation, than introducing a second config file alongside it. This formally **supersedes ADR003V01**'s own driver 4 and Decision Outcome item 3 ("any new... path setting... never merged into the `.adrpy.json` schema") -- everything else ADR003V01 decided (the `adrpy log` command's mechanical-only scope, its fail-closed collision handling on a same-day/scope/slug clash, and staying flag-driven with no interactive prompt) is unaffected and remains in force; this ADR does not reopen or relitigate any of it.
 
 The decision has three parts, mirroring how `folderadr` itself is already governed:
 
@@ -60,7 +59,6 @@ The decision has three parts, mirroring how `folderadr` itself is already govern
 
 ### Negative Consequences
 
-* Formally reverses one of ADR003V01's own drivers -- a field in the SHARED `adr-config.adrplus` schema that AdrPlus 1.0.0 does not have (AdrPlus will mirror it), the first time this project did so for the shared schema itself (ADR002V01 only ever did it in the separate, adrpy-ai-only install-level config).
 * A real implementation cost (19 files touched in the end) landed for this, comparable in shape to what ADR005V01's own deferred registry refactor was estimated at.
 * The decision-log directory's scan gaining recursion (and the fail-closed-on-unreadable-subdirectory handling that comes with it) added complexity to a module (`core/decision_log.py`) that was deliberately simple (no `warnings` machinery at all) specifically because it never needed to handle this class of risk before.
 
@@ -75,11 +73,10 @@ The decision has three parts, mirroring how `folderadr` itself is already govern
 
 * Good, because it is simpler operationally -- one config file, already read once per command, gains one more field.
 * Good, because the containment/change guards can be validated together with `folderadr` in the exact same `parse_repo_config` pass, no cross-file coordination needed.
-* Bad, because it adds a field AdrPlus 1.0.0's schema does not have, the first time this project has done so for the shared schema itself rather than the separate install-level config.
 
-### `folderlog` in a new, adrpy-ai-only per-repository config file
+### `folderlog` in a new, separate per-repository config file
 
-* Good, because it preserves ADR003V01's own driver exactly as written -- the shared schema never changes.
+* Good, because it preserves ADR003V01's own driver exactly as written -- `.adrpy.json` never changes.
 * Bad, because it introduces a second config file every repository-scoped command would need to resolve and keep in sync with `adr-config.adrplus` (e.g. for the containment guard, which needs both directories' values at once) -- real, ongoing complexity for a trade-off the repo owner has already said is an acceptable one to avoid.
 
 ## Links

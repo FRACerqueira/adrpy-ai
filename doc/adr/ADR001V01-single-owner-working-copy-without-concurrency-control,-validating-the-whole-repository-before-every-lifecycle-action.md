@@ -69,7 +69,6 @@ The decision has five parts:
 * Two commands run in parallel on one working copy can lose an update that ends in a valid state; only the visibility plan above covers it.
 * A multi-file write that stops halfway needs a manual repair; the tool gives the exact row but does not apply it.
 * Every lifecycle action pays for a full validation, about 0.8 s at 5000 ADRs.
-* A repository adopted from AdrPlus 1.0.0 in a state AdrPlus allows but adrpy's invariants refuse must be repaired once, by hand, before lifecycle actions run on it.
 
 ## Pros and Cons of the Options
 

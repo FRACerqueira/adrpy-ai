@@ -1,12 +1,4 @@
-"""`init` command: initializes an ADR repository.
-
-Plugin-baseline discovery/writing is intentionally not implemented -- the
-plugin system is out of scope for now (decision-log:
-deferred--2026-09-15--plugins--sync-and-plugins-out-of-scope.md): this
-command never touches `activeplugins` beyond what the supplied or
-default config already contains (confirmed true even with --language's
-own merge, since no language pack defines that field).
-"""
+"""`init` command: initializes an ADR repository."""
 
 from dataclasses import asdict
 from pathlib import Path
@@ -69,8 +61,8 @@ def describe():
                 # `--file` means "the decision file to mutate"; this alone
                 # meant "a config JSON to seed the repo with", a naming
                 # collision an agent generalizing across commands could
-                # reasonably get wrong (decision-log: accepted-
-                # divergence--2026-09-15--init--file-flag-renamed-to-seed.md).
+                # reasonably get wrong (decision-log:
+                # 2026-09-15--scope-note--init--file-flag-renamed-to-seed.md).
                 "description": (
                     "Path to a config JSON to seed the repository with, instead of the install-level "
                     "config (see the installconfig command) or the built-in default. Fails with "

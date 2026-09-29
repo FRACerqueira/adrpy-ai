@@ -104,8 +104,8 @@ class DecisionRecord:
 def build_header(config, record, migrated=False):
     """The "Migrated" word in the Values column's own label comes from
     `config.headermigrated`, and appears only when `migrated` (decision-log:
-    accepted-divergence--2026-09-16--header--migrated-word-only-when-
-    migrated.md) -- the word is never parsed (parse_header below only
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md) --
+    the word is never parsed (parse_header below only
     looks for the trailing HTML comment), so on a non-migrated file it
     would carry no information, only a misleading one.
     """

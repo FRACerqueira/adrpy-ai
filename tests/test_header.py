@@ -26,25 +26,13 @@ def _valid_header_lines(config):
     return header_text.split(os.linesep)[:-1]  # drop the trailing empty split
 
 
-def test_build_header_matches_real_adrplus_output():
-    """Captured byte-for-byte from a real run of the reference tool's own
-    `new` command (version 1.0.0, Windows) against a disposable copy of
-    this same fixture, with matching --title/--domain/--refdate arguments.
-
-    Two deliberate divergences from that captured output:
-    * The reference tool's row 2 reads literally "Values Migrated " even
-      for this non-migrated file; adrpy-ai now omits the "Migrated" word
-      when `migrated=False` (decision-log: accepted-divergence--2026-09-
-      16--header--migrated-word-only-when-migrated.md) -- the word is
-      never parsed by either tool, so the real output was misleading,
-      not information adrpy-ai had to match.
-    * Every status cell now carries a trailing hidden canonical marker
-      (ADR004V01) the reference tool doesn't write yet -- in the same
-      trailing space after the date's closing `)` both parsers already
-      ignore, confirmed directly in the reference tool's own source
-      (`Helper.ParseStatusLine`); a file adrpy-ai writes today is still
-      readable by that tool unmodified, it just doesn't itself write the
-      marker until it adopts the same convention.
+def test_build_header_writes_the_twelve_line_header_byte_for_byte():
+    """The whole header, byte for byte: the fields row holds the label
+    alone, the Values label carries no "Migrated" word on a file that was
+    not migrated (decision-log:
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md),
+    and every status cell ends with its hidden canonical marker (ADR004V01),
+    after the date's closing `)`, where the parser ignores trailing text.
     """
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
@@ -76,12 +64,10 @@ def test_build_header_matches_real_adrplus_output():
 
 
 def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
-    """Deliberate divergence from the reference tool's own literal "Values
-    Migrated" column label -- confirmed via `parse_header` below (and the
-    reference tool's own positional-only parsing) that the label text is never
-    read by either side, only the trailing `<!-- Migrated -->` HTML comment
-    is (see decision-log:
-    accepted-divergence--2026-09-16--header--migrated-word-only-when-migrated.md).
+    """The "Migrated" word appears in the Values label only on a migrated
+    file -- `parse_header` never reads that label, only the trailing
+    `<!-- Migrated -->` HTML comment (decision-log:
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md).
     A non-migrated file's label must not read as if it had been."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(

@@ -433,9 +433,8 @@ def test_init_with_seed_overwrites_using_custom_config(tmp_path):
     everywhere else in the CLI, --file means "the decision file to
     mutate"; here it meant "a config JSON to seed the repo with", a
     naming collision an agent generalizing across commands could
-    reasonably get wrong. Confirmed with the user as a deliberate
-    divergence from the reference tool's own `-f/--file` naming (decision-log:
-    accepted-divergence--2026-09-15--init--file-flag-renamed-to-seed.md)."""
+    reasonably get wrong (decision-log:
+    2026-09-15--scope-note--init--file-flag-renamed-to-seed.md)."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "decisions"
     file_path = tmp_path / "custom-config.json"
