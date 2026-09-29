@@ -6,6 +6,34 @@ from adrpy.cli import init, migrate
 from adrpy.core import install_config
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_defaults: runs with the shipped default config sizes")
+
+
+@pytest.fixture(autouse=True)
+def _default_sizes_the_tests_were_written_for(request, monkeypatch):
+    """Tests that use init only to set a repository up expect names built
+    with lenseq 3 and no revision (ADR001V01-...): the default they were
+    written against. They keep it; a test marked `real_defaults` runs with
+    the shipped default instead."""
+    if request.node.get_closest_marker("real_defaults"):
+        return
+    import json
+
+    from adrpy.cli import init as init_command, installconfig
+    from adrpy.core import config as config_module, install_config as install_config_module
+
+    shipped = config_module.default_repo_config_text
+
+    def written_for():
+        data = json.loads(shipped())
+        data.update({"lenseq": 3, "lenrevision": 0})
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    for module in (config_module, init_command, installconfig, install_config_module):
+        monkeypatch.setattr(module, "default_repo_config_text", written_for)
+
+
 @pytest.fixture(autouse=True)
 def _no_real_home(tmp_path_factory, monkeypatch):
     """A global-scope skill install or listing reads Path.home(): without

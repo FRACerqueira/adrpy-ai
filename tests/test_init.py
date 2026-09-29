@@ -27,6 +27,7 @@ def _as_written(config_text):
     return serialize_repo_config(asdict(parse_repo_config(config_text)))
 
 
+@pytest.mark.real_defaults
 def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     result = init.run(["--path", str(tmp_path)])
 
@@ -792,11 +793,12 @@ def test_the_first_config_change_after_init_rewrites_only_the_changed_line(tmp_p
     config_path = tmp_path / ".adrpy.json"
     before = config_path.read_text(encoding="utf-8").splitlines()
 
-    config.run(["--path", str(tmp_path), "--lenseq", "4"])
+    config.run(["--path", str(tmp_path), "--lenseq", "5"])
 
     after = config_path.read_text(encoding="utf-8").splitlines()
     assert len(before) == len(after)
-    assert [(old, new) for old, new in zip(before, after) if old != new] == [('  "lenseq": 3,', '  "lenseq": 4,')]
+    changed = [(old, new) for old, new in zip(before, after) if old != new]
+    assert len(changed) == 1 and changed[0][0].startswith('  "lenseq": ') and changed[0][1] == '  "lenseq": 5,'
 
 
 
@@ -823,3 +825,22 @@ def test_a_new_repository_config_has_no_plugin_fields(tmp_path):
     init.run(["--path", str(tmp_path)])
     text = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
     assert "activeplugins" not in text and "disableplugins" not in text
+
+
+@pytest.mark.real_defaults
+def test_the_shipped_defaults_are_four_two_two():
+    from adrpy.core.config import default_repo_config_text
+
+    data = json.loads(default_repo_config_text())
+    assert (data["lenseq"], data["lenversion"], data["lenrevision"]) == (4, 2, 2)
+
+
+@pytest.mark.real_defaults
+def test_a_decision_in_a_new_repository_is_named_with_the_shipped_defaults(tmp_path):
+    from adrpy.cli import new
+
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    names = [path.name for path in (tmp_path / "doc" / "adr").glob("*.md")]
+    assert len(names) == 1 and names[0].startswith("ADR0001V01R01-")
