@@ -272,7 +272,7 @@ A file `migrate` brought in says so on line 2, `|Fields|Values Migrated <!-- Mig
 This project records its own architectural decisions as it makes them:
 
 - [`doc/architecture.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the single-owner model, configuration layering, and the decision lifecycle, with diagrams.
-- [`doc/adr/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool).
+- [`doc/adr/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/INDEX.md) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool), listed with their state, scope and domain in the index adrpy regenerates at each write.
 - [`doc/decision-log/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log/INDEX.md) — the project's audit trail, written first for tooling and for AI agents calibrating a review: audit findings, documentation corrections, and deferred/accepted trade-offs, indexed from individual entries that are never hand-edited. To understand the design, read the ADRs.
 - [`doc/decision-log-workflow.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md) — the step-by-step workflow (with a diagram) for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
 - [`doc/skills/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/skills/README.md) — how `adrpy-skills` installs that same judgment layer for AI coding agents, and how it decides what to write, per provider.
