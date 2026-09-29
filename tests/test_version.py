@@ -578,8 +578,7 @@ def test_version_end_to_end_through_main(tmp_path):
 def test_version_describe_declares_empty_as_a_presence_only_switch():
     """--empty is presence-only (confirmed live,
     `--empty true` fails with "Unknown argument") -- must not be declared
-    "boolean", which implies accepting an explicit value like
-    `config --disableplugins true/false` does."""
+    "boolean", which implies accepting an explicit value."""
     arguments = {argument["name"]: argument for argument in version.describe()["arguments"]}
 
     assert arguments["empty"]["type"] == "switch"

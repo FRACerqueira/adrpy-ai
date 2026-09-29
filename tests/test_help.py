@@ -151,12 +151,10 @@ def test_init_documents_the_three_length_too_small_codes():
     assert "lenrevision-too-small-for-existing-decisions" in codes
 
 
-def test_config_documents_field_not_an_integer_and_field_not_a_boolean():
-    """field-not-an-integer (lenseq/lenversion/lenrevision) and
-    field-not-a-boolean (disableplugins)."""
+def test_config_documents_field_not_an_integer():
+    """field-not-an-integer (lenseq/lenversion/lenrevision)."""
     codes = _codes("config")
     assert "field-not-an-integer" in codes
-    assert "field-not-a-boolean" in codes
 
 
 def test_new_supersede_and_version_document_the_forbidden_character_constraint():

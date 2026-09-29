@@ -37,8 +37,6 @@ def _valid_config_dict():
         "headertablefields": "Fields",
         "headertablevalues": "Values",
         "headermigrated": "Migrated",
-        "activeplugins": [],
-        "disableplugins": False,
     }
 
 

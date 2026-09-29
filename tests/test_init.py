@@ -614,9 +614,9 @@ def test_init_rejects_unsupported_language(tmp_path):
 
 
 def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypatch):
-    # tests/fixtures/.adrpy.json differs from the built-in default
-    # in activeplugins (["AdrIndexer"] vs []) -- a distinguishing field
-    # that proves this content was actually used, not a coincidence.
+    # tests/fixtures/.adrpy.json differs from the built-in default in
+    # its template (CRLF line endings) -- a distinguishing field that
+    # proves this content was actually used, not a coincidence.
     install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
@@ -624,7 +624,7 @@ def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypat
 
     config_path = tmp_path / ".adrpy.json"
     assert config_path.read_text(encoding="utf-8") == _as_written(install_text)
-    assert load_repo_config(config_path).activeplugins == ["AdrIndexer"]
+    assert "\r\n" in load_repo_config(config_path).template
     assert result["created"][0] == str(config_path)
 
 
@@ -816,3 +816,10 @@ def test_a_config_under_another_name_is_not_a_repository_config(tmp_path):
         explore.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "config-not-found"
+
+
+
+def test_a_new_repository_config_has_no_plugin_fields(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    text = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
+    assert "activeplugins" not in text and "disableplugins" not in text

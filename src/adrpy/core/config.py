@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from adrpy.core.casing import CASE_TRANSFORMS
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.fs import read_bounded, read_with_permission_retry
+from adrpy.core.notices import notice
 from adrpy.core.naming import migration_pattern_overlap, parse_migration_pattern
 from adrpy.core.security import (
     reject_embedded_delimiter,
@@ -133,7 +134,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_INVALID_JSON: "The config file is not valid JSON, or its root is not a JSON object.",
     FailureCodes.CONFIG_MISSING_FIELD: "The config is missing one or more required fields.",
     FailureCodes.CONFIG_UNEXPECTED_FIELD: "The config has one or more fields this schema does not recognize.",
-    FailureCodes.CONFIG_WRONG_TYPE: "A field's value is not the type this schema requires for it (string/integer/boolean/array of strings).",
+    FailureCodes.CONFIG_WRONG_TYPE: "A field's value is not the type this schema requires for it (string/integer).",
     FailureCodes.CONFIG_LENSEQ_TOO_SMALL: f"lenseq is below its configured minimum ({LENSEQ_MIN}).",
     FailureCodes.CONFIG_LENSEQ_TOO_LARGE: f"lenseq is above its configured maximum ({LENSEQ_MAX}).",
     FailureCodes.CONFIG_LENVERSION_TOO_SMALL: f"lenversion is below its configured minimum ({LENVERSION_MIN}).",
@@ -255,9 +256,10 @@ _STRING_FIELDS = (
     "headermigrated",
 )
 _INT_FIELDS = ("lenseq", "lenversion", "lenrevision")
-_BOOL_FIELDS = ("disableplugins",)
-_LIST_FIELDS = ("activeplugins",)
-ALL_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS + _LIST_FIELDS
+ALL_FIELDS = _STRING_FIELDS + _INT_FIELDS
+# Fields a config may still hold but no longer has: dropped on read with a
+# warning, and gone from the file at its next write.
+_RETIRED_FIELDS = ("activeplugins", "disableplugins")
 
 # migrationpattern and template have no "cannot be empty" rule of their own;
 # every other string field does.
@@ -294,8 +296,6 @@ class RepoConfig:
     headertablefields: str
     headertablevalues: str
     headermigrated: str
-    activeplugins: list
-    disableplugins: bool
 
 
 def serialize_repo_config(fields):
@@ -449,13 +449,16 @@ def parse_repo_config(text):
     if not isinstance(raw, dict):
         raise CommandError(FailureCodes.CONFIG_INVALID_JSON, "Configuration root must be a JSON object.")
 
-    lowered = {key.lower(): value for key, value in raw.items()}
+    retired = [key for key in raw if key.lower() in _RETIRED_FIELDS]
+    if retired:
+        notice(f"{', '.join(retired)}: no longer config field(s); ignored, and removed at the next write.")
+    lowered = {key.lower(): value for key, value in raw.items() if key.lower() not in _RETIRED_FIELDS}
 
     missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]
     if missing:
         raise CommandError(FailureCodes.CONFIG_MISSING_FIELD, f"Missing required field(s): {', '.join(missing)}")
 
-    extra = [key for key in raw if key.lower() not in ALL_FIELDS]
+    extra = [key for key in raw if key.lower() not in ALL_FIELDS + _RETIRED_FIELDS]
     if extra:
         raise CommandError(FailureCodes.CONFIG_UNEXPECTED_FIELD, f"Unexpected field(s): {', '.join(extra)}")
 
@@ -481,15 +484,6 @@ def parse_repo_config(text):
         value = lowered[name]
         if isinstance(value, bool) or not isinstance(value, int):
             raise CommandError(FailureCodes.CONFIG_WRONG_TYPE, f"Field '{name}' must be an integer.")
-
-    for name in _BOOL_FIELDS:
-        if not isinstance(lowered[name], bool):
-            raise CommandError(FailureCodes.CONFIG_WRONG_TYPE, f"Field '{name}' must be a boolean.")
-
-    for name in _LIST_FIELDS:
-        value = lowered[name]
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise CommandError(FailureCodes.CONFIG_WRONG_TYPE, f"Field '{name}' must be an array of strings.")
 
     if lowered["lenseq"] < LENSEQ_MIN:
         raise CommandError(FailureCodes.CONFIG_LENSEQ_TOO_SMALL, f"lenseq must be >= {LENSEQ_MIN}.")

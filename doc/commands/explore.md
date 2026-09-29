@@ -34,7 +34,7 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |

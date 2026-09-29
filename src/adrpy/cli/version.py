@@ -69,8 +69,7 @@ def describe():
                 "required": False,
                 # Presence-only (`--empty` with no value, like a getopt
                 # flag), not "boolean" -- `--empty true`/`--empty false`
-                # both fail with "Unknown argument", unlike
-                # `config --disableplugins`, which does take a value.
+                # both fail with "Unknown argument".
                 "description": (
                     "Start from the default template instead of carrying the source's content forward. "
                     "Presence-only: pass just '--empty' with no value; do not pass '--empty true/false'."

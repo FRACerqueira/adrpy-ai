@@ -21,11 +21,6 @@ knowledge of AdrPlus's install-directory layout, is added for that.
 blocked by an existing install-level config, since writing that config
 is this command's own purpose.
 
-`activeplugins` is deliberately not exposed here either, same as
-`config` -- the plugin system is out of scope (see the `init` command's
-own note); it is still carried through from whatever base this command
-merges onto (the existing file, or the bundled default), never dropped.
-
 No concurrency control: this file is per-user, per-machine state
 (ADR002V01). A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
@@ -51,7 +46,6 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import (
     INT_FIELD_BOUNDS,
-    _BOOL_FIELDS,
     _INT_FIELDS,
     _STRING_FIELDS,
     SUPPORTED_LANGUAGES,
@@ -67,14 +61,12 @@ from adrpy.core.text import parse_ascii_int
 from adrpy.core.fs import cleanup_orphaned_temp_files_for
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 
-_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS
+_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS
 
 
 def _field_type(field):
     if field in _INT_FIELDS:
         return "integer"
-    if field in _BOOL_FIELDS:
-        return "boolean"
     return "string"
 
 
@@ -163,8 +155,6 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    if field == "disableplugins":
-        return "'true' or 'false'; anything else fails with field-not-a-boolean."
     # Same fail-loud guard as config.py's own _field_description, and for
     # the same reason: a newly added schema field with no matching branch
     # here must be caught immediately, not silently fall through to a
@@ -184,7 +174,7 @@ def describe():
             "migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field"
             " flags and no --seed/--language it reads the file back (`configured` is false, with no `config` "
             "key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the "
-            "file with --seed or --language. `activeplugins` is never read or written, but a write keeps it."
+            "file with --seed or --language."
         ),
         "arguments": [
             {
@@ -235,7 +225,6 @@ def describe():
                 FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
                 FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
-                FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             config_schema.SHARED_FAILURE_CODES,
@@ -356,13 +345,6 @@ def run(args):
                     FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
                 ) from error
             updated_fields.append(field)
-
-    if "disableplugins" in flags:
-        text = flags["disableplugins"].strip().lower()
-        if text not in ("true", "false"):
-            raise CommandError(FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'.")
-        merged["disableplugins"] = text == "true"
-        updated_fields.append("disableplugins")
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     parse_repo_config(merged_text)  # re-validates the merged result; raises on failure

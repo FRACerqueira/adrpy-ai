@@ -11,7 +11,7 @@ Reads or updates the per-user, install-level default config (seeds new repositor
 
 ## Description
 
-Reads or updates the per-user install-level config (ADR002V01), which seeds `init` and supplies migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field flags and no --seed/--language it reads the file back (`configured` is false, with no `config` key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the file with --seed or --language. `activeplugins` is never read or written, but a write keeps it.
+Reads or updates the per-user install-level config (ADR002V01), which seeds `init` and supplies migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field flags and no --seed/--language it reads the file back (`configured` is false, with no `config` key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the file with --seed or --language.
 
 ## Arguments
 
@@ -45,7 +45,6 @@ Reads or updates the per-user install-level config (ADR002V01), which seeds `ini
 | `--lenseq` | -- | no | integer | Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenversion` | -- | no | integer | Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenrevision` | -- | no | integer | Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer. |
-| `--disableplugins` | -- | no | boolean | 'true' or 'false'; anything else fails with field-not-a-boolean. |
 
 ## Failure codes
 
@@ -54,7 +53,6 @@ Reads or updates the per-user install-level config (ADR002V01), which seeds `ini
 | `config-file-not-found` | --seed does not point to an existing file. |
 | `language-not-supported` | --language is not one of SUPPORTED_LANGUAGES. |
 | `field-not-an-integer` | An integer field's own value is not a valid integer. |
-| `field-not-a-boolean` | --disableplugins is not 'true' or 'false'. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
 | `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
@@ -62,7 +60,7 @@ Reads or updates the per-user install-level config (ADR002V01), which seeds `ini
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |

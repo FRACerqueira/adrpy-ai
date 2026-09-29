@@ -38,8 +38,6 @@ def _valid_config_dict():
         "headertablefields": "Fields",
         "headertablevalues": "Values",
         "headermigrated": "Migrated",
-        "activeplugins": [],
-        "disableplugins": False,
     }
 
 
@@ -49,8 +47,6 @@ def test_loads_real_repo_config_fixture():
     assert config.folderadr == "doc/adr"
     assert config.prefix == "ADR"
     assert config.lenseq == 3
-    assert config.activeplugins == ["AdrIndexer"]
-    assert config.disableplugins is False
 
 
 def test_malformed_json_is_rejected():
@@ -686,36 +682,6 @@ def test_int_field_given_a_bool_is_rejected_as_wrong_type():
 def test_string_field_given_a_wrong_type_is_rejected():
     data = _valid_config_dict()
     data["folderadr"] = 123
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
-def test_bool_field_given_a_wrong_type_is_rejected():
-    data = _valid_config_dict()
-    data["disableplugins"] = "true"  # a JSON string, not a real boolean
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
-def test_list_field_given_a_non_list_is_rejected():
-    data = _valid_config_dict()
-    data["activeplugins"] = "not-a-list"
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
-def test_list_field_with_a_non_string_item_is_rejected():
-    data = _valid_config_dict()
-    data["activeplugins"] = [1, 2]
 
     with pytest.raises(CommandError) as excinfo:
         parse_repo_config(json.dumps(data))

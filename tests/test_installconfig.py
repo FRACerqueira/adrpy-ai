@@ -49,17 +49,6 @@ def test_second_write_merges_onto_the_existing_file_not_the_bundled_default(tmp_
     assert read_back["config"]["lenseq"] == 4
 
 
-def test_activeplugins_is_preserved_across_writes_even_though_never_exposed(tmp_path):
-    installconfig.run(["--seed", FIXTURE_PATH])  # fixture's activeplugins == ["AdrIndexer"]
-
-    installconfig.run(["--prefix", "XYZ"])
-
-    target_path = installconfig.resolve_install_config_path()
-    written = parse_repo_config(target_path.read_text(encoding="utf-8"))
-    assert written.activeplugins == ["AdrIndexer"]
-    assert written.prefix == "XYZ"
-
-
 def test_seed_replaces_the_file_wholesale(tmp_path):
     result = installconfig.run(["--seed", FIXTURE_PATH])
 
@@ -160,20 +149,6 @@ def test_invalid_field_value_is_rejected(tmp_path):
         installconfig.run(["--lenseq", "2"])
 
     assert excinfo.value.code == "config-lenseq-too-small"
-
-
-def test_disableplugins_accepts_true_and_false(tmp_path):
-    result = installconfig.run(["--disableplugins", "true"])
-
-    assert result["updated_fields"] == ["disableplugins"]
-    assert installconfig.run([])["config"]["disableplugins"] is True
-
-
-def test_disableplugins_rejects_a_non_boolean_value(tmp_path):
-    with pytest.raises(CommandError) as excinfo:
-        installconfig.run(["--disableplugins", "maybe"])
-
-    assert excinfo.value.code == "field-not-a-boolean"
 
 
 def test_describe_has_no_path_argument_and_no_activeplugins_flag():

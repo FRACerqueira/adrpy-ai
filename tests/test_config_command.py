@@ -82,7 +82,6 @@ def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
     assert after.prefix == "DOC"
     assert after.folderadr == before.folderadr
     assert after.lenseq == before.lenseq
-    assert after.activeplugins == before.activeplugins  # untouched, not exposed
 
 
 def test_config_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
@@ -781,38 +780,6 @@ def test_config_omitted_fields_keep_current_value(tmp_path):
     assert after.headertitlefile == "Title"
 
 
-def test_config_toggles_disableplugins(tmp_path):
-    tmp_path = _init_repo(tmp_path)
-
-    config.run(["--path", str(tmp_path), "--disableplugins", "true"])
-    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is True
-
-    config.run(["--path", str(tmp_path), "--disableplugins", "false"])
-    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is False
-
-
-def test_config_rejects_invalid_disableplugins_value(tmp_path):
-    tmp_path = _init_repo(tmp_path)
-
-    with pytest.raises(CommandError) as excinfo:
-        config.run(["--path", str(tmp_path), "--disableplugins", "maybe"])
-
-    assert excinfo.value.code == "field-not-a-boolean"
-
-
-@pytest.mark.parametrize("value", ["True", "TRUE", " true ", "False", " FALSE "])
-def test_config_normalizes_non_canonical_disableplugins_input(tmp_path, value):
-    """--disableplugins's own
-    `.strip().lower()` normalization had no test with non-canonical input
-    (only exactly "true"/"false"/"maybe")."""
-    tmp_path = _init_repo(tmp_path)
-
-    config.run(["--path", str(tmp_path), "--disableplugins", value])
-
-    expected = value.strip().lower() == "true"
-    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is expected
-
-
 def test_config_rejects_non_integer_lenseq(tmp_path):
     tmp_path = _init_repo(tmp_path)
 
@@ -974,15 +941,14 @@ def test_config_end_to_end_through_main(tmp_path):
 
 def test_config_describe_declares_correct_field_types():
     """Every editable field was declared "string" in
-    describe(), including the 3 integer fields and the boolean --
-    indistinguishable from a real string field until an agent hit
-    field-not-an-integer/field-not-a-boolean by trial and error."""
+    describe(), including the 3 integer fields -- indistinguishable from
+    a real string field until an agent hit field-not-an-integer by trial
+    and error."""
     arguments = {argument["name"]: argument for argument in config.describe()["arguments"]}
 
     assert arguments["lenseq"]["type"] == "integer"
     assert arguments["lenversion"]["type"] == "integer"
     assert arguments["lenrevision"]["type"] == "integer"
-    assert arguments["disableplugins"]["type"] == "boolean"
     assert arguments["prefix"]["type"] == "string"
 
 
@@ -1016,7 +982,6 @@ def test_config_describe_documents_the_real_domain_constraints():
     for field in config_schema._STATUS_LABEL_FIELDS:
         assert str(config_schema.STATUS_LABEL_MAX_LENGTH) in arguments[field]
     assert "N" in arguments["migrationpattern"] and "T" in arguments["migrationpattern"]
-    assert "true" in arguments["disableplugins"] and "false" in arguments["disableplugins"]
 
 
 def test_config_describe_does_not_falsely_claim_these_two_fields_are_settable_to_empty():
@@ -1360,3 +1325,64 @@ def test_a_header_label_change_is_allowed_before_any_decision(tmp_path):
     tmp_path = _init_repo(tmp_path)
     config.run(["--path", str(tmp_path), "--headertablefields", "Campos"])
     assert "Campos" in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
+
+
+
+def _with_retired_fields(tmp_path):
+    import json
+
+    config_path = tmp_path / ".adrpy.json"
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data.update({"activeplugins": [], "disableplugins": False})
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+    return config_path
+
+
+def test_a_config_with_the_retired_plugin_fields_is_read_with_a_warning(tmp_path, capsys):
+    """activeplugins and disableplugins are no longer config fields: a
+    config that still holds them is read, and the answer says they were
+    ignored."""
+    import json
+
+    from adrpy.__main__ import main
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+
+    assert main(["config", "--path", str(tmp_path)]) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["success"]
+    assert "activeplugins" not in answer["data"]["config"]
+    assert any("activeplugins" in warning and "disableplugins" in warning for warning in answer["data"]["warnings"])
+
+
+def test_a_write_drops_the_retired_plugin_fields(tmp_path):
+    tmp_path = _init_repo(tmp_path)
+    config_path = _with_retired_fields(tmp_path)
+
+    config.run(["--path", str(tmp_path), "--headerscope", "Escopo"])
+
+    text = config_path.read_text(encoding="utf-8")
+    assert "activeplugins" not in text and "disableplugins" not in text
+
+
+def test_another_unknown_field_is_still_an_error(tmp_path):
+    import json
+
+    tmp_path = _init_repo(tmp_path)
+    config_path = tmp_path / ".adrpy.json"
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data["somethingelse"] = 1
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        config.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "config-unexpected-field"
+
+
+@pytest.mark.parametrize("flag", ["--disableplugins", "--activeplugins"])
+def test_the_plugin_flags_are_gone(tmp_path, flag):
+    tmp_path = _init_repo(tmp_path)
+    with pytest.raises(UsageError):
+        config.run(["--path", str(tmp_path), flag, "true"])

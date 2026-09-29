@@ -11,7 +11,7 @@ Reads or updates an existing repository's own `.adrpy.json`.
 
 ## Description
 
-With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". `activeplugins` is never read or written.
+With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "".
 
 ## Arguments
 
@@ -44,7 +44,6 @@ With no field flags, reads the repository's .adrpy.json back (the result has a `
 | `--lenseq` | -- | no | integer | Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenversion` | -- | no | integer | Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenrevision` | -- | no | integer | Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer. |
-| `--disableplugins` | -- | no | boolean | 'true' or 'false'; anything else fails with field-not-a-boolean. |
 
 ## Failure codes
 
@@ -53,7 +52,6 @@ With no field flags, reads the repository's .adrpy.json back (the result has a `
 | `target-directory-not-found` | --path does not point to an existing directory. |
 | `config-not-found` | --path's own directory has no .adrpy.json. |
 | `field-not-an-integer` | An integer field's own value is not a valid integer. |
-| `field-not-a-boolean` | --disableplugins is not 'true' or 'false'. |
 | `repository-inconsistent` | A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `folderadr-change-blocked-by-existing-decisions` | --folderadr can only be changed while the OLD folder has no recognized decisions yet. |
 | `folderadr-change-scan-incomplete` | A subdirectory under the NEW folderadr could not be scanned while checking a --folderadr change. |
@@ -75,7 +73,7 @@ With no field flags, reads the repository's .adrpy.json back (the result has a `
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |

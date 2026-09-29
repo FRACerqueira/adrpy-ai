@@ -5,12 +5,6 @@ adrpy-ai has no interactive wizard, so this command is how an existing
 repository's settings change: one flag per config field, merge/update
 semantics -- an omitted flag preserves the repo's current value, never
 resets it.
-
-`activeplugins` is deliberately not exposed here -- the plugin system is
-out of scope. `disableplugins` IS exposed
-(it's a meaningful kill-switch field even with no plugins implemented,
-harmless either way) but needs an explicit true/false value, not a
-presence-only switch, since either direction is a real edit.
 """
 
 from dataclasses import asdict
@@ -41,15 +35,12 @@ from adrpy.core.text import parse_ascii_int
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
-_BOOLEAN_FIELD_FLAGS = ("disableplugins",)
-_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
+_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS
 
 
 def _field_type(field):
     if field in _INT_FIELDS:
         return "integer"
-    if field in _BOOLEAN_FIELD_FLAGS:
-        return "boolean"
     return "string"
 
 
@@ -154,8 +145,6 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    if field == "disableplugins":
-        return "'true' or 'false'; anything else fails with field-not-a-boolean."
     # Unreachable today -- every field in _EDITABLE_FIELDS hits a branch
     # above. A silent, generic fallback here (a tautological "New value
     # for '<field>'." an agent can't learn anything from) would return
@@ -179,8 +168,7 @@ def describe():
             "without writing anything, so preview there first. While the repository is not adopted yet, check "
             "then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a "
             "decision migrate did not write exists, such a file is only warned about. To back out, "
-            "--migrationpattern \"\". "
-            "`activeplugins` is never read or written."
+            "--migrationpattern \"\"."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -199,7 +187,6 @@ def describe():
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
                 FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
-                FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.REPOSITORY_INCONSISTENT: "A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--folderadr can only be changed while the OLD folder has no recognized decisions yet.",
                 FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the NEW folderadr could not be scanned while checking a --folderadr change.",
@@ -233,7 +220,7 @@ def run(args):
         # contract at all, and calling this with no field flags -- the
         # natural way an agent would try to "just look" -- still rewrote
         # (and reformatted) the file as a side effect of what looks like a
-        # read-only call. `activeplugins` stays excluded, same as a write.
+        # read-only call.
         current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
@@ -262,15 +249,6 @@ def run(args):
                         FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
                     ) from error
                 updated_fields.append(field)
-
-        if "disableplugins" in flags:
-            text = flags["disableplugins"].strip().lower()
-            if text not in ("true", "false"):
-                raise CommandError(
-                    FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'."
-                )
-            merged["disableplugins"] = text == "true"
-            updated_fields.append("disableplugins")
 
         merged_text = serialize_repo_config(merged)
         new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure

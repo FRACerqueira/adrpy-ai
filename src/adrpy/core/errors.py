@@ -64,7 +64,6 @@ class FailureCodes:
     ALREADY_ACCEPTED = "already-accepted"
     CONFIG_FILE_NOT_FOUND = "config-file-not-found"
     FAMILY_NOT_FOUND = "family-not-found"
-    FIELD_NOT_A_BOOLEAN = "field-not-a-boolean"
     FIELD_NOT_AN_INTEGER = "field-not-an-integer"
     NOT_LATEST_VERSION = "not-latest-version"
 

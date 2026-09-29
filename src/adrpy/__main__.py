@@ -4,6 +4,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, metadata
 
 from adrpy.core.errors import CommandError, UsageError
+from adrpy.core.notices import collecting
 from adrpy.core.output import EXIT_SUCCESS, emit_failure, explain, emit_success, emit_usage_failure
 from adrpy.core.registry import COMMANDS
 
@@ -62,15 +63,23 @@ def main(argv=None):
     if command is None:
         return emit_usage_failure("unknown-command", f"Unknown command: {verb} (see `adrpy help` for the list).")
 
+    with collecting() as notices:
+        return _run(verb, command, rest, notices)
+
+
+def _run(verb, command, rest, notices):
     try:
         data = command.run(rest)
+        if notices and isinstance(data, dict):
+            data["warnings"] = [*data.get("warnings", []), *notices]
     except UsageError as error:
         if error.unknown in ("--help", "-h"):
             # `adrpy <command> --help` is `adrpy help <command>`.
             return emit_success(COMMANDS["help"].run([verb]))
         return emit_usage_failure(error.code, _with_example(verb, error))
     except CommandError as error:
-        return emit_failure(error.code, error.detail, error.data, error.warnings)
+        warnings = error.warnings if not notices else [*(error.warnings or []), *notices]
+        return emit_failure(error.code, error.detail, error.data, warnings)
     except OSError as error:
         # Any OSError not already translated into a CommandError by the
         # command itself (a permission failure, a full disk, a missing
