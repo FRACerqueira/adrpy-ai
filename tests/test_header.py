@@ -150,7 +150,7 @@ def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
 
 def test_status_falls_back_to_label_text_when_no_marker_is_present():
     """The pre-ADR004V01 file shape (any file written by an older version
-    of this tool, or by AdrPlus before it adopts the same marker) has
+    of this tool, or by hand) has
     none -- must still resolve via the original label-text match, the
     same as before this feature existed."""
     config = load_repo_config(FIXTURE_PATH)

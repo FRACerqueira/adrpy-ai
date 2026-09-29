@@ -36,11 +36,6 @@ its own package metadata and carried consistently through every command:
   `core/` rather than pulled in from a package, so the tool has no
   supply-chain surface beyond the Python standard library.
 
-`adrpy-ai` is the reference for the rules it shares with AdrPlus
-(C#/.NET), by the same author, and reads AdrPlus 1.0.0 repositories -- see
-[Relationship to AdrPlus](../README.md#relationship-to-adrplus) in the
-main README for what that relationship does and does not mean. This page
-only describes `adrpy-ai`'s own architecture.
 
 ## Module map
 
@@ -199,10 +194,8 @@ The install-level file lives at a per-user, OS-appropriate path
 **not** relative to this package's own install directory, because writing
 into a pip package's own install/site-packages directory is unsafe
 (permissions, often shared, wiped on reinstall). Its schema is the same
-full, seed-valid shape `init --seed` accepts, byte-compatible with a
-repository's own `.adrpy.json`, the schema AdrPlus 1.0.0 also
-uses (plus `folderlog`, see `core/config.py`'s own
-docstring).
+full, seed-valid shape `init --seed` accepts: a repository's own
+`.adrpy.json` schema.
 
 ## Decision lifecycle
 
@@ -266,7 +259,7 @@ subcommand: `adrpy` manages the ADR/decision-log *record* mechanically and
 must stay pure -- this feature installs *operating instructions for an AI
 agent*, a different concern, for more than one provider (Claude Code,
 Cursor, GitHub Copilot, generic `AGENTS.md`) with genuinely different
-activation models, which AdrPlus has no equivalent of at all.
+activation models.
 `adrpy`'s own command surface never mentions `adrpy-skills`; installing or
 running it is entirely opt-in. One of the shipped skills, `adrpy`, tells an
 agent to change decision files only through the CLI -- see
@@ -403,6 +396,3 @@ and nothing may depend on it.
   not rise to a full ADR.
 - [`doc/decision-log-workflow.md`](decision-log-workflow.md) -- how to
   decide between an ADR and a decision-log entry, and how to write either.
-- [README's own "Relationship to AdrPlus"](../README.md#relationship-to-adrplus)
-  -- what this project shares with AdrPlus, and how to adopt it on an
-  AdrPlus 1.0.0 repository.

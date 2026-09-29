@@ -39,10 +39,10 @@ adrpy supersede --file "$f" --title "Use CockroachDB for the primary database" -
 cp "$R44/env/seed/pred.bak" "$f"
 commit_seed S3
 
-# S4 -- AdrPlus-1.0.0-shaped repo: config WITHOUT folderlog, label-only status
-# cells (no hidden markers). Skills ARE installed (per the batch design), but
-# `adrpy init` is NOT run (the repo already has its AdrPlus config). Inconsistent state: V01 Superseded next to V02 Accepted
-# (superseded-not-live) -- AdrPlus 1.0.0 superseded the older version.
+# S4 -- a repository adopted as it is: config WITHOUT folderlog, label-only
+# status cells (no hidden markers). Skills ARE installed (per the batch design),
+# but `adrpy init` is NOT run (the repo already has its config). Inconsistent
+# state: V01 Superseded next to V02 Accepted (superseded-not-live).
 d="$R44/seeds/S4"; mkdir -p "$d/doc/adr"; cd "$d"; git init -q -b main
 rm -rf "$R44/env/seed/cfgsrc"; mkdir -p "$R44/env/seed/cfgsrc"; adrpy init --path "$R44/env/seed/cfgsrc" >/dev/null
 "$BASEPY" -B - "$R44/env/seed/cfgsrc/.adrpy.json" .adrpy.json <<'EOF'
@@ -54,7 +54,7 @@ EOF
 hdr() {  # title version created changed superseded
 cat <<EOF
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|$1|
 |Version|$2|

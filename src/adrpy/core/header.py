@@ -56,8 +56,8 @@ _STATUS_CONFIG_FIELD = {
 }
 
 # ADR0004V01: a fixed, non-translatable marker written after the status
-# cell's date -- in the trailing space both this parser and AdrPlus
-# 1.0.0's ParseStatusLine ignore for date purposes (as they already do
+# cell's date -- in the trailing space the parser ignores for date
+# purposes (as it already does
 # for the Superseded row's own ": <number>" suffix below).
 # Recognizing it takes recognition of a decision written under this
 # scheme off the repository's CURRENT statusnew/statusacc/statusrej/

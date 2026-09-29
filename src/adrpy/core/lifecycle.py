@@ -1215,7 +1215,7 @@ def prepare_mark_superseded(path, config, header, filename_info, successor_numbe
     """Like prepare_status_field_rewrite's "change" field, but also stamps
     the successor's own zero-padded sequence number into the Superseded
     row. NOT a filename, despite DecisionRecord's `superseded_by_file`
-    name: the value is a bare padded number, as in AdrPlus's header row."""
+    name: the value is a bare padded number."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate

@@ -986,7 +986,7 @@ def test_an_interrupt_once_the_per_file_loop_started_is_reported_even_with_no_fi
 
 
 def test_a_repository_with_a_header_migrate_did_not_write_is_refused_before_the_pattern_is_needed(tmp_path):
-    # A repository created by AdrPlus or adrpy (no migrationpattern needed
+    # A repository whose decisions already carry headers (no migrationpattern needed
     # there) must hear that it already has headers, with the files, not be
     # sent to configure a migrationpattern first.
     init.run(["--path", str(tmp_path)])
@@ -998,7 +998,7 @@ def test_a_repository_with_a_header_migrate_did_not_write_is_refused_before_the_
 
     assert excinfo.value.code == "already-tool-created-adrs-exist"
     assert excinfo.value.data == {"files": [str(created)]}
-    assert "AdrPlus or adrpy" in excinfo.value.detail
+    assert "a valid header migrate did not write" in excinfo.value.detail
 
 
 def test_a_repository_with_a_header_migrate_did_not_write_does_not_get_the_fallback_pattern(tmp_path, monkeypatch):

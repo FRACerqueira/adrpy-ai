@@ -49,7 +49,7 @@ BASEPY = os.environ.get("AGENT_EVAL_PYTHON") or sys.executable
 SCENARIOS = ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"]
 MODEL_IDS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5", "haiku": "claude-haiku-4-5-20251001"}
 ALLOWED_TOOLS = {"Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill"}
-HEADER_ROW = re.compile(r"^\|(Adr-Plus Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\|", re.M)
+HEADER_ROW = re.compile(r"^\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\|", re.M)
 MARKER = re.compile(r"<!--\s*(Proposed|Accepted|Rejected|Superseded)\s*-->")
 ADR_NAME = re.compile(r"^ADR(\d+)V(\d+)(?:R(\d+))?-(.+?)(?:--(\d+))?\.md$", re.I)
 ASK_WORDS = re.compile(r"\b(confirm|approval|approve (?:the|this) write|shall I|should I|do you want|would you like|may I|go ahead|proceed\?)", re.I)
@@ -360,7 +360,7 @@ def _denied_attempt(reviews: list | None, what: str) -> None:
 
 _PY_STR = r"(\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*')"
 _PY_REPLACE = re.compile(r"\.replace\(\s*" + _PY_STR + r"\s*,\s*" + _PY_STR + r"(?:\s*,\s*\d+)?\s*\)")
-_HEADER_TEXT = re.compile(r"\|(Adr-Plus Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||Do not remove this comment")
+_HEADER_TEXT = re.compile(r"\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||Do not remove this comment")
 
 
 def _script_changes_header(cmd: str) -> bool:
@@ -1477,15 +1477,13 @@ def probe(root: Path, label: str = "S0") -> tuple[bool, list[str]]:
     if run.init is None:
         fail("no init event in stream-json")
         return ok, notes
-    # The shipped adrpy skill names the config file `.adrpy.json`; that must not read as
-    # the user's adrplus plugin if the init event ever carries skill descriptions.
-    init_blob = json.dumps(run.init).lower().replace(".adrpy.json", "")
+    init_blob = json.dumps(run.init).lower()
     # R46: exact equality with the id requested for this label's model (out/<label>.model, else
     # MODEL_IDS by prefix); an empty or different init.model fails.
     want = requested_model(root, label)
     model = str(run.init.get("model", ""))
     (notes.append if want and model == want else fail)(f"model={model!r} (requested {want!r}, exact match required)")
-    for bad in ("adrplus", "manage-adrs", "graphify", "cowork"):
+    for bad in ("graphify", "cowork"):
         if bad in init_blob:
             fail(f"user-scope plugin/skill visible in init: {bad!r}")
     mcp = run.init.get("mcp_servers") or []

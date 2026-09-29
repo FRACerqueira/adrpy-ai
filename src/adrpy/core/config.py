@@ -4,9 +4,7 @@ never cached across invocations, so a command never works from a stale
 copy of the file.
 
 ADR0007V01 (superseding ADR0003V01's own driver on this point): `folderlog`
-is adrpy's own field, not part of AdrPlus 1.0.0's schema. It is also
-this schema's first field with a
-computed default instead of being strictly required (see the `folderlog`
+is this schema's first field with a computed default instead of being strictly required (see the `folderlog`
 handling in `parse_repo_config`), so an `.adrpy.json` written
 before this field existed keeps parsing unchanged.
 """
@@ -34,13 +32,9 @@ VALID_SEPARATORS = ("-", "_", ".")
 # tuple of the same 4 names.
 VALID_CASE_TRANSFORMS = tuple(CASE_TRANSFORMS.keys())
 
-# Upper bounds on these three fields: AdrPlus's non-interactive
-# validator has none -- only its interactive config wizard's slider
-# limits them (lenseq 3-5, lenversion 2-3, lenrevision 0-3), and
-# hand-editing the config file bypasses that slider entirely even there.
-# Without a wizard here, nothing else would ever guard these values, so
-# this project adds them explicitly, using bounds slightly wider than the
-# wizard's own.
+# Bounds on these three fields: nothing but this schema guards a value
+# edited by hand, and a digit count outside them makes names no reader
+# wants (lenseq 7+) or none at all (lenversion 0).
 LENSEQ_MIN, LENSEQ_MAX = 3, 6
 LENVERSION_MIN, LENVERSION_MAX = 2, 4
 LENREVISION_MIN, LENREVISION_MAX = 0, 3
@@ -54,8 +48,8 @@ INT_FIELD_BOUNDS = {
     "lenrevision": (LENREVISION_MIN, LENREVISION_MAX),
 }
 
-# Every bound below comes from the same wizard, same reasoning as above.
-# `prefix`'s charset restriction is also a real correctness requirement
+# The length bounds below keep every field fit for the one-line header
+# cell or file name it becomes. `prefix`'s charset restriction is also a real correctness requirement
 # here, not just cosmetic: core/naming.py's filename parser assumes the
 # prefix segment is letters-only to tell it apart from the digit run that
 # follows.
@@ -64,18 +58,12 @@ _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 
 REPO_CONFIG_NAME = ".adrpy.json"  # at the repository root; what makes a folder a repository
 
-FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
-# ADR0007V01: folderlog has no AdrPlus wizard field to cite. Same bound
-# as folderadr's own, for consistency.
-FOLDERLOG_MAX_LENGTH = 50
-# headerdisclaimer and status labels: wizard's own real values are 200 and
-# 15 (PromptEditFieldHeaderText(headerdisclaimer, 200, ...); PromptEditFieldStatus's
-# MaxLength(15)) -- this project uses 100/25 instead, same as the lenseq-family bounds.
+FOLDERADR_MAX_LENGTH = 50
+FOLDERLOG_MAX_LENGTH = 50  # ADR0007V01: the same bound as folderadr's
 HEADER_DISCLAIMER_MAX_LENGTH = 100
-HEADER_LABEL_MAX_LENGTH = 40  # PromptEditFieldHeaderText(<other header fields>, 40, ...)
+HEADER_LABEL_MAX_LENGTH = 40
 STATUS_LABEL_MAX_LENGTH = 25
-# AdrPlus's wizard has no equivalent bound for this field (it's
-# free-form body content, not a single prompt-edit-text field) -- added
+# The template is free-form body content, not a one-line cell: bounded
 # so a bounded read of the config file itself (core/config.py's own
 # read_config_text) can trust a fixed byte cap without risking a false
 # rejection of a legitimate, if unusually long, template.
@@ -206,8 +194,8 @@ def _normalized_repo_path_parts(value):
     case-folded) -- used ONLY for the folderadr/folderlog mutual-overlap
     comparison below, never for what actually gets stored in the parsed
     config: the field's own stored/displayed value stays exactly as the
-    config text gave it (this project's own forward-slash convention,
-    the same as AdrPlus's), and only this transient,
+    config text gave it (this project's own forward-slash convention),
+    and only this transient,
     comparison-only view is host-normalized. Without this, a `../`
     traversal, a backslash-separated nesting on Windows, or a bare case
     difference could each resolve to the identical or a genuinely nested
@@ -617,7 +605,7 @@ def parse_repo_config(text):
             raise CommandError(FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER, error.detail) from error
 
     # A non-empty migrationpattern must match the
-    # N##:##T##[V##:##][R##:##][P##:##] shape (as AdrPlus requires too).
+    # N##:##T##[V##:##][R##:##][P##:##] shape.
     migrationpattern = lowered["migrationpattern"]
     if migrationpattern and parse_migration_pattern(migrationpattern) is None:
         raise CommandError(

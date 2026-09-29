@@ -74,7 +74,7 @@ This project records two different kinds of durable record, and dogfoods its own
 
 See **[Writing a decision-log entry](doc/decision-log-workflow.md)** for the full step-by-step workflow, including which of the two this is for a given change and a diagram of the classification decision tree.
 
-If your pull request makes a real architectural choice or changes a rule adrpy shares with AdrPlus (adrpy is the reference AdrPlus follows), please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
+If your pull request makes a real architectural choice or changes a lifecycle rule, please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
 
 ## Commit Messages
 
@@ -96,4 +96,4 @@ Open an issue with: what you ran, what you expected, what actually happened (inc
 
 ## Requesting Features
 
-Open an issue describing the use case, not just the feature — this project keeps its scope deliberately small (see [Relationship to AdrPlus](README.md#relationship-to-adrplus)), so understanding *why* you need something helps decide whether it belongs here or is better left out.
+Open an issue describing the use case, not just the feature — this project keeps its scope deliberately small, so understanding *why* you need something helps decide whether it belongs here or is better left out.

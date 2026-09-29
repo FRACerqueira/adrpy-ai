@@ -45,8 +45,8 @@ is filled. `undo` never touches the Superseded cell.
   the two share it.
 - **Status comes from the header.** Every file with an ADR name must have
   a header that parses, with a status combination the tool writes (see
-  the next section). A header written by AdrPlus 1.0.0 -- the status read
-  from its label, with no hidden canonical marker -- and a file `migrate`
+  the next section). A header with no hidden canonical marker -- the status
+  read from its label -- and a file `migrate`
   brought in (`<!-- Migrated -->`) both count. When a status cell has both
   the hidden marker (`<!-- Accepted -->`) and a label, the marker wins; a
   label that says otherwise is reported as a warning.
@@ -91,8 +91,8 @@ without `V` -- is not a decision: validation and numbering ignore it
 
 A legacy name also depends on the repository's **phase**, decided on
 every scan of the folder: once any file with an ADR name (either scheme)
-has a valid header `migrate` did not write -- one the tool or AdrPlus
-created, or one copied by hand; from then on `migrate` no longer runs
+has a valid header `migrate` did not write -- one the tool created, or
+one copied by hand; from then on `migrate` no longer runs
 (`already-tool-created-adrs-exist`) -- a legacy name **without a header**
 is not a decision anywhere: validation, numbering, the config guards and
 `init`'s existing-number check ignore it, a command given it as `--file`
@@ -447,8 +447,7 @@ in this order:
 
 1. a file that looks like this tool's header but does not parse
    (`migration-invalid-headers-exist`), then a file with a valid header
-   `migrate` did not write -- AdrPlus's or adrpy's
-   (`already-tool-created-adrs-exist`); both before the pattern is needed;
+   `migrate` did not write (`already-tool-created-adrs-exist`); both before the pattern is needed;
 2. the repository's own pattern reads part of a name twice
    (`config-migrationpattern-invalid`), unless a decision was already
    migrated with it (then `migrate` goes on with a warning, as above);

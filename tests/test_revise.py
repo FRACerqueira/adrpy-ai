@@ -214,9 +214,8 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
 
 
 def test_revise_branching_off_an_older_revision_takes_the_next_free_number(tmp_path):
-    """Round 40, decided by the project owner (a divergence from AdrPlus,
-    whose revise always computes TARGET.revision+1 and so collided here
-    with the rejected R02 still on disk): revise numbers from the highest
+    """Round 40, decided by the project owner (TARGET.revision+1 would
+    collide here with the rejected R02 still on disk): revise numbers from the highest
     revision this version already holds, so branching off R01 while the
     single newer R02 is Rejected creates R03."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)

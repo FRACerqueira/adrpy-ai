@@ -444,8 +444,8 @@ def test_migrate_skips_a_zero_byte_legacy_file_as_the_users_and_a_rerun_takes_it
 
 
 def test_the_texts_about_adoption_say_what_the_docs_say(tmp_path, capsys):
-    # The condition is a valid header migrate did not write (AdrPlus's, or
-    # one copied by hand, count too), not "a decision the tool created".
+    # The condition is a valid header migrate did not write (one copied by
+    # hand counts too), not "a decision the tool created".
     repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
     note = _note(repo)
     _note(repo, "12-x.md")

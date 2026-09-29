@@ -233,7 +233,7 @@ def decision_names(scan, config):
     """(names, unheadered_legacy) for the `.md` files of `scan`: every
     DecisionName, and the paths the phase rule leaves out. The rule: once
     any file whose name is a decision's (either scheme) has a valid header
-    migrate did not write -- created by the tool or AdrPlus, or copied by
+    migrate did not write -- created by the tool, or copied by
     hand, the point after which migrate no longer runs
     (already-tool-created-adrs-exist) -- a legacy-scheme name (recognized
     only through migrationpattern) with no header at all is not a
@@ -608,7 +608,7 @@ def _name_number(name, config):
 
 def _has_tool_created_decision(scan, config):
     """Whether a file of `scan` with an ADR name has a valid header migrate
-    did not write (AdrPlus or adrpy)."""
+    did not write."""
     for path in scan.markdown:
         if parse_any_filename(path.name, config) is None:
             continue

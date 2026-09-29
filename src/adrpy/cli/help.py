@@ -36,8 +36,7 @@ def describe():
                 "required": False,
                 # Every other command's arguments are `--flag value`,
                 # parsed by parse_flags -- this one alone is positional
-                # (`help <command>`, no `--`), the same shape as AdrPlus's
-                # equivalent command. Without this
+                # (`help <command>`, no `--`). Without this
                 # note an agent generalizing from the other commands would
                 # reasonably (and wrongly) try `help --command X`.
                 "positional": True,

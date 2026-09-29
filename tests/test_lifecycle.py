@@ -716,7 +716,7 @@ def test_the_snapshot_ignores_files_reached_through_a_windows_junction(tmp_path)
     root; rglob("*.md") happily descends into a Windows junction planted
     inside the decisions folder (no admin privilege required to create
     one, and Path.is_symlink() does NOT detect it). Confirmed live:
-    `migrate` wrote a real AdrPlus header into a file OUTSIDE the repo
+    `migrate` wrote a real header into a file OUTSIDE the repo
     through exactly this, and `next_number` was poisoned by the outside
     file's own (unrelated) sequence number."""
     config = load_repo_config(FIXTURE_PATH)

@@ -7,15 +7,12 @@ assignees: ""
 ---
 
 **What's the use case?**
-Describe what you're trying to accomplish, not just the feature itself — this project ports AdrPlus's own behavior deliberately and selectively, so the *why* matters for deciding whether something belongs here.
+Describe what you're trying to accomplish, not just the feature itself — this project keeps its scope deliberately small, so the *why* matters for deciding whether something belongs here.
 
 **What would you expect the command/flag to look like?**
 
 ```
 adrpy ...
 ```
-
-**Is this something AdrPlus (the original C# tool) already does?**
-If so, a link to the relevant part of its own documentation helps.
 
 **Would you be willing to work on this yourself?**
