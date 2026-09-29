@@ -21,7 +21,7 @@ Technical Story: Round 44 ran a fresh `claude -p` agent in scratch repositories 
 
 ## Context and Problem Statement
 
-[ADR009V01](ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) decided how `adrpy-skills` delivers skills to each provider; the skills it shipped (`decision-log`, `pre-release-audit`) carry judgment -- when to record a decision, when to run a review -- not how to operate on the decision files. An adopter's agent therefore meets an `adr-config.adrplus` repository knowing only that ADRs are Markdown files, and edits them the way it edits any Markdown: renaming, hand-writing headers, deleting suffixes. The CLI's own safeguards (validation before every action, hints naming the literal repair) only help an agent that runs it. The package's README and `doc/` do not travel into the adopter's repository.
+[ADR009V01](ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) decided how `adrpy-skills` delivers skills to each provider; the skills it shipped (`decision-log`, `pre-release-audit`) carry judgment -- when to record a decision, when to run a review -- not how to operate on the decision files. An adopter's agent therefore meets an `.adrpy.json` repository knowing only that ADRs are Markdown files, and edits them the way it edits any Markdown: renaming, hand-writing headers, deleting suffixes. The CLI's own safeguards (validation before every action, hints naming the literal repair) only help an agent that runs it. The package's README and `doc/` do not travel into the adopter's repository.
 
 How should an adopter's AI agent learn that this repository's decisions are managed by `adrpy`, and how to change them?
 
@@ -37,14 +37,14 @@ How should an adopter's AI agent learn that this repository's decisions are mana
 
 * Rely on the CLI alone: better hints and `adrpy <command> --help`.
 * Put the rules in the shipped `decision-log` skill.
-* A separate shipped `adrpy` skill, triggered by an `adr-config.adrplus` at the repository root, that says how to change decision files and defers "whether" to `decision-log`.
+* A separate shipped `adrpy` skill, triggered by an `.adrpy.json` at the repository root, that says how to change decision files and defers "whether" to `decision-log`.
 
 ## Decision Outcome
 
 Chosen option: "A separate shipped `adrpy` skill", because it is the only option that reaches an agent that does not yet know the CLI exists, on every ADR task, without mixing operating rules into a judgment skill.
 
 1. `adrpy-skills` ships a third skill, `adrpy`, installed by default next to `decision-log` and `pre-release-audit` for every provider, through the same ADR009 mechanism (full body or stub plus shared doc, drift marker, `gate.md`).
-2. Its `gate.md` applies it to any ADR or decision-record task in a repository that has `adr-config.adrplus`, and not otherwise (unless the user asks to set adrpy up).
+2. Its `gate.md` applies it to any ADR or decision-record task in a repository that has `.adrpy.json`, and not otherwise (unless the user asks to set adrpy up).
 3. Its body is short and operational: run `adrpy help` and `adrpy check --path .` first and follow each error's `hint`; never rename, hand-write or hand-edit a decision when a command does the job (the text below the header is written by hand); the `<sep><sep>NNN` suffix is the successor link and is never removed; supersede with `adrpy supersede`; repair by hand only as a hint or `data.repair` says; one command at a time; and a one-line map of every command, which a test keeps in sync with the command registry.
 4. It decides nothing about whether a decision should be recorded: when `decision-log` is installed, its approval gate applies before any write.
 
@@ -77,7 +77,7 @@ The CLI changes of the same round (hints with the literal row, `<command> --help
 
 ### A separate shipped `adrpy` skill (chosen)
 
-* Good, because it triggers on the repository itself (`adr-config.adrplus`), for every ADR task.
+* Good, because it triggers on the repository itself (`.adrpy.json`), for every ADR task.
 * Good, because it reuses ADR009's delivery and drift protection unchanged.
 * Bad, because it is one more skill to maintain, and its effect still has to be shown by a real-agent run.
 

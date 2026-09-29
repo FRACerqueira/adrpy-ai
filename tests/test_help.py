@@ -300,7 +300,7 @@ def test_bare_help_defaults_reflects_the_built_in_default_with_no_install_level_
 def test_bare_help_defaults_reflects_an_install_level_config_when_one_exists(capsys, monkeypatch):
     from adrpy.core import install_config
 
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(install_config, "read_install_config_text", lambda *args, **kwargs: install_text)
 
     exit_code = main(["help"])

@@ -91,7 +91,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",

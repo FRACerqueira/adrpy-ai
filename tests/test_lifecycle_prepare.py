@@ -20,7 +20,7 @@ def _repo_with_mismatched_label(tmp_path):
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision", "--refdate", "2026-01-01"])
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-first-decision.md"
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     text = adr_path.read_text(encoding="utf-8")
     atomic_write_text(adr_path, text.replace(config.statusnew, config.statusacc, 1))
     return adr_path
@@ -57,7 +57,7 @@ def test_revision_not_configured_names_the_command_that_turns_revisions_on(tmp_p
     ],
 )
 def test_a_file_given_relative_to_the_current_directory_finds_its_repository(tmp_path, monkeypatch, cwd, relative):
-    # The walk up for adr-config.adrplus starts from the file's real
+    # The walk up for .adrpy.json starts from the file's real
     # folder, not from the relative path's own parent ('.', whose parent
     # is '.').
     init.run(["--path", str(tmp_path)])

@@ -36,7 +36,7 @@ pieces, concatenated in this order:
    to run, rewritten to stand on its own without the maintainer's personal
    global instructions. Every bundled skill has one: `pre-release-audit`
    and `decision-log` say when they may run, and `adrpy`'s says it applies
-   to ADR tasks in a repository that has `adr-config.adrplus`.
+   to ADR tasks in a repository that has `.adrpy.json`.
 2. **`body.md`** -- the skill's own vendor-neutral mechanics: the *how*,
    once the gate (if any) says this is allowed to run.
 3. **`glue.md`** (decision-log only) -- the adrpy-specific instantiation:

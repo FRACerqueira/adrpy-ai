@@ -176,7 +176,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FOLDERADR_FOLDERLOG_ALIAS_SAME_DIRECTORY: "folderadr and folderlog resolve to the same real directory (or one nested inside the other), typically via a symlink or junction.",
                 FailureCodes.LOG_CLASSIFICATION_INVALID: "--classification is not one of the recognized classifications.",
                 FailureCodes.LOG_SLUG_INVALID: "--slug is not valid kebab-case.",

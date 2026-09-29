@@ -59,7 +59,7 @@ from adrpy.core.config import parse_repo_config
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.naming import build_filename
 
-FIXTURE_CONFIG = Path(__file__).parent / "fixtures" / "adr-config.adrplus"
+FIXTURE_CONFIG = Path(__file__).parent / "fixtures" / ".adrpy.json"
 _UNSET = object()
 _DAY = date(2026, 1, 1)
 
@@ -136,13 +136,13 @@ def decision_record(config, spec):
 
 
 def make_repo(tmp_path, config=None, files=()):
-    """Writes adr-config.adrplus (the test fixture with `config`'s
+    """Writes .adrpy.json (the test fixture with `config`'s
     fields replacing its own) and each D in `files` under folderadr."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     data = json.loads(FIXTURE_CONFIG.read_text(encoding="utf-8"))
     data.update(config or {})
     text = json.dumps(data)
-    (tmp_path / "adr-config.adrplus").write_text(text, encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(text, encoding="utf-8")
     parsed = parse_repo_config(text)
     folder = tmp_path / parsed.folderadr
     folder.mkdir(parents=True, exist_ok=True)

@@ -1,13 +1,14 @@
 # When this skill applies
 
 Use it for any task that touches Architecture Decision Records (ADRs) or
-other decision records in a repository that has an `adr-config.adrplus`
+other decision records in a repository that has an `.adrpy.json`
 file at its root: creating, accepting, rejecting, versioning, revising,
 superseding or migrating a decision, fixing a failing `adrpy check`, or
-changing the repository's ADR configuration. The `adrpy` command must be
-on `PATH` (it comes with `pip install adrpy-ai`).
+changing the repository's ADR configuration. The file is hidden on Linux
+and macOS: look for it by name, or list with `ls -a`. The `adrpy` command
+must be on `PATH` (it comes with `pip install adrpy-ai`).
 
-It does not apply when the repository has no `adr-config.adrplus`: then
+It does not apply when the repository has no `.adrpy.json`: then
 adrpy does not manage its decisions, unless the user asks to set it up
 (`adrpy init --path .`).
 

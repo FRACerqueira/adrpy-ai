@@ -6,7 +6,7 @@
 
 This page is the step-by-step workflow for adding an entry to the
 [decision log](decision-log/INDEX.md) -- the folder `folderlog` names in
-the repository's `adr-config.adrplus` (`doc/decision-log/` by default;
+the repository's `.adrpy.json` (`doc/decision-log/` by default;
 `adrpy config --path .` shows the repository's own value): the
 lighter-weight sibling of the decisions folder (`folderadr`,
 [`doc/adr/`](adr/) by default), for events that are worth recording but are not an

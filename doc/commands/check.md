@@ -17,7 +17,7 @@ Validates the whole repository, read-only: every file with an ADR name under the
 
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
-| `--path` | `-p` | yes | string | Repository root directory (must contain adr-config.adrplus). |
+| `--path` | `-p` | yes | string | Repository root directory (must contain .adrpy.json). |
 
 ## Failure codes
 
@@ -57,11 +57,11 @@ Validates the whole repository, read-only: every file with an ADR name under the
 | `status-line-date-invalid` | data.errors[].detail of an invalid-header entry starts with this code: a status cell's own parenthesized date is not a valid ISO date. |
 | `field-contains-forbidden-character` | data.errors[].detail of an invalid-header entry starts with this code: the Title, Scope or Domain cell breaks a free-text rule: a '\|' (an extra cell in its row), a line-break-like character, or (for Title) a filesystem-unsafe character or no character other than whitespace, '_' or '-'. |
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

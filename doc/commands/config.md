@@ -4,14 +4,14 @@
 
 # `adrpy config`
 
-Reads or updates an existing repository's own `adr-config.adrplus`.
+Reads or updates an existing repository's own `.adrpy.json`.
 
 <!-- generated:start -->
 <!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
 
 ## Description
 
-With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". `activeplugins` is never read or written.
+With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". `activeplugins` is never read or written.
 
 ## Arguments
 
@@ -51,7 +51,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `field-not-an-integer` | An integer field's own value is not a valid integer. |
 | `field-not-a-boolean` | --disableplugins is not 'true' or 'false'. |
 | `repository-inconsistent` | A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
@@ -70,7 +70,7 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

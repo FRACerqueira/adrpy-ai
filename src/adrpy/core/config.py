@@ -1,5 +1,5 @@
 """Repository configuration schema: the single source of
-truth for a repo's `adr-config.adrplus`. Always read live from disk,
+truth for a repo's `.adrpy.json`. Always read live from disk,
 never cached across invocations, so a command never works from a stale
 copy of the file.
 
@@ -7,7 +7,7 @@ ADR007V01 (superseding ADR003V01's own driver on this point): `folderlog`
 is adrpy's own field, not part of AdrPlus 1.0.0's schema. It is also
 this schema's first field with a
 computed default instead of being strictly required (see the `folderlog`
-handling in `parse_repo_config`), so an `adr-config.adrplus` written
+handling in `parse_repo_config`), so an `.adrpy.json` written
 before this field existed keeps parsing unchanged.
 """
 
@@ -60,6 +60,8 @@ INT_FIELD_BOUNDS = {
 # follows.
 PREFIX_MAX_LENGTH = 5
 _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
+
+REPO_CONFIG_NAME = ".adrpy.json"  # at the repository root; what makes a folder a repository
 
 FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
 # ADR007V01: folderlog has no AdrPlus wizard field to cite. Same bound
@@ -126,7 +128,7 @@ _TOO_LONG_CODES = {
 # installconfig, not universal).
 SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_FILE_TOO_LARGE: "The config file exceeds the 64KB size limit.",
-    FailureCodes.CONFIG_FILE_EMPTY: "The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again.",
+    FailureCodes.CONFIG_FILE_EMPTY: "The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again.",
     FailureCodes.CONFIG_INVALID_ENCODING: "The config file's bytes are not valid UTF-8.",
     FailureCodes.CONFIG_INVALID_JSON: "The config file is not valid JSON, or its root is not a JSON object.",
     FailureCodes.CONFIG_MISSING_FIELD: "The config is missing one or more required fields.",
@@ -297,7 +299,7 @@ class RepoConfig:
 
 
 def serialize_repo_config(fields):
-    """The one JSON form adr-config.adrplus is written in (init, config,
+    """The one JSON form .adrpy.json is written in (init, config,
     migrate's migrationpattern persist-back): `fields` (a RepoConfig's
     asdict, in schema order) with a 2-space indent and non-ASCII
     characters kept as they are -- so a later change rewrites only its
@@ -313,7 +315,7 @@ def load_repo_config(path):
 
 
 def raise_config_file_empty(path):
-    """A 0-byte adr-config.adrplus: what an init interrupted after
+    """A 0-byte .adrpy.json: what an init interrupted after
     reserving the name leaves on a filesystem without hard links."""
     raise CommandError(
         FailureCodes.CONFIG_FILE_EMPTY,
@@ -393,7 +395,7 @@ _CONFIG_READ_CHUNK_SIZE = 4096
 
 def read_config_text(path):
     """Shared by every reader of a config JSON file (the repo's own
-    adr-config.adrplus, and init's --seed) -- invalid bytes must
+    .adrpy.json, and init's --seed) -- invalid bytes must
     become a structured CommandError, not a raw UnicodeDecodeError with
     empty stdout. Bounded to CONFIG_READ_MAX_BYTES (see its own note) --
     raises config-file-too-large instead of reading further when the
@@ -458,7 +460,7 @@ def parse_repo_config(text):
         raise CommandError(FailureCodes.CONFIG_UNEXPECTED_FIELD, f"Unexpected field(s): {', '.join(extra)}")
 
     # ADR007V01: folderlog defaults to the exact computed sibling-of-
-    # folderadr location when absent, so an adr-config.adrplus written
+    # folderadr location when absent, so an .adrpy.json written
     # before this field existed keeps parsing unchanged. Guarded against a
     # non-string folderadr (not yet type-checked at this point) so this
     # never raises an uncaught TypeError instead of the real

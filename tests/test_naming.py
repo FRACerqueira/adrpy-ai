@@ -13,7 +13,7 @@ from adrpy.core.naming import (
     parse_migration_pattern,
 )
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _config_with_migration_pattern(pattern):

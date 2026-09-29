@@ -11,7 +11,7 @@ Adds an adrpy-compliant header to existing, hand-written decision files.
 
 ## Description
 
-Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback, and must not read part of a name twice (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid, refused before anything is written, a fallback before it is persisted; once a decision was migrated with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the titles begin with part of the number). It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
+Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback, and must not read part of a name twice (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid, refused before anything is written, a fallback before it is persisted; once a decision was migrated with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the titles begin with part of the number). It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into .adrpy.json (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
 
 ## Arguments
 
@@ -24,7 +24,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `migration-pattern-not-configured` | Both the repository's own migrationpattern and the install-level config's own fallback are empty. |
 | `field-contains-forbidden-character` | A candidate's own title (sourced from its raw legacy filename) contains '\|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort. |
 | `migration-scan-failed` | A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run. |
@@ -40,7 +40,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

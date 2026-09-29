@@ -11,7 +11,7 @@ from adrpy.core.header import DecisionRecord, build_header
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _seed_config_with_pattern(pattern):
@@ -33,7 +33,7 @@ def _interrupt_candidate_writes(monkeypatch):
     real_prepare_write = migrate.prepare_write
 
     def interrupted(path, data):
-        if Path(path).name != "adr-config.adrplus":
+        if Path(path).name != ".adrpy.json":
             raise KeyboardInterrupt()
         return real_prepare_write(path, data)
 
@@ -460,7 +460,7 @@ def test_migrate_falls_back_to_install_level_pattern_and_persists_it(tmp_path, m
     result = migrate.run(["--path", str(tmp_path)])
 
     assert result["migrated"] == [str(tmp_path / "doc" / "adr" / "0001First.md")]
-    persisted = load_repo_config(tmp_path / "adr-config.adrplus")
+    persisted = load_repo_config(tmp_path / ".adrpy.json")
     assert persisted.migrationpattern == "N00:04T04"
 
 
@@ -630,7 +630,7 @@ def test_migrate_describe_documents_the_persist_back_write_survives_a_later_fail
     the scan/eligibility checks and is never rolled back if one of them
     later refuses the run -- describe() must say so explicitly, not just
     "no file is touched," which would misleadingly imply
-    adr-config.adrplus itself was untouched too."""
+    .adrpy.json itself was untouched too."""
     description = migrate.describe()["description"]
     assert "survives" in description
     assert "no decision file is touched" in description
@@ -717,7 +717,7 @@ def test_migrate_never_stamps_a_second_header_over_an_adulterated_one(tmp_path, 
     # it, instead of writing a new header on top of the broken one.
     tmp_path = _init_repo_with_pattern(tmp_path)
     legacy = _write_legacy_file(tmp_path, "0001First.md", "# First\n")
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     header = build_header(cfg, DecisionRecord(number=2, title="Second", version=1))
     lines = header.split("\n")
     if damage == "title":
@@ -817,7 +817,7 @@ def test_migrate_refuses_over_a_tool_header_re_encoded_as_utf16(tmp_path):
 def test_a_damaged_tool_header_is_recognized_past_line_two_and_by_its_separator(tmp_path, damage):
     tmp_path = _init_repo_with_pattern(tmp_path)
     _write_legacy_file(tmp_path, "0001First.md", "# First\n")
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     header = build_header(cfg, DecisionRecord(number=2, title="Second", version=1))
     lines = header.split("\n")
     if damage == "lines-above":
@@ -957,7 +957,7 @@ def test_a_damaged_header_is_reported_before_a_valid_tool_created_decision(tmp_p
     # there too.
     tmp_path = _init_repo_with_pattern(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "Tool made"])
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     lines = build_header(cfg, DecisionRecord(number=2, title="Second", version=1)).split("\n")
     lines[3] = "broken title row"
     damaged = tmp_path / "doc" / "adr" / "0002Second.md"
@@ -1004,7 +1004,7 @@ def test_a_repository_with_a_header_migrate_did_not_write_is_refused_before_the_
 def test_a_repository_with_a_header_migrate_did_not_write_does_not_get_the_fallback_pattern(tmp_path, monkeypatch):
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "Already tool created"])
-    config_before = (tmp_path / "adr-config.adrplus").read_bytes()
+    config_before = (tmp_path / ".adrpy.json").read_bytes()
     monkeypatch.setattr(migrate, "read_install_config_text", lambda *a, **k: json.dumps(_seed_config_with_pattern("N00:04T04")))
 
     with pytest.raises(CommandError) as excinfo:
@@ -1012,7 +1012,7 @@ def test_a_repository_with_a_header_migrate_did_not_write_does_not_get_the_fallb
 
     assert excinfo.value.code == "already-tool-created-adrs-exist"
     assert "migrationpattern_persisted" not in excinfo.value.data
-    assert (tmp_path / "adr-config.adrplus").read_bytes() == config_before
+    assert (tmp_path / ".adrpy.json").read_bytes() == config_before
 
 
 def test_migrate_never_adopts_an_empty_file_left_by_an_interrupted_create(tmp_path):
@@ -1093,7 +1093,7 @@ def test_migrate_reports_a_legacy_name_too_long_to_rewrite_and_migrates_the_rest
     import json as _json
     from adrpy.cli import init, migrate
 
-    seed = _json.loads((Path(__file__).parent / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8"))
+    seed = _json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
     seed["migrationpattern"] = "N00:04T05"
     seed_file = tmp_path / "seed.json"
     seed_file.write_text(_json.dumps(seed), encoding="utf-8")

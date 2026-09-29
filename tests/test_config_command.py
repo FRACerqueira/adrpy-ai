@@ -25,7 +25,7 @@ def _write_legacy_file(tmp_path, filename, content="Legacy content\n"):
     # a guarded field.
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
-    repo_config = load_repo_config(tmp_path / "adr-config.adrplus")
+    repo_config = load_repo_config(tmp_path / ".adrpy.json")
     found = parse_any_filename(filename, repo_config)
     if found is not None:
         record = DecisionRecord(number=found[1].number, title=found[1].title, version=0)
@@ -52,7 +52,7 @@ def test_config_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
         config.run(["--path", str(tmp_path), "--lenseq", "5"])
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    assert load_repo_config(tmp_path / "adr-config.adrplus").lenseq == 3  # never committed
+    assert load_repo_config(tmp_path / ".adrpy.json").lenseq == 3  # never committed
 
 
 def test_config_changes_folderadr_when_the_old_folder_is_missing(tmp_path):
@@ -68,17 +68,17 @@ def test_config_changes_folderadr_when_the_old_folder_is_missing(tmp_path):
     result = config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
 
     assert result["updated_fields"] == ["folderadr"]
-    assert load_repo_config(tmp_path / "adr-config.adrplus").folderadr == "decisions"
+    assert load_repo_config(tmp_path / ".adrpy.json").folderadr == "decisions"
 
 
 def test_config_updates_a_single_field_and_preserves_the_rest(tmp_path):
     tmp_path = _init_repo(tmp_path)
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     result = config.run(["--path", str(tmp_path), "--prefix", "DOC"])
 
     assert result["updated_fields"] == ["prefix"]
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.prefix == "DOC"
     assert after.folderadr == before.folderadr
     assert after.lenseq == before.lenseq
@@ -127,7 +127,7 @@ def test_config_updates_multiple_fields_at_once(tmp_path):
     )
 
     assert set(result["updated_fields"]) == {"folderadr", "separator", "lenseq"}
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderadr == "decisions"
     assert after.separator == "_"
     assert after.lenseq == 4
@@ -141,14 +141,14 @@ def test_config_rejects_a_folderadr_change_when_decisions_already_exist(tmp_path
     structured, mappable error instead of a silent orphaning."""
     tmp_path = _init_repo(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "First decision"])
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", "decisions"])
 
     assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderadr == before.folderadr  # nothing was written
 
 
@@ -160,7 +160,7 @@ def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
     blocked.mkdir()
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     real_scandir = os.scandir
 
@@ -178,7 +178,7 @@ def test_config_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(
     # unlistable subdirectory is the validator's scan-incomplete.
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderadr == before.folderadr  # nothing was written
 
 
@@ -205,7 +205,7 @@ def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tm
     new_folder = tmp_path / "unrelated-docs"
     new_folder.mkdir(parents=True)
     (new_folder / "ADR001V01-unrelated.md").write_bytes(b"hand written, never a real decision\n")
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", "unrelated-docs"])
@@ -213,7 +213,7 @@ def test_config_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file(tm
     assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
     assert len(excinfo.value.data["adopted_files"]) == 1
     assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderadr == before.folderadr  # nothing was written
 
 
@@ -256,14 +256,14 @@ def test_config_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
         ["--path", str(tmp_path), "--classification", "scope-note", "--scope", "test", "--slug", "x",
          "--summary", "s", "--body", "b"]
     )
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderlog", "doc/other-log"])
 
     assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
     assert excinfo.value.data == {"folderlog": "doc/decision-log", "existing_entries": 1}
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderlog == before.folderlog  # nothing was written
 
 
@@ -359,14 +359,14 @@ def test_config_rejects_a_status_label_change_when_decisions_already_exist(tmp_p
     is_valid: false)."""
     tmp_path = _init_repo(tmp_path)
     new.run(["--path", str(tmp_path), "--title", "First decision"])
-    before = load_repo_config(tmp_path / "adr-config.adrplus")
+    before = load_repo_config(tmp_path / ".adrpy.json")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--statusnew", "Draft"])
 
     assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"changed_fields": ["statusnew"], "existing_decisions": 1}
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.statusnew == before.statusnew  # nothing was written
 
 
@@ -534,7 +534,7 @@ def test_config_refuses_to_clear_migrationpattern_while_a_legacy_decision_exists
     tmp_path = _init_repo(tmp_path)
     config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
     _write_legacy_file(tmp_path, "0001T01.md")
-    config_file = tmp_path / "adr-config.adrplus"
+    config_file = tmp_path / ".adrpy.json"
     before = config_file.read_bytes()
 
     with pytest.raises(CommandError) as excinfo:
@@ -586,7 +586,7 @@ def test_config_separator_change_does_not_silently_reclassify_a_legacy_file_as_c
 
     # Nothing committed -- the file is still recognized under its
     # original scheme/identity, not silently reclassified.
-    config_after = load_repo_config(tmp_path / "adr-config.adrplus")
+    config_after = load_repo_config(tmp_path / ".adrpy.json")
     assert config_after.separator == "-"
 
 
@@ -611,7 +611,7 @@ def test_config_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecog
     assert len(excinfo.value.data["adopted_files"]) == 1
     assert "ADR001V01_MyTitle.md" in excinfo.value.data["adopted_files"][0]
     # Nothing committed.
-    config_after = load_repo_config(tmp_path / "adr-config.adrplus")
+    config_after = load_repo_config(tmp_path / ".adrpy.json")
     assert config_after.separator == "-"
 
 
@@ -765,7 +765,7 @@ def test_config_does_not_commit_folderadr_if_the_new_folder_cannot_be_created(tm
     with pytest.raises(CommandError):
         config.run(["--path", str(tmp_path), "--folderadr", "newfolder"])
 
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.folderadr == "doc/adr"  # unchanged -- nothing committed
     assert not (tmp_path / "newfolder").exists()
 
@@ -776,7 +776,7 @@ def test_config_omitted_fields_keep_current_value(tmp_path):
 
     config.run(["--path", str(tmp_path), "--headertitlefile", "Title"])
 
-    after = load_repo_config(tmp_path / "adr-config.adrplus")
+    after = load_repo_config(tmp_path / ".adrpy.json")
     assert after.prefix == "DOC"  # set earlier, preserved by the second call
     assert after.headertitlefile == "Title"
 
@@ -785,10 +785,10 @@ def test_config_toggles_disableplugins(tmp_path):
     tmp_path = _init_repo(tmp_path)
 
     config.run(["--path", str(tmp_path), "--disableplugins", "true"])
-    assert load_repo_config(tmp_path / "adr-config.adrplus").disableplugins is True
+    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is True
 
     config.run(["--path", str(tmp_path), "--disableplugins", "false"])
-    assert load_repo_config(tmp_path / "adr-config.adrplus").disableplugins is False
+    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is False
 
 
 def test_config_rejects_invalid_disableplugins_value(tmp_path):
@@ -810,7 +810,7 @@ def test_config_normalizes_non_canonical_disableplugins_input(tmp_path, value):
     config.run(["--path", str(tmp_path), "--disableplugins", value])
 
     expected = value.strip().lower() == "true"
-    assert load_repo_config(tmp_path / "adr-config.adrplus").disableplugins is expected
+    assert load_repo_config(tmp_path / ".adrpy.json").disableplugins is expected
 
 
 def test_config_rejects_non_integer_lenseq(tmp_path):
@@ -833,12 +833,12 @@ def test_config_still_enforces_schema_bounds(tmp_path):
 
 def test_config_rejects_invalid_merged_value_leaves_file_untouched(tmp_path):
     tmp_path = _init_repo(tmp_path)
-    before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
+    before = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
 
     with pytest.raises(CommandError):
         config.run(["--path", str(tmp_path), "--separator", "~"])
 
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
+    assert (tmp_path / ".adrpy.json").read_text(encoding="utf-8") == before
 
 
 def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
@@ -847,13 +847,13 @@ def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
     the file back. The schema itself refuses it now, before anything is
     written."""
     tmp_path = _init_repo(tmp_path)
-    before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
+    before = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", "../../evil"])
 
     assert excinfo.value.code == "config-folderadr-not-relative"
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
+    assert (tmp_path / ".adrpy.json").read_text(encoding="utf-8") == before
 
 
 @pytest.mark.parametrize(
@@ -877,7 +877,7 @@ def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_pa
     repository root -- resolve_within must not accept that as 'not
     outside,' or folderadr would become indistinguishable from the repo
     root and every subsequent write would land next to
-    adr-config.adrplus itself.
+    .adrpy.json itself.
 
     ADR007V01: '.' now fails EARLIER and via a different, also-correct
     code -- folderadr='.' has zero path components, which is a prefix of
@@ -888,14 +888,14 @@ def test_config_rejects_folderadr_that_collapses_onto_the_repository_root(tmp_pa
     component, so it does not trip the containment guard and still
     surfaces via path-outside-repository, unchanged."""
     tmp_path = _init_repo(tmp_path)
-    before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
+    before = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", folderadr])
 
     expected_code = "config-folderadr-folderlog-overlap" if folderadr == "." else "path-outside-repository"
     assert excinfo.value.code == expected_code
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
+    assert (tmp_path / ".adrpy.json").read_text(encoding="utf-8") == before
 
 
 def test_config_rejects_a_whitespace_only_header_field_end_to_end(tmp_path):
@@ -920,7 +920,7 @@ def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp
     current migrationpattern before calling migrate) without triggering
     a write."""
     tmp_path = _init_repo(tmp_path)
-    before_bytes = (tmp_path / "adr-config.adrplus").read_bytes()
+    before_bytes = (tmp_path / ".adrpy.json").read_bytes()
 
     result = config.run(["--path", str(tmp_path)])
 
@@ -928,7 +928,7 @@ def test_config_with_no_field_flags_reads_the_current_config_without_writing(tmp
     assert result["config"]["prefix"] == "ADR"
     assert result["config"]["lenrevision"] == 0
     assert "activeplugins" not in result["config"]
-    assert (tmp_path / "adr-config.adrplus").read_bytes() == before_bytes
+    assert (tmp_path / ".adrpy.json").read_bytes() == before_bytes
 
 
 def test_config_does_not_expose_activeplugins(tmp_path):
@@ -1090,7 +1090,7 @@ def test_config_refuses_a_prefix_change_while_a_decision_is_recognized(tmp_path)
 
     assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"changed_fields": ["prefix"], "existing_decisions": 1}
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix == "ADR"
 
 
 def test_config_refuses_a_prefix_change_that_would_adopt_an_unrelated_file(tmp_path):
@@ -1103,7 +1103,7 @@ def test_config_refuses_a_prefix_change_that_would_adopt_an_unrelated_file(tmp_p
 
     assert excinfo.value.code == "prefix-change-would-adopt-unrelated-files"
     assert [os.path.basename(path) for path in excinfo.value.data["adopted_files"]] == ["XYZ001V01-x.md"]
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix == "ADR"
 
 
 def test_config_refuses_a_prefix_and_separator_change_that_adopts_only_together(tmp_path):
@@ -1120,7 +1120,7 @@ def test_config_refuses_a_prefix_and_separator_change_that_adopts_only_together(
         "separator-change-would-adopt-unrelated-files",
     )
     assert [os.path.basename(path) for path in excinfo.value.data["adopted_files"]] == ["XYZ0001V01_foo.md"]
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "ADR"
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix == "ADR"
 
 
 def test_config_allows_a_prefix_change_on_an_empty_repository(tmp_path):
@@ -1129,7 +1129,7 @@ def test_config_allows_a_prefix_change_on_an_empty_repository(tmp_path):
     result = config.run(["--path", str(tmp_path), "--prefix", "DEC"])
 
     assert result["updated_fields"] == ["prefix"]
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix == "DEC"
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix == "DEC"
 
 
 def test_a_refused_config_does_not_recreate_a_missing_folderadr(tmp_path):
@@ -1306,7 +1306,7 @@ def test_an_interrupt_while_previewing_a_migrationpattern_leaves_the_config_unch
     # runs after the config is on disk.
     _init_repo(tmp_path)
     (tmp_path / "doc" / "adr" / "0001-use-x.md").write_text("# x\n", encoding="utf-8")
-    before = (tmp_path / "adr-config.adrplus").read_bytes()
+    before = (tmp_path / ".adrpy.json").read_bytes()
     real_scan = config.scan_tree
     calls = {"n": 0}
 
@@ -1321,7 +1321,7 @@ def test_an_interrupt_while_previewing_a_migrationpattern_leaves_the_config_unch
     with pytest.raises(KeyboardInterrupt):
         config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T05"])
 
-    assert (tmp_path / "adr-config.adrplus").read_bytes() == before
+    assert (tmp_path / ".adrpy.json").read_bytes() == before
 
 
 def test_a_folder_that_cannot_be_created_leaves_none_of_its_new_parents(tmp_path, monkeypatch):
@@ -1359,4 +1359,4 @@ def test_a_header_label_change_is_blocked_by_existing_decisions(tmp_path):
 def test_a_header_label_change_is_allowed_before_any_decision(tmp_path):
     tmp_path = _init_repo(tmp_path)
     config.run(["--path", str(tmp_path), "--headertablefields", "Campos"])
-    assert "Campos" in (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
+    assert "Campos" in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")

@@ -7,7 +7,7 @@ import pytest
 from adrpy.core.errors import CommandError
 from adrpy.core.install_config import read_install_config_text, resolve_install_config_path
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _valid_config_dict():

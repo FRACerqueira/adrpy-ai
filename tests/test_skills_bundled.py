@@ -29,8 +29,8 @@ class TestAdrpySkillIsBundled:
         assert resources.load_meta("adrpy")["name"] == "adrpy"
 
     def test_its_trigger_names_the_config_file(self):
-        assert "adr-config.adrplus" in resources.load_meta("adrpy")["description"]
-        assert "adr-config.adrplus" in resources.load_full_content("adrpy")
+        assert ".adrpy.json" in resources.load_meta("adrpy")["description"]
+        assert ".adrpy.json" in resources.load_full_content("adrpy")
 
     def test_it_maps_every_adrpy_command(self):
         # Drift guard: a command added to adrpy without a line in the skill fails here.

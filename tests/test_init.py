@@ -30,7 +30,7 @@ def _as_written(config_text):
 def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     result = init.run(["--path", str(tmp_path)])
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     assert config_path.read_text(encoding="utf-8") == _as_written(_default_config_text())
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
@@ -58,7 +58,7 @@ def test_init_does_not_recommend_installconfig_when_language_is_given(tmp_path):
 
 
 def test_init_does_not_recommend_installconfig_when_install_level_config_exists(tmp_path, monkeypatch):
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     result = init.run(["--path", str(tmp_path)])
@@ -97,7 +97,7 @@ def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_fold
     # before the race is even injected) legitimately observed it as
     # missing at that point -- a harmless reporting quirk, not a bug.
     assert (tmp_path / "doc" / "adr").is_dir()
-    assert result["created"] == [str(tmp_path / "adr-config.adrplus"), str(tmp_path / "doc" / "adr")]
+    assert result["created"] == [str(tmp_path / ".adrpy.json"), str(tmp_path / "doc" / "adr")]
 
 
 def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
@@ -138,7 +138,7 @@ def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_pat
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderlog"] == "doc/decision-log"
 
 
@@ -162,7 +162,7 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
     assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
     # Nothing was written -- the original config survives untouched.
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"
 
 
@@ -195,7 +195,7 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderadr-change-scan-incomplete"
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
@@ -220,7 +220,7 @@ def test_init_seed_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file
     assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
     assert len(excinfo.value.data["adopted_files"]) == 1
     assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
@@ -241,7 +241,7 @@ def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_alr
 
     assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"changed_fields": ["statusacc"], "existing_decisions": 1}
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["statusacc"] == "Accepted"  # nothing was written
 
 
@@ -261,7 +261,7 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
     record = DecisionRecord(number=1, title="T01", version=0)
-    header = build_header(load_repo_config(tmp_path / "adr-config.adrplus"), record, migrated=True)
+    header = build_header(load_repo_config(tmp_path / ".adrpy.json"), record, migrated=True)
     (adr_dir / "0001T01.md").write_bytes((header + "Legacy content\n").encode("utf-8"))
 
     seed["migrationpattern"] = "N00:05T05"
@@ -354,7 +354,7 @@ def test_init_seed_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path)
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix != "SEED"  # never committed
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix != "SEED"  # never committed
 
 
 def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -414,7 +414,7 @@ def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created
     with pytest.raises(CommandError):
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # unchanged -- nothing committed
     assert not (tmp_path / "newfolder").exists()
 
@@ -442,7 +442,7 @@ def test_init_with_seed_overwrites_using_custom_config(tmp_path):
 
     result = init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == _as_written(json.dumps(custom))
+    assert (tmp_path / ".adrpy.json").read_text(encoding="utf-8") == _as_written(json.dumps(custom))
     assert (tmp_path / "decisions").is_dir()
     assert str(tmp_path / "decisions") in result["created"]
 
@@ -552,7 +552,7 @@ def test_init_end_to_end_through_main(tmp_path):
     exit_code = main(["init", "--path", str(tmp_path)])
 
     assert exit_code == EXIT_SUCCESS
-    assert (tmp_path / "adr-config.adrplus").exists()
+    assert (tmp_path / ".adrpy.json").exists()
 
 
 def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
@@ -591,7 +591,7 @@ def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
     own resources, never hand-translated."""
     result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
-    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert config["statusnew"] == "Proposto"
     assert config["statusacc"] == "Aceito"
     assert config["headerversion"] == "Versão"
@@ -600,7 +600,7 @@ def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
     # Everything NOT covered by the language pack keeps the built-in default.
     assert config["folderadr"] == "doc/adr"
     assert config["separator"] == "-"
-    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
+    assert result["created"][0] == str(tmp_path / ".adrpy.json")
 
 
 def test_init_rejects_unsupported_language(tmp_path):
@@ -614,22 +614,22 @@ def test_init_rejects_unsupported_language(tmp_path):
 
 
 def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypatch):
-    # tests/fixtures/adr-config.adrplus differs from the built-in default
+    # tests/fixtures/.adrpy.json differs from the built-in default
     # in activeplugins (["AdrIndexer"] vs []) -- a distinguishing field
     # that proves this content was actually used, not a coincidence.
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     result = init.run(["--path", str(tmp_path)])
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     assert config_path.read_text(encoding="utf-8") == _as_written(install_text)
     assert load_repo_config(config_path).activeplugins == ["AdrIndexer"]
     assert result["created"][0] == str(config_path)
 
 
 def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkeypatch):
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     with pytest.raises(UsageError):
@@ -660,7 +660,7 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "config-folderadr-folderlog-overlap"
-    assert not (tmp_path / "adr-config.adrplus").exists()
+    assert not (tmp_path / ".adrpy.json").exists()
 
 
 def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
@@ -710,8 +710,8 @@ def test_init_accepts_every_supported_language(tmp_path, language):
     (label length limits, ASCII-only prefix, ...) -- not just pt-br."""
     result = init.run(["--path", str(tmp_path), "--language", language])
 
-    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
-    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert result["created"][0] == str(tmp_path / ".adrpy.json")
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
 
 
@@ -720,14 +720,14 @@ def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(t
     line endings while every one of the 11 language packs (including
     en-us.json, "Defaults to en-us" per init's own describe()) used bare
     LF -- so a bare `init` and an explicit `init --language en-us`
-    produced the same prose but byte-different adr-config.adrplus files."""
+    produced the same prose but byte-different .adrpy.json files."""
     bare_dir = tmp_path_factory.mktemp("bare")
     lang_dir = tmp_path_factory.mktemp("lang")
     init.run(["--path", str(bare_dir)])
     init.run(["--path", str(lang_dir), "--language", "en-us"])
 
-    bare_template = json.loads((bare_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
-    lang_template = json.loads((lang_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
+    bare_template = json.loads((bare_dir / ".adrpy.json").read_text(encoding="utf-8"))["template"]
+    lang_template = json.loads((lang_dir / ".adrpy.json").read_text(encoding="utf-8"))["template"]
     assert bare_template == lang_template
 
 
@@ -765,7 +765,7 @@ def test_init_rejects_language_combined_with_seed(tmp_path):
 def test_init_over_an_empty_config_says_it_is_empty(tmp_path):
     # An interrupted init (no hard links) can leave a 0-byte config: init
     # names that, instead of "already exists".
-    (tmp_path / "adr-config.adrplus").write_bytes(b"")
+    (tmp_path / ".adrpy.json").write_bytes(b"")
 
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path)])
@@ -789,7 +789,7 @@ def test_the_first_config_change_after_init_rewrites_only_the_changed_line(tmp_p
         seed_file.write_text(_default_config_text(), encoding="utf-8")
         args += ["--seed", str(seed_file)]
     init.run(args)
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     before = config_path.read_text(encoding="utf-8").splitlines()
 
     config.run(["--path", str(tmp_path), "--lenseq", "4"])
@@ -797,3 +797,22 @@ def test_the_first_config_change_after_init_rewrites_only_the_changed_line(tmp_p
     after = config_path.read_text(encoding="utf-8").splitlines()
     assert len(before) == len(after)
     assert [(old, new) for old, new in zip(before, after) if old != new] == [('  "lenseq": 3,', '  "lenseq": 4,')]
+
+
+
+def test_init_writes_the_repository_config_as_adrpy_json(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    assert (tmp_path / ".adrpy.json").is_file()
+
+
+def test_a_config_under_another_name_is_not_a_repository_config(tmp_path):
+    """Only `.adrpy.json` at the root makes a repository: a config JSON
+    under any other name is not read."""
+    from adrpy.cli import explore
+
+    (tmp_path / "adrpy-config.json").write_text(_default_config_text(), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        explore.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "config-not-found"

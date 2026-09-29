@@ -62,7 +62,7 @@ def test_check_warns_about_a_symlinked_decision(tmp_path):
 
 
 def test_migrate_reports_a_symlinked_candidate_and_leaves_the_link(tmp_path):
-    seed = json.loads((Path(__file__).parent / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8"))
+    seed = json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
     seed["migrationpattern"] = "N00:04T05"
     seed_file = tmp_path / "seed.json"
     seed_file.write_text(json.dumps(seed), encoding="utf-8")

@@ -11,7 +11,7 @@ from adrpy.core.header import (
     parse_header,
 )
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _valid_header_lines(config):

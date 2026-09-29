@@ -7,7 +7,7 @@ directory is unsafe (permissions, wiped on reinstall, often shared).
 
 Reuses core/config.py's own schema and validation directly -- the
 install-level file's shape is identical to a repository's own
-adr-config.adrplus, so there is no separate schema to maintain here.
+.adrpy.json, so there is no separate schema to maintain here.
 """
 
 import os
@@ -33,7 +33,7 @@ def resolve_install_config_path():
 
 def read_install_config_text(path=None):
     """Returns the install-level config's raw text, validated against
-    the same schema as a repository's own adr-config.adrplus, or None if
+    the same schema as a repository's own .adrpy.json, or None if
     the file doesn't exist -- the normal state for any installation that
     has never run `installconfig` (ADR002V01), not an error condition.
     Shared by every consumer of this file (`init`'s default seed,

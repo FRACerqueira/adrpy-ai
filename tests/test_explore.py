@@ -12,7 +12,7 @@ from conftest import D, make_repo
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _default_config_dict():
@@ -22,7 +22,7 @@ def _default_config_dict():
 
 def _write_repo(tmp_path, config_dict, decisions):
     config_text = json.dumps(config_dict)
-    (tmp_path / "adr-config.adrplus").write_text(config_text, encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(config_text, encoding="utf-8")
     config = parse_repo_config(config_text)
 
     adr_dir = tmp_path / config.folderadr
@@ -58,7 +58,7 @@ def test_explore_config_not_found(tmp_path):
 
 def test_explore_returns_empty_when_adr_folder_missing(tmp_path):
     config_dict = _default_config_dict()
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config_dict), encoding="utf-8")
 
     result = explore.run(["--path", str(tmp_path)])
 
@@ -243,7 +243,7 @@ def test_explore_recognizes_legacy_scheme_too(tmp_path):
 
     adr_dir = tmp_path / config.folderadr
     adr_dir.mkdir(parents=True)
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config_dict), encoding="utf-8")
     (adr_dir / "0001UsePostgreSQL.md").write_text("# legacy content, no header yet", encoding="utf-8")
 
     result = explore.run(["--path", str(tmp_path)])
@@ -434,7 +434,7 @@ def test_explore_end_to_end_through_main(tmp_path):
     from adrpy.core.output import EXIT_SUCCESS
 
     config_dict = _default_config_dict()
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config_dict), encoding="utf-8")
 
     exit_code = main(["explore", "--path", str(tmp_path)])
 
@@ -448,7 +448,7 @@ def test_explore_accepts_short_flag_end_to_end_through_main(tmp_path):
     from adrpy.core.output import EXIT_SUCCESS
 
     config_dict = _default_config_dict()
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(config_dict), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config_dict), encoding="utf-8")
 
     assert main(["explore", "-p", str(tmp_path)]) == EXIT_SUCCESS
 

@@ -59,7 +59,7 @@ def describe():
                 "alias": "-p",
                 "type": "string",
                 "required": True,
-                "description": "Repository root directory (must contain adr-config.adrplus).",
+                "description": "Repository root directory (must contain .adrpy.json).",
             },
             {
                 "name": "migrationpattern",
@@ -77,7 +77,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
             },

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from adrpy.cli import approve, explore, init, new, reject, revise, supersede, undo, version
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _custom_labels_config():

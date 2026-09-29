@@ -13,7 +13,7 @@ from adrpy.core.atomic_write import atomic_write_text
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 
@@ -70,7 +70,7 @@ def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     validation until this write, would otherwise embed it into the
     rewritten header with no error at all."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
 
     with pytest.raises(CommandError) as excinfo:
@@ -90,7 +90,7 @@ def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
     surface as a warning, but must NOT block approve -- the marker is
     still authoritative and the write still proceeds normally."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     text = adr_path.read_text(encoding="utf-8")
     assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in text
     atomic_write_text(adr_path, text.replace(config.statusnew, config.statusacc, 1))
@@ -149,7 +149,7 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
     reject fell through to eligible for any status_update other than
     exactly "Accepted"/"Rejected", instead of requiring None."""
     _, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     lines = adr_path.read_text(encoding="utf-8").splitlines()
     lines[9] = lines[9].replace("|Changed||", f"|Changed|{config.statusnew} (2026-01-02)|")
     atomic_write_text(adr_path, "\n".join(lines) + "\n")
@@ -273,7 +273,7 @@ def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
     (successor-without-predecessor): nothing is committed at all."""
     target = tmp_path
     init.run(["--path", str(target)])
-    config = load_repo_config(target / "adr-config.adrplus")
+    config = load_repo_config(target / ".adrpy.json")
     adr_dir = target / "doc" / "adr"
     # A real successor shape (its number is higher than the one it names),
     # whose predecessor file does not exist.
@@ -453,7 +453,7 @@ def test_following_a_partial_rejects_repair_literally_leaves_a_consistent_reposi
         "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
     )
 
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     assert check_repository(adr_path.parent, config)[1] == []
 
 
@@ -583,7 +583,7 @@ def test_reject_happy_path(tmp_path):
 def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     """See approve's own equivalent test -- reject shares the same gap."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
 
     with pytest.raises(CommandError) as excinfo:
@@ -682,7 +682,7 @@ def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp
     (undoing the predecessor's Superseded status)."""
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
 
     predecessor_path = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -721,7 +721,7 @@ def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp
 def test_reject_undoes_predecessor_supersede_status(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
 
     predecessor_path = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -793,7 +793,7 @@ def test_undo_happy_path(tmp_path):
 def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
     """See approve's own equivalent test -- undo shares the same gap."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(
         adr_path, config, number=1, title="Hostile:Title", version=1,
         status_create="Proposed", status_update="Accepted", date_update=date(2026, 1, 2),
@@ -935,7 +935,7 @@ def test_undo_rejects_when_sibling_superseded(tmp_path):
 def test_undo_rejects_when_pending_sibling_exists(tmp_path):
     tmp_path, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
     _write_raw(
         sibling_path,
@@ -1138,7 +1138,7 @@ def test_a_hand_made_member_in_a_rejected_successors_family_refuses_the_reposito
     # predecessor would then leave it two live lines. The validator refuses
     # the whole repository first.
     adr, pred, succ = _rejected_successor(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     v02 = adr / "ADR002V02-first.md"
     _write_raw(v02, cfg, number=2, title="First", version=2, status_create="Proposed", date_create=date(2026, 1, 4))
     target = {"approve": v02, "supersede": pred}[command]
@@ -1229,7 +1229,7 @@ def test_the_whole_family_of_a_rejected_successor_is_final(tmp_path):
 
 def test_reject_treats_a_non_ascii_digit_back_reference_as_not_naming_it(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     pred = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -1257,7 +1257,7 @@ def _migrated_family(tmp_path, *names, pattern="N00:04T06V04:02", lenrevision=0)
     import json as _json
     from adrpy.cli import migrate as migrate_cmd
 
-    config = _json.loads(open("tests/fixtures/adr-config.adrplus", encoding="utf-8").read())
+    config = _json.loads(open("tests/fixtures/.adrpy.json", encoding="utf-8").read())
     config.update(migrationpattern=pattern, lenrevision=lenrevision)
     seed = tmp_path / "seed.json"
     seed.write_text(_json.dumps(config), encoding="utf-8")
@@ -1306,7 +1306,7 @@ def test_supersede_of_a_member_whose_newer_versions_are_all_rejected_works(tmp_p
 
 def test_reject_leaves_the_predecessor_alone_for_a_non_ascii_back_reference(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     pred = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(

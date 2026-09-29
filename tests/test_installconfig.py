@@ -7,7 +7,7 @@ from adrpy.cli import installconfig
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError, UsageError
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +109,7 @@ def test_language_replaces_the_file_wholesale_with_localized_labels_and_template
     """Mirrors init's own test_init_with_language_seeds_localized_labels_
     and_template -- same language packs, same merge-onto-built-in-default
     semantics, just written to the install-level file instead of a fresh
-    repository's adr-config.adrplus."""
+    repository's .adrpy.json."""
     result = installconfig.run(["--language", "pt-br"])
 
     assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)

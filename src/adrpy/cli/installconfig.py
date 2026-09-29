@@ -11,7 +11,7 @@ as this command's own `file` key, so a caller never needs to know the
 convention to locate it). One flag per schema field (mirroring
 `config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
-schema is byte-compatible with a repository's own adr-config.adrplus
+schema is byte-compatible with a repository's own .adrpy.json
 (ADR002V01), `--seed` pointed directly at AdrPlus's own template file
 already covers importing from it; no separate cross-tool flag, and no
 knowledge of AdrPlus's install-directory layout, is added for that.
@@ -196,7 +196,7 @@ def describe():
                     "merging individual field flags -- same semantics as `init --seed`. Fails with "
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "The install-level "
-                    "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
+                    "config's schema is byte-compatible with a repository's own .adrpy.json, so "
                     "this also covers importing AdrPlus's own "
                     "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
                     "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "

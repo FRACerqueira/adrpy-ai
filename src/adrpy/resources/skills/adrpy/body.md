@@ -101,7 +101,7 @@ takes flags and prints one JSON object; none of them prompts.
 ## Commands
 
 - `adrpy help` -- lists every command; `adrpy help <command>` describes one.
-- `adrpy init --path .` -- creates `adr-config.adrplus` and the decisions folder.
+- `adrpy init --path .` -- creates `.adrpy.json` and the decisions folder.
 - `adrpy explore --path .` -- lists every `.md` file in the decisions folder, decision or not; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
 - `adrpy check --path .` -- validates the repository; each error has a `hint`.
 - `adrpy new --path . --title "..."` -- creates a decision, status Proposed.

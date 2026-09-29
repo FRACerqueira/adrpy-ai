@@ -18,6 +18,7 @@ from adrpy.core.atomic_write import (
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import (
     LENREVISION_MAX,
+    REPO_CONFIG_NAME,
     LENVERSION_MAX,
     SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
     VALID_SEPARATORS,
@@ -388,7 +389,7 @@ def find_by_unique_title(title, config, decisions):
 
 def find_repo_root(file_path):
     """Walks up from the file's own directory looking for
-    adr-config.adrplus. Returns the config file's Path, or None if never
+    .adrpy.json. Returns the config file's Path, or None if never
     found. The path is made absolute with `..` collapsed but no link
     followed (os.path.abspath): a relative path's own parents stop at '.',
     an uncollapsed `..` walks through folders that are not the file's
@@ -396,7 +397,7 @@ def find_repo_root(file_path):
     find another (the boundary checks then refuse a link out of it)."""
     directory = Path(os.path.abspath(file_path)).parent
     while True:
-        candidate = directory / "adr-config.adrplus"
+        candidate = directory / REPO_CONFIG_NAME
         if candidate.is_file():
             return candidate
         parent = directory.parent
@@ -520,7 +521,7 @@ def stream_normalized_body_chunks(source_path, report):
 # invalid, one of repository-inconsistent's data.errors. The two
 # commands that can reach them list them in their own inline dict.
 SHARED_FAILURE_CODES = {
-    FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
+    FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No .adrpy.json was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
     FailureCodes.FILENAME_NOT_RECOGNIZED: (
         "--file's own name matches neither naming scheme, or only migrationpattern matches it and it has no "
@@ -567,13 +568,13 @@ def resolve_target_and_config(path, *, require_config=True):
     target = Path(path)
     if not target.is_dir():
         raise CommandError(FailureCodes.TARGET_DIRECTORY_NOT_FOUND, f"Directory does not exist: {path}")
-    config_path = target / "adr-config.adrplus"
+    config_path = target / REPO_CONFIG_NAME
     if not require_config:
         return target, config_path, None
     if not config_path.is_file():
         raise CommandError(
             FailureCodes.CONFIG_NOT_FOUND,
-            f"No adr-config.adrplus found at: {config_path.absolute()} -- run `adrpy init --path {shell_argument(path, '<repository folder>')}` to create "
+            f"No .adrpy.json found at: {config_path.absolute()} -- run `adrpy init --path {shell_argument(path, '<repository folder>')}` to create "
             "one, or give --path the repository's root.",
         )
     return target, config_path, load_repo_config(config_path)
@@ -982,7 +983,7 @@ def _validated_field(name, source, flags, header, filename_info):
 
 def _resolve_file(fileadr):
     """--file's path (a bare name gets '.md'), its repository's config
-    (found by walking up for adr-config.adrplus) and root, and its
+    (found by walking up for .adrpy.json) and root, and its
     filename identity ((scheme, ParsedFileName)) -- nothing read from the file itself yet."""
     fileadr = Path(fileadr)
     if fileadr.suffix == "":
@@ -992,7 +993,7 @@ def _resolve_file(fileadr):
     config_path = find_repo_root(fileadr)
     if config_path is None:
         detail = (
-            f"Cannot determine the repository root for: {fileadr} -- no adr-config.adrplus in its folder or any "
+            f"Cannot determine the repository root for: {fileadr} -- no .adrpy.json in its folder or any "
             "folder above it (run `adrpy init --path .` at the repository's root)."
         )
         real = fileadr.resolve()

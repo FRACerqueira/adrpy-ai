@@ -69,7 +69,7 @@ commands x 18 modules is a hairball no one can actually read.
 |---|---|---|
 | Dispatch & contract | `registry.py`, `args.py`, `output.py`, `errors.py` | Maps each verb to its command module; parses `--flag value` pairs; builds the JSON envelope and exit code; defines `CommandError`/`UsageError`. Used by every command. |
 | Storage | `fs.py`, `atomic_write.py` | Every file read, write and delete goes through `fs.py` (a source-scan test enforces it for the `read_*`/`write_*`/`unlink`/`os.replace`/`remove`/`rename`/`link` calls; a few plain `open()` reads remain outside it): bounded reads with a short retry on a transient `PermissionError`, the two-step write (`prepare_write` puts the complete content in a temp file next to the target, `commit_write` moves it into place, or creates it exclusively, never over an existing file), the one walk of a folder (`scan_tree`) and the cleanup of orphaned temp files. `atomic_write.py` wraps the write for text, bytes and streamed chunks, with the host line endings. |
-| Configuration | `config.py`, `install_config.py` | A repository's own `adr-config.adrplus` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
+| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Repository model & validation | `consistency.py`, `family.py` | One scan of the decisions folder into a snapshot of `Decision`s, each with a status derived once from the closed set of combinations, and the validator that checks every invariant ([lifecycle.md](lifecycle.md#validate-the-whole-repository-before-acting)); the family rules both it and the commands share (which filename names a successor, which member is live). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py`, `text.py` | The shared preamble of the file commands (`prepare`) and the transition table it follows; the 12-line header format, its free-text rules included; filename parsing/building for both naming schemes; title case transforms; path-escape guards; small text rules (plain ASCII numbers, leading BOMs). |
 | Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR007V01](adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--003.md), superseding ADR003V01's own schema driver). |
@@ -152,7 +152,7 @@ What the tool keeps, and why each is enough on its own:
   one, never a partial one. A crash between the two steps leaves at most
   a temp file, which a later command writing there removes once it is older than
   30 s: `new`, the file commands and `migrate` in the decisions folder, `log` in the
-  decision-log folder, `init`, `config` and `migrate` for `adr-config.adrplus`, and
+  decision-log folder, `init`, `config` and `migrate` for `.adrpy.json`, and
   `installconfig` for the install-level config (`fs.cleanup_orphaned_temp_files`).
 - **Exclusive create.** A file is never created over an existing one:
   the move itself fails when the name is taken, leaving the original
@@ -200,7 +200,7 @@ The install-level file lives at a per-user, OS-appropriate path
 into a pip package's own install/site-packages directory is unsafe
 (permissions, often shared, wiped on reinstall). Its schema is the same
 full, seed-valid shape `init --seed` accepts, byte-compatible with a
-repository's own `adr-config.adrplus`, the schema AdrPlus 1.0.0 also
+repository's own `.adrpy.json`, the schema AdrPlus 1.0.0 also
 uses (plus `folderlog`, see `core/config.py`'s own
 docstring).
 

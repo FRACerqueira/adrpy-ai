@@ -518,8 +518,8 @@ def test_the_folder_sweep_never_removes_a_16_hex_tmp_that_is_not_a_decision_s(tm
 def test_the_named_files_sweep_removes_a_16_hex_orphan_of_its_file(tmp_path):
     from adrpy.core.fs import cleanup_orphaned_temp_files_for
 
-    target = tmp_path / "adr-config.adrplus"
-    orphan = tmp_path / f"adr-config.adrplus.{OWN_TEMP_HEX[:16]}.tmp"
+    target = tmp_path / ".adrpy.json"
+    orphan = tmp_path / f".adrpy.json.{OWN_TEMP_HEX[:16]}.tmp"
     orphan.write_text("stale")
     old_time = time.time() - 60
     os.utime(orphan, (old_time, old_time))

@@ -35,9 +35,9 @@ from adrpy.core.warnings import (
 def describe():
     return {
         "name": "init",
-        "summary": "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder.",
+        "summary": "Initializes an ADR repository: writes .adrpy.json and creates the decisions folder.",
         "description": (
-            "Initializes an ADR repository: writes adr-config.adrplus and creates the decisions folder, "
+            "Initializes an ADR repository: writes .adrpy.json and creates the decisions folder, "
             "refusing to replace an existing config unless --seed is given. With no --seed and no --language,"
             " seeds from this machine's install-level config (see installconfig) or, when there is none, from"
             " the built-in default, and then says so in `warnings`. A decisions folder that already exists is"
@@ -68,7 +68,7 @@ def describe():
                     "config (see the installconfig command) or the built-in default. Fails with "
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "Unlike a bare `init` on a fresh path, this OVERWRITES an already-existing "
-                    "adr-config.adrplus outright -- config-already-exists is not raised for a config that was "
+                    ".adrpy.json outright -- config-already-exists is not raised for a config that was "
                     "already there when --seed is given. The "
                     "existing file must still parse (its folderadr scopes the change "
                     "guards): a corrupted one fails with its own config-* code -- repair or remove it first. "
@@ -142,7 +142,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_ALREADY_EXISTS: "adr-config.adrplus already exists and no --seed was given, or it appeared while init was running.",
+                FailureCodes.CONFIG_ALREADY_EXISTS: ".adrpy.json already exists and no --seed was given, or it appeared while init was running.",
                 FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
                 FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own folderadr differs from the current one, and the OLD folder already has recognized decisions.",

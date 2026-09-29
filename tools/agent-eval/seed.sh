@@ -45,7 +45,7 @@ commit_seed S3
 # (superseded-not-live) -- AdrPlus 1.0.0 superseded the older version.
 d="$R44/seeds/S4"; mkdir -p "$d/doc/adr"; cd "$d"; git init -q -b main
 rm -rf "$R44/env/seed/cfgsrc"; mkdir -p "$R44/env/seed/cfgsrc"; adrpy init --path "$R44/env/seed/cfgsrc" >/dev/null
-"$BASEPY" -B - "$R44/env/seed/cfgsrc/adr-config.adrplus" adr-config.adrplus <<'EOF'
+"$BASEPY" -B - "$R44/env/seed/cfgsrc/.adrpy.json" .adrpy.json <<'EOF'
 import json, sys
 cfg = json.load(open(sys.argv[1], encoding="utf-8"))
 cfg.pop("folderlog")

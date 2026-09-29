@@ -30,7 +30,7 @@ Marks a Proposed decision (or a migrated placeholder) Accepted. The whole reposi
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
 | `refdate-in-future` | --refdate is after today. |
 | `refdate-before-history` | --refdate is before this decision's own creation date. |
-| `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
+| `cannot-determine-root-path` | No .adrpy.json was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
@@ -43,7 +43,7 @@ Marks a Proposed decision (or a migrated placeholder) Accepted. The whole reposi
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

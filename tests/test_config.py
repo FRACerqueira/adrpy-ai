@@ -8,7 +8,7 @@ from adrpy.core import config as config_module
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _valid_config_dict():
@@ -194,7 +194,7 @@ def test_relative_folderadr_is_accepted(folderadr):
 
 def test_folderlog_defaults_to_folderadrs_own_sibling_when_omitted():
     """ADR007V01: the concrete proof of the backward-compatibility
-    promise -- an adr-config.adrplus written before folderlog existed
+    promise -- an .adrpy.json written before folderlog existed
     (no key at all, exactly what _valid_config_dict/the shared test
     fixture already look like) must keep parsing unchanged, with
     folderlog defaulting to today's exact computed sibling location."""
@@ -730,7 +730,7 @@ def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
     JSON contract. read_text(encoding="utf-8") has no default error
     handling of its own -- must be caught and turned into a CommandError,
     the same as a malformed-JSON config already is."""
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
     with pytest.raises(CommandError) as excinfo:
@@ -746,7 +746,7 @@ def test_read_config_text_does_not_read_the_whole_file(tmp_path):
     read on every single command invocation."""
     from unittest.mock import patch
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     huge = json.dumps(_valid_config_dict())
     huge += " " * (200 * 1024 * 1024)  # 200MB of trailing whitespace, still invalid JSON either way
     config_path.write_text(huge, encoding="utf-8")
@@ -762,7 +762,7 @@ def test_read_config_text_does_not_read_the_whole_file(tmp_path):
 
 
 def test_read_config_text_accepts_a_normal_sized_config(tmp_path):
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
 
     config = load_repo_config(config_path)
@@ -774,7 +774,7 @@ def test_read_config_text_accepts_a_config_at_exactly_the_cap_boundary(tmp_path)
     """Positive control at the boundary itself -- a config file whose own
     JSON text is comfortably under the cap (padded with whitespace, still
     valid JSON) must parse correctly, not be treated as too-large."""
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     data = _valid_config_dict()
     data["template"] = "t" * config_module.TEMPLATE_MAX_LENGTH  # the field's own real max
     text = json.dumps(data)
@@ -797,7 +797,7 @@ def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeyp
     measured ~0.23% of reads hitting this window -- matching the ~0.2%
     rate already measured and retried for the sibling case in
     lifecycle.py."""
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
 
     real_open = config_module.Path.open

@@ -1,5 +1,5 @@
 """The temp files a write outside folderadr can leave behind (the repo's
-adr-config.adrplus, the decision log's INDEX.md and entries, the
+.adrpy.json, the decision log's INDEX.md and entries, the
 install-level config) are swept at the start of the command that writes
 there, with the same 30 s age rule as the folderadr sweep: an old one is
 removed and reported, a young one (maybe another call's, in flight) kept."""
@@ -34,7 +34,7 @@ def _assert_swept(old, young, warnings):
 
 def test_config_sweeps_its_own_orphaned_temps(tmp_path):
     init.run(["--path", str(tmp_path)])
-    old, young = _old_and_young(tmp_path / "adr-config.adrplus")
+    old, young = _old_and_young(tmp_path / ".adrpy.json")
 
     result = config.run(["--path", str(tmp_path), "--lenseq", "4"])
 
@@ -42,7 +42,7 @@ def test_config_sweeps_its_own_orphaned_temps(tmp_path):
 
 
 def test_init_sweeps_the_orphaned_temps_of_the_config_it_writes(tmp_path):
-    old, young = _old_and_young(tmp_path / "adr-config.adrplus")
+    old, young = _old_and_young(tmp_path / ".adrpy.json")
 
     result = init.run(["--path", str(tmp_path)])
 
@@ -53,7 +53,7 @@ def test_init_seed_sweeps_the_orphaned_temps_of_the_config_it_replaces(tmp_path)
     init.run(["--path", str(tmp_path)])
     seed = tmp_path / "seed.json"
     seed.write_text(init.default_repo_config_text(), encoding="utf-8")
-    old, young = _old_and_young(tmp_path / "adr-config.adrplus")
+    old, young = _old_and_young(tmp_path / ".adrpy.json")
 
     result = init.run(["--path", str(tmp_path), "--seed", str(seed)])
 
@@ -64,7 +64,7 @@ def test_migrate_sweeps_the_orphaned_temps_of_the_config_it_may_write(tmp_path):
     init.run(["--path", str(tmp_path)])
     config.run(["--path", str(tmp_path), "--migrationpattern", "N00:04T04"])
     (tmp_path / "doc" / "adr" / "0001UsePostgres.md").write_bytes(b"# Use Postgres\n")
-    old, young = _old_and_young(tmp_path / "adr-config.adrplus")
+    old, young = _old_and_young(tmp_path / ".adrpy.json")
 
     result = migrate.run(["--path", str(tmp_path)])
 
@@ -124,7 +124,7 @@ def test_the_known_files_sweep_never_removes_a_link_named_like_its_own_temp(tmp_
     (outside / "keep.txt").write_text("user data", encoding="utf-8")
     stamp = time.time() - 120
     os.utime(outside, (stamp, stamp))
-    config_path = tmp_path / "repo" / "adr-config.adrplus"
+    config_path = tmp_path / "repo" / ".adrpy.json"
     config_path.parent.mkdir()
     link = config_path.with_name(f"{config_path.name}.{uuid.uuid4().hex[:16]}.tmp")
     if sys.platform == "win32":

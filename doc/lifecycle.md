@@ -9,7 +9,7 @@ stops a command. Every rule here is checked by `adrpy` itself, from the
 files on disk, on every call; a command that is not allowed changes no
 decision file and returns the failure code named below. (Housekeeping can
 still happen first: removing its own orphaned temp files, and `migrate`
-persisting its fallback pattern into `adr-config.adrplus`.)
+persisting its fallback pattern into `.adrpy.json`.)
 
 ## Where status lives
 

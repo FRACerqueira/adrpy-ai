@@ -17,7 +17,7 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
-| `--path` | `-p` | yes | string | Repository root directory (must contain adr-config.adrplus). |
+| `--path` | `-p` | yes | string | Repository root directory (must contain .adrpy.json). |
 | `--migrationpattern` | -- | no | string | A migrationpattern to preview (same syntax as `adrpy config --migrationpattern`), read instead of the repository's own for `migrationpattern_preview` only; nothing is written. An invalid one fails with config-migrationpattern-invalid, as does one that reads part of a name twice (its T starts inside its N/V/R/P range, or two of those ranges overlap; the detail names the overlap); an empty value is a usage error (there is nothing to preview). |
 
 ## Failure codes
@@ -25,11 +25,11 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

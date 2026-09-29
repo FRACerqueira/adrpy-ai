@@ -59,7 +59,7 @@ def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
 def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     record = DecisionRecord(
         number=1,
@@ -93,7 +93,7 @@ def test_version_checks_the_targets_status_before_the_new_number_fits(tmp_path):
     # Proposed V99 is refused as still-proposed, not as a width problem
     # the owner could "fix" by widening lenversion.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(number=1, title="Existing", version=99, status_create="Proposed", date_create=date(2026, 1, 1))
     adr_path = tmp_path / "doc" / "adr" / "ADR001V99-existing.md"
     atomic_write_text(adr_path, build_header(config, record) + "# body")
@@ -145,7 +145,7 @@ def test_version_checks_the_family_rules_before_the_new_number_fits(tmp_path):
     # as not-latest-version, not as a width problem that widening
     # lenversion would only trade for this same refusal.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     folder = tmp_path / "doc" / "adr"
     for number in (98, 99):
         record = DecisionRecord(
@@ -168,7 +168,7 @@ def test_lenversion_one_below_the_maximum_offers_config_up_to_the_maximum(tmp_pa
 
     init.run(["--path", str(tmp_path)])
     config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX - 1)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     last = 10 ** (LENVERSION_MAX - 1) - 1
     record = DecisionRecord(
         number=1,
@@ -198,7 +198,7 @@ def test_lenversion_too_small_at_the_maximum_width_offers_no_config_way_out(tmp_
     from adrpy.core.config import LENVERSION_MAX
 
     init.run(["--path", str(tmp_path)])
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     from adrpy.cli import config as config_cmd
 
     config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX)])
@@ -503,7 +503,7 @@ def test_version_rejects_path_traversal_via_header_title(tmp_path):
     independent line of defense against anything those checks might
     miss."""
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -533,7 +533,7 @@ def test_version_rejects_a_header_title_made_only_of_separator_characters(tmp_pa
     whitespace/'_'/'-' -- reachable here via a hand-edited or migrated
     source file's header cell, the same as the path-traversal case above."""
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -634,7 +634,7 @@ def test_version_checks_the_new_version_width_after_refdate(tmp_path):
     # new/supersede do with lenseq), so a bad --refdate is reported
     # before a lenversion that widening would only trade for it.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1,
         title="Existing",

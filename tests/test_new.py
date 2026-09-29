@@ -12,7 +12,7 @@ from adrpy.core.errors import CommandError
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _init_repo(tmp_path):
@@ -82,7 +82,7 @@ def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 def test_new_includes_revision_when_configured(tmp_path):
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["lenrevision"] = 2
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(data), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(data), encoding="utf-8")
     (tmp_path / "doc" / "adr").mkdir(parents=True)
 
     result = new.run(["--path", str(tmp_path), "--title", "Some decision"])

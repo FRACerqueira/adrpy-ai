@@ -533,7 +533,7 @@ def test_following_a_partial_supersedes_repair_literally_leaves_a_consistent_rep
         "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
     )
 
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     assert check_repository(adr_path.parent, config)[1] == []
 
 
@@ -611,7 +611,7 @@ def _hand_written_repo(tmp_path, *names):
     from adrpy.core.naming import parse_any_filename
 
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
@@ -719,7 +719,7 @@ def _hand_written_proposed(adr_dir, name):
     from adrpy.core.header import DecisionRecord, build_header
     from adrpy.core.naming import parse_any_filename
 
-    config = load_repo_config(adr_dir.parent.parent / "adr-config.adrplus")
+    config = load_repo_config(adr_dir.parent.parent / ".adrpy.json")
     parsed = parse_any_filename(name, config)[1]
     record = DecisionRecord(number=parsed.number, title=parsed.title, version=parsed.version,
                             status_create="Proposed", date_create=date(2026, 1, 1))

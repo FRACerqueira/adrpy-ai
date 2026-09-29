@@ -37,7 +37,7 @@ import json
 
 from conftest import D, make_repo
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def test_validate_refdate_not_in_future_accepts_today():
@@ -97,7 +97,7 @@ def test_next_number_and_unique_title_with_real_decisions(tmp_path):
 def test_prepare_reports_when_no_adr_config_is_found_above(tmp_path):
     """Cannot-determine-root-path
     (raised when find_repo_root walks all the way up without finding
-    adr-config.adrplus) had zero coverage -- reachable from every one of
+    .adrpy.json) had zero coverage -- reachable from every one of
     the 6 status-transition commands via prepare."""
     orphan_dir = tmp_path / "no-repo-here"
     orphan_dir.mkdir()
@@ -125,12 +125,12 @@ def test_resolve_target_and_config_reports_a_missing_config(tmp_path):
 
 
 def test_resolve_target_and_config_loads_and_returns_the_config(tmp_path):
-    (tmp_path / "adr-config.adrplus").write_bytes(Path(FIXTURE_PATH).read_bytes())
+    (tmp_path / ".adrpy.json").write_bytes(Path(FIXTURE_PATH).read_bytes())
 
     target, config_path, config = resolve_target_and_config(tmp_path)
 
     assert target == tmp_path
-    assert config_path == tmp_path / "adr-config.adrplus"
+    assert config_path == tmp_path / ".adrpy.json"
     assert config.folderadr == load_repo_config(FIXTURE_PATH).folderadr
 
 
@@ -142,7 +142,7 @@ def test_resolve_target_and_config_skips_the_config_check_when_not_required(tmp_
     target, config_path, config = resolve_target_and_config(tmp_path, require_config=False)
 
     assert target == tmp_path
-    assert config_path == tmp_path / "adr-config.adrplus"
+    assert config_path == tmp_path / ".adrpy.json"
     assert config is None
 
 
@@ -163,7 +163,7 @@ def test_prepare_reports_the_targets_own_header_through_the_validator(tmp_path, 
     adr_dir.mkdir(parents=True)
     target = adr_dir / "ADR001V01-broken.md"
     target.write_text(content, encoding="utf-8")
-    (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         prepare("approve", target, {})
@@ -182,7 +182,7 @@ def test_prepare_reports_no_encoding_repair_for_a_clean_file(tmp_path):
     target = adr_dir / "ADR001V01-clean.md"
     with open(target, "w", encoding="utf-8", newline="") as handle:
         handle.write(build_header(config, record) + "# body\n")
-    (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
     assert prepare("approve", target, {}).encoding_repaired is False
 
@@ -215,7 +215,7 @@ def test_prepare_reports_encoding_repair_when_the_header_has_invalid_utf8_bytes(
     with open(target, "wb") as handle:
         handle.write(corrupted_header)
         handle.write(b"# body\n")
-    (tmp_path / "adr-config.adrplus").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(open(FIXTURE_PATH, encoding="utf-8").read(), encoding="utf-8")
 
     assert prepare("approve", target, {}).encoding_repaired is True
 
@@ -973,7 +973,7 @@ def test_cannot_determine_root_path_says_what_is_missing(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         prepare("approve", target, {})
 
-    assert "adr-config.adrplus" in excinfo.value.detail
+    assert ".adrpy.json" in excinfo.value.detail
     assert "adrpy init" in excinfo.value.detail
 
 

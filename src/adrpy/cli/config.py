@@ -1,5 +1,5 @@
 """`config` command: updates fields of an existing repository's own
-`adr-config.adrplus` directly.
+`.adrpy.json` directly.
 
 adrpy-ai has no interactive wizard, so this command is how an existing
 repository's settings change: one flag per config field, merge/update
@@ -167,9 +167,9 @@ def _field_description(field):
 def describe():
     return {
         "name": "config",
-        "summary": "Reads or updates an existing repository's own adr-config.adrplus.",
+        "summary": "Reads or updates an existing repository's own .adrpy.json.",
         "description": (
-            "With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` "
+            "With no field flags, reads the repository's .adrpy.json back (the result has a `config` "
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
             "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
@@ -197,7 +197,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
                 FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.REPOSITORY_INCONSISTENT: "A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",

@@ -33,7 +33,7 @@ Marks a Proposed decision (or a migrated placeholder) Rejected, after the same r
 | `reject-predecessor-write-failed` | Preparing either file, or committing the predecessor's reverted Superseded status, failed with a real OSError -- no write was made (data.failed_file names the file whose write failed). |
 | `multi-file-write-partially-applied` | The predecessor's Superseded status was already reverted for real, but committing this decision's own Rejected status then failed -- data.applied names the file already reverted, data.pending this decision; the repository is then inconsistent until this decision is marked Rejected by hand, with the exact row in data.repair. |
 | `interrupted` | Interrupted (Ctrl+C) after the predecessor's Superseded status was reverted but before this decision was marked Rejected -- same data as multi-file-write-partially-applied (data.applied, data.pending, data.repair). Once both are written, data.applied names both, data.pending is empty and there is no data.repair (the repository is consistent). What was written is read from the disk, so an interrupt right after a write counts it. An interrupt before the first write is reported without data. |
-| `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
+| `cannot-determine-root-path` | No .adrpy.json was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
@@ -46,7 +46,7 @@ Marks a Proposed decision (or a migrated placeholder) Rejected, after the same r
 | `not-latest-version` | A newer member of this family locks this one -- only the latest member can change, unless every newer one is Rejected (data.latest_file names the newer file). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

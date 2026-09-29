@@ -154,7 +154,7 @@ def test_init_seed_over_a_repository_that_already_has_that_pattern_is_not_refuse
 
     init.run(["--path", str(repo.root), "--seed", str(seed)])
 
-    assert parse_repo_config((repo.root / "adr-config.adrplus").read_text(encoding="utf-8")).migrationpattern == _BAD
+    assert parse_repo_config((repo.root / ".adrpy.json").read_text(encoding="utf-8")).migrationpattern == _BAD
 
 
 # ------------------------------------------------------- already in place --
@@ -172,7 +172,7 @@ def test_a_config_already_holding_an_overlapping_pattern_still_loads_and_can_cha
     assert main(["check", "--path", str(repo.root)]) == 0
     capsys.readouterr()
     config.run(["--path", str(repo.root), "--lenseq", "4"])
-    assert parse_repo_config((repo.root / "adr-config.adrplus").read_text(encoding="utf-8")).lenseq == 4
+    assert parse_repo_config((repo.root / ".adrpy.json").read_text(encoding="utf-8")).lenseq == 4
 
 
 def test_a_repository_holding_an_overlapping_pattern_can_clear_or_correct_it(tmp_path):
@@ -182,7 +182,7 @@ def test_a_repository_holding_an_overlapping_pattern_can_clear_or_correct_it(tmp
     config.run(["--path", str(repo.root), "--migrationpattern", ""])
     config.run(["--path", str(repo.root), "--migrationpattern", "N00:04T05"])
 
-    assert parse_repo_config((repo.root / "adr-config.adrplus").read_text(encoding="utf-8")).migrationpattern == "N00:04T05"
+    assert parse_repo_config((repo.root / ".adrpy.json").read_text(encoding="utf-8")).migrationpattern == "N00:04T05"
 
 
 # ---------------------------------------------------------------- migrate --
@@ -214,7 +214,7 @@ def test_migrate_finishes_a_partial_adoption_under_an_overlapping_pattern_with_a
     assert result["migrated"] == [str(repo.folder / "0002-use-y.md")]
     [warning] = [w for w in result["warnings"] if "reads part of a name twice" in w]
     assert "T02 starts inside N00:04" in warning and "by hand" in warning
-    assert check_repository(repo.folder, parse_repo_config((repo.root / "adr-config.adrplus").read_text(encoding="utf-8")))[1] == []
+    assert check_repository(repo.folder, parse_repo_config((repo.root / ".adrpy.json").read_text(encoding="utf-8")))[1] == []
 
 
 def test_migrate_refuses_an_overlapping_fallback_before_persisting_it(tmp_path, monkeypatch):

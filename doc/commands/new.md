@@ -28,7 +28,7 @@ Creates a new decision, status Proposed, in a new family under the number after 
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `field-contains-forbidden-character` | title/domain/scope contains '\|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'. |
 | `field-is-blank` | domain or scope is non-empty but blank after stripping whitespace. |
 | `refdate-invalid-format` | --refdate is not an ISO 8601 date (give it as YYYY-MM-DD). |
@@ -43,7 +43,7 @@ Creates a new decision, status Proposed, in a new family under the number after 
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |

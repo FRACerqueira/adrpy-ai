@@ -12,7 +12,7 @@ endings and bytes otherwise, not literally its every byte.
 If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
 command; ADR002V01) when one is set there, and persists the found value
-back into this repository's own `adr-config.adrplus`.
+back into this repository's own `.adrpy.json`.
 """
 
 import contextlib
@@ -175,7 +175,7 @@ def describe():
             " with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the"
             " titles begin with part of the number). It is a one-time step, refused as a whole"
             " when a file already has a valid header migrate did not write (checked first, before anything is "
-            "written); a fallback value is then persisted into adr-config.adrplus (reported as "
+            "written); a fallback value is then persisted into .adrpy.json (reported as "
             "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
             "touched. It is also refused as a whole when a scanned file has a damaged header, carries a "
             "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
@@ -190,7 +190,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED: "Both the repository's own migrationpattern and the install-level config's own fallback are empty.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
@@ -311,7 +311,7 @@ def run(args):
             if not fallback_pattern:
                 raise CommandError(
                     FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED,
-                    "adr-config.adrplus has no migrationpattern configured, and the install-level "
+                    ".adrpy.json has no migrationpattern configured, and the install-level "
                     "config (see installconfig) has none either.",
                     warnings=warnings,
                 )

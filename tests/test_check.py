@@ -118,7 +118,7 @@ def test_an_empty_file_with_an_adr_name_is_no_header_never_an_invalid_header_det
 
 
 def test_every_command_that_loads_an_empty_config_says_it_is_empty(tmp_path, capsys):
-    (tmp_path / "adr-config.adrplus").write_bytes(b"")
+    (tmp_path / ".adrpy.json").write_bytes(b"")
     (tmp_path / "doc" / "adr").mkdir(parents=True)
     (tmp_path / "doc" / "adr" / "ADR001V01-x.md").write_text("# x\n", encoding="utf-8")
 

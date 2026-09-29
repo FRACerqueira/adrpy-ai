@@ -10,7 +10,7 @@ from adrpy.core.header import DecisionRecord, build_header
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _config_with_revisions():
@@ -257,7 +257,7 @@ def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     record = DecisionRecord(
         number=1,
@@ -292,7 +292,7 @@ def test_revise_checks_the_targets_status_before_the_new_number_fits(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1, title="Existing", version=1, revision=9, status_create="Proposed", date_create=date(2026, 1, 1)
     )
@@ -335,7 +335,7 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -379,7 +379,7 @@ def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_tar
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -413,7 +413,7 @@ def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_pat
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -642,7 +642,7 @@ def test_revise_checks_the_new_revision_width_after_refdate(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1,
         title="Existing",
