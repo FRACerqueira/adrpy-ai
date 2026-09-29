@@ -7,7 +7,7 @@
 |Scope|cli|
 |Domain|tooling|
 |Created|Proposed (2026-09-29) <!-- Proposed -->|
-|Changed||
+|Changed|Accepted (2026-09-29) <!-- Accepted -->|
 |Superseded||
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---
