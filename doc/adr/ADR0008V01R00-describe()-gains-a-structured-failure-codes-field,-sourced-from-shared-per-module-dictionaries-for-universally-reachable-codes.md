@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|describe() gains a structured failure_codes field, sourced from shared per-module dictionaries for universally-reachable codes|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|cli|
 |Domain|tooling|
 |Created|Proposed (2026-09-21) <!-- Proposed -->|
@@ -15,7 +15,7 @@
 
 ## Deciders
 
-* Deciders: Fernando Cerqueira (repo owner), decided while closing the FailureCodes documentation-completeness gap ADR005V01's own registry left tracked (`tests/test_help.py::test_every_failure_code_is_documented_somewhere`, `xfail`).
+* Deciders: Fernando Cerqueira (repo owner), decided while closing the FailureCodes documentation-completeness gap ADR0005V01's own registry left tracked (`tests/test_help.py::test_every_failure_code_is_documented_somewhere`, `xfail`).
 
 Technical Story: closing that gap by hand-narrating the 62 still-undocumented codes as prose sentences inside each command's own `describe()` `description` text was rejected mid-discussion in favor of a structural fix -- most of the gap (~53 of 62 codes) is `core/config.py`'s schema-validation grammar and `core/header.py`'s header-parsing grammar, both reachable identically from nearly every command (`parse_repo_config` runs on every invocation's own config load; header parsing runs on every per-file command's own `read_target`), so narrating them as prose in 14 separate `describe()` bodies would mean writing (and maintaining) the same explanation over a dozen times.
 
@@ -87,5 +87,5 @@ The chosen shape does not actually reopen that position for those codes -- it re
 
 ## Links
 
-* Relates to: [ADR005V01](ADR005V01-failure-codes-and-shared-constants-gain-dedicated,-closed-registry-classes.md) -- this ADR closes the documentation-completeness gap ADR005V01's own registry left tracked via `xfail`, using the same "one shared source, not N duplicated copies" reasoning ADR005V01 itself established for failure codes' own wire values.
+* Relates to: [ADR0005V01](ADR0005V01R00-failure-codes-and-shared-constants-gain-dedicated,-closed-registry-classes.md) -- this ADR closes the documentation-completeness gap ADR0005V01's own registry left tracked via `xfail`, using the same "one shared source, not N duplicated copies" reasoning ADR0005V01 itself established for failure codes' own wire values.
 * Constrained by: `doc/commands/INDEX.md`'s own stated no-global-index position -- this decision narrows, rather than reverses, that position, scoping it to genuinely context-specific codes only.

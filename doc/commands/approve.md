@@ -89,7 +89,7 @@ Marks a Proposed decision (or a migrated placeholder) Accepted. The whole reposi
 ## Example
 
 ```bash
-adrpy approve --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy approve --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

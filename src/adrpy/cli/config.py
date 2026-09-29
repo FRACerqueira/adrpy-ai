@@ -57,7 +57,7 @@ def _field_description(field):
         )
     if field == "folderlog":
         return (
-            f"Relative path to the decision-log directory (ADR007V01), max "
+            f"Relative path to the decision-log directory (ADR0007V01), max "
             f"{config_schema.FOLDERLOG_MAX_LENGTH} characters; cannot be empty, absolute, escape the "
             "repository, or be the same as (or nested inside/around) folderadr "
             "(config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling "
@@ -118,7 +118,7 @@ def _field_description(field):
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
             "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
             "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
-            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and "
             "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
             "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
             "corrupt which successor a Superseded row points to."
@@ -162,7 +162,7 @@ def describe():
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
             "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
-            "reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config "
+            "reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config "
             "and also returns `migrationpattern_preview` (file, number, version, title of each file it "
             "recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview "
             "without writing anything, so preview there first. While the repository is not adopted yet, check "

@@ -1,5 +1,5 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|adrpy-skills ships an adrpy skill that makes an AI agent use the CLI instead of editing ADR files by hand|
 |Version|01|
@@ -23,7 +23,7 @@ Technical Story: Round 44 ran a fresh `claude -p` agent in scratch repositories 
 
 ## Context and Problem Statement
 
-[ADR009V01](ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) decided how `adrpy-skills` delivers skills to each provider; the skills it shipped (`decision-log`, `pre-release-audit`) carry judgment -- when to record a decision, when to run a review -- not how to operate on the decision files. An adopter's agent therefore meets an `.adrpy.json` repository knowing only that ADRs are Markdown files, and edits them the way it edits any Markdown: renaming, hand-writing headers, deleting suffixes. The CLI's own safeguards (validation before every action, hints naming the literal repair) only help an agent that runs it. The package's README and `doc/` do not travel into the adopter's repository.
+[ADR0009V01](ADR0009V01R00-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) decided how `adrpy-skills` delivers skills to each provider; the skills it shipped (`decision-log`, `pre-release-audit`) carry judgment -- when to record a decision, when to run a review -- not how to operate on the decision files. An adopter's agent therefore meets an `.adrpy.json` repository knowing only that ADRs are Markdown files, and edits them the way it edits any Markdown: renaming, hand-writing headers, deleting suffixes. The CLI's own safeguards (validation before every action, hints naming the literal repair) only help an agent that runs it. The package's README and `doc/` do not travel into the adopter's repository.
 
 How should an adopter's AI agent learn that this repository's decisions are managed by `adrpy`, and how to change them?
 
@@ -85,5 +85,5 @@ The CLI's own texts are not a second line but the first one for anything that mu
 
 ## Links
 
-* Refines [ADR009V01](ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) -- ADR009 decides how skills are delivered; this decision adds the skill that says how to operate the decision files.
+* Refines [ADR0009V01](ADR0009V01R00-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md) -- ADR009 decides how skills are delivered; this decision adds the skill that says how to operate the decision files.
 * Evidence: decision-log entry `2026-09-25--audit-finding--skills--shipped-adrpy-skill-tells-agents-to-use-the-cli.md` (Round 44, S3).

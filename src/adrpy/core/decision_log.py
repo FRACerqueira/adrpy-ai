@@ -1,4 +1,4 @@
-"""Decision-log entries (ADR003V01): the lighter-weight sibling of a
+"""Decision-log entries (ADR0003V01): the lighter-weight sibling of a
 repository's formal ADRs, for an event worth recording that is not
 itself an architectural decision. This module owns only the mechanical
 part of that record -- filename construction, structured-line
@@ -10,7 +10,7 @@ Filename convention is this project's own, date-first, established
 independently of ADR003 (see doc/decision-log/INDEX.md's own header and
 every real entry): {ISO date}--{classification}--{scope}--{slug}.md.
 
-ADR007V01 (superseding ADR003V01's own driver on this point): the
+ADR0007V01 (superseding ADR0003V01's own driver on this point): the
 decision-log directory lives at `config.folderlog`, an independently
 configurable, recursively-scanned field -- no longer a fixed, non-
 recursive sibling of `folderadr`. Defaults to that exact sibling
@@ -70,7 +70,7 @@ _USERS_FILE = (
 
 
 def decision_log_dir_for(target, config):
-    """ADR007V01: resolved from `config.folderlog`, the same way
+    """ADR0007V01: resolved from `config.folderlog`, the same way
     `folderadr` itself is resolved everywhere else (`resolve_within`) --
     no longer derived from `folderadr`'s own path."""
     return resolve_within(target, config.folderlog)
@@ -267,7 +267,7 @@ def _parse_entry(path):
 
 
 def _existing_entries(decision_log_dir, *, warnings=None):
-    """ADR007V01: recursive, now that `folderlog` is independently
+    """ADR0007V01: recursive, now that `folderlog` is independently
     placeable and no longer guaranteed flat by construction. Walked with
     core/fs.scan_tree, the decisions folder's own scan. Fails closed on an
     unreadable subdirectory instead of silently under-reporting -- every
@@ -346,7 +346,7 @@ def check_entries(decision_log_dir, *, warnings=None):
 
 def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_folderlog, *, target, warnings=None):
     """The folderlog counterpart to the folderadr check of core/lifecycle.py's
-    validate_config_change (ADR007V01), which calls it -- changing
+    validate_config_change (ADR0007V01), which calls it -- changing
     folderlog on a repository that already has decision-log entries makes
     every one of them invisible at their old, still-real path. Unlike the
     folderadr guard, no separate scan-incomplete code is needed here:
@@ -358,7 +358,7 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
     to provide there.
 
     Also guards the opposite direction, the same adoption hazard
-    ADR004V02/the folderadr guard already close: `new_folderlog` may
+    ADR0004V02/the folderadr guard already close: `new_folderlog` may
     already hold unrelated content that would silently become
     recognized decision-log history (round allocation, INDEX.md) the
     moment anything scans it. Skipped entirely when the new directory
@@ -422,7 +422,7 @@ def next_round(decision_log_dir, *, warnings=None):
     """The default Round when none is given explicitly: always the start
     of a NEW round (max existing + 1) -- the same class of allocation as
     an ADR's own next_number. Reusing an already-open round instead
-    requires passing --round explicitly (ADR003V01); this function is
+    requires passing --round explicitly (ADR0003V01); this function is
     never the only way to pick a Round, only the safe default."""
     return max_existing_round(decision_log_dir, warnings=warnings) + 1
 

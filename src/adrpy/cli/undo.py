@@ -42,7 +42,7 @@ def run(args):
             path, ctx.config, ctx.header, ctx.filename_info, field="update", status=None, refdate=None
         )
         # Accurate only because the write above already succeeded --
-        # the warning claims the file was rewritten. ADR006V01:
+        # the warning claims the file was rewritten. ADR0006V01:
         # combines the header's own flag (known since prepare)
         # with the body's own (only known now, from the streamed
         # write).

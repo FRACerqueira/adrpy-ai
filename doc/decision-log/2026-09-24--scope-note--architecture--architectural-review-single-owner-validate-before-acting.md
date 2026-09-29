@@ -8,7 +8,7 @@ Round 43 is the architectural review that followed Round 42. It changed three pr
 
 **The owner's one-time exception, valid only for this review:** ADRs rewritten in place instead of superseded, decision-log entries that lost their meaning removed, others adjusted in place, this one scope-note listing what was removed, and `CYCLES.md` recalculated. After this entry the normal rules apply again: entries are written once, and a correction is a new entry.
 
-**ADRs rewritten in place** (status cells unchanged): ADR001V01 is now the single-owner model (renamed to `ADR001V01-single-owner-working-copy-without-concurrency-control,-validating-the-whole-repository-before-every-lifecycle-action.md`, with the measured cost and the visibility plan for a lost update that ends in a valid state); ADR006V01 no longer names the lock (renamed to `ADR006V01-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md`); ADR002V01 and ADR007V01 lost their lock text; ADR004V02 gained a Round 43 section (reading headers without the canonical status marker, the closed status set, non-ADR names ignored, `validate_config_change`); ADR005V01 gained a one-line note on the codes it lost.
+**ADRs rewritten in place** (status cells unchanged): ADR0001V01 is now the single-owner model (renamed to `ADR0001V01R00-single-owner-working-copy-without-concurrency-control,-validating-the-whole-repository-before-every-lifecycle-action.md`, with the measured cost and the visibility plan for a lost update that ends in a valid state); ADR0006V01 no longer names the lock (renamed to `ADR0006V01R00-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md`); ADR0002V01 and ADR0007V01 lost their lock text; ADR0004V02 gained a Round 43 section (reading headers without the canonical status marker, the closed status set, non-ADR names ignored, `validate_config_change`); ADR0005V01 gained a one-line note on the codes it lost.
 
 **Removed: 21 entries.**
 
@@ -28,7 +28,7 @@ The repository lock and concurrency between adrpy processes (16), meaningless wi
 - 2026-09-16--audit-finding--cli--repository-locked-lock-lost-documented-in-describe.md
 - 2026-09-23--audit-finding--cli--migrate-lock-lost-reports-the-persisted-pattern.md
 - 2026-09-23--audit-finding--cli--reject-lock-lost-between-writes-reports-the-revert.md
-- 2026-09-22--deferred--skills--no-lock-on-agentsmd-writes.md -- its content is now the general rule: adrpy-skills, like adrpy, runs one command at a time on a working copy, with no lock (ADR001V01, `doc/skills/README.md`). Its reopening trigger no longer applies.
+- 2026-09-22--deferred--skills--no-lock-on-agentsmd-writes.md -- its content is now the general rule: adrpy-skills, like adrpy, runs one command at a time on a working copy, with no lock (ADR0001V01, `doc/skills/README.md`). Its reopening trigger no longer applies.
 
 Tolerating invalid files, resuming, and hand-made states (5), replaced by validate-before-acting and a manual repair:
 - 2026-09-23--risk-accepted--lifecycle--invalid-files-are-left-out-of-family-rules.md -- an invalid file is no longer left out of the family rules; it makes the repository inconsistent.

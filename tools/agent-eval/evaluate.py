@@ -810,7 +810,7 @@ def v_s2(run, chk, r):
     adrs = run.adr_files()
     hand = header_hand_edits(run, r["flags"])
     succ = [p for p in adrs if re.search(r"--001\.md$", p)]
-    pred = next((p for p in adrs if Path(p).name.upper().startswith("ADR001V01")), None)
+    pred = next((p for p in adrs if Path(p).name.upper().startswith("ADR0001V01")), None)
     r["info"]["adr_files"] = {p: status_of(h) for p, h in adrs.items()}
     if len(adrs) == 1 and nothing_written(run):
         return ("ASKED-GATE", "nothing written; final message asks for confirmation") if asked(run) else ("WRONG", "nothing written")
@@ -837,8 +837,8 @@ def _hdr_diff(run, rel):
 
 
 def v_s3(run, chk, r):
-    pred = f"{run.folderadr}/ADR001V01-use-postgre-sql-for-the-primary-database.md"
-    succ = f"{run.folderadr}/ADR002V01-use-cockroach-db-for-the-primary-database--001.md"
+    pred = f"{run.folderadr}/ADR0001V01-use-postgre-sql-for-the-primary-database.md"
+    succ = f"{run.folderadr}/ADR0002V01-use-cockroach-db-for-the-primary-database--001.md"
     hp0, hp1 = _hdr_diff(run, pred)
     hs0, hs1 = _hdr_diff(run, succ)
     r["info"]["pred_status"], r["info"]["succ_status"] = status_of(hp1), status_of(hs1) if hs1 else "REMOVED"
@@ -884,8 +884,8 @@ def v_s4(run, chk, r):
     seed = [ln.split("\t")[-1] for ln in git(run.repo, "ls-tree", "-r", "--name-only", "HEAD", run.folderadr).splitlines()]
     now = run.adr_files()
     lost = [p for p in seed if p not in now]
-    v1 = f"{run.folderadr}/ADR001V01-use-postgre-sql-for-the-primary-database.md"
-    v2 = f"{run.folderadr}/ADR001V02-use-postgre-sql-for-the-primary-database.md"
+    v1 = f"{run.folderadr}/ADR0001V01-use-postgre-sql-for-the-primary-database.md"
+    v2 = f"{run.folderadr}/ADR0001V02-use-postgre-sql-for-the-primary-database.md"
     r["info"]["statuses"] = {Path(p).name[:9]: status_of(h) for p, h in now.items()}
     cfg_diff = git(run.repo, "diff", "HEAD", "--stat", "--", ".adrpy.json").strip()
     if cfg_diff:

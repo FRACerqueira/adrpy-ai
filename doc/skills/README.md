@@ -13,7 +13,7 @@ A third skill, `adrpy`, tells an agent how to drive the CLI itself: run
 decision files only through the commands, never by hand.
 `adrpy-skills` installs those skills into a repository (or your own global
 config), for whichever AI coding assistants you actually use. See
-[ADR009V01](../adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
+[ADR0009V01](../adr/ADR0009V01R00-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
 for the full design rationale -- this page is the *how*, not the *why*.
 
 ## Two commands, one package, no runtime coupling

@@ -3,7 +3,7 @@ truth for a repo's `.adrpy.json`. Always read live from disk,
 never cached across invocations, so a command never works from a stale
 copy of the file.
 
-ADR007V01 (superseding ADR003V01's own driver on this point): `folderlog`
+ADR0007V01 (superseding ADR0003V01's own driver on this point): `folderlog`
 is adrpy's own field, not part of AdrPlus 1.0.0's schema. It is also
 this schema's first field with a
 computed default instead of being strictly required (see the `folderlog`
@@ -45,7 +45,7 @@ LENSEQ_MIN, LENSEQ_MAX = 3, 6
 LENVERSION_MIN, LENVERSION_MAX = 2, 4
 LENREVISION_MIN, LENREVISION_MAX = 0, 3
 
-# ADR005V01: the single source of truth for the 3 int fields' own bounds --
+# ADR0005V01: the single source of truth for the 3 int fields' own bounds --
 # `cli/config.py` and `cli/installconfig.py` used to each hand-write an
 # identical copy of this dict; both now import it from here instead.
 INT_FIELD_BOUNDS = {
@@ -65,7 +65,7 @@ _PREFIX_PATTERN = re.compile(rf"^[A-Za-z]{{0,{PREFIX_MAX_LENGTH}}}$")
 REPO_CONFIG_NAME = ".adrpy.json"  # at the repository root; what makes a folder a repository
 
 FOLDERADR_MAX_LENGTH = 50  # PromptEditFieldFolderRepo
-# ADR007V01: folderlog has no AdrPlus wizard field to cite. Same bound
+# ADR0007V01: folderlog has no AdrPlus wizard field to cite. Same bound
 # as folderadr's own, for consistency.
 FOLDERLOG_MAX_LENGTH = 50
 # headerdisclaimer and status labels: wizard's own real values are 200 and
@@ -96,7 +96,7 @@ _HEADER_LABEL_FIELDS_MAX_40 = (
 )
 _STATUS_LABEL_FIELDS = ("statusnew", "statusacc", "statusrej", "statussup")
 
-# ADR005V01: these 15 codes used to be built as f"config-{name}-too-long" at
+# ADR0005V01: these 15 codes used to be built as f"config-{name}-too-long" at
 # raise time -- each one still gets its own real FailureCodes attribute
 # (a fixed, finite set), looked up here instead of formatted, so the
 # registry stays the single source of truth for every code this module can
@@ -119,7 +119,7 @@ _TOO_LONG_CODES = {
     "statussup": FailureCodes.CONFIG_STATUSSUP_TOO_LONG,
 }
 
-# ADR008V01: every code parse_repo_config can raise, one static one-line
+# ADR0008V01: every code parse_repo_config can raise, one static one-line
 # condition each -- reachable from every command (parse_repo_config runs
 # on every invocation's own config load, via resolve_target_and_config/
 # load_repo_config), so each command's own describe() merges this dict
@@ -216,7 +216,7 @@ def _normalized_repo_path_parts(value):
 
 
 def _validate_relative_repo_path_field(value, field_name, max_length, too_long_code, not_relative_code):
-    """Shared by folderadr and folderlog (ADR007V01) -- both are a
+    """Shared by folderadr and folderlog (ADR0007V01) -- both are a
     relative-path-to-a-repo-subfolder field with the exact same length
     and escape-path validation shape, differing only in their own max
     length and failure codes."""
@@ -462,7 +462,7 @@ def parse_repo_config(text):
     if extra:
         raise CommandError(FailureCodes.CONFIG_UNEXPECTED_FIELD, f"Unexpected field(s): {', '.join(extra)}")
 
-    # ADR007V01: folderlog defaults to the exact computed sibling-of-
+    # ADR0007V01: folderlog defaults to the exact computed sibling-of-
     # folderadr location when absent, so an .adrpy.json written
     # before this field existed keeps parsing unchanged. Guarded against a
     # non-string folderadr (not yet type-checked at this point) so this
@@ -531,10 +531,10 @@ def parse_repo_config(text):
         FailureCodes.CONFIG_FOLDERLOG_NOT_RELATIVE,
     )
 
-    # ADR007V01: folderadr and folderlog are independently configurable and
+    # ADR0007V01: folderadr and folderlog are independently configurable and
     # each recursively scanned -- if either is the same directory as, or
     # nested inside, the other, each one's own scan would start seeing the
-    # other's files (the same class of misrecognition hazard ADR004V02
+    # other's files (the same class of misrecognition hazard ADR0004V02
     # already closed for --separator, applied here to a directory-
     # placement change instead of a naming-rule change). Compared via
     # _normalized_repo_path_parts (see its own docstring for what that
@@ -592,7 +592,7 @@ def parse_repo_config(text):
                 raise CommandError(FailureCodes.CONFIG_FIELD_IS_BLANK, error.detail) from error
             raise CommandError(FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER, error.detail) from error
 
-    # ADR004V01's hidden canonical marker (`<!-- Status -->` after the status
+    # ADR0004V01's hidden canonical marker (`<!-- Status -->` after the status
     # cell's parenthesized date) is only trustworthy if a status LABEL can
     # never itself contain the characters that mark a date/marker boundary --
     # otherwise a hostile statusnew/statusacc/statusrej/statussup forges a

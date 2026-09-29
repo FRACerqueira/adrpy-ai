@@ -31,7 +31,7 @@ changing a command's contract, run the script instead of editing the page.
 | [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
 Every failure code a command can return is listed on that command's own
-page, in its `## Failure codes` table (ADR008V01) -- the structured
+page, in its `## Failure codes` table (ADR0008V01) -- the structured
 `failure_codes` field of `describe()`, not prose. There is no separate
 global error-code index: codes with the same meaning everywhere they are
 reachable (config-schema validation, header parsing, the repository

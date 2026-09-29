@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Decision-body reads and writes stream chunk by chunk instead of loading whole-file content into memory|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|core/lifecycle.py, core/atomic_write.py, cli/migrate.py|
 |Domain|security|
 |Created|Proposed (2026-09-21) <!-- Proposed -->|
@@ -82,4 +82,4 @@ This also fixes a related, smaller bug found while designing the fix: `_read_hea
 ## Links
 
 * Closes: the two round-28 (2026-09-21) `audit-finding` decision-log entries covering `read_target`/`read_lines_with_report` and `cli/migrate.py`'s own candidate read.
-* Related: `doc/adr/ADR001V01-...md` (the atomic write per file this refactor must preserve), `doc/adr/ADR005V01-...md` (the other "found the same class was broader than the first fix" decision).
+* Related: `doc/adr/ADR0001V01-...md` (the atomic write per file this refactor must preserve), `doc/adr/ADR0005V01-...md` (the other "found the same class was broader than the first fix" decision).

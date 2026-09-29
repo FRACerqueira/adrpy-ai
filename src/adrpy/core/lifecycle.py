@@ -89,7 +89,7 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-# ADR004V02: two groups, not one flat list -- `migrationpattern` only
+# ADR0004V02: two groups, not one flat list -- `migrationpattern` only
 # affects recognition of LEGACY-scheme files (naming.py's
 # parse_legacy_filename is its only reader); every other guarded field
 # is blanket (blocks on any recognized decision, any scheme).
@@ -164,7 +164,7 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
       affect). A separator or prefix change must also not newly recognize
       a file (separator-/prefix-change-would-adopt-unrelated-files) --
       checked with a config where only that field changed, so
-      migrationpattern's own intended adoption (ADR002V01) is never
+      migrationpattern's own intended adoption (ADR0002V01) is never
       blamed on it.
     - folderlog: core/decision_log.reject_folderlog_change_if_entries_exist.
 
@@ -322,7 +322,7 @@ def legacy_pattern_preview(paths, config):
 
 
 # What to do about a likely misreading: before migrate the pattern can
-# still change; after it, the migrated files block any change (ADR004V02).
+# still change; after it, the migrated files block any change (ADR0004V02).
 PATTERN_ADVICE_BEFORE_MIGRATE = (
     "Preview another with `adrpy explore --path . --migrationpattern <pattern>` (it writes nothing), set the "
     "right one with `adrpy config --migrationpattern` (it writes the config), then run `adrpy migrate`."
@@ -426,7 +426,7 @@ _BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
 def stream_normalized_body_chunks(source_path, report):
     """Streams `source_path`'s own BODY (everything past its 12-line
     header), reproducing the whole-file read it replaced byte-for-byte
-    (ADR006V01; tests/test_lifecycle.py keeps that read as its reference) -- every real line
+    (ADR0006V01; tests/test_lifecycle.py keeps that read as its reference) -- every real line
     terminator converted to this host's os.linesep, invalid UTF-8 bytes
     replaced with U+FFFD, exactly one trailing terminator ensured for a
     non-empty body -- without ever holding the whole body in memory. The
@@ -504,7 +504,7 @@ def stream_normalized_body_chunks(source_path, report):
         yield LINESEP_BYTES
 
 
-# ADR008V01: the one text for every code the 6 per-file lifecycle
+# ADR0008V01: the one text for every code the 6 per-file lifecycle
 # commands (approve/reject/undo/supersede/version/revise) reach through
 # prepare() -- the ones all of them reach while resolving the target and
 # validating the repository,
@@ -1076,7 +1076,7 @@ def prepare(command, fileadr, flags):
         if row.numbering is None:
             reject_linked_file(path)
             reject_too_long_filename(path.name, REWRITE_TOO_LONG_REMEDY)
-        # ADR004V01: a marker/label disagreement on the target itself, not
+        # ADR0004V01: a marker/label disagreement on the target itself, not
         # on a sibling (that would misattribute it to this command).
         warning = marker_label_mismatch_warning(header)
         if warning:
@@ -1164,7 +1164,7 @@ def _record_from_header(config, filename_info, header):
 
 
 def _streamed_rewrite_chunks(path, config, record, migrated, report):
-    """The chunk factory of a rewrite of `path` (ADR006V01): the new
+    """The chunk factory of a rewrite of `path` (ADR0006V01): the new
     header (schema-bounded, safe in memory), then the ORIGINAL body
     streamed straight from `path` -- the file being rewritten is also the
     source of its own preserved body, safe because the write goes to a
@@ -1190,7 +1190,7 @@ def rewrite_status_field(path, config, header, filename_info, *, field, status, 
     """Mutates exactly one status+date pair (`field="update"` or
     `field="change"`) on the already-parsed header, rebuilds via
     build_header preserving every other field, streams the original body
-    verbatim from `path` (ADR006V01), and writes the file. Returns the
+    verbatim from `path` (ADR0006V01), and writes the file. Returns the
     write's own attempt count too -- callers can surface it as a warning
     when it's more than 1 -- and the BODY's own encoding_repaired signal
     (combine with the header's own, from prepare, via `or`)."""

@@ -83,20 +83,20 @@ def describe():
                     "file paths) instead of silently absorbing it and corrupting next-number allocation -- "
                     "the same scan-incomplete code above covers an unreadable subdirectory under the new "
                     "folder too; skipped entirely when the new folder does not exist yet. The seed's own "
-                    "folderlog (ADR007V01) gets the same treatment: folderlog-change-blocked-by-existing-"
+                    "folderlog (ADR0007V01) gets the same treatment: folderlog-change-blocked-by-existing-"
                     "entries / folderlog-change-would-adopt-unrelated-files / log-scan-incomplete, same rule "
                     "as the `config` command's own --folderlog guard. Likewise, if the "
                     "seed's own statusnew/statusacc/statusrej/statussup/separator/prefix/"
                     "migrationpattern differ from the current ones in a way that would break recognition of "
                     "an existing decision, fails with status-or-separator-change-blocked-by-existing-decisions "
-                    "(ADR004V01/V02; same rule as the `config` command's own guard for these fields -- status "
+                    "(ADR0004V01/V02; same rule as the `config` command's own guard for these fields -- status "
                     "labels, --separator and --prefix block on any recognized decision (--separator's recognition "
                     "dependency is current-scheme-only, but a value already present in a legacy filename could "
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
                     "that already has a header (migrated) exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
                     "migration path -- for the four status fields, --separator and --prefix that means ANY recognized "
-                    "decision, any scheme (the ADR004V01 marker future-proofs RECOGNITION of files that already "
+                    "decision, any scheme (the ADR0004V01 marker future-proofs RECOGNITION of files that already "
                     "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
                     "config change itself -- a marker-protected repository is blocked exactly the same as one "
                     "with none); for --migrationpattern it means a migrated LEGACY-scheme decision specifically. "
@@ -197,7 +197,7 @@ def run(args):
             raise_config_file_empty(config_path)
         raise CommandError(FailureCodes.CONFIG_ALREADY_EXISTS, f"Configuration file already exists at: {config_path}")
 
-    # ADR002V01: an install-level config, when present, is an implicit
+    # ADR0002V01: an install-level config, when present, is an implicit
     # seed -- the same reason --seed and --language are already mutually
     # exclusive above applies here too (both are full content sources;
     # the caller must pick one explicitly rather than have one silently
@@ -317,7 +317,7 @@ def _validate_and_write(target, config_path, config_text, config, warnings, old_
     folder_already_existed = folder_adr.is_dir()
     folder_adr.mkdir(parents=True, exist_ok=True)
 
-    # ADR007V01: same escape-path validation as folderadr above -- fails
+    # ADR0007V01: same escape-path validation as folderadr above -- fails
     # fast on a hostile/malformed folderlog at init time, rather than
     # deferring to the first `adrpy log` call. Unlike folderadr, never
     # eagerly created here -- `adrpy log` already creates it lazily on

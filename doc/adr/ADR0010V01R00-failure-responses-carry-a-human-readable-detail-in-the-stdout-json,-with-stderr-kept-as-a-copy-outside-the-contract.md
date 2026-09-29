@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Failure responses carry a human-readable detail in the stdout JSON, with stderr kept as a copy outside the contract|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|json-contract|
 |Domain|cli|
 |Created|Proposed (2026-09-23) <!-- Proposed -->|
@@ -87,4 +87,4 @@ Chosen option: "Two channels", because it is the only option that gives a stdout
 
 ## Links
 
-* Relates to [ADR008V01](ADR008V01-describe()-gains-a-structured-failure-codes-field,-sourced-from-shared-per-module-dictionaries-for-universally-reachable-codes.md) -- `failure_codes` documents what `code` values exist; this decision documents where each failure's explanation is delivered.
+* Relates to [ADR0008V01](ADR0008V01R00-describe()-gains-a-structured-failure-codes-field,-sourced-from-shared-per-module-dictionaries-for-universally-reachable-codes.md) -- `failure_codes` documents what `code` values exist; this decision documents where each failure's explanation is delivered.

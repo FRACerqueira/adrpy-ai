@@ -1,5 +1,5 @@
 """`remove` command: deletes/strips the requested (provider, skill) pairs,
-same drift protection as `install` -- see ADR009V01."""
+same drift protection as `install` -- see ADR0009V01."""
 
 from adrpy.core.args import parse_flags
 from adrpy.skills import installer

@@ -112,7 +112,7 @@ def atomic_write_chunks(path, chunks_factory, exclusive=False):
     """Same atomicity guarantees as atomic_write_bytes, but streams content
     from `chunks_factory()` -- a zero-arg callable returning a fresh
     iterable of bytes chunks -- instead of requiring the whole content
-    already assembled in memory (ADR006V01: a decision's body, or a
+    already assembled in memory (ADR0006V01: a decision's body, or a
     legacy file's own content during `migrate`, has no schema-imposed
     size bound the way header content does).
 

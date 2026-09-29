@@ -1,4 +1,4 @@
-"""Entry point: `adrpy-skills install|remove|list` -- see ADR009V01. A
+"""Entry point: `adrpy-skills install|remove|list` -- see ADR0009V01. A
 separate console script from `adrpy` itself; never touches its command
 surface or `describe()` contracts."""
 

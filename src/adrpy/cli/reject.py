@@ -121,7 +121,7 @@ def run(args):
                 path, config, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
             # Accurate only because the write above already succeeded --
-            # the warning claims the file was rewritten. ADR006V01:
+            # the warning claims the file was rewritten. ADR0006V01:
             # combines the header's own flag (known since prepare)
             # with the body's own (only known now, from the streamed
             # write).
@@ -157,7 +157,7 @@ def _revert_then_reject(ctx, predecessor):
         # read (core/consistency, via read_header_lines_with_report) -- no
         # separate read needed for the header portion. It parsed, so
         # whatever that read replaced did not affect the status read
-        # from it -- only the BODY's own encoding status (ADR006V01,
+        # from it -- only the BODY's own encoding status (ADR0006V01,
         # known only once the streamed read has run) can still need the
         # warning.
         _record, pred_body_encoding_repaired, pred_prepared = prepare_status_field_rewrite(

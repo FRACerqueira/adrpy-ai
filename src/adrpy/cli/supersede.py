@@ -184,7 +184,7 @@ def run(args):
                 warnings=warnings,
             ) from error
 
-        # ADR006V01: combines the header's own flag (known since
+        # ADR0006V01: combines the header's own flag (known since
         # prepare) with the body's own (only known now, from the
         # streamed read); reported only once the predecessor is written.
         predecessor_warnings = []

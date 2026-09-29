@@ -98,7 +98,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 ## Example
 
 ```bash
-adrpy version --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md --empty
+adrpy version --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md --empty
 ```
 
 ---

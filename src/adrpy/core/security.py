@@ -131,7 +131,7 @@ def reject_embedded_delimiter(value, field_name):
 def reject_status_marker_forgery_characters(value, field_name):
     """statusnew/statusacc/statusrej/statussup only -- lands verbatim in the
     status cell that _parse_status_cell (core/header.py) also parses for the
-    decision's parenthesized date and, once ADR004V01 writes one, the hidden
+    decision's parenthesized date and, once ADR0004V01 writes one, the hidden
     canonical marker. That parser trusts the FIRST '(' and first ')' in the
     cell to bound the date, then searches after it for a marker -- so a
     label containing a well-formed '(date)<!--Status-->' substring forges a
@@ -200,7 +200,7 @@ def reject_title_with_no_case_transform_content(value, field_name):
     whitespace/'_'/'-' characters. That raw echo lands in
     naming.build_filename verbatim and can collide with the filename's
     own separator -- e.g. a title of '-' with the default '-' separator
-    produces 'ADR001V01--.md', which naming.parse_filename can no longer
+    produces 'ADR0001V01--.md', which naming.parse_filename can no longer
     recognize at all (permanently unreachable by every other command:
     approve/reject/undo/supersede/version/revise all fail
     filename-not-recognized), and its own sequence number would be

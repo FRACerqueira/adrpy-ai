@@ -69,10 +69,10 @@ commands x 18 modules is a hairball no one can actually read.
 |---|---|---|
 | Dispatch & contract | `registry.py`, `args.py`, `output.py`, `errors.py` | Maps each verb to its command module; parses `--flag value` pairs; builds the JSON envelope and exit code; defines `CommandError`/`UsageError`. Used by every command. |
 | Storage | `fs.py`, `atomic_write.py` | Every file read, write and delete goes through `fs.py` (a source-scan test enforces it for the `read_*`/`write_*`/`unlink`/`os.replace`/`remove`/`rename`/`link` calls; a few plain `open()` reads remain outside it): bounded reads with a short retry on a transient `PermissionError`, the two-step write (`prepare_write` puts the complete content in a temp file next to the target, `commit_write` moves it into place, or creates it exclusively, never over an existing file), the one walk of a folder (`scan_tree`) and the cleanup of orphaned temp files. `atomic_write.py` wraps the write for text, bytes and streamed chunks, with the host line endings. |
-| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
+| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Repository model & validation | `consistency.py`, `family.py` | One scan of the decisions folder into a snapshot of `Decision`s, each with a status derived once from the closed set of combinations, and the validator that checks every invariant ([lifecycle.md](lifecycle.md#validate-the-whole-repository-before-acting)); the family rules both it and the commands share (which filename names a successor, which member is live). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py`, `text.py` | The shared preamble of the file commands (`prepare`) and the transition table it follows; the 12-line header format, its free-text rules included; filename parsing/building for both naming schemes; title case transforms; path-escape guards; small text rules (plain ASCII numbers, leading BOMs). |
-| Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR007V01](adr/ADR007V01-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--003.md), superseding ADR003V01's own schema driver). |
+| Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR0003V01](adr/ADR0003V01R00-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR0007V01](adr/ADR0007V01R00-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--0003.md), superseding ADR0003V01's own schema driver). |
 | Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal actions (a retried write, orphan cleanup, an encoding repair, a file excluded for escaping the repository, a status marker that disagrees with its label). |
 
 Every write command (`init`, `new`, `approve`, `reject`, `undo`,
@@ -117,7 +117,7 @@ sequenceDiagram
     participant Val as core/consistency
     participant FS as core/fs + Filesystem
 
-    Caller->>Main: adrpy approve --file doc/adr/ADR001V01-....md
+    Caller->>Main: adrpy approve --file doc/adr/ADR0001V01-....md
     Main->>Main: look up verb in core/registry.py
     Main->>Cmd: command.run(args)
     Cmd->>Cmd: parse_flags(args, ...) (or raises UsageError)
@@ -181,7 +181,7 @@ no lock, atomic writes, one invocation at a time.
 ## Configuration layering
 
 `adrpy-ai` has two independent config scopes, and a defined precedence
-between them, decided in [ADR002](adr/ADR002V01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
+between them, decided in [ADR002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
 
 ```mermaid
 graph LR
@@ -260,7 +260,7 @@ locked -- see [`lifecycle.md`](lifecycle.md) for the exact rule.
 `adrpy-skills` is a second, independent console-script entry point in the
 same distribution (`pip install adrpy-ai` installs both `adrpy` and
 `adrpy-skills` on `PATH`) -- installing AI-coding-agent skill files, not
-managing ADRs. See [ADR009V01](adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
+managing ADRs. See [ADR0009V01](adr/ADR0009V01R00-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
 for why it exists as a separate entry point rather than an `adrpy`
 subcommand: `adrpy` manages the ADR/decision-log *record* mechanically and
 must stay pure -- this feature installs *operating instructions for an AI
@@ -270,7 +270,7 @@ activation models, which AdrPlus has no equivalent of at all.
 `adrpy`'s own command surface never mentions `adrpy-skills`; installing or
 running it is entirely opt-in. One of the shipped skills, `adrpy`, tells an
 agent to change decision files only through the CLI -- see
-[ADR011V01](adr/ADR011V01-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md).
+[ADR0011V01](adr/ADR0011V01R00-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md).
 
 ### Module map
 
@@ -291,10 +291,10 @@ graph TD
 | Module | Responsibility |
 |---|---|
 | `skills/__main__.py` | Entry point + dispatch: looks up the verb in `skills/registry.py`, handles `--version`/`-v` and `--help`/`-h` (the one JSON-exception convenience, mirroring `adrpy/__main__.py`), and is the single place any exception becomes the JSON envelope. |
-| `skills/registry.py` | Maps each of the 4 verbs (`help`, `install`, `remove`, `list`) to its command module -- a separate table from `core/registry.py`'s own, by design (ADR009V01: never touches `adrpy`'s own command surface). |
+| `skills/registry.py` | Maps each of the 4 verbs (`help`, `install`, `remove`, `list`) to its command module -- a separate table from `core/registry.py`'s own, by design (ADR0009V01: never touches `adrpy`'s own command surface). |
 | `skills/commands/*.py` | 4 thin command modules, one per verb: each owns its own `describe()` contract and flag parsing (`core/args.parse_flags`, reused from `adrpy`), then delegates to `skills/installer.py`. |
 | `skills/installer.py` | The shared mechanics: content generation per (provider, skill), `foreign`/`drifted`/`malformed` classification, and the actual write/delete orchestration for `install`/`remove`/`list`. |
-| `skills/providers.py` | The provider-adapter table (ADR009V01): per-provider project/global file path, delivery mode (`full`/`stub`/`stub_block`), and the wrap function shaping content for that provider. |
+| `skills/providers.py` | The provider-adapter table (ADR0009V01): per-provider project/global file path, delivery mode (`full`/`stub`/`stub_block`), and the wrap function shaping content for that provider. |
 | `skills/resources.py` | Loads each bundled skill's static `gate.md`/`body.md`/`glue.md`/`meta.json` from the package and assembles the full content a `claude`/`cursor` provider gets, or the one shared doc a stub-mode provider points at. |
 
 `skills/installer.py` also reuses `core/atomic_write.py`, `core/fs.py`
@@ -383,7 +383,7 @@ discarded before it ever reached anywhere a caller could see it.
 
 A failure also carries `detail`, a human-readable explanation (which
 flag, which file, what to do next), whenever one exists
-([ADR010](adr/ADR010V01-failure-responses-carry-a-human-readable-detail-in-the-stdout-json,-with-stderr-kept-as-a-copy-outside-the-contract.md)).
+([ADR010](adr/ADR0010V01R00-failure-responses-carry-a-human-readable-detail-in-the-stdout-json,-with-stderr-kept-as-a-copy-outside-the-contract.md)).
 It is for people: decide on `code` and `data`, never by parsing
 `detail`, whose wording may change in any release. The same text is
 also written to stderr, so it stays visible in a terminal while stdout

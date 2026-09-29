@@ -9,7 +9,7 @@ class CommandError(Exception):
         """`data`: a structured payload for a failure that isn't fully
         explained by `code` alone -- e.g. not-latest-version needs to
         name WHICH version actually is the latest, which a fixed code
-        string can't carry and `detail` (free text for humans -- in the stdout JSON and copied to stderr, never a contract; ADR010V01) isn't
+        string can't carry and `detail` (free text for humans -- in the stdout JSON and copied to stderr, never a contract; ADR0010V01) isn't
         part of the JSON contract.
 
         `warnings`: a real side effect (an encoding repair, an
@@ -45,7 +45,7 @@ class FailureCodes:
     """Every failure code this project can raise via CommandError, as a class
     attribute -- one canonical place to check completeness (every code appears in
     at least one command's own describe() text) against, instead of re-auditing the
-    scattered literals by hand (ADR005V01). Grouped by the module that owns/raises
+    scattered literals by hand (ADR0005V01). Grouped by the module that owns/raises
     each code, in that module's own raise order -- not alphabetized, so each group
     stays reviewable against the file it replaces. A code shared verbatim across 2+
     CLI commands (the exact drift risk this class exists to close) gets its own
@@ -103,7 +103,7 @@ class FailureCodes:
     CONFIG_PREFIX_INVALID = "config-prefix-invalid"
     CONFIG_FOLDERADR_TOO_LONG = "config-folderadr-too-long"
     CONFIG_FOLDERADR_NOT_RELATIVE = "config-folderadr-not-relative"
-    # ADR007V01: folderlog, the first optional-with-computed-default field
+    # ADR0007V01: folderlog, the first optional-with-computed-default field
     # in this schema.
     CONFIG_FOLDERLOG_TOO_LONG = "config-folderlog-too-long"
     CONFIG_FOLDERLOG_NOT_RELATIVE = "config-folderlog-not-relative"
@@ -175,7 +175,7 @@ class FailureCodes:
     LOG_ROUND_INVALID = "log-round-invalid"
     LOG_ROUND_TOO_LOW = "log-round-too-low"
     LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE = "log-directory-contains-unrecognized-file"
-    # ADR007V01: folderlog is now recursively scanned, gaining the same
+    # ADR0007V01: folderlog is now recursively scanned, gaining the same
     # fail-closed-on-unreadable-subdirectory handling folderadr's own scan
     # already had.
     LOG_SCAN_INCOMPLETE = "log-scan-incomplete"
@@ -254,7 +254,7 @@ class FailureCodes:
 
 
 def build_failure_codes(*sources):
-    """ADR008V01: merges any number of {code: condition} mappings -- a
+    """ADR0008V01: merges any number of {code: condition} mappings -- a
     command's own inline entries plus whichever shared dicts it reaches
     (core/config.py's, core/header.py's, core/lifecycle.py's) -- into the
     list-of-objects shape every describe() response uses for its own

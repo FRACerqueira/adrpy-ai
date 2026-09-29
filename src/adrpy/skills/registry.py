@@ -1,6 +1,6 @@
 """Maps each adrpy-skills verb to its command module -- mirrors
 adrpy.core.registry, kept as a separate table since adrpy-skills is a
-separate entry point from adrpy (ADR009V01)."""
+separate entry point from adrpy (ADR0009V01)."""
 
 from adrpy.skills.commands import help as help_command
 from adrpy.skills.commands import install as install_command

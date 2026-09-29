@@ -97,11 +97,11 @@ Revisions are off until the repository's `lenrevision` is set (it is 0 by defaul
 
 ```bash
 adrpy config --path . --lenrevision 2
-adrpy revise --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy revise --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
-This creates `ADR001V01R01-use-postgre-sql-for-the-primary-datastore.md`. Once `lenrevision` is set, the
-decisions the tool creates afterwards carry a revision in their names too (`ADR002V01R01-...`).
+This creates `ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md`. Once `lenrevision` is set, the
+decisions the tool creates afterwards carry a revision in their names too (`ADR0002V01R01-...`).
 
 ---
 

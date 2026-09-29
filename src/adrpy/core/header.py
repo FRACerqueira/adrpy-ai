@@ -21,7 +21,7 @@ from adrpy.core.text import is_ascii_digits, strip_leading_boms
 
 HEADER_LINE_COUNT = 12
 
-# ADR008V01: every code parse_header can produce via its own result.error
+# ADR0008V01: every code parse_header can produce via its own result.error
 # (never raised here directly: the repository validator, core/consistency,
 # reports it as the start of an invalid-header entry's `detail`), one
 # static one-line condition each. Reachable by the commands that validate
@@ -55,7 +55,7 @@ _STATUS_CONFIG_FIELD = {
     "Superseded": "statussup",
 }
 
-# ADR004V01: a fixed, non-translatable marker written after the status
+# ADR0004V01: a fixed, non-translatable marker written after the status
 # cell's date -- in the trailing space both this parser and AdrPlus
 # 1.0.0's ParseStatusLine ignore for date purposes (as they already do
 # for the Superseded row's own ": <number>" suffix below).
@@ -65,7 +65,7 @@ _STATUS_CONFIG_FIELD = {
 # again break it. Absent (any file written before this existed) falls
 # back to the same label-text match as before.
 #
-# ADR004V02: matched case-insensitively -- a hand edit that changes only
+# ADR0004V02: matched case-insensitively -- a hand edit that changes only
 # the marker's case (e.g. "<!-- accepted -->") used to fail this match
 # outright and silently fall back to label-text matching with zero
 # signal, reopening exactly the fragility this marker exists to close.
@@ -179,7 +179,7 @@ class HeaderParseResult:
     status_change: str | None = None
     date_change: date_cls | None = None
     superseded_by_file: str | None = None
-    # ADR004V01: names which of status_create/status_update/status_change
+    # ADR0004V01: names which of status_create/status_update/status_change
     # carried BOTH a canonical marker and a label-text match, where the two
     # disagreed (the marker still wins for the field's own resolved value
     # above) -- a hand edit of the visible word after the marker was
@@ -351,7 +351,7 @@ def _extract_cell(line, free_text=False):
 def _parse_status_cell(text, config):
     """Returns (status, date, marker_label_mismatch, error).
 
-    ADR004V01: a canonical marker after the date's closing `)`, when
+    ADR0004V01: a canonical marker after the date's closing `)`, when
     present, decides `status` on its own -- the repository's CURRENT
     statusnew/statusacc/statusrej/statussup no longer has any say, so a
     later label or language change can never again break recognition of

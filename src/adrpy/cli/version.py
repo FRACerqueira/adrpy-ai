@@ -109,7 +109,7 @@ def run(args):
         # version never rewrites its own source (only its BODY is
         # carried into a newly created file) -- encoding_repaired_
         # source_warning's "the file has been rewritten" claim is never
-        # true here. ADR006V01: the body is no longer read at all
+        # true here. ADR0006V01: the body is no longer read at all
         # unless/until the write below actually streams it, so this
         # warning (which is specifically about the BODY's own decode,
         # not just the header's) can only be finalized once that
@@ -139,7 +139,7 @@ def run(args):
         )
         new_path = resolve_within(folder, filename)
 
-        # ADR006V01: --empty uses config.template (schema-bounded, safe
+        # ADR0006V01: --empty uses config.template (schema-bounded, safe
         # in memory, unchanged); otherwise the SOURCE's own body is
         # streamed straight from `path` into the new file, without
         # ever holding it in memory. body_encoding_repaired stays

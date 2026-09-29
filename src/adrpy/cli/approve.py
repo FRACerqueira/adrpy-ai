@@ -58,7 +58,7 @@ def run(args):
         # encoding_repaired_warning claims "the file has been rewritten
         # ... bytes are now lost" -- only true once the write above has
         # actually happened, not at read time (an eligibility check
-        # could still have failed first). ADR006V01: combines the
+        # could still have failed first). ADR0006V01: combines the
         # header's own flag (known since prepare, above) with the
         # body's own (only known now, once the streamed write has
         # actually read it) -- either half being lossy loses bytes on

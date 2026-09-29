@@ -3,7 +3,7 @@
 A failure's human-readable explanation (`detail`) is part of the stdout
 JSON and is also written, as the same text, to stderr -- a copy for a
 human watching a terminal while stdout is piped, outside the contract
-(ADR010V01). `detail`'s wording is for people: callers decide on `code`
+(ADR0010V01). `detail`'s wording is for people: callers decide on `code`
 and `data`, never by parsing `detail`.
 """
 

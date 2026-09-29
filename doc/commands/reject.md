@@ -92,7 +92,7 @@ Marks a Proposed decision (or a migrated placeholder) Rejected, after the same r
 ## Example
 
 ```bash
-adrpy reject --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy reject --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

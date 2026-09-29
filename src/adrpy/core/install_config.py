@@ -1,4 +1,4 @@
-"""Install-level config (ADR002V01): a per-user file holding the full
+"""Install-level config (ADR0002V01): a per-user file holding the full
 repo-config schema, used to seed `init` and as a `migrationpattern`
 fallback for `migrate` when the repository's own is empty. Deliberately
 NOT stored relative to this package's own installation directory (see
@@ -23,7 +23,7 @@ def resolve_install_config_path():
     """Resolves the per-user install-level config file's path. Never
     checks whether it exists -- callers decide what "doesn't exist yet"
     means for them (the normal state for a fresh installation, per
-    ADR002V01, not an error condition)."""
+    ADR0002V01, not an error condition)."""
     if os.name == "nt":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     else:
@@ -35,7 +35,7 @@ def read_install_config_text(path=None):
     """Returns the install-level config's raw text, validated against
     the same schema as a repository's own .adrpy.json, or None if
     the file doesn't exist -- the normal state for any installation that
-    has never run `installconfig` (ADR002V01), not an error condition.
+    has never run `installconfig` (ADR0002V01), not an error condition.
     Shared by every consumer of this file (`init`'s default seed,
     `migrate`'s migrationpattern fallback) so "does it exist, and is it
     valid" is answered identically everywhere, not reimplemented per

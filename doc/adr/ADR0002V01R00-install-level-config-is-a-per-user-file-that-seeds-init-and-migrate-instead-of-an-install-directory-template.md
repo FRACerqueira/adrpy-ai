@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Install-level config is a per-user file that seeds init and migrate instead of an install-directory template|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|install-config|
 |Domain|configuration|
 |Created|Proposed (2026-09-18) <!-- Proposed -->|
@@ -46,7 +46,7 @@ The decision has three parts:
 2. **Command surface.** A new `installconfig` command, kept separate from the existing repository-scoped `config` command rather than extending it with a scope flag — the same one-command-per-concern shape the project already uses, with one flag per schema field (following `config.py`'s own `_EDITABLE_FIELDS` pattern, including the same inherited constraint that `migrationpattern`/`template`/`prefix` cannot be set to an empty string by flag — only `--seed` can) plus a `--seed <file>` bulk-import flag, matching `init --seed`. `installconfig` writes only per-user state (this file), never the repository (`.adrpy.json` / the `folderadr` folder). A bare `installconfig` (no flags) reads the current values back, same shape as `config`'s own bare-read form; if the file does not exist, the result states that explicitly (not-configured) rather than silently reporting built-in defaults as if they had been chosen — exact JSON shape left to implementation, but the distinction itself is decided here since a JSON-only, agent-driven contract needs it to be unambiguous.
 3. **Consumption points.**
    * `init` with no `--seed`: uses the install-level file as its seed if the file exists; otherwise falls back to today's bundled `default_repo_config.json`, with no error and no nag — this is the expected state for any installation that has never configured one. `--language` cannot be combined with a bare `init` when the install-level file exists, for the same reason `--language` already cannot be combined with an explicit `--seed` today (both are full content sources; the caller must pick one explicitly rather than have one silently win) — this extends an existing precedence rule to the new implicit-seed case instead of leaving it to be decided silently during implementation.
-   * `migrate`: unchanged fallback trigger (only consulted when the repository's own `migrationpattern` is empty), but when the install-level file supplies a non-empty value, that value is also persisted back into the repository's own `.adrpy.json`, so the repository does not depend on one machine's install-level file for as long as its migrated decisions keep their legacy names (ADR012V01) — a new write reason on an existing command, written with the same atomic per-file write as every other write (ADR001). If `migrationpattern` is empty in *both* places, `migrate` keeps adrpy-ai's clear `migration-pattern-not-configured` error rather than proceeding and failing later — a deliberate, stated choice, consistent with this project's "AI-agent-driven use" positioning (predictable, structured failures over silent best-effort).
+   * `migrate`: unchanged fallback trigger (only consulted when the repository's own `migrationpattern` is empty), but when the install-level file supplies a non-empty value, that value is also persisted back into the repository's own `.adrpy.json`, so the repository does not depend on one machine's install-level file for as long as its migrated decisions keep their legacy names (ADR0012V01) — a new write reason on an existing command, written with the same atomic per-file write as every other write (ADR001). If `migrationpattern` is empty in *both* places, `migrate` keeps adrpy-ai's clear `migration-pattern-not-configured` error rather than proceeding and failing later — a deliberate, stated choice, consistent with this project's "AI-agent-driven use" positioning (predictable, structured failures over silent best-effort).
 
 **Round 43 note (2026-09-24), owner decision.** The repository-scoped `config` command now accepts `--migrationpattern ""` to clear the pattern, under the same guard as any other `migrationpattern` change (refused while a recognized legacy-scheme decision would lose recognition). `template` and `prefix` still cannot be set to an empty string by flag, and `installconfig` is unchanged.
 
@@ -81,4 +81,4 @@ The decision has three parts:
 ## Links
 
 * Satisfies the reopening condition of `doc/decision-log/2026-09-15--deferred--migrate--no-install-level-fallback-for-migrationpattern.md` ("an install-level/app-config module exists in adrpy-ai") once this decision is implemented — not yet, as of this ADR being accepted; the module exists only as a decision until then.
-* `doc/adr/ADR001V01-single-owner-working-copy-without-concurrency-control,-validating-the-whole-repository-before-every-lifecycle-action.md` — `migrate`'s write-back uses the same atomic per-file write as every other write; adrpy has no concurrency control (one owner per working copy).
+* `doc/adr/ADR0001V01R00-single-owner-working-copy-without-concurrency-control,-validating-the-whole-repository-before-every-lifecycle-action.md` — `migrate`'s write-back uses the same atomic per-file write as every other write; adrpy has no concurrency control (one owner per working copy).

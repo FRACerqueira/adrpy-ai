@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Decision status recognition uses a hidden canonical marker; status labels and the filename separator both gain an existing-decisions guard|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|header|
 |Domain|correctness|
 |Created|Proposed (2026-09-20) <!-- Proposed -->|

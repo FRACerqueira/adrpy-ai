@@ -73,7 +73,7 @@ ADR-worthy decision.
 
 Once steps 1-2 are settled -- this genuinely belongs in the log, and you
 know its classification -- run [`adrpy log`](commands/log.md)
-([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
+([ADR0003V01](adr/ADR0003V01R00-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
 It owns everything mechanical in one call: constructing the filename,
 formatting the classification-specific structured line, writing the
 entry, and regenerating `INDEX.md` -- and refuses outright

@@ -1,5 +1,5 @@
 """`installconfig` command: reads or updates the per-user install-level
-config (ADR002V01; see the ADR for why it is a per-user file, not one
+config (ADR0002V01; see the ADR for why it is a per-user file, not one
 relative to the install directory).
 
 Unlike every other command, this one takes no `--path` -- it always
@@ -12,7 +12,7 @@ convention to locate it). One flag per schema field (mirroring
 `config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
 schema is byte-compatible with a repository's own .adrpy.json
-(ADR002V01), `--seed` pointed directly at AdrPlus's own template file
+(ADR0002V01), `--seed` pointed directly at AdrPlus's own template file
 already covers importing from it; no separate cross-tool flag, and no
 knowledge of AdrPlus's install-directory layout, is added for that.
 
@@ -22,7 +22,7 @@ blocked by an existing install-level config, since writing that config
 is this command's own purpose.
 
 No concurrency control: this file is per-user, per-machine state
-(ADR002V01). A lost update between two concurrent `installconfig` calls is an
+(ADR0002V01). A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
 a single human/agent doing one-time setup. Confirmed the worst
 case really is a lost update, never corruption (a merge-write always
@@ -88,7 +88,7 @@ def _field_description(field):
         )
     if field == "folderlog":
         return (
-            "Relative path to the decision-log directory (ADR007V01) that a newly init'd repository "
+            "Relative path to the decision-log directory (ADR0007V01) that a newly init'd repository "
             f"using this as its seed will get by default, max {config_schema.FOLDERLOG_MAX_LENGTH} "
             "characters; cannot be empty or absolute, or the same as (or nested inside/around) "
             "--folderadr (config-folderadr-folderlog-overlap, checked even here). Omitting this flag keeps "
@@ -128,7 +128,7 @@ def _field_description(field):
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
             "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
             "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
-            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and "
             "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
             "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
             "corrupt which successor a Superseded row points to."
@@ -170,7 +170,7 @@ def describe():
             "supplies a migrate fallback)."
         ),
         "description": (
-            "Reads or updates the per-user install-level config (ADR002V01), which seeds `init` and supplies "
+            "Reads or updates the per-user install-level config (ADR0002V01), which seeds `init` and supplies "
             "migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field"
             " flags and no --seed/--language it reads the file back (`configured` is false, with no `config` "
             "key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the "

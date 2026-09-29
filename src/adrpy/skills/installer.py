@@ -1,7 +1,7 @@
 """install/remove/list logic for adrpy-skills: resolves each (provider,
 skill) pair to a real path, builds its content via that provider's wrap,
 and checks/writes it through the content-hash drift marker -- see
-ADR009V01."""
+ADR0009V01."""
 
 import re
 from contextlib import contextmanager

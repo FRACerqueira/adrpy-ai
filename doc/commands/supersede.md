@@ -102,7 +102,7 @@ Marks an Accepted decision (or a migrated placeholder) Superseded and creates it
 
 ```bash
 # The successor is dated today; --refdate YYYY-MM-DD gives another date (not in the future)
-adrpy supersede --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy supersede --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

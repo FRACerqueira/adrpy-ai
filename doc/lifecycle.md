@@ -77,9 +77,9 @@ A file is a decision only when its name is an **ADR name**:
   separator is read as the suffix: a name where that part is not all
   digits, or with more than one doubled separator, is not an ADR name.
   The suffix is read only after a title, that is, when a single separator
-  comes before the doubled one: `ADR002V01--001.md` has no title and is
+  comes before the doubled one: `ADR0002V01--001.md` has no title and is
   not an ADR name.
-- The `.md` extension is compared case-insensitively (`ADR001V01-x.MD`
+- The `.md` extension is compared case-insensitively (`ADR0001V01-x.MD`
   counts). The folder scan follows the platform's file-name case rule,
   so on a case-sensitive file system only a lower-case `.md` is scanned.
 
@@ -209,12 +209,12 @@ repository to a state that validates (see Migrated decisions below).
 ## Families
 
 A **family** is every decision sharing the same sequence number:
-`ADR001V01` and `ADR001V02` (or, with revisions configured, `ADR001V01R01`,
-`ADR001V01R02`, `ADR001V02R01`) are one family. `version` (a new major
+`ADR0001V01` and `ADR0001V02` (or, with revisions configured, `ADR0001V01R01`,
+`ADR0001V01R02`, `ADR0001V02R01`) are one family. `version` (a new major
 version) and `revise` (a wording fix, when revisions are configured) add
 a member to the same family. `supersede` starts a new family under the
 next number, whose filename ends with the predecessor's number
-(`ADR002V01-title--001.md`).
+(`ADR0002V01-title--001.md`).
 
 ## State diagram
 

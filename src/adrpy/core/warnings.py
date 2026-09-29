@@ -161,7 +161,7 @@ def excluded_candidate_warning(paths):
 
 
 def marker_label_mismatch_warning(header):
-    """ADR004V01: a hidden canonical status marker takes precedence over
+    """ADR0004V01: a hidden canonical status marker takes precedence over
     the status cell's visible label text when both are present. If they
     resolve to a valid but DIFFERENT status, that combination only
     happens when the visible word was hand-edited after the marker was

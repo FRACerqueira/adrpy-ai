@@ -248,7 +248,7 @@ def _entry(path, scheme, parsed, header, header_state, encoding_repaired):
             # lossy-decoded -- explore is a read-only report, the natural
             # place for this visibility.
             "encoding_repaired": encoding_repaired,
-            # ADR004V01: names which status field(s), if any, had a
+            # ADR0004V01: names which status field(s), if any, had a
             # marker/label disagreement -- explore lists every decision,
             # not just the one a write command happens to be acting on,
             # so this is per-file data here rather than a warning.

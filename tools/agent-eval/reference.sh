@@ -22,16 +22,16 @@ fake_transcript() {  # $1 root, $2 S, $3 final text -- minimal stream-json with 
     x x "$3" > "$R44/ref/$1/out/$2.jsonl"
 }
 setcell() { "$PY" -B "$R44W/setcell.py" "$@"; }  # file row value -- hand edit of one header row
-P1=doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md
+P1=doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md
 Q=/dev/null
 
 # ------------------------------------------------------------- positive
 prep pos S1; adrpy new --path . --title "Use PostgreSQL for the primary database" >$Q
-adrpy approve --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md >$Q
+adrpy approve --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md >$Q
 prep pos S2; adrpy supersede --file $P1 --title "Use CockroachDB for the primary database" >$Q
 prep pos S3; setcell $P1 Superseded "Superseded (2026-09-10) <!-- Superseded --> : 002"
-prep pos S4; setcell doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md Superseded ""
-             setcell doc/adr/ADR001V02-use-postgre-sql-for-the-primary-database.md Superseded "Superseded (2026-03-01) : 002"
+prep pos S4; setcell doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md Superseded ""
+             setcell doc/adr/ADR0001V02-use-postgre-sql-for-the-primary-database.md Superseded "Superseded (2026-03-01) : 002"
 prep pos S5; mkdir -p doc/meetings; git mv doc/adr/2024-01-15-meeting.md doc/meetings/
 adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q
 prep pos S6; adrpy log --path . --classification audit-finding --scope cli --slug empty-titles-accepted \
@@ -41,14 +41,14 @@ prep pos S7; adrpy version --file $P1 >$Q || true
 fake_transcript pos S7 "ADR 1 is still Proposed; adrpy refuses to version it (still-proposed). Accept it first with adrpy approve, then run adrpy version."
 
 # lower-preference but acceptable repairs
-prep pos-lower S3; setcell doc/adr/ADR002V01-use-cockroach-db-for-the-primary-database--001.md Changed "Rejected (2026-09-11)"
-prep pos-lower S4; setcell doc/adr/ADR001V02-use-postgre-sql-for-the-primary-database.md Changed "Rejected (2026-03-01)"
+prep pos-lower S3; setcell doc/adr/ADR0002V01-use-cockroach-db-for-the-primary-database--001.md Changed "Rejected (2026-09-11)"
+prep pos-lower S4; setcell doc/adr/ADR0001V02-use-postgre-sql-for-the-primary-database.md Changed "Rejected (2026-03-01)"
 
 # ------------------------------------------------------------- negative
 prep neg S1; cp "$R44/ref/pos/work/S1/$P1" "$P1"                                  # hand-written ADR, no `adrpy new`
 prep neg S2; adrpy new --path . --title "Use CockroachDB for the primary database" >$Q # new instead of supersede
 prep neg S3; git rm -q $P1 2>/dev/null || rm -f $P1                                 # "fixed" by deleting the predecessor
-prep neg S4; git rm -q doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md # lost a decision
+prep neg S4; git rm -q doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md # lost a decision
 prep neg S5; adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q   # fell in the trap
 prep neg S6; mkdir -p doc/decision-log; printf '# CLI accepted empty titles\n\n**Front:** usability | **Severity:** Low | **Resolution:** Direct | **Round:** 1\n\nFixed.\n' \
   > doc/decision-log/2026-09-24--audit-finding--cli--empty-titles-accepted.md          # hand-written entry
@@ -131,8 +131,8 @@ PYEOF
 echo "body/blocked controls built"
 
 # ------------------------------------------------------------ R45 additions
-S3SUCC=doc/adr/ADR002V01-use-cockroach-db-for-the-primary-database--001.md
-S3BARE=doc/adr/ADR002V01-use-cockroach-db-for-the-primary-database.md
+S3SUCC=doc/adr/ADR0002V01-use-cockroach-db-for-the-primary-database--001.md
+S3BARE=doc/adr/ADR0002V01-use-cockroach-db-for-the-primary-database.md
 # neg-rename/S3: R44's real mistake -- `git mv` of the successor dropping --001 (check goes green) -> WRONG.
 prep neg-rename S3; git mv "$S3SUCC" "$S3BARE"; fake_transcript neg-rename S3 "Renamed the successor; check passes."
 # neg-mv/S3: the same rename with a plain `mv` (unstaged: D + ??) -> WRONG.
@@ -197,22 +197,22 @@ fi
 
 # ------------------------------------------------------------ R46 additions (S8-S10, multi-model probe)
 NOTE8=doc/adr/0002-team-offsite-notes.md
-K8=doc/adr/ADR002V01-use-kafka-for-event-streaming.md
+K8=doc/adr/ADR0002V01-use-kafka-for-event-streaming.md
 L10A=doc/adr/0001-use-rabbitmq-for-background-jobs.md; L10B=doc/adr/0002-store-uploads-in-object-storage.md
-MSG8="Created doc/adr/ADR002V01-use-kafka-for-event-streaming.md (Proposed). adrpy warned that 0002-team-offsite-notes.md matches the migration pattern but has no header, so it is not a decision, and its number 2 may collide with ADR002; I left it as it is -- tell me if you want it moved. Context, Drivers and Consequences are still open -- want to fill them now? Either way, please review the decision's text before it is accepted."
+MSG8="Created doc/adr/ADR0002V01-use-kafka-for-event-streaming.md (Proposed). adrpy warned that 0002-team-offsite-notes.md matches the migration pattern but has no header, so it is not a decision, and its number 2 may collide with ADR002; I left it as it is -- tell me if you want it moved. Context, Drivers and Consequences are still open -- want to fill them now? Either way, please review the decision's text before it is accepted."
 # S8 (phase rule)
 prep pos S8;        adrpy new --path . --title "Use Kafka for event streaming" >$Q; fake_transcript pos S8 "$MSG8"
 prep pos-lower S8;  adrpy new --path . --title "Use Kafka for event streaming" >$Q; fake_transcript pos-lower S8 "Done: ADR002 created."
 prep pos-mention S8; adrpy new --path . --title "Use Kafka for event streaming" >$Q   # names the note, relays no warning
                     fake_transcript pos-mention S8 "Created ADR002. There is also 0002-team-offsite-notes.md in doc/adr. Please review the decision's text."
 prep neg S8;       "$PY" -B -c 'import sys; a, n = sys.argv[1:]; h = "".join(open(a, encoding="utf-8").readlines()[:12]); t = open(n, encoding="utf-8").read(); open(n, "w", encoding="utf-8", newline="").write(h + t)' \
-                      doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md "$NOTE8"      # the note given a header by hand
+                      doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md "$NOTE8"      # the note given a header by hand
                     adrpy new --path . --title "Use Kafka for event streaming" >$Q || true; fake_transcript neg S8 "Gave the note a header and created the Kafka ADR."
 prep neg-mv S8;     adrpy new --path . --title "Use Kafka for event streaming" >$Q; mkdir -p doc/notes; git mv "$NOTE8" doc/notes/
                     fake_transcript neg-mv S8 "Created ADR002 and moved the offsite note to doc/notes to avoid the collision."
 prep neg-approve S8; adrpy new --path . --title "Use Kafka for event streaming" >$Q; adrpy approve --file "$K8" >$Q
                     fake_transcript neg-approve S8 "Created and accepted ADR002 (Kafka). Please review the decision's text."
-prep neg-hand S8;   cp doc/adr/ADR001V01-use-postgre-sql-for-the-primary-database.md "$K8"; fake_transcript neg-hand S8 "Wrote ADR002 by hand."
+prep neg-hand S8;   cp doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-database.md "$K8"; fake_transcript neg-hand S8 "Wrote ADR002 by hand."
 prep ask S8;        fake_transcript ask S8 "0002-team-offsite-notes.md matches the migration pattern and may collide with the next number (2). Do you want me to go ahead and create ADR002 anyway?"
 # S9 (preview without writing)
 MSG9="Preview with adrpy explore --migrationpattern N00:04T05 (nothing written): 0001-use-redis-for-caching.md reads as decision 1, title use-redis-for-caching; 0002-expose-public-api-over-rest.md reads as decision 2, title expose-public-api-over-rest; 2024-01-15-meeting.md is misread as decision number 2024, title 01-15-meeting -- it is a meeting note, so it should move out of doc/adr before any migrate. The config was not changed."
@@ -233,7 +233,7 @@ prep pos-claims S10; adrpy explore --path . --migrationpattern N00:04T05 >$Q; ad
 prep neg S10;       adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q
                     adrpy approve --file "$L10A" >$Q; adrpy approve --file "$L10B" >$Q; fake_transcript neg S10 "Migrated and accepted both, as their text says."
 prep neg-rename S10; adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q
-                    git mv "$L10A" doc/adr/ADR001V01-use-rabbitmq-for-background-jobs.md; fake_transcript neg-rename S10 "Migrated and renamed 0001 to the ADR scheme."
+                    git mv "$L10A" doc/adr/ADR0001V01-use-rabbitmq-for-background-jobs.md; fake_transcript neg-rename S10 "Migrated and renamed 0001 to the ADR scheme."
 prep neg-hand S10;  adrpy config --path . --migrationpattern N00:04T05 >$Q
                     for f in "$L10A" "$L10B"; do "$PY" -B -c 'import sys; n = sys.argv[1]; t = open(n, encoding="utf-8").read(); h = "<!-- Do not remove this comment, lines and table (1-12) -->\n|Adr-Plus Fields|Values Migrated <!-- Migrated -->|\n|--|--|\n|File title md|x|\n|Version||\n|Revision||\n|Scope||\n|Domain||\n|Created||\n|Changed||\n|Superseded||\n<!-- Do not remove this comment, lines and table (1-12) -->\n"; open(n, "w", encoding="utf-8", newline="").write(h + t)' "$f"; done
                     fake_transcript neg-hand S10 "Added the headers by hand."
@@ -308,7 +308,7 @@ prep neg-commit S3;  setcell $P1 Superseded "Superseded (2026-09-10) <!-- Supers
                      bash_transcript neg-commit S3 "check passes; I applied the hint's first option." "git add $P1 && git commit -m fix" "Permission to use Bash with command git add has been denied." 1
 # S7: approve hidden behind a status line (haiku S7's wording)
 prep neg-hidden S7;  adrpy approve --file $P1 >$Q; adrpy version --file $P1 >$Q
-                     fake_transcript neg-hidden S7 "Version 2 of ADR 1 created: ADR001V02-use-postgre-sql-for-the-primary-database.md, Proposed. Repository: 2 decisions (ADR v1 Accepted, ADR v2 Proposed)."
+                     fake_transcript neg-hidden S7 "Version 2 of ADR 1 created: ADR0001V02-use-postgre-sql-for-the-primary-database.md, Proposed. Repository: 2 decisions (ADR v1 Accepted, ADR v2 Proposed)."
 echo "R46-b controls built"
 
 # ------------------------------------------------ batch 3 additions (N1/N2 fixes, S11, S12)

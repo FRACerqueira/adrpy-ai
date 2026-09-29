@@ -1,6 +1,6 @@
 """`install` command: writes the requested (provider, skill) pairs into a
 target repository or the user's global config, protected by the
-content-hash drift marker -- see ADR009V01."""
+content-hash drift marker -- see ADR0009V01."""
 
 from adrpy.core.args import parse_flags
 from adrpy.skills import installer

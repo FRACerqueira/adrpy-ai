@@ -3,7 +3,7 @@
 A generated file or AGENTS.md block carries a leading marker comment
 recording a hash of everything else in it, so a later install/remove can
 tell whether it is still exactly what was last generated before touching
-it again -- see ADR009V01.
+it again -- see ADR0009V01.
 """
 
 import hashlib

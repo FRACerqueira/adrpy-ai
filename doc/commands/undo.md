@@ -86,7 +86,7 @@ Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cel
 ## Example
 
 ```bash
-adrpy undo --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy undo --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

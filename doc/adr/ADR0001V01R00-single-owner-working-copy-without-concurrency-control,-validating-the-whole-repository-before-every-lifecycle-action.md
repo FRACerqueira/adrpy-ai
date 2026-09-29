@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Single-owner working copy without concurrency control, validating the whole repository before every lifecycle action|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|core/consistency.py, core/fs.py|
 |Domain|concurrency|
 |Created|Proposed (2026-09-16) <!-- Proposed -->|
@@ -95,4 +95,4 @@ The decision has five parts:
 
 * `doc/decision-log/2026-09-24--scope-note--architecture--architectural-review-single-owner-validate-before-acting.md` -- the review that made this decision, the entries it removed and what it left out.
 * README, "One owner per working copy"; `doc/architecture.md`, "Single-owner model"; `doc/lifecycle.md` -- the rule and the validator as users see them.
-* `doc/adr/ADR006V01-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md` -- the streaming writes that the atomic write per file carries.
+* `doc/adr/ADR0006V01R00-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md` -- the streaming writes that the atomic write per file carries.

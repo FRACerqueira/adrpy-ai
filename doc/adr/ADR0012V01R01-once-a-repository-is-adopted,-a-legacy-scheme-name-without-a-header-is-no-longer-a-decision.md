@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Once a repository is adopted, a legacy-scheme name without a header is no longer a decision|
 |Version|01|
-|Revision||
+|Revision|01|
 |Scope|migrate|
 |Domain|correctness|
 |Created|Proposed (2026-09-25) <!-- Proposed -->|
@@ -16,6 +16,8 @@
 ## Deciders
 
 * Deciders: Fernando Cerqueira (repo owner), decided during the Round 45 hardening round.
+
+Revision 01 (Round 46) keeps the decision and records what came with it afterwards: the refusal of a pattern that reads part of a name twice, and the exemption that keeps a partial adoption from being locked by it.
 
 Technical Story: `migrate` exists to bring a repository that did not use adrpy under the tool, once, at adoption -- a one-time operation. In practice it kept shaping the repository long after: Round 45's real-agent runs and the findings of Rounds 43-45 kept returning to `migrationpattern` and its consequences.
 
@@ -53,10 +55,11 @@ How can `migrate` stay a one-time onboarding step, without legacy names deciding
 Chosen option: "A phase rule", because it removes the lasting effect where it arises -- after adoption -- and leaves the adoption flow exactly as it was.
 
 1. Before adoption, nothing changes: a legacy name without a header is a decision with `no-header`, check fails and every lifecycle command refuses until `migrate` runs.
-2. The repository is adopted once any file in the decisions folder has a valid header `migrate` did not write -- created by the tool, or copied by hand -- which is exactly when `migrate` stops running (`already-tool-created-adrs-exist`). Headers `migrate` wrote do not end the adoption: after a partial run, the files left keep blocking every lifecycle command until `migrate` finishes them, so no `new` can lock them out. Once adopted, a legacy name without a header is not a decision for any rule, count or listing; a command given it as `--file` refuses it (`filename-not-recognized`), and `check`, `explore` and every lifecycle command report it in a warning (give it a header by hand after renaming it to a free number -- its number may already be a decision's -- or move it out of the folder). Its number and title are not reserved: a new decision may take them, and the warning says so at that moment.
+2. The repository is adopted once any file in the decisions folder has a valid header `migrate` did not write -- created by the tool, or copied by hand -- which is exactly when `migrate` stops running (`already-tool-created-adrs-exist`). Headers `migrate` wrote do not end the adoption: after a partial run, the files left keep blocking every lifecycle command until `migrate` finishes them, so no `new` can lock them out. Once adopted, a legacy name without a header is not a decision for any rule, count or listing; a command given it as `--file` refuses it (`filename-not-recognized`), and `check`, `explore` and every lifecycle command report it in a warning (give it a header by hand after renaming it to a free number -- its number may already be a decision's -- or move it out of the folder). Its number and title are not reserved: a new decision may take them, and the warning names the number it now shares at that moment (it does not compare titles).
 3. A legacy name with a valid header is a decision in both phases; one with a header that looks like this tool's but does not parse stays an `invalid-header` error in both.
 4. `migrate` still finds every legacy name without a header, so a run after a partial one migrates what is left.
 5. A read-only preview comes with it: `adrpy explore --path . --migrationpattern <pattern>` shows what a pattern would read from each name before `adrpy config --migrationpattern` writes it.
+6. A pattern that reads part of a name twice (its title starting inside the number's range, as `N00:04T02` for `0001-title.md`, or two ranges overlapping) is refused wherever it is set and by `migrate` before writing, never when a config is loaded. Once a decision was migrated with the repository's own such pattern, the `migrationpattern` guard keeps it, so `migrate` finishes with it and warns that the titles begin with part of the number; refusing there would leave the rest of the adoption unmigratable.
 
 **Not done now: renaming during `migrate`.** Renaming would remove the second scheme for the repositories that go through it, but it breaks links to the old names from other documents, needs a rule for the `V` a name requires while a migrated header has a blank Version. It is deferred, not rejected. **Reopen when** a finding after this decision is again caused by a legacy-scheme name -- an `audit-finding` or `doc-drift` entry in the decision log whose cause is a legacy name: that would mean this rule was not enough, and renaming removes the cause itself.
 
@@ -69,7 +72,7 @@ Chosen option: "A phase rule", because it removes the lasting effect where it ar
 ### Negative Consequences
 
 * What a legacy name means now depends on the whole repository (adopted or not), not on the file alone; every consumer has to ask one shared rule instead of the name.
-* Before adoption, setting a wrong `migrationpattern` still makes check fail until it is cleared or `migrate` runs; the read-only preview and the `adrpy` skill's migrate rule are what keep that from happening.
+* Before adoption, setting a wrong `migrationpattern` still makes check fail until it is cleared or `migrate` runs; the read-only preview, the refusal of a pattern that reads part of a name twice (`config-migrationpattern-invalid`) and the `adrpy` skill's migrate rule are what keep that from happening.
 * A repository with only migrated decisions and no decision the tool created is still adopting: a note added there whose name matches the pattern blocks until it is moved or migrated. The first `new` ends that phase.
 * `migrationpattern` is still needed, and still guarded, for as long as migrated decisions keep their legacy names.
 
@@ -109,5 +112,5 @@ The first draft of this rule ended the adoption at any valid header, migrated on
 
 ## Links
 
-* Relates to [ADR004V02](ADR004V02-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md) -- its guards protect recognition of existing decisions; the `migrationpattern` guard keeps counting only legacy decisions with a valid header.
-* Relates to [ADR011V01](ADR011V01-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md) -- the shipped `adrpy` skill treats `migrate` as a one-time adoption step and previews a pattern before writing it.
+* Relates to [ADR0004V02](ADR0004V02R00-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md) -- its guards protect recognition of existing decisions; the `migrationpattern` guard keeps counting only legacy decisions with a valid header.
+* Relates to [ADR0011V01](ADR0011V01R00-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md) -- the shipped `adrpy` skill treats `migrate` as a one-time adoption step and previews a pattern before writing it.

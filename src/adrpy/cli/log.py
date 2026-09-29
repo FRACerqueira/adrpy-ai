@@ -1,6 +1,6 @@
 """`log` command: writes a decision-log entry -- the lighter-weight
 sibling of a formal ADR, for an event worth recording that is not
-itself an architectural decision (ADR003V01). Owns only the mechanical
+itself an architectural decision (ADR0003V01). Owns only the mechanical
 part of that record: constructing the filename, formatting the
 classification-specific structured line, writing the entry, and
 regenerating INDEX.md as part of the same operation. It never decides
@@ -375,7 +375,7 @@ def run(args):
             # `data.file` names that partial success explicitly, the
             # same shape reject/supersede already use for their own
             # second-write failures. CommandError here is either
-            # log-directory-contains-unrecognized-file or (ADR007V01,
+            # log-directory-contains-unrecognized-file or (ADR0007V01,
             # folderlog now recursively scanned) log-scan-incomplete
             # -- both are the only ones regenerate_index itself can
             # raise, and each one's own detail text already names the

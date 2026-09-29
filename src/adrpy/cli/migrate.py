@@ -11,7 +11,7 @@ endings and bytes otherwise, not literally its every byte.
 
 If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
-command; ADR002V01) when one is set there, and persists the found value
+command; ADR0002V01) when one is set there, and persists the found value
 back into this repository's own `.adrpy.json`.
 """
 
@@ -71,7 +71,7 @@ from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orp
 
 
 def _stream_migrated_candidate(candidate_path, header_text):
-    """ADR006V01: the candidate's own content has no schema-imposed size
+    """ADR0006V01: the candidate's own content has no schema-imposed size
     bound (unlike a header) -- the new header (already fully built,
     schema-bounded), followed by the candidate's own content streamed
     through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
@@ -303,7 +303,7 @@ def run(args):
                     "file's `File title md` row by hand."
                 )
 
-        # ADR002V01: the install-level fallback is only consulted when
+        # ADR0002V01: the install-level fallback is only consulted when
         # the repository's own migrationpattern is empty.
         if not config.migrationpattern:
             fallback_text = read_install_config_text()
@@ -383,7 +383,7 @@ def run(args):
                         warnings=warnings,
                     ) from error
                 # Deliberately does not surface header.marker_label_
-                # mismatches (ADR004V01) here -- this scan is a bulk
+                # mismatches (ADR0004V01) here -- this scan is a bulk
                 # eligibility pass over every candidate, not a report
                 # on one specific target file the way prepare's
                 # own warning already covers.
@@ -527,7 +527,7 @@ def run(args):
                 reject_too_long_filename(candidate_path.name, REWRITE_TOO_LONG_REMEDY)
                 record = DecisionRecord(number=parsed.number, title=title, version=0)
                 header_text = build_header(config, record, migrated=True)
-                # ADR006V01: streams the candidate's own content
+                # ADR0006V01: streams the candidate's own content
                 # straight from disk into the destination temp file --
                 # never assembled as one in-memory bytes object (the
                 # original content's own line endings, and anything
