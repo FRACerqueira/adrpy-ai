@@ -143,9 +143,9 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_FIELD_EMPTY: "A field that must be non-empty is an empty string.",
     FailureCodes.CONFIG_PREFIX_INVALID: f"prefix is not ASCII letters only, max {PREFIX_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_FOLDERADR_TOO_LONG: f"folderadr exceeds {FOLDERADR_MAX_LENGTH} characters.",
-    FailureCodes.CONFIG_FOLDERADR_NOT_RELATIVE: "folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository.",
+    FailureCodes.CONFIG_FOLDERADR_NOT_RELATIVE: "folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it.",
     FailureCodes.CONFIG_FOLDERLOG_TOO_LONG: f"folderlog exceeds {FOLDERLOG_MAX_LENGTH} characters.",
-    FailureCodes.CONFIG_FOLDERLOG_NOT_RELATIVE: "folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository.",
+    FailureCodes.CONFIG_FOLDERLOG_NOT_RELATIVE: "folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it.",
     FailureCodes.CONFIG_FOLDERADR_FOLDERLOG_OVERLAP: "folderadr and folderlog are the same directory, or one is nested inside the other.",
     FailureCodes.CONFIG_TEMPLATE_TOO_LONG: f"template exceeds {TEMPLATE_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERDISCLAIMER_TOO_LONG: f"headerdisclaimer exceeds {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
@@ -185,6 +185,18 @@ def _is_relative_path(value):
     return True
 
 
+def _stays_inside(value):
+    """Whether `value`, read lexically on either separator, never climbs
+    above its starting folder: `doc/../log` stays, `doc/../../x` does not.
+    resolve_within still resolves links when the folder is used."""
+    depth = 0
+    for part in PureWindowsPath(value).parts:
+        depth += -1 if part == ".." else 0 if part == "." else 1
+        if depth < 0:
+            return False
+    return True
+
+
 def _normalized_repo_path_parts(value):
     """THIS host's own view of `value`'s path components (native
     separator, `.`/`..` collapsed via os.path.normpath, each component
@@ -207,10 +219,11 @@ def _validate_relative_repo_path_field(value, field_name, max_length, too_long_c
     length and failure codes."""
     if len(value) > max_length:
         raise CommandError(too_long_code, f"{field_name} must be <= {max_length} characters.")
-    if not _is_relative_path(value):
+    if not _is_relative_path(value) or not _stays_inside(value):
         raise CommandError(
             not_relative_code,
-            f"{field_name} must be a relative path (a hostile config must never point outside the repository).",
+            f"{field_name} must be a relative path inside the repository (a hostile config must never point "
+            "outside it).",
         )
 
 

@@ -278,12 +278,10 @@ def run(args):
         if "migrationpattern" in flags:
             reject_overlapping_migration_pattern(new_config.migrationpattern)
 
-        # _is_relative_path only rejects an anchored escape ("C:\..",
-        # "\\server\.."); "../../evil" is still relative and passes that check,
-        # but resolves outside the repository -- validate before writing, the
-        # same order `init` already uses, so a hostile --folderadr can never
-        # get persisted and brick the repository (every subsequent command
-        # would refuse with path-outside-repository until hand-fixed).
+        # The schema refuses a folder that leads out lexically ("../x"); one
+        # that resolves out through a junction or symlink is only seen here --
+        # checked before writing, the order `init` uses, so it is never
+        # persisted to brick the repository.
         resolve_within(target, new_config.folderadr)
 
         # The new folderlog can't escape the repository either, and the

@@ -182,7 +182,7 @@ def test_absolute_folderadr_is_rejected(folderadr):
     assert excinfo.value.code == "config-folderadr-not-relative"
 
 
-@pytest.mark.parametrize("folderadr", ["doc/adr", "decisions", "../still-relative"])
+@pytest.mark.parametrize("folderadr", ["doc/adr", "decisions", "doc/../adr"])
 def test_relative_folderadr_is_accepted(folderadr):
     data = _valid_config_dict()
     data["folderadr"] = folderadr
@@ -852,3 +852,27 @@ def test_config_invalid_json_says_to_repair_the_file_by_hand():
         parse_repo_config("{not json")
 
     assert "repair it by hand" in excinfo.value.detail
+
+
+@pytest.mark.parametrize("field", ["folderadr", "folderlog"])
+@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", "a\..\..\outside", "./../outside"])
+def test_a_folder_leading_outside_the_repository_is_rejected_on_read(field, value):
+    """The read accepted a relative folder that leads outside the
+    repository: `adrpy config` reported a hand-edited `../outside` as valid,
+    and only the command using the folder refused it (resolve_within).
+    Lexical here, on either separator; resolve_within still catches links."""
+    data = _valid_config_dict()
+    data[field] = value
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == f"config-{field}-not-relative"
+
+
+@pytest.mark.parametrize("value", ["doc/../log", "./log", "..hidden/log", "log..", "a/b/../c"])
+def test_a_folder_that_stays_inside_the_repository_is_accepted(value):
+    data = _valid_config_dict()
+    data["folderlog"] = value
+
+    assert parse_repo_config(json.dumps(data)).folderlog == value

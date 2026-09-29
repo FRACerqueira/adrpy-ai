@@ -57,9 +57,9 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `config-field-empty` | A field that must be non-empty is an empty string. |
 | `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
 | `config-folderadr-too-long` | folderadr exceeds 50 characters. |
-| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderlog-too-long` | folderlog exceeds 50 characters. |
-| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |

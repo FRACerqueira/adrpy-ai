@@ -842,19 +842,17 @@ def test_config_rejects_invalid_merged_value_leaves_file_untouched(tmp_path):
 
 
 def test_config_rejects_folderadr_that_escapes_the_repository(tmp_path):
-    """'../../evil' passes the schema-level relative-
-    path check (it has no drive/leading slash) but still escapes the
-    repository once resolved -- unlike `init`, which validates this
-    before writing, `config` wrote it straight to disk, silently
-    bricking the repository (every subsequent command failed with
-    path-outside-repository) until someone hand-edited the file back."""
+    """'../../evil' escapes the repository: `config` once wrote it straight
+    to disk, silently bricking the repository until someone hand-edited
+    the file back. The schema itself refuses it now, before anything is
+    written."""
     tmp_path = _init_repo(tmp_path)
     before = (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8")
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(tmp_path), "--folderadr", "../../evil"])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "config-folderadr-not-relative"
     assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == before
 
 

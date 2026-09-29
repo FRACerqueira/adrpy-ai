@@ -557,10 +557,9 @@ def test_init_end_to_end_through_main(tmp_path):
 
 
 def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
-    """`folderadr: "../.."` passes config.py's schema check (it isn't
-    absolute), but must still be caught at the point of use -- a hostile
-    config (e.g. from a cloned repo) must never be able to make init create
-    a directory outside the target repository."""
+    """A hostile config (e.g. from a cloned repo) must never be able to
+    make init create a directory outside the target repository: the
+    schema refuses a folderadr leading out of it."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "../../escape"
     file_path = tmp_path / "custom-config.json"
@@ -569,7 +568,7 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "config-folderadr-not-relative"
 
 
 def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
