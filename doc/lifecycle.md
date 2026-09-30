@@ -102,7 +102,7 @@ in `warnings`, each with the number read from its name -- that number
 may already be a decision's, so rename it to a free number before giving
 it a header by hand. When `new`, `version`, `revise` or `supersede` has
 just created a decision with that number, or `supersede` acts on one, the
-same warning says so (`ADR002 now shares number 2 with
+same warning says so (`ADR0002 now shares number 2 with
 0002-team-offsite-notes.md`). Before
 that (the repository not adopted yet), it is a decision with no header
 (`no-header`, until `migrate` runs), as a hand-written repository expects:

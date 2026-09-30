@@ -64,7 +64,7 @@ commands x 18 modules is a hairball no one can actually read.
 |---|---|---|
 | Dispatch & contract | `registry.py`, `args.py`, `output.py`, `errors.py` | Maps each verb to its command module; parses `--flag value` pairs; builds the JSON envelope and exit code; defines `CommandError`/`UsageError`. Used by every command. |
 | Storage | `fs.py`, `atomic_write.py` | Every file read, write and delete goes through `fs.py` (a source-scan test enforces it for the `read_*`/`write_*`/`unlink`/`os.replace`/`remove`/`rename`/`link` calls; a few plain `open()` reads remain outside it): bounded reads with a short retry on a transient `PermissionError`, the two-step write (`prepare_write` puts the complete content in a temp file next to the target, `commit_write` moves it into place, or creates it exclusively, never over an existing file), the one walk of a folder (`scan_tree`) and the cleanup of orphaned temp files. `atomic_write.py` wraps the write for text, bytes and streamed chunks, with the host line endings. |
-| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
+| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR0002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Repository model & validation | `consistency.py`, `family.py` | One scan of the decisions folder into a snapshot of `Decision`s, each with a status derived once from the closed set of combinations, and the validator that checks every invariant ([lifecycle.md](lifecycle.md#validate-the-whole-repository-before-acting)); the family rules both it and the commands share (which filename names a successor, which member is live). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py`, `text.py` | The shared preamble of the file commands (`prepare`) and the transition table it follows; the 12-line header format, its free-text rules included; filename parsing/building for both naming schemes; title case transforms; path-escape guards; small text rules (plain ASCII numbers, leading BOMs). |
 | Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR0003V01](adr/ADR0003V01R00-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR0007V01](adr/ADR0007V01R00-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--0003.md), superseding ADR0003V01's own schema driver). |
@@ -176,7 +176,7 @@ no lock, atomic writes, one invocation at a time.
 ## Configuration layering
 
 `adrpy-ai` has two independent config scopes, and a defined precedence
-between them, decided in [ADR002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
+between them, decided in [ADR0002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
 
 ```mermaid
 graph LR
@@ -236,7 +236,7 @@ stateDiagram-v2
 ```
 
 A **family** is every file sharing the same leading sequence number
-(`ADR001*`): `version` starts a new major version and `revise` a new
+(`ADR0001*`): `version` starts a new major version and `revise` a new
 wording-fix revision -- both create a new Proposed sibling in the same
 family rather than mutating the source they branch from. `supersede`
 instead creates a Proposed successor under a new sequence number (a new
@@ -376,7 +376,7 @@ discarded before it ever reached anywhere a caller could see it.
 
 A failure also carries `detail`, a human-readable explanation (which
 flag, which file, what to do next), whenever one exists
-([ADR010](adr/ADR0010V01R00-failure-responses-carry-a-human-readable-detail-in-the-stdout-json,-with-stderr-kept-as-a-copy-outside-the-contract.md)).
+([ADR0010](adr/ADR0010V01R00-failure-responses-carry-a-human-readable-detail-in-the-stdout-json,-with-stderr-kept-as-a-copy-outside-the-contract.md)).
 It is for people: decide on `code` and `data`, never by parsing
 `detail`, whose wording may change in any release. The same text is
 also written to stderr, so it stays visible in a terminal while stdout
