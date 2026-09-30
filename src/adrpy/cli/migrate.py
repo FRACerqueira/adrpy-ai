@@ -140,8 +140,8 @@ def _refuse_damaged_headers(files, warnings):
     raise CommandError(
         FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
         f"{len(files)} file(s) look like they carry this tool's header (in the first 12 lines: its "
-        f"`(1-12) -->` comment, a status cell's hidden marker, its fields row or an exact `|--|--|` "
-        f"first line), or are not UTF-8 text at all (a NUL "
+        f"`(1-12) -->` comment, a table row holding a hidden status marker or shaped like the migrated "
+        f"fields row, its fields row or an exact `|--|--|` first line), or are not UTF-8 text at all (a NUL "
         f"byte there, e.g. UTF-16), and no header parses: "
         f"{', '.join(files)}. Repair or remove them by hand, then run migrate again.",
         data={"files": files},
@@ -195,7 +195,7 @@ def describe():
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (in its first 12 lines: its `(1-12) -->` comment, a status cell's hidden marker, its fields row, an exact `|--|--|` first line or a NUL byte) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (in its first 12 lines: its `(1-12) -->` comment, a table row holding a hidden status marker or shaped like the migrated fields row, its fields row, an exact `|--|--|` first line or a NUL byte) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",

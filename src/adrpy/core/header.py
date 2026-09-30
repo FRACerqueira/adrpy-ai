@@ -407,7 +407,11 @@ def _is_fields_row(line, config):
     return line.startswith("|") and len(cells) > 2 and config.headertablefields in cells[1]
 
 
-_ENDS_IN_A_COMMENT = re.compile(r"<!-- .* -->\s*\|$")
+# The migrated fields row's own shape, whatever its labels: two cells, the
+# second ending in some words and a comment holding those same words, any
+# case (`|Fields|Values Migrated <!-- Migrated -->|`; headermigrated may
+# hold spaces).
+_MIGRATED_FIELDS_ROW = re.compile(r"^\|[^|]*\|(?:[^|]*\s)?(\S(?:[^|]*?\S)?)\s+<!--\s*\1\s*-->\s*\|$", re.IGNORECASE)
 
 
 def has_header_shape(lines, config):
@@ -420,8 +424,11 @@ def has_header_shape(lines, config):
       (`(1-12) -->`), on any line: the closing one survives a fault at the
       top, a markdown formatter's blank line and padding, indentation;
     - a table row holding a status cell's hidden canonical marker
-      (`<!-- Accepted -->`, ADR0004V01, never translated), or ending in a
-      comment the way the migrated fields row does (`<!-- Migrated -->|`);
+      (`<!-- Accepted -->`, ADR0004V01, never translated), or shaped like
+      the migrated fields row (`|Fields|Values Migrated <!-- Migrated -->|`:
+      two cells, the second ending in words its comment repeats). A note's
+      row of either shape is taken for a header -- the notes this blocks;
+      one ending in a comment of its own (`<!-- todo -->`) is not;
     - the fields row exactly as written, `|{headertablefields}|`, anywhere;
     - the exact `|--|--|` separator on the first line, where no note's
       table can have it (a table's separator sits under its header row);
@@ -441,7 +448,7 @@ def has_header_shape(lines, config):
         if (
             (stripped.startswith("<!-- ") and stripped.endswith(f"(1-{HEADER_LINE_COUNT}) -->"))
             or (stripped.startswith("|") and (_CANONICAL_MARKER_PATTERN.search(line)
-                                               or _ENDS_IN_A_COMMENT.search(stripped)))
+                                               or _MIGRATED_FIELDS_ROW.match(stripped)))
             or line.startswith(f"|{config.headertablefields}|")
             or "\x00" in line
         ):

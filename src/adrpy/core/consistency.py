@@ -99,7 +99,10 @@ HINTS = {
     ),
     FailureCodes.INVALID_HEADER: (
         "The header does not parse (detail names the reason). Repair it by hand, comparing it with the "
-        "header of a decision that has a valid one, or restore it from git history."
+        "header of a decision that has a valid one, or restore it from git history. A file saved as "
+        "UTF-16 (NUL bytes) reads this way: save it again as UTF-8. A note of yours that only looks like "
+        "a header (a table row holding `<!-- Accepted -->`, or a two-cell row ending `Done <!-- Done -->`) "
+        "belongs outside the decisions folder."
     ),
     FailureCodes.INVALID_STATUS_COMBINATION: (
         "The Created/Changed/Superseded cells form a combination no command writes: Created is Proposed "

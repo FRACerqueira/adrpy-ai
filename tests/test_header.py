@@ -770,3 +770,43 @@ def test_a_header_written_under_an_earlier_disclaimer_still_reads():
     assert config.headerdisclaimer != changed.headerdisclaimer
     assert parse_header(lines, changed).is_valid
     assert has_header_shape(_replaced(lines, 2, "|---|---|"), changed)
+
+
+@pytest.mark.parametrize("row", [
+    "| Status | Accepted <!-- 2024-01-02 --> |",
+    "| Cache | Ana | decide next week <!-- follow up --> |",
+    "| A | fast <!-- todo -->|",
+    "| Option | Cost <!-- optional --> |",
+])
+def test_a_note_s_table_row_ending_in_a_comment_is_no_header(row):
+    """Only the migrated fields row ends in a word and a comment holding
+    that same word (`Values Migrated <!-- Migrated -->`); a note's row
+    ending in a comment of its own is the note's."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    note = ["# Meeting 2026-09-30", "", "| Topic | Notes |", "|--|--|", row, "", "Text."] + [""] * 5
+    assert not has_header_shape(note, config)
+
+
+def test_a_migrated_fields_row_in_another_language_is_a_damaged_header():
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = ["<!-- x -->", "|Campos|Valores Migrado <!-- Migrado -->|", "|--|--|", "|Titulo|x|"] + [""] * 8
+    assert has_header_shape(lines, config)
+
+
+@pytest.mark.parametrize("row", [
+    "| Fields | Values Migrated by hand <!-- Migrated by hand --> |",
+    "| Fields | Values Migrated <!-- migrated --> |",
+    "|Fiels|Values Migrated (v1) <!-- Migrated (v1) -->|",
+])
+def test_a_migrated_fields_row_with_a_multi_word_or_recased_word_is_a_damaged_header(row):
+    """headermigrated may hold spaces (the schema allows it), and a comment
+    recased by hand is still the same word."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = ["# x", row, "| -- | -- |", "| File title md | x |"] + [""] * 8
+    assert has_header_shape(lines, config)
