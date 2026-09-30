@@ -66,7 +66,9 @@ P="$R44/expected"
 # ref/r44-real needs archived real-run artifacts (AGENT_EVAL_R44_REAL_DIR, reference.sh); without them its rows
 # are left out of both sides of the R45 comparison.
 r44real=cat; [ -d "$R44/ref/r44-real" ] || { r44real="grep -v ^r44-real/"; echo "== r44-real not built: its rows are left out of the R45 comparison"; }
-if diff <(cut -c1-200 "$P/control_table.r45.r46b.txt" | $r44real) <(head -n "$n45" "$NOW" | cut -c1-200 | $r44real); then
+# Decision names are compared scheme-free ({2V1}, --{1}: adrnames.py normalize), so the table holds
+# what each verdict says whatever widths the seeds were built with.
+if diff <(cut -c1-200 "$P/control_table.r45.r46b.txt" | $r44real) <(head -n "$n45" "$NOW" | adrnames normalize "$R44/seeds/S1" | cut -c1-200 | $r44real); then
   echo "== R45 controls: identical to control_table.r45.r46b.txt ($n45 rows; vs control_table.r45.txt only pos/S5, pos-readonly/S5, r44-real/S5 differ, by design)"
 else
   echo "R45 CONTROLS CHANGED (see diff above; $NOW)" >&2; rc=8
