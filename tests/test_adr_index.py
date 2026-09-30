@@ -162,7 +162,7 @@ def test_a_decision_in_a_folder_named_with_a_lone_surrogate_is_indexed(tmp_path)
     created = new.run(["--path", str(root), "--title", "Second", "--refdate", "2026-09-20"])
 
     assert created["status"] == "Proposed"
-    assert _row(index, "s%80/") is not None
+    assert _file_name(moved) in index.read_text(encoding="utf-8")
 
 
 def test_an_interrupt_while_indexing_leaves_the_decision_written_and_says_so(tmp_path, monkeypatch):
@@ -379,3 +379,138 @@ def test_the_mark_after_a_character_that_is_not_a_line_end_is_still_the_users(tm
     new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
 
     assert index.read_bytes() == notes.encode("utf-8")
+
+
+@pytest.mark.parametrize("damage", ["conflict", "no-header"])
+def test_the_index_names_every_decision_it_leaves_out(tmp_path, damage):
+    """Conflict markers in a header, or a decision name with no header at
+    all, leave a decision out of the index just as a header that does not
+    parse does: the warning names it (config writes the index without
+    validating the repository first)."""
+    from pathlib import Path
+
+    from adrpy.cli import config
+
+    root, index = _repo(tmp_path)
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+    second = Path(new.run(["--path", str(root), "--title", "Second", "--refdate", "2026-09-20"])["created"])
+    text = second.read_text(encoding="utf-8")
+    second.write_text(text.replace("|File title md|", "<<<<<<< HEAD\n|File title md|", 1) if damage == "conflict"
+                      else "# Second, header removed\n", encoding="utf-8")
+
+    result = config.run(["--path", str(root), "--headerdomain", "Area"])
+
+    assert _row(index, second.name) is None
+    assert any(second.name in warning and "not in the decisions index" in warning for warning in result["warnings"])
+
+
+def test_init_seed_changing_folderadr_names_the_index_left_behind(tmp_path):
+    import json
+
+    root, old_index = _repo(tmp_path)
+    seed = tmp_path.parent / f"{tmp_path.name}-seed.json"
+    data = json.loads((root / ".adrpy.json").read_text(encoding="utf-8"))
+    data["folderadr"] = "decisions"
+    seed.write_text(json.dumps(data), encoding="utf-8")
+
+    result = init.run(["--path", str(root), "--seed", str(seed)])
+
+    assert (root / "decisions" / "INDEX.md").is_file() and old_index.is_file()
+    assert any(str(old_index) in warning and "previous decisions folder" in warning for warning in result["warnings"])
+
+
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="a lone surrogate is a valid name on NTFS only")
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udfff"])
+def test_a_folder_named_with_any_lone_surrogate_does_not_freeze_the_index(tmp_path, surrogate):
+    """Outside U+DC80-U+DCFF too, the index is written: its link to that
+    folder cannot be exact, but every other row stays true."""
+    import os
+
+    root, index = _repo(tmp_path)
+    first = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])["created"]
+    folder = root / "doc" / "adr" / f"sub{surrogate}"
+    folder.mkdir()
+    os.replace(first, folder / _file_name(first))
+
+    second = new.run(["--path", str(root), "--title", "Second", "--refdate", "2026-09-20"])
+
+    assert _row(index, _file_name(second["created"])) is not None
+    assert not any("could not be updated" in warning for warning in second["warnings"])
+
+
+def _blocked_scandir(monkeypatch, blocked):
+    import os
+
+    real_scandir = os.scandir
+
+    def flaky_scandir(path="."):
+        if os.path.abspath(path) == os.path.abspath(blocked):
+            raise PermissionError(13, "Access is denied", str(blocked))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", flaky_scandir)
+
+
+@pytest.mark.parametrize("where", ["root", "subfolder"])
+def test_a_folder_that_cannot_be_read_leaves_the_index_as_it_was(tmp_path, monkeypatch, where):
+    """A scan that could not read a folder would write an index missing its
+    decisions (none at all, for the root): the page stays as it was, and the
+    warning names the folder, never as a decision file."""
+    from adrpy.cli import config
+
+    root, index = _repo(tmp_path)
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+    blocked = root / "doc" / "adr" if where == "root" else root / "doc" / "adr" / "restricted"
+    blocked.mkdir(exist_ok=True)
+    before = index.read_bytes()
+    _blocked_scandir(monkeypatch, blocked)
+
+    result = config.run(["--path", str(root), "--headerdomain", "Area"])
+
+    assert index.read_bytes() == before
+    [warning] = [w for w in result["warnings"] if "INDEX.md" in w or "decisions index" in w]
+    assert blocked.name in warning and "decision file" not in warning
+
+
+def test_the_index_names_what_it_leaves_out_by_its_path_in_the_folder(tmp_path):
+    """Two files of one name in two subfolders are two names in the warning."""
+    from pathlib import Path
+
+    from adrpy.cli import config
+
+    root, index = _repo(tmp_path)
+    created = Path(new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])["created"])
+    broken = created.read_text(encoding="utf-8").replace("|File title md|", "<<<<<<< HEAD\n|File title md|", 1)
+    for sub in ("a", "b"):
+        (created.parent / sub).mkdir()
+        (created.parent / sub / created.name).write_text(broken, encoding="utf-8")
+
+    result = config.run(["--path", str(root), "--headerdomain", "Area"])
+
+    [warning] = [w for w in result["warnings"] if "not in the decisions index" in w]
+    assert f"a/{created.name}" in warning and f"b/{created.name}" in warning
+
+
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="a lone surrogate is a valid name on NTFS only")
+def test_a_legacy_file_named_with_a_lone_surrogate_does_not_freeze_the_index(tmp_path):
+    import json
+    import os
+
+    from adrpy.cli import migrate
+
+    seed = tmp_path / "seed.json"
+    init.run(["--path", str(tmp_path)])
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
+    config["migrationpattern"] = "N00:04T04"
+    seed.write_text(json.dumps(config), encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init.run(["--path", str(repo), "--seed", str(seed)])
+    folder = repo / "doc" / "adr"
+    (folder / "0002Plain.md").write_text("# Plain\n", encoding="utf-8")
+    migrate.run(["--path", str(repo)])
+    os.replace(folder / "0002Plain.md", folder / "0002Pl\ud800ain.md")
+
+    created = new.run(["--path", str(repo), "--title", "Third", "--refdate", "2026-09-20"])
+
+    assert _row(folder / "INDEX.md", _file_name(created["created"])) is not None

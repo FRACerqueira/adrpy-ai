@@ -339,7 +339,7 @@ def run(args):
             # is the answer either way.
             try:
                 regenerate_index(log_dir, warnings=warnings)
-            except (OSError, CommandError) as index_error:
+            except Exception as index_error:  # the refusal below is the answer either way
                 warnings.append(
                     f"INDEX.md could not be regenerated ({explain(index_error)}); it may not list every "
                     "entry, and will catch up on the next log call that succeeds."
@@ -362,7 +362,7 @@ def run(args):
             if warning:
                 warnings.append(warning)
             regenerate_index(log_dir, warnings=warnings)
-        except (OSError, CommandError) as error:
+        except Exception as error:
             # The entry above is already committed to disk --
             # `data.file` names that partial success, the same shape
             # reject/supersede use for their own second-write failures.

@@ -918,3 +918,28 @@ def test_log_regenerates_an_index_in_the_format_earlier_versions_wrote(tmp_path)
     log.run(_plain_entry_args(tmp_path))
 
     assert "2026-09-18--scope-note--lock--a-note.md" in (folder / "INDEX.md").read_text(encoding="utf-8")
+
+
+def test_an_error_other_than_oserror_while_indexing_is_the_index_failure(tmp_path, monkeypatch):
+    """The entry is written: any failure regenerating INDEX.md, not only an
+    OSError, is log-index-regeneration-failed naming it, never interrupted."""
+    _init_repo(tmp_path)
+    monkeypatch.setattr(log, "regenerate_index", lambda *a, **k: (_ for _ in ()).throw(UnicodeEncodeError("utf-8", "\ud800", 0, 1, "surrogates not allowed")))
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(_plain_entry_args(tmp_path))
+
+    assert excinfo.value.code == "log-index-regeneration-failed"
+    assert excinfo.value.data["file"].endswith("2026-09-18--scope-note--lock--a-note.md")
+
+
+def test_a_colliding_entry_is_refused_whatever_the_index_rebuild_raises(tmp_path, monkeypatch):
+    _init_repo(tmp_path)
+    log.run(_plain_entry_args(tmp_path))
+    monkeypatch.setattr(log, "regenerate_index", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
+
+    with pytest.raises(CommandError) as excinfo:
+        log.run(_plain_entry_args(tmp_path))
+
+    assert excinfo.value.code == "log-entry-already-exists"
+    assert any("boom" in warning for warning in excinfo.value.warnings)

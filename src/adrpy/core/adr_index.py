@@ -30,22 +30,42 @@ def _link_text(decision, config):
     """The name's identity part; a legacy name keeps all of it, since its
     prefix may hold the separator (`ADR-0001-...`)."""
     name = Path(decision.path).name
-    return Path(name).stem if decision.scheme == "legacy" else name.split(config.separator, 1)[0]
+    text = Path(name).stem if decision.scheme == "legacy" else name.split(config.separator, 1)[0]
+    # A lone surrogate (valid on NTFS) cannot be written as UTF-8: shown as U+FFFD.
+    return text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+
+
+def _in_folder(path, folder):
+    relative = Path(path).relative_to(folder).as_posix() if Path(path).is_relative_to(folder) else str(path)
+    return str(path) if relative == "." else relative
 
 
 def render(folder, config, warnings):
-    """INDEX.md's text for the decisions under `folder`. A decision whose
-    header does not parse is left out, and `warnings` names it: only `init`
-    gets here without validating first. One with no header yet (before
-    migrate) is left out silently, as its own warnings already say."""
-    snapshot, errors = check_repository(folder, config, scan_tree(folder))
+    """INDEX.md's text for the decisions under `folder`. Every decision it
+    leaves out (a header that does not parse, conflict markers, a file that
+    cannot be read, a decision name with no header) is named in `warnings`,
+    by its path in the folder: `init` and `config` write the index without
+    validating first. A legacy name with no header yet (before migrate) is
+    left out silently, as its own warnings already say. A folder the scan
+    could not read raises instead: the page would miss its decisions."""
+    scan = scan_tree(folder)
+    if scan.unreadable:
+        raise CommandError(
+            FailureCodes.SCAN_INCOMPLETE,
+            f"{len(scan.unreadable)} folder(s) could not be read, so the page would miss their decisions; it is "
+            f"left as it was: {', '.join(sorted(_in_folder(path, folder) for path in scan.unreadable))}",
+        )
+    snapshot, errors = check_repository(folder, config, scan)
     decisions = sorted((d for d in snapshot.decisions if d.header is not None and d.header.is_valid),
                        key=lambda d: (d.name.number, d.name.version, d.name.revision or 0))
-    left_out = sorted(Path(error["file"]).name for error in errors if error["code"] == FailureCodes.INVALID_HEADER)
+    legacy = {str(d.path) for d in snapshot.decisions if d.scheme == "legacy"}
+    unlisted = (FailureCodes.INVALID_HEADER, FailureCodes.MERGE_CONFLICT_MARKERS, FailureCodes.SCAN_INCOMPLETE)
+    left_out = sorted(_in_folder(error["file"], folder) for error in errors
+                      if error["code"] in unlisted or (error["code"] == FailureCodes.NO_HEADER and error["file"] not in legacy))
     if left_out:
         warnings.append(
             f"{len(left_out)} decision file(s) are not in the decisions index, because their header does not "
-            f"parse: {', '.join(left_out)}. `adrpy check` says what each one needs."
+            f"parse or could not be read: {', '.join(left_out)}. `adrpy check` says what each one needs."
         )
     columns = [config.prefix or "#", config.headertitlefile, config.headerscope, config.headerdomain,
                config.headertitlestatuscreated, config.headertitlestatuschanged, config.headertitlestatussuperseded]
@@ -62,8 +82,9 @@ def render(folder, config, warnings):
         relative = Path(decision.path).relative_to(folder).as_posix()
         successor = f" : {header.superseded_by_file}" if header.superseded_by_file else ""
         cells = [
-            # surrogateescape: a folder name NTFS allows but UTF-8 cannot hold still gets a link.
-            f"[{_link_text(decision, config)}]({quote(relative, safe='/-_.,;', errors='surrogateescape')})",
+            # surrogatepass: a folder name NTFS allows but UTF-8 cannot hold (a lone surrogate) must
+            # not stop the whole page; that one link cannot be exact.
+            f"[{_link_text(decision, config)}]({quote(relative, safe='/-_.,;', errors='surrogatepass')})",
             header.title,
             header.scope,
             header.domain,
@@ -73,6 +94,14 @@ def render(folder, config, warnings):
         ]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
+
+
+def previous_index_warning(old_folder, new_folder, warnings):
+    """After a folderadr change, names the generated index the previous
+    folder still holds (never deleted: it is the user's call)."""
+    old_index = Path(old_folder) / INDEX_NAME
+    if Path(new_folder) != Path(old_folder) and old_index.is_file() and not written_by_someone_else(old_index, GENERATED_MARK):
+        warnings.append(f"{old_index} is the index of the previous decisions folder: delete it if it is no longer needed.")
 
 
 def regenerate(root, config, warnings):

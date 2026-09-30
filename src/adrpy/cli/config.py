@@ -28,7 +28,6 @@ from adrpy.core.fs import (
     make_dirs,
     remove_created_dirs,
     scan_tree,
-    written_by_someone_else,
 )
 from adrpy.core.lifecycle import (
     PATTERN_ADVICE_BEFORE_MIGRATE,
@@ -312,9 +311,7 @@ def run(args):
     # The index shows the config's labels and lives in folderadr, so it follows
     # the change at once; the previous folder's generated one is named, never deleted.
     adr_index.regenerate(target, new_config, warnings)
-    old_index = folder / adr_index.INDEX_NAME
-    if new_folder != folder and old_index.is_file() and not written_by_someone_else(old_index, adr_index.GENERATED_MARK):
-        warnings.append(f"{old_index} is the index of the previous decisions folder: delete it if it is no longer needed.")
+    adr_index.previous_index_warning(folder, new_folder, warnings)
 
     result = {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}
     if preview is not None:

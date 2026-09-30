@@ -245,6 +245,7 @@ def run(args):
                 target, config_path, config_text, config, warnings, old_config=old_config
             )
         adr_index.regenerate(target, config, warnings)
+        adr_index.previous_index_warning(resolve_within(target, old_config.folderadr), resolve_within(target, config.folderadr), warnings)
         return {"created": created, "warnings": warnings}
 
     created = _validate_and_write(target, config_path, config_text, config, warnings)
