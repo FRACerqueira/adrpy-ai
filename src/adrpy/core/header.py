@@ -417,8 +417,15 @@ def has_header_shape(lines, config):
     the top doesn't hide it. A NUL byte also counts: it means the file
     was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
     which splits the markers apart -- a damaged header, not a missing one
-    (decided by the project owner)."""
-    return any(
+    (decided by the project owner).
+
+    The second line also counts when parse_header would read it as the
+    fields row (more around the label in its cell, no space at its edges):
+    the older form, whose damaged header migrate would otherwise stack a
+    second one on. Only there, so a compact table lower in a note is not
+    taken for a header."""
+    older_form = len(lines) > 1 and _is_fields_row(lines[1], config) and lines[1].split("|")[1] == lines[1].split("|")[1].strip()
+    return older_form or any(
         line.startswith(f"|{config.headertablefields}|") or line.rstrip() == "|--|--|" or "\x00" in line
         for line in lines[:HEADER_LINE_COUNT]
     )

@@ -560,3 +560,23 @@ def test_a_damaged_header_is_told_apart_by_its_fields_row_alone():
     lines = _replaced(_valid_header_lines(config), 2, "|-|-|")
     assert has_header_shape(lines, config)
     assert not has_header_shape(["# Notes", "| Name | Value |", "|---|---|", "text"] + [""] * 8, config)
+
+
+def test_a_damaged_header_in_the_older_form_is_still_a_damaged_header():
+    """A fields row with more around the label in its cell is read as a
+    header (parse_header); when its separator row is damaged it must stay
+    a damaged header, not "no header": migrate would stack a second header
+    on it and drop its status."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _replaced(_valid_header_lines(config), 1, f"|Former {config.headertablefields}|{config.headertablevalues}|")
+    assert parse_header(lines, config).is_valid
+    damaged = _replaced(lines, 2, "|---|---|")
+    assert has_header_shape(damaged, config)
+    # A hand-written table, spaces around its cells, is still no header.
+    assert not has_header_shape(["# Notes", f"| {config.headertablefields} | Value |", "|---|---|"] + [""] * 9, config)
+    # The wider read is the second line's only: a compact table further down
+    # a legacy file, its first cell ending in the label, stays no header.
+    assert not has_header_shape(["# Notes", "", "Some text.", "", f"|Custom {config.headertablefields}|Type|",
+                                 "|---|---|"] + [""] * 6, config)
