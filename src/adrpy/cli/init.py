@@ -4,7 +4,7 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
-from adrpy.core import adr_index
+from adrpy.core import adr_index, decision_log
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import (
@@ -242,11 +242,14 @@ def run(args):
         # config scopes the change guards in _validate_and_write.
         old_config = load_repo_config(config_path)
         with attach_warnings(warnings):
+            # Before the write, so nothing that can fail runs once the config is on disk.
+            old_folder, new_folder = resolve_within(target, old_config.folderadr), resolve_within(target, config.folderadr)
             created = _validate_and_write(
                 target, config_path, config_text, config, warnings, old_config=old_config
             )
         adr_index.regenerate(target, config, warnings)
-        adr_index.previous_index_warning(resolve_within(target, old_config.folderadr), resolve_within(target, config.folderadr), warnings)
+        adr_index.previous_index_warning(old_folder, new_folder, warnings)
+        decision_log.previous_index_warning(target / old_config.folderlog, target / config.folderlog, warnings)
         return {"created": created, "warnings": warnings}
 
     created = _validate_and_write(target, config_path, config_text, config, warnings)

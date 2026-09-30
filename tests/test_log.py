@@ -890,6 +890,7 @@ def test_log_leaves_a_users_index_that_cannot_be_read_as_it_is(tmp_path, monkeyp
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "decision-log"
     folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(parents=True, exist_ok=True)
     (folder / "INDEX.md").write_text("Our own list.\n", encoding="utf-8")
     real_open = open
 
@@ -910,6 +911,7 @@ def test_log_regenerates_an_index_in_the_format_earlier_versions_wrote(tmp_path)
     it, keeps the file adrpy's."""
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "INDEX.md").write_text(
         "# Decision log index\n\nGenerated -- do not edit by hand (see [the decision-log workflow](x)).\n",
@@ -943,3 +945,117 @@ def test_a_colliding_entry_is_refused_whatever_the_index_rebuild_raises(tmp_path
 
     assert excinfo.value.code == "log-entry-already-exists"
     assert any("boom" in warning for warning in excinfo.value.warnings)
+
+
+
+def _log(tmp_path, *extra, slug="a", classification="scope-note"):
+    return log.run(["--path", str(tmp_path), "--classification", classification, "--scope", "cli", "--slug", slug,
+                    "--summary", "S", "--body", "b", *extra])
+
+
+def _log_index(tmp_path):
+    return (tmp_path / "doc" / "decision-log" / "INDEX.md").read_text(encoding="utf-8")
+
+
+def test_an_entry_in_a_subfolder_is_linked_and_named_by_its_path_in_the_log(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    for sub in ("a", "b"):
+        (folder / sub).mkdir()
+        (folder / sub / "2026-09-01--scope-note--cli--same.md").write_text(f"# In {sub}\n", encoding="utf-8")
+    _log(tmp_path, "--refdate", "2026-09-01", slug="same")
+    index = _log_index(tmp_path)
+    assert "(a/2026-09-01--scope-note--cli--same.md)" in index
+    assert "(b/2026-09-01--scope-note--cli--same.md)" in index
+    (folder / "b" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        _log(tmp_path, slug="other")
+    assert raised.value.data["file"] == "b/notes.md"
+    assert raised.value.detail.startswith("b/notes.md ")
+
+
+def test_an_entry_named_with_a_lone_surrogate_does_not_fail_every_later_log(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-01--scope-note--cli--x\ud800.md").write_text("# Odd \ud800 name\n", encoding="utf-8",
+                                                                        errors="surrogatepass")
+    result = _log(tmp_path)
+    assert result["created"]
+    assert "x\ufffd" in _log_index(tmp_path)
+
+
+def test_log_index_cells_and_links_survive_odd_names_and_pipes(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-02--scope-note--cli--x (1) ].md").write_text("# Pipe | in | heading\n", encoding="utf-8")
+    _log(tmp_path)
+    row = next(line for line in _log_index(tmp_path).splitlines() if "2026-09-02" in line)
+    assert "Pipe \\| in \\| heading" in row
+    assert "(2026-09-02--scope-note--cli--x%20%281%29%20%5D.md)" in row
+    assert "[2026-09-02--scope-note--cli--x (1) \\].md]" in row
+
+
+def test_a_round_below_one_on_an_entry_is_refused_as_malformed(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-01--audit-finding--cli--neg.md").write_text(
+        "# Neg\n**Front:** x | **Severity:** Low | **Resolution:** Direct | **Round:** -1\n", encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        _log(tmp_path, "--front", "f", "--severity", "Low", "--resolution", "Direct", classification="audit-finding")
+    assert raised.value.code == "log-directory-contains-unrecognized-file"
+
+
+def test_the_log_s_own_pages_are_told_by_name_as_the_file_system_compares_names(tmp_path):
+    import os
+
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "Cycles.md").write_text("# Cycles\n", encoding="utf-8")
+    (folder / "sub").mkdir()
+    (folder / "sub" / "index.md").write_text("# Index\n", encoding="utf-8")
+    if os.path.normcase("A") == "a":
+        assert _log(tmp_path)["created"]
+    else:
+        with pytest.raises(CommandError):
+            _log(tmp_path)
+
+
+def test_a_folderlog_change_names_the_log_index_left_behind(tmp_path):
+    from adrpy.cli import config
+
+    from adrpy.core.decision_log import regenerate_index
+
+    _init_repo(tmp_path)
+    (tmp_path / "doc" / "decision-log").mkdir(parents=True)
+    regenerate_index(tmp_path / "doc" / "decision-log")
+    result = config.run(["--path", str(tmp_path), "--folderlog", "doc/log2"])
+    old = tmp_path / "doc" / "decision-log" / "INDEX.md"
+    assert old.is_file()
+    assert any(str(old) in warning and "previous decision-log folder" in warning for warning in result["warnings"])
+
+
+
+def test_a_folderlog_spelled_another_way_is_not_its_own_previous_folder(tmp_path):
+    from adrpy.cli import config
+    from adrpy.core.decision_log import regenerate_index
+
+    _init_repo(tmp_path)
+    (tmp_path / "doc" / "decision-log").mkdir(parents=True)
+    regenerate_index(tmp_path / "doc" / "decision-log")
+    result = config.run(["--path", str(tmp_path), "--folderlog", "doc/../doc/decision-log"])
+    assert not any("previous decision-log folder" in warning for warning in result["warnings"])
+
+
+def test_a_code_span_in_a_summary_keeps_its_backslashes(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-03--scope-note--cli--code.md").write_text("# Reads `\\r\\n` endings\n", encoding="utf-8")
+    _log(tmp_path)
+    row = next(line for line in _log_index(tmp_path).splitlines() if "2026-09-03" in line)
+    assert "`\\r\\n`" in row

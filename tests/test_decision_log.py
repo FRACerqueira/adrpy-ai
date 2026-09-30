@@ -625,7 +625,7 @@ def test_existing_entries_counts_an_entry_reached_twice_through_a_junction_once(
     regenerate_index(log_dir)
 
     # One index row (each row names the file twice: link text and target).
-    assert (log_dir / "INDEX.md").read_text(encoding="utf-8").count("[2026-01-01--audit-finding--cli--dup.md]") == 1
+    assert (log_dir / "INDEX.md").read_text(encoding="utf-8").count("[team/2026-01-01--audit-finding--cli--dup.md]") == 1
 
 
 def test_a_directory_named_like_an_entry_is_not_an_entry(tmp_path):

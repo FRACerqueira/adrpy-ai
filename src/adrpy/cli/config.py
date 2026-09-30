@@ -22,7 +22,7 @@ from adrpy.core.config import (
 )
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core import adr_index
+from adrpy.core import adr_index, decision_log
 from adrpy.core.fs import (
     cleanup_orphaned_temp_files_for,
     make_dirs,
@@ -312,6 +312,7 @@ def run(args):
     # the change at once; the previous folder's generated one is named, never deleted.
     adr_index.regenerate(target, new_config, warnings)
     adr_index.previous_index_warning(folder, new_folder, warnings)
+    decision_log.previous_index_warning(target / current.folderlog, target / new_config.folderlog, warnings)
 
     result = {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}
     if preview is not None:

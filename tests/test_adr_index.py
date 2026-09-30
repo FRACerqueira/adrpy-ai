@@ -514,3 +514,45 @@ def test_a_legacy_file_named_with_a_lone_surrogate_does_not_freeze_the_index(tmp
     created = new.run(["--path", str(repo), "--title", "Third", "--refdate", "2026-09-20"])
 
     assert _row(folder / "INDEX.md", _file_name(created["created"])) is not None
+
+
+
+def test_a_legacy_link_text_with_brackets_stays_a_link(tmp_path):
+    root, _ = _repo(tmp_path)
+    adr = root / "doc" / "adr"
+    (adr / "0001-foo]bar [x].md").write_text("# Foo\n\nText.\n", encoding="utf-8")
+    from adrpy.cli import config as config_command, migrate
+
+    config_command.run(["--path", str(root), "--migrationpattern", "N00:04T05"])
+    migrate.run(["--path", str(root)])
+    index = (adr / "INDEX.md").read_text(encoding="utf-8")
+    assert "[0001-foo\\]bar \\[x\\]](" in index
+
+
+def test_config_names_a_legacy_decision_with_no_header_it_leaves_out_before_adoption(tmp_path):
+    from adrpy.cli import config as config_command, migrate
+
+    root, _ = _repo(tmp_path)
+    adr = root / "doc" / "adr"
+    (adr / "0001-first.md").write_text("# First\n\nText.\n", encoding="utf-8")
+    config_command.run(["--path", str(root), "--migrationpattern", "N00:04T05"])
+    migrate.run(["--path", str(root)])
+    (adr / "0003-third.md").write_text("# Third\n\nText.\n", encoding="utf-8")
+    result = config_command.run(["--path", str(root), "--headerdomain", "Dom"])
+    assert any("0003-third.md" in warning for warning in result["warnings"])
+
+
+def test_an_interrupt_naming_the_previous_index_leaves_the_config_written(tmp_path, monkeypatch):
+    from adrpy.cli import config as config_command
+    from adrpy.core import adr_index
+
+    root, _ = _repo(tmp_path)
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(adr_index, "written_by_someone_else", interrupted)
+    monkeypatch.setattr(adr_index, "atomic_write_text", lambda *a, **k: None)
+    result = config_command.run(["--path", str(root), "--folderadr", "doc/other"])
+    assert load_repo_config(root / ".adrpy.json").folderadr == "doc/other"
+    assert any("interrupted" in warning for warning in result["warnings"])

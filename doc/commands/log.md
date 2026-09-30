@@ -48,7 +48,7 @@ Writes a decision-log entry under folderlog -- the lighter-weight sibling of an 
 | `log-round-too-low` | --round is lower than the highest Round already recorded. |
 | `field-contains-forbidden-character` | summary/front/reopenwhen contains '\|' or a line-break-like character. |
 | `field-is-blank` | summary/front/reopenwhen is non-empty but blank after stripping whitespace. |
-| `log-directory-contains-unrecognized-file` | A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content, or (checked only when this call's own --classification is audit-finding/doc-drift) is an audit-finding/doc-drift entry whose Round is missing or not a plain integer -- Round/INDEX.md can't be safely computed while it's present. |
+| `log-directory-contains-unrecognized-file` | A file under folderlog does not match the expected filename shape, or carries an unrecognized classification, or has no content, or (checked only when this call's own --classification is audit-finding/doc-drift) is an audit-finding/doc-drift entry whose Round is missing or not a positive integer -- Round/INDEX.md can't be safely computed while it's present. |
 | `log-scan-incomplete` | A subdirectory under folderlog could not be scanned. |
 | `filename-too-long` | The entry's file name (date, classification, scope and slug) is longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; shorten --scope or --slug. |
 | `log-entry-already-exists` | An entry with this exact date/classification/scope/slug already exists -- no entry was written, but INDEX.md is regenerated so it lists the existing one (a warning says so when that regeneration itself fails). |

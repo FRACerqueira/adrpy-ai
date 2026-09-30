@@ -10,7 +10,7 @@ from urllib.parse import quote
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.consistency import check_repository
 from adrpy.core.errors import CommandError, FailureCodes
-from adrpy.core.fs import scan_tree, written_by_someone_else
+from adrpy.core.fs import is_zero_bytes, scan_tree, written_by_someone_else
 from adrpy.core.header import _STATUS_CONFIG_FIELD
 from adrpy.core.output import explain
 
@@ -32,7 +32,8 @@ def _link_text(decision, config):
     name = Path(decision.path).name
     text = Path(name).stem if decision.scheme == "legacy" else name.split(config.separator, 1)[0]
     # A lone surrogate (valid on NTFS) cannot be written as UTF-8: shown as U+FFFD.
-    return text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+    text = text.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+    return text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def _in_folder(path, folder):
@@ -45,9 +46,10 @@ def render(folder, config, warnings):
     leaves out (a header that does not parse, conflict markers, a file that
     cannot be read, a decision name with no header) is named in `warnings`,
     by its path in the folder: `init` and `config` write the index without
-    validating first. A legacy name with no header yet (before migrate) is
-    left out silently, as its own warnings already say. A folder the scan
-    could not read raises instead: the page would miss its decisions."""
+    validating first. A legacy name with no header is left out silently
+    while no decision has one yet (before migrate: every file is), or when
+    it is 0 bytes (migrate names it as the user's). A folder the scan could
+    not read raises instead: the page would miss its decisions."""
     scan = scan_tree(folder)
     if scan.unreadable:
         raise CommandError(
@@ -58,14 +60,15 @@ def render(folder, config, warnings):
     snapshot, errors = check_repository(folder, config, scan)
     decisions = sorted((d for d in snapshot.decisions if d.header is not None and d.header.is_valid),
                        key=lambda d: (d.name.number, d.name.version, d.name.revision or 0))
-    legacy = {str(d.path) for d in snapshot.decisions if d.scheme == "legacy"}
+    legacy = {str(d.path) for d in snapshot.decisions
+              if d.scheme == "legacy" and (not decisions or is_zero_bytes(d.path))}
     unlisted = (FailureCodes.INVALID_HEADER, FailureCodes.MERGE_CONFLICT_MARKERS, FailureCodes.SCAN_INCOMPLETE)
     left_out = sorted(_in_folder(error["file"], folder) for error in errors
                       if error["code"] in unlisted or (error["code"] == FailureCodes.NO_HEADER and error["file"] not in legacy))
     if left_out:
         warnings.append(
-            f"{len(left_out)} decision file(s) are not in the decisions index, because their header does not "
-            f"parse or could not be read: {', '.join(left_out)}. `adrpy check` says what each one needs."
+            f"{len(left_out)} decision file(s) are not in the decisions index, because their header is missing, does "
+            f"not parse or could not be read: {', '.join(left_out)}. `adrpy check` says what each one needs."
         )
     columns = [config.prefix or "#", config.headertitlefile, config.headerscope, config.headerdomain,
                config.headertitlestatuscreated, config.headertitlestatuschanged, config.headertitlestatussuperseded]
@@ -98,10 +101,16 @@ def render(folder, config, warnings):
 
 def previous_index_warning(old_folder, new_folder, warnings):
     """After a folderadr change, names the generated index the previous
-    folder still holds (never deleted: it is the user's call)."""
+    folder still holds (never deleted: it is the user's call). Never
+    raises, not even Ctrl+C: what the command wrote is written."""
     old_index = Path(old_folder) / INDEX_NAME
-    if Path(new_folder) != Path(old_folder) and old_index.is_file() and not written_by_someone_else(old_index, GENERATED_MARK):
-        warnings.append(f"{old_index} is the index of the previous decisions folder: delete it if it is no longer needed.")
+    try:
+        if Path(new_folder) != Path(old_folder) and old_index.is_file() and not written_by_someone_else(old_index, GENERATED_MARK):
+            warnings.append(f"{old_index} is the index of the previous decisions folder: delete it if it is no longer needed.")
+    except KeyboardInterrupt:
+        warnings.append(f"{old_index} was not looked at: interrupted (Ctrl+C). What the command wrote stays written.")
+    except OSError:
+        pass
 
 
 def regenerate(root, config, warnings):
