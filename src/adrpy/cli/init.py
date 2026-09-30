@@ -1,5 +1,6 @@
 """`init` command: initializes an ADR repository."""
 
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -384,4 +385,28 @@ def _max_existing_numbers(target, config, warnings=None):
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
+        warning = _other_widths_warning(names, config)
+        if warning:
+            warnings.append(warning)
     return max_number, max_version, max_revision
+
+
+def _other_widths_warning(names, config):
+    """Names of the current scheme padded to other widths than `config`'s
+    are still decisions, but the next ones would sit next to them in
+    another width: said now, while `adrpy config` can still match them."""
+    shape = re.compile(rf"^{re.escape(config.prefix or '')}(\d+)V(\d+)(?:R(\d+))?")
+    other = []
+    for name in names:
+        match = shape.match(Path(name.path).name) if name.scheme == "current" else None
+        if match and (len(match.group(1)) != config.lenseq or len(match.group(2)) != config.lenversion
+                      or len(match.group(3) or "") != config.lenrevision):
+            other.append(Path(name.path).name)
+    if not other:
+        return None
+    return (
+        f"{len(other)} existing decision name(s) use other widths than this config (lenseq {config.lenseq}, "
+        f"lenversion {config.lenversion}, lenrevision {config.lenrevision}), e.g. {', '.join(sorted(other)[:3])}: "
+        "new decisions would be named in the config's widths next to them. To keep one scheme, set those "
+        "sizes with `adrpy config` before the next new decision."
+    )

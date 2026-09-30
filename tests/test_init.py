@@ -834,3 +834,30 @@ def test_a_decision_in_a_new_repository_is_named_with_the_shipped_defaults(tmp_p
 
     names = [path.name for path in (tmp_path / "doc" / "adr").glob("*.md") if path.name != "INDEX.md"]
     assert len(names) == 1 and names[0].startswith("ADR0001V01R01-")
+
+
+@pytest.mark.real_defaults
+def test_init_over_decisions_named_with_other_widths_says_so(tmp_path):
+    """init keeps decisions with other widths readable, and says the next
+    ones will be named differently next to them, before anyone runs new."""
+    folder = tmp_path / "doc" / "adr"
+    folder.mkdir(parents=True)
+    (folder / "ADR001V01-first.md").write_text("# First\n", encoding="utf-8")
+    (folder / "ADR002V01-second.md").write_text("# Second\n", encoding="utf-8")
+
+    result = init.run(["--path", str(tmp_path)])
+
+    [warning] = [w for w in result["warnings"] if "widths" in w]
+    assert "ADR001V01-first.md" in warning and "lenseq" in warning
+
+
+@pytest.mark.real_defaults
+def test_init_over_decisions_named_with_the_same_widths_says_nothing_of_it(tmp_path):
+    folder = tmp_path / "doc" / "adr"
+    folder.mkdir(parents=True)
+    (folder / "ADR0001V01R01-first.md").write_text("# First\n", encoding="utf-8")
+    (folder / "0002-legacy-note.md").write_text("# Note\n", encoding="utf-8")
+
+    result = init.run(["--path", str(tmp_path)])
+
+    assert not any("widths" in w for w in result["warnings"])
