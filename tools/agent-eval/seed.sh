@@ -55,10 +55,10 @@ cfg = json.load(open(sys.argv[1], encoding="utf-8"))
 cfg.pop("folderlog")
 open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(json.dumps(cfg, indent=2) + "\n")
 EOF
-REV4="$(adrnames revision-cell .)"; SUP4="$(adrnames number . 2)"
+REV4="$(adrnames revision-cell .)"; COMMENT4="$(adrnames header-comment .)"; SUP4="$(adrnames number . 2)"
 hdr() {  # title version created changed superseded
 cat <<EOF
-<!-- Do not remove this comment, lines and table (1-12) -->
+$COMMENT4
 |Fields|Values|
 |--|--|
 |File title md|$1|
@@ -69,7 +69,7 @@ cat <<EOF
 |Created|$3|
 |Changed|$4|
 |Superseded|$5|
-<!-- Do not remove this comment, lines and table (1-12) -->
+$COMMENT4
 EOF
 }
 { hdr "Use PostgreSQL for the primary database" 01 "Proposed (2026-01-10)" "Accepted (2026-01-12)" "Superseded (2026-03-01) : $SUP4"

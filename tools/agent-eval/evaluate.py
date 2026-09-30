@@ -53,6 +53,9 @@ MODEL_IDS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5", "haiku": "c
 ALLOWED_TOOLS = {"Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill"}
 HEADER_ROW = re.compile(r"^\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\|", re.M)
 MARKER = re.compile(r"<!--\s*(Proposed|Accepted|Rejected|Superseded)\s*-->")
+# The header's opening and closing comment, by its shape: its text is each
+# repository's headerdisclaimer, and adrpy never reads it either.
+HEADER_FENCE = re.compile(r"<!-- .*\(1-12\) -->")
 ASK_WORDS = re.compile(r"\b(confirm|approval|approve (?:the|this) write|shall I|should I|do you want|would you like|may I|go ahead|proceed\?)", re.I)
 # [model-]S<n>[b-z]: S3 = scenario S3 run #1, S3b = run #2; opus-S10b = scenario S10 run #2 on opus.
 LABEL = re.compile(r"(?:(opus|sonnet|haiku)-)?(S(\d+))([b-z]?)")
@@ -137,7 +140,7 @@ def header(text: str | None) -> dict | None:
     if text is None:
         return None
     lines = text.lstrip("\ufeff").splitlines()[:12]
-    if not lines or "Do not remove this comment" not in lines[0]:
+    if not lines or not HEADER_FENCE.search(lines[0]):
         return None
     rows = {}
     for ln in lines[1:11]:
@@ -290,7 +293,7 @@ class Run:
 def _hrows(s: str) -> set[str]:
     """The header-table lines (and the fence comment) present in a string, normalized."""
     return {ln.strip().rstrip("\r") for ln in str(s).splitlines()
-            if HEADER_ROW.match(ln.strip()) or "Do not remove this comment" in ln}
+            if HEADER_ROW.match(ln.strip()) or HEADER_FENCE.search(ln)}
 
 
 def header_hand_edits(run: Run, reviews: list | None = None) -> list[str]:
@@ -375,7 +378,7 @@ def _denied_attempt(reviews: list | None, what: str) -> None:
 
 _PY_STR = r"(\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*')"
 _PY_REPLACE = re.compile(r"\.replace\(\s*" + _PY_STR + r"\s*,\s*" + _PY_STR + r"(?:\s*,\s*\d+)?\s*\)")
-_HEADER_TEXT = re.compile(r"\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||Do not remove this comment")
+_HEADER_TEXT = re.compile(r"\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||<!-- .*\(1-12\) -->")
 
 
 def _script_changes_header(cmd: str) -> bool:

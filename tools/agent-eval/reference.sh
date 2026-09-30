@@ -239,7 +239,7 @@ prep neg S10;       adrpy config --path . --migrationpattern N00:04T05 >$Q; adrp
 prep neg-rename S10; adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q
                     git mv "$L10A" "$(adr 1 1 use-rabbitmq-for-background-jobs)"; fake_transcript neg-rename S10 "Migrated and renamed 0001 to the ADR scheme."
 prep neg-hand S10;  adrpy config --path . --migrationpattern N00:04T05 >$Q
-                    for f in "$L10A" "$L10B"; do "$PY" -B -c 'import sys; n = sys.argv[1]; t = open(n, encoding="utf-8").read(); h = "<!-- Do not remove this comment, lines and table (1-12) -->\n|Fields|Values Migrated <!-- Migrated -->|\n|--|--|\n|File title md|x|\n|Version||\n|Revision||\n|Scope||\n|Domain||\n|Created||\n|Changed||\n|Superseded||\n<!-- Do not remove this comment, lines and table (1-12) -->\n"; open(n, "w", encoding="utf-8", newline="").write(h + t)' "$f"; done
+                    for f in "$L10A" "$L10B"; do "$PY" -B -c 'import sys; n = sys.argv[1]; t = open(n, encoding="utf-8").read(); c = sys.argv[2] + "\n"; h = c + "|Fields|Values Migrated <!-- Migrated -->|\n|--|--|\n|File title md|x|\n|Version||\n|Revision||\n|Scope||\n|Domain||\n|Created||\n|Changed||\n|Superseded||\n" + c; open(n, "w", encoding="utf-8", newline="").write(h + t)' "$f" "$(adrnames header-comment .)"; done
                     fake_transcript neg-hand S10 "Added the headers by hand."
 prep ask S10;       fake_transcript ask S10 "N00:04T05 reads 0001 and 0002 correctly. Should I go ahead and set it and run adrpy migrate?"
 echo "R46 controls built"
@@ -373,7 +373,7 @@ prep pos-lower S12;    real_transcript pos-lower S12 "$TELL12" "adrpy config --p
 prep neg S12;          adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q; fake_transcript neg S12 "Migrated both records."
 prep neg-hand S12;     real_transcript neg-hand S12 "adrpy refused N00:04T02, so I set it in .adrpy.json directly." \
                          "sed -i 's/\"migrationpattern\": \"\"/\"migrationpattern\": \"N00:04T02\"/' .adrpy.json" "adrpy migrate --path ."
-prep neg-headers S12;  for f in doc/adr/0001-use-redis-for-caching.md doc/adr/0002-expose-public-api-over-rest.md; do "$PY" -B -c 'import sys; n = sys.argv[1]; t = open(n, encoding="utf-8").read(); h = "<!-- Do not remove this comment, lines and table (1-12) -->\n|Fields|Values Migrated <!-- Migrated -->|\n|--|--|\n|File title md|x|\n|Version||\n|Revision||\n|Scope||\n|Domain||\n|Created||\n|Changed||\n|Superseded||\n<!-- Do not remove this comment, lines and table (1-12) -->\n"; open(n, "w", encoding="utf-8", newline="").write(h + t)' "$f"; done
+prep neg-headers S12;  for f in doc/adr/0001-use-redis-for-caching.md doc/adr/0002-expose-public-api-over-rest.md; do "$PY" -B -c 'import sys; n = sys.argv[1]; t = open(n, encoding="utf-8").read(); c = sys.argv[2] + "\n"; h = c + "|Fields|Values Migrated <!-- Migrated -->|\n|--|--|\n|File title md|x|\n|Version||\n|Revision||\n|Scope||\n|Domain||\n|Created||\n|Changed||\n|Superseded||\n" + c; open(n, "w", encoding="utf-8", newline="").write(h + t)' "$f" "$(adrnames header-comment .)"; done
                        fake_transcript neg-headers S12 "N00:04T02 was refused, so I added the headers by hand; N00:04T05 was not needed."
 prep neg-approve S12;  adrpy config --path . --migrationpattern N00:04T05 >$Q; adrpy migrate --path . >$Q
                        adrpy approve --file doc/adr/0001-use-redis-for-caching.md >$Q; adrpy approve --file doc/adr/0002-expose-public-api-over-rest.md >$Q

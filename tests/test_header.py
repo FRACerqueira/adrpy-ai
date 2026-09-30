@@ -756,3 +756,17 @@ def test_a_header_without_its_comments_or_exact_fields_row_is_still_a_damaged_he
     assert has_header_shape(_replaced(migrated, 1, "| Fiels | Values Migrated <!-- Migrated --> |"), config)
     for status in ("|Created|Proposed (2026-01-01) <!-- proposed -->|", "|Created|Proposed 2026-01-01 <!-- Proposed -->|"):
         assert has_header_shape(["<!-- x -->", "| Fields | Values |", "|--|--|"] + rows + [status, "", ""], config)
+
+
+def test_a_header_written_under_an_earlier_disclaimer_still_reads():
+    """The disclaimer is written, never read: a header written before the
+    config's disclaimer changed -- or before the default one did -- still
+    parses, and still reads as damaged once damaged."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    changed = dataclasses.replace(config, headerdisclaimer="Do not edit or remove this comment, lines and table")
+    assert config.headerdisclaimer != changed.headerdisclaimer
+    assert parse_header(lines, changed).is_valid
+    assert has_header_shape(_replaced(lines, 2, "|---|---|"), changed)

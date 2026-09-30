@@ -8,6 +8,7 @@ Command line, for the shell scripts (REPO is a repository root):
   adrnames.py label REPO NUMBER                           -> prefix + padded number (ADR0001)
   adrnames.py number REPO NUMBER                          -> padded number (0001)
   adrnames.py revision-cell REPO                          -> the header's Revision value
+  adrnames.py header-comment REPO                         -> the header's opening and closing comment
   adrnames.py normalize REPO < text                       -> text with every decision name made scheme-free
 """
 import json
@@ -30,6 +31,10 @@ def label(cfg, n):
 
 def revision_cell(cfg, revision=1):
     return f"{revision:0{cfg['lenrevision']}d}" if cfg["lenrevision"] > 0 else ""
+
+
+def header_comment(cfg):
+    return f"<!-- {cfg['headerdisclaimer']} (1-12) -->"
 
 
 def name(cfg, n, version, slug, superseded=None, revision=1):
@@ -70,6 +75,8 @@ if __name__ == "__main__":
         print(number(cfg, int(rest[0])))
     elif command == "revision-cell":
         print(revision_cell(cfg))
+    elif command == "header-comment":
+        print(header_comment(cfg))
     elif command == "normalize":
         sys.stdout.write(normalize(cfg, sys.stdin.read()))
     else:

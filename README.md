@@ -251,7 +251,7 @@ A file with an ADR name but no header gets `no-header`; while no decision has a 
 The 12 lines at the top of every decision -- the status read from its label and the hidden `<!-- Accepted -->` marker after the date (a header without the marker is read from the label alone):
 
 ```markdown
-<!-- Do not remove this comment, lines and table (1-12) -->
+<!-- Do not edit or remove this comment, lines and table (1-12) -->
 |Fields|Values|
 |--|--|
 |File title md|Use PostgreSQL|
@@ -262,7 +262,7 @@ The 12 lines at the top of every decision -- the status read from its label and 
 |Created|Proposed (2026-01-10) <!-- Proposed -->|
 |Changed|Accepted (2026-01-12) <!-- Accepted -->|
 |Superseded||
-<!-- Do not remove this comment, lines and table (1-12) -->
+<!-- Do not edit or remove this comment, lines and table (1-12) -->
 ```
 
 A file `migrate` brought in says so on line 2, `|Fields|Values Migrated <!-- Migrated -->|`, and may have blank Version and status cells.
