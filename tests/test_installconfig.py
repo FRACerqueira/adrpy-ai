@@ -248,3 +248,15 @@ def test_installconfig_refuses_a_comment_delimiter_in_a_text_written_inside_one(
     with pytest.raises(CommandError) as raised:
         installconfig.run([f"--{field}", "Managed --> keep"])
     assert raised.value.code == "config-field-contains-forbidden-character"
+
+
+def test_installconfig_seed_refuses_a_comment_delimiter_in_a_text_written_inside_one(tmp_path):
+    from adrpy.core.config import default_repo_config_text
+
+    data = json.loads(default_repo_config_text())
+    data["headermigrated"] = "Mig<!--x"
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        installconfig.run(["--seed", str(seed)])
+    assert raised.value.code == "config-field-contains-forbidden-character"

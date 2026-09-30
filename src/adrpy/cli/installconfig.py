@@ -82,16 +82,17 @@ def _field_description(field):
         return (
             "Relative path to the decisions folder that a newly init'd repository using this as its "
             f"seed will get by default, max {config_schema.FOLDERADR_MAX_LENGTH} characters; cannot be "
-            "empty or absolute. Unlike the `config` command's own --folderadr, this one does NOT check "
-            "whether the value would escape a repository once applied -- there is no repository yet at "
-            "the point this file is written; that check happens later, in whichever command consumes "
-            "this file as a seed (currently `init`)."
+            "empty; one absolute or leading outside a repository (`..`) is refused with "
+            "config-folderadr-not-relative, the same shape check `config` applies. Whether it resolves outside through a link, and the guards "
+            "that need a real repository, are checked later by the command that consumes this file as a "
+            "seed (`init`)."
         )
     if field == "folderlog":
         return (
             "Relative path to the decision-log directory (ADR0007V01) that a newly init'd repository "
             f"using this as its seed will get by default, max {config_schema.FOLDERLOG_MAX_LENGTH} "
-            "characters; cannot be empty or absolute, or the same as (or nested inside/around) "
+            "characters; cannot be empty; one absolute or leading outside a repository (`..`) is refused "
+            "with config-folderlog-not-relative; nor can it be the same as (or nested inside/around) "
             "--folderadr (config-folderadr-folderlog-overlap, checked even here). Omitting this flag keeps "
             "the currently stored value -- changing --folderadr alone does not move it; the 'decision-log' "
             "sibling of folderadr is only the default for a hand-edited file written before this field "
@@ -289,6 +290,7 @@ def run(args):
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
         seed = parse_repo_config(seed_text, source=seed_path)  # validates before writing
+        reject_comment_delimiters(asdict(seed))
         reject_overlapping_migration_pattern(seed.migrationpattern)
         # Written as given, except that the retired fields do not survive the write.
         if any(key.lower() in _RETIRED_FIELDS for key in json.loads(seed_text)):

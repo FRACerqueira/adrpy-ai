@@ -1059,3 +1059,67 @@ def test_a_code_span_in_a_summary_keeps_its_backslashes(tmp_path):
     _log(tmp_path)
     row = next(line for line in _log_index(tmp_path).splitlines() if "2026-09-03" in line)
     assert "`\\r\\n`" in row
+
+
+
+def test_log_link_text_shows_a_name_with_markdown_punctuation_as_it_is(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-04--scope-note--cli--two`b_x_&amp;.md").write_text("# Odd\n", encoding="utf-8")
+    _log(tmp_path)
+    row = next(line for line in _log_index(tmp_path).splitlines() if "2026-09-04" in line)
+    assert "[2026-09-04--scope-note--cli--two\\`b\\_x\\_\\&amp;.md]" in row
+
+
+def test_a_lone_surrogate_is_shown_as_one_replacement_character(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-01--scope-note--cli--x\ud800y.md").write_text("# Odd\n", encoding="utf-8")
+    _log(tmp_path)
+    assert "x\ufffdy" in _log_index(tmp_path)
+    assert "\ufffd\ufffd" not in _log_index(tmp_path)
+
+
+def test_log_index_ties_are_ordered_by_path_whatever_the_system(tmp_path):
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("2026-09-05--scope-note--cli--a.md", "2026-09-05--scope-note--cli--B.md"):
+        (folder / name).write_text("# t\n", encoding="utf-8")
+    _log(tmp_path)
+    index = _log_index(tmp_path)
+    assert index.index("[2026-09-05--scope-note--cli--B.md]") < index.index("[2026-09-05--scope-note--cli--a.md]")
+
+
+def test_an_entry_whose_extension_is_upper_case_is_an_entry_on_every_system(tmp_path):
+    """Round allocation must not depend on the system reading the log:
+    `x.MD` counts wherever it is read."""
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "2026-09-01--audit-finding--cli--up.MD").write_text(
+        "# Up\n**Front:** x | **Severity:** Low | **Resolution:** Direct | **Round:** 30\n", encoding="utf-8")
+    result = _log(tmp_path, "--front", "f", "--severity", "Low", "--resolution", "Direct", classification="audit-finding")
+    assert result["round"] == 31
+
+
+def test_a_folderlog_respelled_as_the_same_folder_is_no_change_to_refuse(tmp_path):
+    from adrpy.cli import config
+
+    _init_repo(tmp_path)
+    _log(tmp_path)
+    result = config.run(["--path", str(tmp_path), "--folderlog", "doc/decision-log/../decision-log"])
+    assert result["updated_fields"] == ["folderlog"]
+
+
+def test_the_log_s_own_pages_in_another_case_are_its_own_on_every_system(tmp_path):
+    """Its entries' `.md` is read in any case; so are INDEX.md and CYCLES.md,
+    or `log` would refuse them as strays where names are case-sensitive."""
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    (folder / "sub").mkdir(parents=True)
+    (folder / "CYCLES.MD").write_text("# Cycles\n", encoding="utf-8")
+    (folder / "sub" / "Index.Md").write_text("# Index\n", encoding="utf-8")
+    assert _log(tmp_path)["created"]

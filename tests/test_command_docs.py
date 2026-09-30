@@ -82,3 +82,22 @@ def test_revise_s_contract_says_revisions_are_on_in_a_new_repository():
     description = revise.describe()["description"]
     assert "which a freshly initialized repository's is not" not in description
     assert "the value of the config it was seeded from, 2 by default (0 turns revisions off)" in description
+
+
+
+def test_installconfig_s_folder_flags_say_they_refuse_a_path_leading_out():
+    """installconfig refuses `..` (config-folderadr-not-relative); its
+    contract said it did not check."""
+    from adrpy.cli import installconfig
+
+    arguments = {a["name"]: a["description"] for a in installconfig.describe()["arguments"]}
+    for field in ("folderadr", "folderlog"):
+        assert "does NOT check" not in arguments[field]
+        assert f"config-{field}-not-relative" in arguments[field]
+
+
+def test_config_s_folderadr_names_the_code_refusing_the_repository_root():
+    from adrpy.cli import config
+
+    arguments = {a["name"]: a["description"] for a in config.describe()["arguments"]}
+    assert "config-folderadr-folderlog-overlap" in arguments["folderadr"]

@@ -91,5 +91,5 @@ Because `gate.md` and skill-body content are natural-language instructions for a
 
 ## Links
 
-* Depends on: `doc/decision-log-workflow.md` (reused verbatim as `decision-log`'s `glue.md`; already generic to any adrpy-managed repo).
+* Depends on: `doc/decision-log-workflow.md` (adapted as `decision-log`'s `glue.md`: its links replaced by plain names and its wording specific to this repository generalized, so it holds in any adrpy-managed repo).
 * Related: ADR0005V01 (FailureCodes/Constants registry) and ADR0008V01 (structured failure_codes field) -- the `adrpy-skills` entry point reuses `adrpy.core.args`/`adrpy.core.output` for the same JSON-envelope discipline, without adding to `adrpy`'s own `describe()` surface.

@@ -810,3 +810,27 @@ def test_a_migrated_fields_row_with_a_multi_word_or_recased_word_is_a_damaged_he
     config = load_repo_config(FIXTURE_PATH)
     lines = ["# x", row, "| -- | -- |", "| File title md | x |"] + [""] * 8
     assert has_header_shape(lines, config)
+
+
+
+def test_a_long_table_row_ending_in_a_comment_is_read_in_linear_time():
+    """A 16 KB row of short words ending in a comment took over a second
+    per file with a backtracking pattern: every command reads it."""
+    import time
+
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    row = "|a|" + "w " * 8000 + "x <!-- y -->|"
+    start = time.perf_counter()
+    assert not has_header_shape(["# Note", row] + [""] * 10, config)
+    assert time.perf_counter() - start < 0.1
+
+
+@pytest.mark.parametrize("row", ["|a|ß <!-- s -->|", "|Größe|ßa <!-- sa -->|", "|F|\ufb03 <!-- i -->|"])
+def test_a_row_whose_word_folds_to_a_different_length_is_no_migrated_row(row):
+    """The words are compared folded (ß is ss): the boundary before them
+    must be found in the folded text too."""
+    from adrpy.core.header import _is_migrated_fields_row
+
+    assert not _is_migrated_fields_row(row)

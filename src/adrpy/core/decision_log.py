@@ -23,10 +23,10 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.naming import reject_too_long_filename
 from adrpy.core.header import read_header_lines
-from adrpy.core.fs import scan_tree, written_by_someone_else
+from adrpy.core.fs import same_folder, scan_tree, written_by_someone_else
 from adrpy.core.warnings import excluded_candidate_warning
 from adrpy.core.security import resolve_within
-from adrpy.core.text import parse_ascii_int
+from adrpy.core.text import markdown_literal, parse_ascii_int, without_surrogates
 
 CLASSIFICATIONS = (
     "audit-finding",
@@ -262,7 +262,7 @@ def _existing_entries(decision_log_dir, *, warnings=None):
     decision_log_dir = Path(decision_log_dir)
     if not decision_log_dir.is_dir():
         return []
-    scan = scan_tree(decision_log_dir)
+    scan = scan_tree(decision_log_dir, markdown_any_case=True)
     if warnings is not None:
         warning = excluded_candidate_warning(list(scan.excluded))
         if warning and warning not in warnings:
@@ -281,10 +281,10 @@ def _existing_entries(decision_log_dir, *, warnings=None):
 
 def _entry_candidates(scan):
     """The files of `scan` that must each be an entry: every `.md` but
-    the log's own INDEX.md and CYCLES.md, their names compared as the file
-    system compares them, sorted."""
-    own = {os.path.normcase(name) for name in _NON_ENTRY_FILES}
-    return [path for path in sorted(scan.markdown) if os.path.normcase(path.name) not in own]
+    the log's own INDEX.md and CYCLES.md, their names compared in any
+    case as the log's `.md` is (the same on every system), sorted."""
+    own = {name.lower() for name in _NON_ENTRY_FILES}
+    return [path for path in sorted(scan.markdown) if path.name.lower() not in own]
 
 
 def unrecognized_log_files_warning(target, config):
@@ -302,7 +302,7 @@ def unrecognized_log_files_warning(target, config):
     if not decision_log_dir.is_dir():
         return None
     names = []
-    for path in _entry_candidates(scan_tree(decision_log_dir)):
+    for path in _entry_candidates(scan_tree(decision_log_dir, markdown_any_case=True)):
         try:
             _parse_entry(path, path.relative_to(decision_log_dir).as_posix())
         except CommandError as error:
@@ -346,7 +346,8 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
     would silently become recognized decision-log history (round
     allocation, INDEX.md) the moment anything scans it. Skipped when the
     new directory does not exist yet."""
-    if new_folderlog == old_folderlog:
+    new_log_dir = resolve_within(target, new_folderlog)
+    if new_folderlog == old_folderlog or same_folder(old_log_dir, new_log_dir):
         return
     existing = _existing_entries(old_log_dir, warnings=warnings)
     if existing:
@@ -359,7 +360,6 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
             warnings=warnings,
         )
 
-    new_log_dir = resolve_within(target, new_folderlog)
     if new_log_dir.is_dir():
         adopted = _existing_entries(new_log_dir, warnings=warnings)
         if adopted:
@@ -415,8 +415,7 @@ def _cell(text):
     (valid in an NTFS name, not in UTF-8) shown as U+FFFD, so one odd name
     cannot stop the page, and `|` escaped, so the row keeps its columns
     (a backslash is left as written: a code span shows it as is)."""
-    text = str(text).encode("utf-8", "surrogatepass").decode("utf-8", "replace")
-    return text.replace("|", "\\|")
+    return without_surrogates(str(text)).replace("|", "\\|")
 
 
 def previous_index_warning(old_dir, new_dir, warnings):
@@ -427,8 +426,7 @@ def previous_index_warning(old_dir, new_dir, warnings):
     spelled another way (`doc/../doc/log`, a link to it) is no previous one."""
     old_index = Path(old_dir) / _INDEX_FILENAME
     try:
-        same = os.path.normcase(os.path.realpath(old_dir)) == os.path.normcase(os.path.realpath(new_dir))
-        if not same and old_index.is_file() and not written_by_someone_else(old_index, _INDEX_MARK):
+        if not same_folder(old_dir, new_dir) and old_index.is_file() and not written_by_someone_else(old_index, _INDEX_MARK):
             warnings.append(f"{old_index} is the index of the previous decision-log folder: delete it if it is no "
                             "longer needed.")
     except KeyboardInterrupt:
@@ -452,7 +450,8 @@ def regenerate_index(decision_log_dir, *, warnings=None):
             )
         return 0
     entries = _existing_entries(decision_log_dir, warnings=warnings)
-    entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"]))
+    # The path last, as text: the same order on every system.
+    entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"], entry["path"]))
 
     lines = [
         "# Decision log index",
@@ -517,8 +516,7 @@ def regenerate_index(decision_log_dir, *, warnings=None):
     for entry in entries:
         cells = [_cell(entry[key]) for key in ("date", "classification", "scope", "front", "severity",
                                                 "resolution", "round", "reopen_when", "summary")]
-        link_text = _cell(str(entry["path"]).replace("\\", "\\\\")).replace("[", "\\[").replace("]", "\\]")
-        cells.append(f"[{link_text}]({quote(entry['path'], safe='/-_.,;', errors='surrogatepass')})")
+        cells.append(f"[{markdown_literal(str(entry['path']))}]({quote(entry['path'], safe='/-_.,;', errors='surrogatepass')})")
         lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
 

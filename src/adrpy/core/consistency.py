@@ -41,6 +41,7 @@ newer members that are all Rejected not counting.
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.fs import is_zero_bytes, scan_tree
@@ -101,8 +102,8 @@ HINTS = {
         "The header does not parse (detail names the reason). Repair it by hand, comparing it with the "
         "header of a decision that has a valid one, or restore it from git history. A file saved as "
         "UTF-16 (NUL bytes) reads this way: save it again as UTF-8. A note of yours that only looks like "
-        "a header (a table row holding `<!-- Accepted -->`, or a two-cell row ending `Done <!-- Done -->`) "
-        "belongs outside the decisions folder."
+        "a header (a table row holding `<!-- Accepted -->`, a two-cell row ending `Done <!-- Done -->`, or "
+        "a compact `|Fields|Values|` table) belongs outside the decisions folder."
     ),
     FailureCodes.INVALID_STATUS_COMBINATION: (
         "The Created/Changed/Superseded cells form a combination no command writes: Created is Proposed "
@@ -206,6 +207,7 @@ class Snapshot:
     by_number: dict
     excluded: tuple = ()
     unheadered_legacy: tuple = ()
+    folder: object = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +233,15 @@ def _is_unheadered(lines, config):
         and not parse_header(lines, config).is_valid
         and not has_header_shape(lines, config)
     )
+
+
+def _in_folder(path, folder):
+    """`path` by its path in `folder`, as a warning names it; its name when
+    no folder is known or it lies elsewhere."""
+    try:
+        return Path(path).relative_to(folder).as_posix()
+    except (TypeError, ValueError):
+        return Path(path).name
 
 
 def decision_names(scan, config):
@@ -574,7 +585,7 @@ def unrecognized_decision_like_warning(scan, config):
     if scan is None:
         return None
     names = sorted(
-        path.name
+        _in_folder(path, scan.folder)
         for path in scan.markdown
         if path.name[:1].isascii() and path.name[:1].isdigit() and parse_any_filename(path.name, config) is None
     )
@@ -610,7 +621,8 @@ def unheadered_legacy_warning(snapshot, config, shared=()):
     none."""
     if not snapshot.unheadered_legacy:
         return None
-    numbered = sorted((path.name, _name_number(path.name, config)) for path in snapshot.unheadered_legacy)
+    numbered = sorted((_in_folder(path, snapshot.folder), _name_number(path.name, config))
+                      for path in snapshot.unheadered_legacy)
     listed = ", ".join(name if number is None else f"{name} (number {number})" for name, number in numbered)
     found = (
         f"{len(numbered)} file(s) match migrationpattern but have no header, so they are not decisions: "
@@ -693,7 +705,7 @@ def check_repository(folder, config, scan=None):
 
     errors.sort(key=lambda error: (error["file"], error["code"]))
     excluded = scan.excluded if scan is not None else ()
-    return Snapshot(tuple(decisions), by_number, excluded, tuple(unheadered)), errors
+    return Snapshot(tuple(decisions), by_number, excluded, tuple(unheadered), folder), errors
 
 
 def validate_repository(folder, config, scan=None, tolerate=()):

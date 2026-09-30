@@ -407,11 +407,28 @@ def _is_fields_row(line, config):
     return line.startswith("|") and len(cells) > 2 and config.headertablefields in cells[1]
 
 
-# The migrated fields row's own shape, whatever its labels: two cells, the
-# second ending in some words and a comment holding those same words, any
-# case (`|Fields|Values Migrated <!-- Migrated -->|`; headermigrated may
-# hold spaces).
-_MIGRATED_FIELDS_ROW = re.compile(r"^\|[^|]*\|(?:[^|]*\s)?(\S(?:[^|]*?\S)?)\s+<!--\s*\1\s*-->\s*\|$", re.IGNORECASE)
+def _is_migrated_fields_row(line):
+    """Whether the stripped `line` has the migrated fields row's own shape,
+    whatever its labels: two cells, the second ending in some words and a
+    comment holding those same words, any case (`|Fields|Values Migrated
+    <!-- Migrated -->|`; headermigrated may hold spaces). Linear: a row of
+    many words is read once, however long."""
+    cells = line.split("|")
+    if len(cells) != 4 or cells[0] or cells[3]:
+        return False
+    value = cells[2].rstrip()
+    start = value.rfind("<!--")
+    if start < 0 or not value.endswith("-->") or start + 4 > len(value) - 3:
+        return False
+    word = value[start + 4:-3].strip()
+    before = value[:start]
+    if not word or not before[-1:].isspace():
+        return False
+    before, word = before.rstrip().casefold(), word.casefold()
+    if not before.endswith(word):
+        return False
+    head = before[:len(before) - len(word)]
+    return head == "" or head[-1].isspace()
 
 
 def has_header_shape(lines, config):
@@ -448,7 +465,7 @@ def has_header_shape(lines, config):
         if (
             (stripped.startswith("<!-- ") and stripped.endswith(f"(1-{HEADER_LINE_COUNT}) -->"))
             or (stripped.startswith("|") and (_CANONICAL_MARKER_PATTERN.search(line)
-                                               or _MIGRATED_FIELDS_ROW.match(stripped)))
+                                               or _is_migrated_fields_row(stripped)))
             or line.startswith(f"|{config.headertablefields}|")
             or "\x00" in line
         ):

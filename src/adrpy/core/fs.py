@@ -106,6 +106,16 @@ def read_bounded(path, max_bytes, chunk_size):
     return b"".join(chunks)
 
 
+def same_folder(first, second):
+    """Whether two paths name one folder as the file system resolves them:
+    one spelled another way (`doc/../doc/log`, another case where names are
+    case-blind, a link to it) is the same folder."""
+    try:
+        return os.path.samefile(first, second)
+    except (OSError, ValueError):
+        return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
+
+
 def is_zero_bytes(path):
     """True for a 0-byte file, what an interrupted create's reservation
     leaves (a file holding only a BOM is not one). False when it cannot
@@ -377,6 +387,7 @@ class TreeScan:
     excluded: tuple
     unreadable: tuple
     links: tuple = ()
+    folder: object = None
 
 
 def _is_file_link(entry):
@@ -416,7 +427,7 @@ def _real_path(path, known_parent, entry):
         return None
 
 
-def scan_tree(folder):
+def scan_tree(folder, markdown_any_case=False):
     """The one traversal of a folder, os.walk's order (top-down, a
     directory's files before its subdirectories), recording every
     directory it could not list (rglob would skip it silently). Like
@@ -427,7 +438,10 @@ def scan_tree(folder):
     cycle is not listed twice, and a junction to a directory outside
     `folder` is excluded as a whole, not entered. A directory symlink is
     neither entered nor reported in `excluded`, wherever it points. The extension match follows the OS's own case
-    rule (os.path.normcase), as rglob's does. A missing `folder` is
+    rule (os.path.normcase), as rglob's does, unless `markdown_any_case`
+    (the decision log: its Rounds must not depend on the system reading
+    it), where `.md` and the root INDEX.md match in any case. A missing
+    `folder` is
     reported as unreadable. The folder's own INDEX.md is not listed: it is
     the page adrpy generates there (ADR0013V01R02, and the decision log's
     own index).
@@ -479,7 +493,8 @@ def scan_tree(folder):
                     subdirectories.append(entry)
                 continue
             extension = os.path.normcase(entry.name)[-4:]
-            kind = ".md" if extension.endswith(".md") else ".tmp" if extension == ".tmp" else None
+            is_markdown = (entry.name.lower() if markdown_any_case else extension).endswith(".md")
+            kind = ".md" if is_markdown else ".tmp" if extension == ".tmp" else None
             if kind is None:
                 continue
             candidate = directory / entry.name
@@ -516,9 +531,10 @@ def scan_tree(folder):
                 through_links.append((path, real_sub))
             else:
                 pending.append((path, real_sub))
-    index = os.path.normcase(str(folder / "INDEX.md"))
-    markdown = tuple(path for path in found[".md"].values() if os.path.normcase(str(path)) != index)
-    return TreeScan(markdown, tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links))
+    fold = str.lower if markdown_any_case else os.path.normcase
+    index = fold(str(folder / "INDEX.md"))
+    markdown = tuple(path for path in found[".md"].values() if fold(str(path)) != index)
+    return TreeScan(markdown, tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links), folder)
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):

@@ -381,3 +381,12 @@ def test_the_headered_warning_says_to_rename_to_a_free_number_not_to_change_the_
 
     [warning] = [w for w in check.run(["--path", str(tmp_path)])["warnings"] if "carry an adrpy header" in w]
     assert "free number" in warning and "adrpy config" not in warning
+
+
+
+def test_a_digit_named_file_in_a_subfolder_is_named_by_its_path_in_the_folder(tmp_path, capsys):
+    repo = make_repo(tmp_path, files=[D(1)])
+    (repo.folder / "sub").mkdir()
+    (repo.folder / "sub" / "0007-later.md").write_text("# later\n", encoding="utf-8")
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+    assert any("sub/0007-later.md" in warning for warning in payload["data"]["warnings"])

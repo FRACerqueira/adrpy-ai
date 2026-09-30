@@ -43,6 +43,7 @@ from adrpy.core.fs import (
     discard_write,
     landed_after_failure,
     prepare_write,
+    same_folder,
     scan_tree,
 )
 from adrpy.core.naming import REWRITE_TOO_LONG_REMEDY, parse_any_filename, reject_linked_file, reject_too_long_filename
@@ -195,6 +196,9 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
 
 def _check_folderadr_change(old_config, new_config, scan, target, warnings):
     old_folderadr, new_folderadr = old_config.folderadr, new_config.folderadr
+    # The same folder spelled another way makes nothing invisible.
+    if same_folder(resolve_within(target, old_folderadr), resolve_within(target, new_folderadr)):
+        return
     if scan.unreadable:
         unreadable = list(scan.unreadable)
         raise CommandError(

@@ -556,3 +556,26 @@ def test_an_interrupt_naming_the_previous_index_leaves_the_config_written(tmp_pa
     result = config_command.run(["--path", str(root), "--folderadr", "doc/other"])
     assert load_repo_config(root / ".adrpy.json").folderadr == "doc/other"
     assert any("interrupted" in warning for warning in result["warnings"])
+
+
+
+def test_a_legacy_link_text_with_markdown_punctuation_shows_the_name_as_it_is(tmp_path):
+    from adrpy.cli import config as config_command, migrate
+
+    root, _ = _repo(tmp_path)
+    adr = root / "doc" / "adr"
+    (adr / "0001-a_b_`c`&amp;.md").write_text("# Foo\n\nText.\n", encoding="utf-8")
+    config_command.run(["--path", str(root), "--migrationpattern", "N00:04T05"])
+    migrate.run(["--path", str(root)])
+    index = (adr / "INDEX.md").read_text(encoding="utf-8")
+    assert "[0001-a\\_b\\_\\`c\\`\\&amp;](" in index
+
+
+def test_a_folderadr_respelled_as_the_same_folder_is_no_change_to_refuse(tmp_path):
+    from adrpy.cli import config as config_command, new
+
+    root, _ = _repo(tmp_path)
+    new.run(["--path", str(root), "--title", "One"])
+    result = config_command.run(["--path", str(root), "--folderadr", "doc/adr/../adr"])
+    assert result["updated_fields"] == ["folderadr"]
+    assert not any("previous decisions folder" in warning for warning in result["warnings"])

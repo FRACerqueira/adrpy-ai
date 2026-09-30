@@ -1469,3 +1469,19 @@ def test_a_stored_disclaimer_holding_a_comment_end_still_loads(tmp_path):
     data["headerdisclaimer"] = "Managed --> keep"
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     assert config.run(["--path", str(tmp_path), "--lenseq", "4"])["updated_fields"] == ["lenseq"]
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+def test_init_seed_refuses_a_comment_delimiter_in_a_text_written_inside_one(tmp_path, field):
+    import json
+
+    (tmp_path / "source").mkdir()
+    (tmp_path / "target").mkdir()
+    source = _init_repo(tmp_path / "source") / ".adrpy.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data[field] = "Mig<!--x"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        init.run(["--path", str(tmp_path / "target"), "--seed", str(seed_path)])
+    assert raised.value.code == "config-field-contains-forbidden-character"

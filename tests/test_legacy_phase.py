@@ -461,3 +461,14 @@ def test_the_texts_about_adoption_say_what_the_docs_say(tmp_path, capsys):
     for text in texts:
         assert "valid header migrate did not write" in text, text
         assert "decisions the tool created" not in text, text
+
+
+
+def test_a_legacy_note_in_a_subfolder_is_named_by_its_path_in_the_folder(tmp_path, capsys):
+    repo = make_repo(tmp_path, config=_PATTERN, files=[D(1)])
+    (repo.folder / "sub").mkdir()
+    _note(repo, "sub/0099-notes.md")
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+    assert code == EXIT_SUCCESS
+    [warning] = _phase_warnings(payload["data"]["warnings"])
+    assert "sub/0099-notes.md (number 99)" in warning

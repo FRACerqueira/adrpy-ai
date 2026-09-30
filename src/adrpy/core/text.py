@@ -63,3 +63,22 @@ def shell_argument(value, placeholder="<path>"):
     if _UNQUOTABLE.search(value):
         return placeholder
     return f'"{value}"' if _NEEDS_QUOTES.search(value) else value
+
+
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+_INLINE_MARKUP = re.compile(r"[\\`*_\[\]<>&!|~]")
+
+
+def without_surrogates(text):
+    """`text` with each lone surrogate (valid in an NTFS name, never in
+    UTF-8) shown as one U+FFFD, so it can be written as UTF-8."""
+    return _LONE_SURROGATE.sub("\ufffd", text)
+
+
+def markdown_literal(text):
+    """`text` as a Markdown link's text that shows it as it is: each
+    character that starts inline markup there backslash-escaped, so a
+    backtick, `_`, `&amp;`, `<a:b>` or `|` is never read as markup (a `-`
+    or `.` cannot start any inside a link's text). A lone surrogate is shown
+    as U+FFFD."""
+    return _INLINE_MARKUP.sub(lambda match: "\\" + match.group(0), without_surrogates(text))

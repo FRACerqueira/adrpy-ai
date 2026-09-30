@@ -58,7 +58,8 @@ def _field_description(field):
     if field == "folderadr":
         return (
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
-            "cannot be empty, absolute, escape the repository, or resolve to the repository root itself."
+            "cannot be empty, absolute, escape the repository, or resolve to the repository root itself "
+            "(refused as config-folderadr-folderlog-overlap: folderlog would nest inside it)."
         )
     if field == "folderlog":
         return (
