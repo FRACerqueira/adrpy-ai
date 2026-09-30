@@ -418,7 +418,7 @@ def _body_start_offset(header_buffer, count):
     return matches[count - 1].end()
 
 
-_BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
+_REPLACEMENT_CHARACTER_BYTES = "\ufffd".encode("utf-8")
 
 
 def stream_normalized_body_chunks(source_path, report):
@@ -445,20 +445,18 @@ def stream_normalized_body_chunks(source_path, report):
     back (not yet convertible -- the next chunk's first byte could still
     complete a `\\r\\n` pair) rather than converted immediately.
 
-    Not reentrant across concurrent calls within the same process (the
-    error-handler name is re-registered, closing over THIS call's own
-    `report`, immediately before use) -- safe for this project's own
-    single-threaded-per-command-invocation model; never call this a
-    second time before the first call's generator has been fully
-    consumed."""
+    A repair is detected without a registered codec error handler, which
+    is process-global and would let two streams consumed interleaved flag
+    each other's report: every U+FFFD in the output either decodes a valid
+    EF BF BD already in the input or replaces invalid bytes, so the body
+    was repaired exactly when the output holds more of them than the
+    input. EF never occurs inside another sequence, so counting it in the
+    raw bytes (with two bytes carried across a chunk boundary) counts
+    exactly the valid ones."""
     report["encoding_repaired"] = False
-
-    def _replace_and_flag(error):
-        report["encoding_repaired"] = True
-        return codecs.replace_errors(error)
-
-    codecs.register_error(_BODY_DECODE_ERROR_HANDLER_NAME, _replace_and_flag)
-    decoder = codecs.getincrementaldecoder("utf-8")(_BODY_DECODE_ERROR_HANDLER_NAME)
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    replacements_in = replacements_out = 0
+    carried = b""
 
     header_buffer = _read_header_bytes(source_path, HEADER_LINE_COUNT)
     offset = _body_start_offset(header_buffer, HEADER_LINE_COUNT)
@@ -488,16 +486,24 @@ def stream_normalized_body_chunks(source_path, report):
                 continue
             normalized = _REAL_NEWLINE_BYTES.sub(LINESEP_BYTES, data)
             ends_with_terminator = data[-1:] in (b"\r", b"\n")
+            window = carried + normalized
+            replacements_in += window.count(_REPLACEMENT_CHARACTER_BYTES)
+            carried = window[-2:]
             piece = decoder.decode(normalized, False)
+            replacements_out += piece.count("\ufffd")
             if piece:
                 yield piece.encode("utf-8")
 
+    # Flushed before the held CR: the bytes the decoder still holds (a
+    # truncated sequence) came before that CR in the file.
+    final_piece = decoder.decode(b"", True)
+    replacements_out += final_piece.count("\ufffd")
+    report["encoding_repaired"] = replacements_out > replacements_in
+    if final_piece:
+        yield final_piece.encode("utf-8")
     if pending_cr:
         yield LINESEP_BYTES
         ends_with_terminator = True
-    final_piece = decoder.decode(b"", True)
-    if final_piece:
-        yield final_piece.encode("utf-8")
     if saw_any_byte and not ends_with_terminator:
         yield LINESEP_BYTES
 

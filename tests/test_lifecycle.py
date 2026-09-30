@@ -247,6 +247,14 @@ _BODY_MATRIX_CASES = [
     ("é" * 3000).encode("utf-8"),
     b"a" * 100 + "ééé".encode("utf-8") + b"b" * 100 + b"\r\n" + b"c" * 100,
     b"a" * 50 + b"\xa4" + b"b" * 50,
+    # A valid U+FFFD in the body is content, not a repair.
+    "a real \ufffd stays\n".encode("utf-8"),
+    "a real \ufffd and an invalid ".encode("utf-8") + b"\xa4" + b" byte\n",
+    # A truncated sequence then a final lone CR: the U+FFFD comes before
+    # the terminator, as in the whole-file read.
+    b"ab\xe2\x82\r",
+    b"\xc3\r",
+    b"\xf0\x9f\x98\xf0\x9f\x98\r",
 ]
 
 
@@ -304,6 +312,59 @@ def test_stream_normalized_body_chunks_is_chunk_size_independent(tmp_path, monke
 
     assert actual_bytes == expected_text.encode("utf-8")
     assert report["encoding_repaired"] is expected_repaired
+
+
+@pytest.mark.parametrize("chunk_size", [1, 2, 3, 4, 7, 16, 64])
+def test_a_valid_replacement_character_split_across_chunks_is_not_a_repair(tmp_path, monkeypatch, chunk_size):
+    """The three bytes of a valid U+FFFD, wherever a chunk boundary cuts
+    them, are content: encoding_repaired stays False."""
+    import adrpy.core.lifecycle as lifecycle_module
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    target = adr_dir / "ADR001V01-valid.md"
+    body_bytes = ("a" * 5 + "\ufffd" * 3 + "b\r\n" + "\ufffd").encode("utf-8")
+    with open(target, "wb") as handle:
+        handle.write(build_header(config, DecisionRecord(number=1, title="Valid", version=1, status_create="Proposed")).encode("utf-8"))
+        handle.write(body_bytes)
+
+    expected_text, expected_repaired = _reference_body(target)
+
+    monkeypatch.setattr(lifecycle_module, "STREAM_CHUNK_SIZE", chunk_size)
+    report = {}
+    actual_bytes = b"".join(stream_normalized_body_chunks(target, report))
+
+    assert actual_bytes == expected_text.encode("utf-8")
+    assert expected_repaired is False
+    assert report["encoding_repaired"] is False
+
+
+def test_interleaved_body_streams_each_report_their_own_repair(tmp_path, monkeypatch):
+    """Two body streams consumed interleaved in one process: each report
+    says whether ITS body had invalid bytes, never the other's."""
+    import adrpy.core.lifecycle as lifecycle_module
+
+    config = load_repo_config(FIXTURE_PATH)
+    adr_dir = tmp_path / config.folderadr
+    adr_dir.mkdir(parents=True)
+    header = build_header(config, DecisionRecord(number=1, title="Pair", version=1, status_create="Proposed"))
+    dirty = adr_dir / "ADR001V01-dirty.md"
+    clean = adr_dir / "ADR002V01-clean.md"
+    dirty.write_bytes(header.encode("utf-8") + b"a" * 32 + b"\xa4" + b"b" * 8)
+    clean.write_bytes(header.encode("utf-8") + b"c" * 40)
+
+    monkeypatch.setattr(lifecycle_module, "STREAM_CHUNK_SIZE", 16)
+    dirty_report, clean_report = {}, {}
+    dirty_stream = stream_normalized_body_chunks(dirty, dirty_report)
+    clean_stream = stream_normalized_body_chunks(clean, clean_report)
+    next(dirty_stream)
+    next(clean_stream)
+    b"".join(dirty_stream)
+    b"".join(clean_stream)
+
+    assert dirty_report["encoding_repaired"] is True
+    assert clean_report["encoding_repaired"] is False
 
 
 def test_stream_normalized_body_chunks_does_not_read_the_whole_body_into_memory(tmp_path):
