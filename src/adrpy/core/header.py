@@ -407,35 +407,46 @@ def _is_fields_row(line, config):
     return line.startswith("|") and len(cells) > 2 and config.headertablefields in cells[1]
 
 
-def has_header_shape(lines, config):
-    """True when any of the first HEADER_LINE_COUNT lines carries a row
-    only this tool's header writes (the fields row exactly as written,
-    `|{headertablefields}|` -- a hand-written table has spaces around its
-    cells -- or exactly the `|--|--|` separator). Tells a damaged header
-    apart from no header at all --
-    looking past the first two lines, so a line inserted or deleted at
-    the top doesn't hide it. A NUL byte also counts: it means the file
-    was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
-    which splits the markers apart -- a damaged header, not a missing one
-    (decided by the project owner).
+_ENDS_IN_A_COMMENT = re.compile(r"<!-- .* -->\s*\|$")
 
-    The second line also counts when parse_header would read it as the
-    fields row (more around the label in its cell, no space at its edges)
-    under the comment every header opens with, which ends in its line range
-    (`(1-12) -->`): the older form, whose damaged header migrate would
-    otherwise stack a second one on. Only there, and only under that
-    comment, so a compact table in a note, even under its title or under a
-    comment of its own (`<!-- toc -->`), is not taken for a header."""
-    older_form = (
-        len(lines) > 1
-        and lines[0].startswith("<!-- ") and lines[0].rstrip().endswith(f"(1-{HEADER_LINE_COUNT}) -->")
-        and _is_fields_row(lines[1], config)
-        and lines[1].split("|")[1] == lines[1].split("|")[1].strip()
-    )
-    return older_form or any(
-        line.startswith(f"|{config.headertablefields}|") or line.rstrip() == "|--|--|" or "\x00" in line
-        for line in lines[:HEADER_LINE_COUNT]
-    )
+
+def has_header_shape(lines, config):
+    """True when the first HEADER_LINE_COUNT lines carry what only this
+    tool's header writes. Tells a damaged header apart from no header at
+    all -- an Accepted decision must not drop out of every rule, nor
+    migrate stack a second header on it:
+
+    - the comment a header opens and closes with, ending in its line range
+      (`(1-12) -->`), on any line: the closing one survives a fault at the
+      top, a markdown formatter's blank line and padding, indentation;
+    - a table row holding a status cell's hidden canonical marker
+      (`<!-- Accepted -->`, ADR0004V01, never translated), or ending in a
+      comment the way the migrated fields row does (`<!-- Migrated -->|`);
+    - the fields row exactly as written, `|{headertablefields}|`, anywhere;
+    - the exact `|--|--|` separator on the first line, where no note's
+      table can have it (a table's separator sits under its header row);
+    - a NUL byte: the file was re-encoded as UTF-16/UTF-32 (PowerShell
+      5.1's Out-File, '>'), which splits the markers apart -- a damaged
+      header, not a missing one (decided by the project owner).
+
+    None of these reads a row label, which `config` may rename after the
+    header was written. `|--|--|` further down is no header's mark: a
+    note's own table has one, and taking it for a header blocks the
+    repository."""
+    head = lines[:HEADER_LINE_COUNT]
+    if head and head[0].rstrip() == "|--|--|":
+        return True
+    for line in head:
+        stripped = line.strip()
+        if (
+            (stripped.startswith("<!-- ") and stripped.endswith(f"(1-{HEADER_LINE_COUNT}) -->"))
+            or (stripped.startswith("|") and (_CANONICAL_MARKER_PATTERN.search(line)
+                                               or _ENDS_IN_A_COMMENT.search(stripped)))
+            or line.startswith(f"|{config.headertablefields}|")
+            or "\x00" in line
+        ):
+            return True
+    return False
 
 
 _HEADER_READ_CHUNK_SIZE = 4096

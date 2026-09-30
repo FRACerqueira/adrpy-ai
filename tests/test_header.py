@@ -604,7 +604,7 @@ def test_a_note_under_an_ordinary_comment_is_no_header(comment):
 
 
 def test_every_source_file_compiles_without_a_warning():
-    """An invalid escape in a string (a docstring's `\` before a backtick,
+    """An invalid escape in a string (a docstring's backslash before a backtick,
     say) is only a warning today and an error in a later Python."""
     import warnings
     from pathlib import Path
@@ -614,3 +614,145 @@ def test_every_source_file_compiles_without_a_warning():
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             compile(path.read_text(encoding="utf-8"), str(path), "exec")
+
+
+# What prettier 3 and mdformat write for the fixture's header: a blank line
+# after the comment, every cell padded to its column's width.
+_FORMATTED_HEADER = [
+    "<!-- Do not remove this comment, lines and table (1-12) -->",
+    "",
+    "| Fields        | Values                                  |",
+    "| ------------- | --------------------------------------- |",
+    "| File title md | Baseline                                |",
+    "| Version       | 01                                      |",
+    "| Revision      |                                         |",
+    "| Scope         |                                         |",
+    "| Domain        |                                         |",
+    "| Created       | Proposed (2026-01-01) <!-- Proposed --> |",
+    "| Changed       |                                         |",
+    "| Superseded    |                                         |",
+]
+
+
+def test_a_header_a_markdown_formatter_rewrote_is_a_damaged_header():
+    """An Accepted decision must not drop out of every rule because a
+    formatter rewrote its header: it is adrpy's header, damaged."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    assert not parse_header(_FORMATTED_HEADER, config).is_valid
+    assert has_header_shape(_FORMATTED_HEADER, config)
+    assert has_header_shape(_FORMATTED_HEADER[2:] + ["", ""], config)
+
+
+def test_a_header_indented_is_a_damaged_header():
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    assert has_header_shape(["    " + line for line in _valid_header_lines(config)], config)
+
+
+def test_a_note_s_own_table_separator_is_no_header():
+    """|--|--| under a note's own table header is the note's."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    assert not has_header_shape(["# Options", "", "|Option|Cost|", "|--|--|", "|a|1|"] + [""] * 7, config)
+    assert not has_header_shape(["---", "title: x", "---", "|Name|Use|", "|--|--|"] + [""] * 7, config)
+    assert not has_header_shape(["# Form", "|Form Fields|Type|", "|--|--|", "|a|b|"] + [""] * 8, config)
+
+
+def test_a_note_explaining_three_header_rows_is_no_header():
+    """Fewer than four rows led by a header label is a note's table, one
+    that happens to talk about the same things."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    note = ["# Release notes", "", "| Item | Meaning |", "|--|--|", "| Version | the release |",
+            "| Scope | what it covers |", "| Domain | who owns it |", "", "text", "", "", ""]
+    assert not has_header_shape(note, config)
+
+
+def _faults(lines):
+    """Each way one of the first four lines can be damaged: changed,
+    blanked, deleted, or pushed down by an inserted line."""
+    changed = {0: "<!-- x -->", 1: "|Fiels|Values|", 2: "|---|---|", 3: "|Title|Baseline|"}
+    for index in range(4):
+        yield f"line {index + 1} changed", lambda ls, i=index: ls[:i] + [changed[i]] + ls[i + 1:]
+        yield f"line {index + 1} blanked", lambda ls, i=index: ls[:i] + [""] + ls[i + 1:]
+        yield f"line {index + 1} deleted", lambda ls, i=index: ls[:i] + ls[i + 1:] + [""]
+    yield "line inserted on top", lambda ls: ["# Title"] + ls[:-1]
+
+
+def test_every_single_or_double_fault_on_a_header_still_reads_as_a_damaged_header():
+    """Positive controls: one or two of the top lines damaged in any way
+    leave a header adrpy recognizes -- migrate must not stack a second one."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    faults = list(_faults(lines))
+    for first_name, first in faults:
+        assert has_header_shape(first(lines), config), first_name
+        for second_name, second in faults:
+            assert has_header_shape(second(first(lines)), config), (first_name, second_name)
+
+
+def test_a_header_s_comment_and_separator_alone_are_still_a_damaged_header():
+    """What is left of a header whose rows were all deleted: its separator
+    counts on the first line, or anywhere under its own comment."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _valid_header_lines(config)
+    assert has_header_shape(["|--|--|", "# damaged"], config)
+    assert has_header_shape([lines[0], "", "|--|--|", "# damaged"], config)
+    assert not has_header_shape(["<!-- toc -->", "|Option|Cost|", "|--|--|", "# damaged"], config)
+
+
+def test_a_damaged_header_is_recognized_after_its_row_labels_were_renamed():
+    """The row labels are not guarded: `config` may rename them all after a
+    header was written, and that header, damaged later, must still read as
+    damaged -- migrate would otherwise stack a second header on an Accepted
+    decision."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    record = DecisionRecord(number=1, title="Baseline", version=1, status_create="Proposed",
+                            date_create=date(2026, 1, 1), status_update="Accepted", date_update=date(2026, 2, 1))
+    lines = build_header(config, record).split(os.linesep)[:-1]
+    relabeled = dataclasses.replace(
+        config, headertitlefile="Titel", headerversion="Ver", headerrevision="Rev", headerscope="Area",
+        headerdomain="Team", headertitlestatuscreated="Erstellt", headertitlestatuschanged="Geaendert",
+        headertitlestatussuperseded="Ersetzt")
+    damaged = [f"| {config.headertablefields} | {config.headertablevalues} |"] + lines[2:] + [""]
+    assert has_header_shape(damaged, relabeled)
+    assert has_header_shape([line for line in lines if not line.startswith("<!--")][2:], relabeled)
+
+
+def test_a_file_with_a_key_value_table_on_top_is_no_header():
+    """A legacy decision or a note that opens with its own metadata table,
+    rows named like the header's, is the user's: taking it for a damaged
+    header would block the repository."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    note = ["# ADR 1: Use PostgreSQL", "", "| Field | Value |", "|---|---|", "| Status | Accepted |",
+            "| Version | 1.0 |", "| Scope | Backend |", "| Domain | Data |", "| Created | 2024-01-01 |",
+            "| Changed | 2024-02-01 |", "", "Text."]
+    assert not has_header_shape(note, config)
+
+
+def test_a_header_without_its_comments_or_exact_fields_row_is_still_a_damaged_header():
+    """Both comment lines gone and the fields row altered: a migrated
+    header's own mark, or a status marker hand-lowercased or whose date
+    lost its parentheses, still tells it apart from no header."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    rows = ["|File title md|Baseline|", "|Version||", "|Revision||", "|Scope||", "|Domain||"]
+    migrated = ["<!-- x -->", "|Fiels|Values Migrated <!-- Migrated -->|", "|--|--|"] + rows + ["|Created||"] * 3
+    assert has_header_shape(migrated, config)
+    assert has_header_shape(_replaced(migrated, 1, "| Fiels | Values Migrated <!-- Migrated --> |"), config)
+    for status in ("|Created|Proposed (2026-01-01) <!-- proposed -->|", "|Created|Proposed 2026-01-01 <!-- Proposed -->|"):
+        assert has_header_shape(["<!-- x -->", "| Fields | Values |", "|--|--|"] + rows + [status, "", ""], config)

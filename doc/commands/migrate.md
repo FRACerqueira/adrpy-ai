@@ -31,7 +31,7 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `migration-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- refuses the whole run. |
 | `migration-successor-files-exist` | A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run. |
 | `migration-duplicate-numbers-exist` | Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own. |
-| `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (its fields row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
+| `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (in its first 12 lines: its `(1-12) -->` comment, a status cell's hidden marker, its fields row, an exact `\|--\|--\|` first line or a NUL byte) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
 | `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration. |

@@ -799,7 +799,7 @@ def test_config_invalid_json_says_to_repair_the_file_by_hand():
 
 
 @pytest.mark.parametrize("field", ["folderadr", "folderlog"])
-@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", "a\..\..\outside", "./../outside",
+@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", r"a\..\..\outside", "./../outside",
                                    r"\outside", r"\..", r"a\b/../../x"])
 def test_a_folder_leading_outside_the_repository_is_rejected_on_read(field, value):
     """The read accepted a relative folder that leads outside the
