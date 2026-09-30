@@ -81,4 +81,4 @@ def test_revise_s_contract_says_revisions_are_on_in_a_new_repository():
 
     description = revise.describe()["description"]
     assert "which a freshly initialized repository's is not" not in description
-    assert "2 in a new repository" in description
+    assert "the value of the config it was seeded from, 2 by default (0 turns revisions off)" in description

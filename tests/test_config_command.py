@@ -1442,5 +1442,6 @@ def test_the_retired_field_warning_says_which_commands_drop_them(tmp_path, capsy
     _with_retired_fields(tmp_path)
     main(["config", "--path", str(tmp_path), "--lenseq", "5"])
     [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
-    assert "`config` and `installconfig` drop them when they rewrite that file" in warning
+    assert "adrpy drops them from a config it rewrites (`config`, `installconfig`, `init --seed`)" in warning
+    assert "a file it only reads, such as a seed, keeps them" in warning
     assert "activeplugins" not in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
