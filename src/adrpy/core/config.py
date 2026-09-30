@@ -132,7 +132,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_TEMPLATE_TOO_LONG: f"template exceeds {TEMPLATE_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERDISCLAIMER_TOO_LONG: f"headerdisclaimer exceeds {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_FIELD_IS_BLANK: "A field is non-empty but blank after stripping whitespace.",
-    FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->').",
+    FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'; or, for headerdisclaimer/headermigrated when `config` or `installconfig` sets them, '<!--' or '-->').",
     FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID: "migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap).",
     FailureCodes.CONFIG_HEADERTITLEFILE_TOO_LONG: f"headertitlefile exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERVERSION_TOO_LONG: f"headerversion exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
@@ -585,6 +585,25 @@ def parse_repo_config(text, source=None):
         )
 
     return RepoConfig(**{name: lowered[name] for name in ALL_FIELDS})
+
+
+# Written inside an HTML comment (build_header), where `-->` ends it early.
+_COMMENT_WRAPPED_FIELDS = ("headerdisclaimer", "headermigrated")
+
+
+def reject_comment_delimiters(flags):
+    """config-field-contains-forbidden-character when a value being set for
+    a field written inside an HTML comment holds `<!--` or `-->`. Only the
+    value being set, as reject_overlapping_migration_pattern: a config that
+    already holds one stays loadable."""
+    for name in _COMMENT_WRAPPED_FIELDS:
+        value = flags.get(name) or ""
+        if "<!--" in value or "-->" in value:
+            raise CommandError(
+                FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER,
+                f"{name} cannot contain '<!--' or '-->': it is written inside an HTML comment, which that "
+                "would open or close early.",
+            )
 
 
 def reject_overlapping_migration_pattern(pattern_text):

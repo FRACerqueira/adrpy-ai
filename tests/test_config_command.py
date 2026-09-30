@@ -1445,3 +1445,27 @@ def test_the_retired_field_warning_says_which_commands_drop_them(tmp_path, capsy
     assert "adrpy drops them from a config it rewrites (`config`, `installconfig`, `init --seed`)" in warning
     assert "a file it only reads, such as a seed, keeps them" in warning
     assert "activeplugins" not in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+@pytest.mark.parametrize("value", ["Managed by adrpy --> keep", "Keep <!-- this"])
+def test_a_text_written_inside_a_comment_cannot_close_or_open_one(tmp_path, field, value):
+    """Both are written inside an HTML comment: `-->` would end it early,
+    and the rest would show as text."""
+    tmp_path = _init_repo(tmp_path)
+    with pytest.raises(CommandError) as raised:
+        config.run(["--path", str(tmp_path), f"--{field}", value])
+    assert raised.value.code == "config-field-contains-forbidden-character"
+
+
+def test_a_stored_disclaimer_holding_a_comment_end_still_loads(tmp_path):
+    """Refused where it is set, never where it is read: a config written
+    before stays usable."""
+    import json
+
+    tmp_path = _init_repo(tmp_path)
+    path = tmp_path / ".adrpy.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["headerdisclaimer"] = "Managed --> keep"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert config.run(["--path", str(tmp_path), "--lenseq", "4"])["updated_fields"] == ["lenseq"]

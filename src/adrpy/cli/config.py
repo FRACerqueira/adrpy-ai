@@ -17,6 +17,7 @@ from adrpy.core.config import (
     _INT_FIELDS,
     _STRING_FIELDS,
     parse_repo_config,
+    reject_comment_delimiters,
     reject_overlapping_migration_pattern,
     serialize_repo_config,
 )
@@ -129,7 +130,14 @@ def _field_description(field):
     if field == "headerdisclaimer":
         return (
             f"Header disclaimer text, max {config_schema.HEADER_DISCLAIMER_MAX_LENGTH} characters; "
-            "cannot be empty, contain '|', or contain a line-break-like character."
+            "cannot be empty, contain '|', or contain a line-break-like character. Also cannot be set to a "
+            "text holding '<!--' or '-->': it is written inside the header's HTML comment."
+        )
+    if field == "headermigrated":
+        return (
+            f"Header row label, max {config_schema.HEADER_LABEL_MAX_LENGTH} characters; cannot be empty, "
+            "contain '|', or contain a line-break-like character. Also cannot be set to a text holding "
+            "'<!--' or '-->': it is also written inside the migrated fields row's HTML comment."
         )
     if field in ("headertablefields", "headertablevalues"):
         return (
@@ -250,6 +258,7 @@ def run(args):
         # Only the value being set: one already stored is left loadable.
         if "migrationpattern" in flags:
             reject_overlapping_migration_pattern(new_config.migrationpattern)
+        reject_comment_delimiters(flags)
 
         # The schema refuses a folder that leads out lexically ("../x"); one
         # that resolves out through a junction or symlink is only seen here --

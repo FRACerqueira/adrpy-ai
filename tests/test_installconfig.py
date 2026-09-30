@@ -241,3 +241,10 @@ def test_language_replaces_a_config_too_corrupt_to_parse(_isolated_install_confi
 
     assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
     assert installconfig.run([])["configured"] is True
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+def test_installconfig_refuses_a_comment_delimiter_in_a_text_written_inside_one(field):
+    with pytest.raises(CommandError) as raised:
+        installconfig.run([f"--{field}", "Managed --> keep"])
+    assert raised.value.code == "config-field-contains-forbidden-character"
