@@ -59,7 +59,7 @@ def test_approve_happy_path(tmp_path):
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text
 
 
-def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+def test_approve_rejects_a_hostile_title_before_any_rewrite(tmp_path):
     """A hand-edited header title carrying a colon (a genuine NTFS
     Alternate-Data-Stream separator, which parse_header's cell extraction
     does not block, unlike an embedded '|' or real newline) must never be
@@ -548,7 +548,7 @@ def test_reject_happy_path(tmp_path):
     assert "|Changed|Rejected (2026-01-02) <!-- Rejected -->|" in text
 
 
-def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+def test_reject_rejects_a_hostile_title_before_any_rewrite(tmp_path):
     """A hand-edited colon in the title is refused as for approve
     (invalid-header), before any rewrite."""
     tmp_path, adr_path = _setup_repo(tmp_path)
@@ -759,7 +759,7 @@ def test_undo_happy_path(tmp_path):
     assert "|Changed||" in text
 
 
-def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
+def test_undo_rejects_a_hostile_title_before_any_rewrite(tmp_path):
     """A hand-edited colon in the title is refused as for approve
     (invalid-header), before any rewrite."""
     tmp_path, adr_path = _setup_repo(tmp_path)

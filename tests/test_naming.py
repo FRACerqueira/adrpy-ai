@@ -66,7 +66,7 @@ def test_non_matching_filename_returns_none():
     assert parse_filename("ADR-no-number-here.md", config) is None
 
 
-def test_parse_migration_pattern_matches_the_migration_guide_example():
+def test_parse_migration_pattern_matches_the_number_then_title_pattern():
     """"N00:04T04" matches filenames like "0001UsePostgreSQL.md"."""
     pattern = parse_migration_pattern("N00:04T04")
 
@@ -94,7 +94,7 @@ def test_parse_migration_pattern_takes_only_ascii_digits(pattern):
     assert parse_migration_pattern(pattern) is None
 
 
-def test_parses_the_migration_guide_example_filename():
+def test_parses_a_number_then_title_legacy_filename():
     """The typical legacy name: 'N00:04T04' on "0001UsePostgreSQL.md"."""
     config = _config_with_migration_pattern("N00:04T04")
 
