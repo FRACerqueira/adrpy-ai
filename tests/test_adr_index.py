@@ -129,13 +129,17 @@ def test_a_users_own_index_is_left_as_it_is_with_a_warning(tmp_path):
     notes = folder / "index.md"
     notes.write_text("Hand-written notes.\n", encoding="utf-8")
 
+    # Where names are case-sensitive (ext4), INDEX.md is another file, and adrpy's page sits beside it.
+    same_file = (folder / "INDEX.md").exists()
+
     result = init.run(["--path", str(tmp_path)])
     created = new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-09-20"])
 
-    assert [p.name for p in folder.iterdir() if p.name.lower() == "index.md"] == ["index.md"]
+    names = sorted(p.name for p in folder.iterdir() if p.name.lower() == "index.md")
+    assert names == (["index.md"] if same_file else ["INDEX.md", "index.md"])
     assert notes.read_text(encoding="utf-8") == "Hand-written notes.\n"
     for answer in (result, created):
-        assert any("was not written by adrpy" in warning for warning in answer["warnings"])
+        assert any("was not written by adrpy" in warning for warning in answer["warnings"]) == same_file
 
 
 def test_an_error_other_than_oserror_while_indexing_is_a_warning(tmp_path, monkeypatch):

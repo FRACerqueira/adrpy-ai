@@ -975,6 +975,7 @@ def test_an_entry_in_a_subfolder_is_linked_and_named_by_its_path_in_the_log(tmp_
     assert raised.value.detail.startswith("b/notes.md ")
 
 
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="a lone surrogate is a valid name on NTFS only")
 def test_an_entry_named_with_a_lone_surrogate_does_not_fail_every_later_log(tmp_path):
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "decision-log"
@@ -1009,20 +1010,15 @@ def test_a_round_below_one_on_an_entry_is_refused_as_malformed(tmp_path):
     assert raised.value.code == "log-directory-contains-unrecognized-file"
 
 
-def test_the_log_s_own_pages_are_told_by_name_as_the_file_system_compares_names(tmp_path):
-    import os
-
+def test_the_log_s_own_pages_are_told_by_name_in_any_case(tmp_path):
+    """The log is read in any case on every system (its `.md` too)."""
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "decision-log"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "Cycles.md").write_text("# Cycles\n", encoding="utf-8")
     (folder / "sub").mkdir()
     (folder / "sub" / "index.md").write_text("# Index\n", encoding="utf-8")
-    if os.path.normcase("A") == "a":
-        assert _log(tmp_path)["created"]
-    else:
-        with pytest.raises(CommandError):
-            _log(tmp_path)
+    assert _log(tmp_path)["created"]
 
 
 def test_a_folderlog_change_names_the_log_index_left_behind(tmp_path):
@@ -1072,6 +1068,7 @@ def test_log_link_text_shows_a_name_with_markdown_punctuation_as_it_is(tmp_path)
     assert "[2026-09-04--scope-note--cli--two\\`b\\_x\\_\\&amp;.md]" in row
 
 
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="a lone surrogate is a valid name on NTFS only")
 def test_a_lone_surrogate_is_shown_as_one_replacement_character(tmp_path):
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "decision-log"
