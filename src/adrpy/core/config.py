@@ -418,7 +418,8 @@ def parse_repo_config(text, source=None):
     retired = [key for key in raw if key.lower() in _RETIRED_FIELDS]
     if retired and source is not None:
         notice(f"{source}: {', '.join(retired)}: no longer config field(s); ignored, and never written back by "
-               "adrpy -- remove them from that file.")
+               "adrpy: `config` and `installconfig` drop them when they rewrite that file; otherwise remove them "
+               "by hand.")
     lowered = {key.lower(): value for key, value in raw.items() if key.lower() not in _RETIRED_FIELDS}
 
     missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]

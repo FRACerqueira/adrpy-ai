@@ -49,7 +49,9 @@ is filled. `undo` never touches the Superseded cell.
   read from its label -- and a file `migrate`
   brought in (`<!-- Migrated -->`) both count. When a status cell has both
   the hidden marker (`<!-- Accepted -->`) and a label, the marker wins; a
-  label that says otherwise is reported as a warning.
+  label that says otherwise is reported as a warning by a command acting on
+  that decision, and in `explore`'s `header.marker_label_mismatches`;
+  `check` does not report it.
 - **Encoding.** A byte that is not valid UTF-8 only matters if it breaks
   the header. One that doesn't is replaced on the next rewrite, with a
   warning. Leading BOMs are ignored.

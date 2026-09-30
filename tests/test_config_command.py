@@ -1429,3 +1429,18 @@ def test_the_retired_field_warning_reaches_a_usage_error(tmp_path, capsys, monke
 
     assert code == 2 and answer["code"] == "usage-error"
     assert any("activeplugins" in warning and str(install) in warning for warning in answer.get("warnings", []))
+
+
+def test_the_retired_field_warning_says_which_commands_drop_them(tmp_path, capsys):
+    """config just rewrote the file without them: the warning must not
+    leave the reader removing fields that are already gone."""
+    import json
+
+    from adrpy.__main__ import main
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    main(["config", "--path", str(tmp_path), "--lenseq", "5"])
+    [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
+    assert "`config` and `installconfig` drop them when they rewrite that file" in warning
+    assert "activeplugins" not in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")

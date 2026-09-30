@@ -74,3 +74,11 @@ def test_a_page_without_markers_or_with_two_blocks_is_not_accepted():
     assert generate_command_docs.extract("no markers") is None
     assert generate_command_docs.extract(f"{start}\n{end}\n{start}\n{end}") is None
     assert generate_command_docs.extract(f"{end}\n{start}") is None
+
+
+def test_revise_s_contract_says_revisions_are_on_in_a_new_repository():
+    from adrpy.cli import revise
+
+    description = revise.describe()["description"]
+    assert "which a freshly initialized repository's is not" not in description
+    assert "2 in a new repository" in description

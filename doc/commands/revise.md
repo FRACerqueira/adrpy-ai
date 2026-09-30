@@ -11,7 +11,7 @@ Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision.
 
 ## Description
 
-Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
+Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config): it is 2 in a new repository, unless the config it was seeded from sets 0. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
