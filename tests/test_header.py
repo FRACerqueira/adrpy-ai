@@ -580,3 +580,37 @@ def test_a_damaged_header_in_the_older_form_is_still_a_damaged_header():
     # a legacy file, its first cell ending in the label, stays no header.
     assert not has_header_shape(["# Notes", "", "Some text.", "", f"|Custom {config.headertablefields}|Type|",
                                  "|---|---|"] + [""] * 6, config)
+
+
+def test_a_note_with_a_compact_table_under_its_title_is_no_header():
+    """A heading, then a table whose first cell holds the label: the fields
+    row alone is not a header's shape when line 1 is not the disclaimer."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    note = ["# Form layout notes", f"|Custom {config.headertablefields}|Meaning|", "|---|---|", "|a|b|"] + [""] * 8
+    assert not has_header_shape(note, config)
+
+
+@pytest.mark.parametrize("comment", ["<!-- markdownlint-disable MD033 -->", "<!-- toc -->"])
+def test_a_note_under_an_ordinary_comment_is_no_header(comment):
+    """The older form counts only under the comment adrpy's header opens
+    with, which ends in its line range: any other comment is a note's."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    note = [comment, f"|Custom {config.headertablefields}|Meaning|", "|---|---|", "|a|b|"] + [""] * 8
+    assert not has_header_shape(note, config)
+
+
+def test_every_source_file_compiles_without_a_warning():
+    """An invalid escape in a string (a docstring's `\` before a backtick,
+    say) is only a warning today and an error in a later Python."""
+    import warnings
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parent.parent / "src" / "adrpy"
+    for path in sorted(source.rglob("*.py")):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compile(path.read_text(encoding="utf-8"), str(path), "exec")

@@ -313,3 +313,23 @@ def test_check_reads_a_decision_whose_name_holds_an_unpaired_surrogate(tmp_path)
     os.rename(adr / "ADR001V01-alpha-one.md", adr / "ADR001V01-alpha-\ud800.md")
 
     assert check.run(["--path", str(tmp_path)])["decisions"] == 1
+
+
+def test_a_note_with_a_compact_table_under_its_title_never_blocks_the_repository(tmp_path):
+    """After adoption a note is left out of every rule (ADR0012V01R01); one
+    whose second line is a compact table holding the fields label is no
+    exception, and new still writes."""
+    import json
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
+    config["migrationpattern"] = "N00:04T05"
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config), encoding="utf-8")
+    new.run(["--path", str(tmp_path), "--title", "Real one", "--refdate", "2026-09-20"])
+    (tmp_path / "doc" / "adr" / "0002-form-layout.md").write_text(
+        f"# Form layout notes\n|Custom {config['headertablefields']}|Meaning|\n|---|---|\n|a|b|\n", encoding="utf-8")
+
+    assert check.run(["--path", str(tmp_path)])["decisions"] == 1
+    assert new.run(["--path", str(tmp_path), "--title", "Second", "--refdate", "2026-09-20"])["status"] == "Proposed"

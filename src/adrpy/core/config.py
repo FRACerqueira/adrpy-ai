@@ -159,7 +159,7 @@ def _is_relative_path(value):
     (`C:foo`, which PureWindowsPath does NOT consider absolute but which
     still anchors to a specific drive's own current directory), and a UNC
     path -- a hostile config (e.g. from a cloned repo) must never be able to
-    point folderadr outside the repo via `init`/`new`/etc. A leading `\`
+    point folderadr outside the repo via `init`/`new`/etc. A leading backslash
     too: rooted at the current drive on Windows, with no drive letter."""
     if PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute():
         return False

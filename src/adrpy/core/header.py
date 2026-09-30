@@ -420,11 +420,18 @@ def has_header_shape(lines, config):
     (decided by the project owner).
 
     The second line also counts when parse_header would read it as the
-    fields row (more around the label in its cell, no space at its edges):
-    the older form, whose damaged header migrate would otherwise stack a
-    second one on. Only there, so a compact table lower in a note is not
-    taken for a header."""
-    older_form = len(lines) > 1 and _is_fields_row(lines[1], config) and lines[1].split("|")[1] == lines[1].split("|")[1].strip()
+    fields row (more around the label in its cell, no space at its edges)
+    under the comment every header opens with, which ends in its line range
+    (`(1-12) -->`): the older form, whose damaged header migrate would
+    otherwise stack a second one on. Only there, and only under that
+    comment, so a compact table in a note, even under its title or under a
+    comment of its own (`<!-- toc -->`), is not taken for a header."""
+    older_form = (
+        len(lines) > 1
+        and lines[0].startswith("<!-- ") and lines[0].rstrip().endswith(f"(1-{HEADER_LINE_COUNT}) -->")
+        and _is_fields_row(lines[1], config)
+        and lines[1].split("|")[1] == lines[1].split("|")[1].strip()
+    )
     return older_form or any(
         line.startswith(f"|{config.headertablefields}|") or line.rstrip() == "|--|--|" or "\x00" in line
         for line in lines[:HEADER_LINE_COUNT]
