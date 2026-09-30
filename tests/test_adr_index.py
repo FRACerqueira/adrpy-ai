@@ -121,6 +121,167 @@ def test_every_other_writing_command_keeps_the_index_in_step(tmp_path):
     assert _row(index, _file_name(successor)) is not None
 
 
+def test_a_users_own_index_is_left_as_it_is_with_a_warning(tmp_path):
+    """An INDEX.md adrpy did not generate is the user's: never overwritten,
+    whatever its case, and the warning says how to get the generated one."""
+    folder = tmp_path / "doc" / "adr"
+    folder.mkdir(parents=True)
+    notes = folder / "index.md"
+    notes.write_text("Hand-written notes.\n", encoding="utf-8")
+
+    result = init.run(["--path", str(tmp_path)])
+    created = new.run(["--path", str(tmp_path), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert [p.name for p in folder.iterdir() if p.name.lower() == "index.md"] == ["index.md"]
+    assert notes.read_text(encoding="utf-8") == "Hand-written notes.\n"
+    for answer in (result, created):
+        assert any("was not written by adrpy" in warning for warning in answer["warnings"])
+
+
+def test_an_error_other_than_oserror_while_indexing_is_a_warning(tmp_path, monkeypatch):
+    from adrpy.core import adr_index
+
+    root, _ = _repo(tmp_path)
+    monkeypatch.setattr(adr_index, "render", lambda *args: (_ for _ in ()).throw(ValueError("boom")))
+
+    created = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert created["status"] == "Proposed"
+    assert any("INDEX.md" in warning and "boom" in warning for warning in created["warnings"])
+
+
+@pytest.mark.skipif(__import__("sys").platform != "win32", reason="a lone surrogate is a valid name on NTFS only")
+def test_a_decision_in_a_folder_named_with_a_lone_surrogate_is_indexed(tmp_path):
+    root, index = _repo(tmp_path)
+    first = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])["created"]
+    folder = root / "doc" / "adr" / "s\udc80"
+    folder.mkdir()
+    moved = folder / _file_name(first)
+    __import__("os").replace(first, moved)
+
+    created = new.run(["--path", str(root), "--title", "Second", "--refdate", "2026-09-20"])
+
+    assert created["status"] == "Proposed"
+    assert _row(index, "s%80/") is not None
+
+
+def test_an_interrupt_while_indexing_leaves_the_decision_written_and_says_so(tmp_path, monkeypatch):
+    """Ctrl+C after the decision is written: the result is its success, and
+    the index not being updated is a warning."""
+    from adrpy.core import adr_index
+
+    root, _ = _repo(tmp_path)
+
+    def interrupted(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(adr_index, "render", interrupted)
+    created = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert created["status"] == "Proposed"
+    assert any("INDEX.md" in warning and "Ctrl+C" in warning for warning in created["warnings"])
+
+
+def test_a_config_that_cannot_be_reread_for_the_index_leaves_migrate_s_result(tmp_path, monkeypatch):
+    from adrpy.cli import migrate
+
+    seed = tmp_path / "seed.json"
+    init.run(["--path", str(tmp_path)])
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
+    config["migrationpattern"] = "N00:04T04"
+    seed.write_text(json.dumps(config), encoding="utf-8")
+    other = tmp_path / "repo"
+    other.mkdir()
+    init.run(["--path", str(other), "--seed", str(seed)])
+    (other / "doc" / "adr" / "0001UseQueues.md").write_text("# Use queues\n", encoding="utf-8")
+
+    def locked(path):
+        raise PermissionError(13, "locked", str(path))
+
+    monkeypatch.setattr(migrate, "load_repo_config", locked)
+    result = migrate.run(["--path", str(other)])
+
+    assert [entry.replace("\\", "/").rsplit("/", 1)[1] for entry in result["migrated"]] == ["0001UseQueues.md"]
+    assert any("index" in warning and "locked" in warning for warning in result["warnings"])
+
+
+def test_init_says_which_decisions_the_index_leaves_out(tmp_path):
+    """init does not validate first: a decision whose header does not parse
+    is left out of the index, and the warning says so."""
+    root, index = _repo(tmp_path)
+    first = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])["created"]
+    new.run(["--path", str(root), "--title", "Second", "--refdate", "2026-09-20"])
+    path = __import__("pathlib").Path(first)
+    path.write_text(path.read_text(encoding="utf-8").replace("|Version|01|", "|Version|zz|"), encoding="utf-8")
+    seed = tmp_path / "seed.json"
+    seed.write_text((root / ".adrpy.json").read_text(encoding="utf-8"), encoding="utf-8")
+
+    result = init.run(["--path", str(root), "--seed", str(seed)])
+
+    assert _row(index, _file_name(first)) is None
+    assert any(_file_name(first) in warning and "not in the decisions index" in warning for warning in result["warnings"])
+
+
+def test_the_index_warning_does_not_promise_the_next_write_fixes_it(tmp_path):
+    root, index = _repo(tmp_path)
+    index.unlink()
+    index.mkdir()
+
+    created = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    [warning] = [warning for warning in created["warnings"] if "INDEX.md" in warning]
+    assert "the next write updates it" not in warning
+
+
+def test_legacy_names_keep_their_own_link_text(tmp_path):
+    """A legacy prefix that holds the separator (ADR-0001-...) must not
+    collapse every row's link text to the prefix."""
+    from adrpy.cli import migrate
+
+    seed = tmp_path / "seed.json"
+    init.run(["--path", str(tmp_path)])
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
+    config["migrationpattern"] = "N04:04T09"
+    seed.write_text(json.dumps(config), encoding="utf-8")
+    other = tmp_path / "repo"
+    other.mkdir()
+    init.run(["--path", str(other), "--seed", str(seed)])
+    for name in ("ADR-0001-use-x.md", "ADR-0002-use-y.md"):
+        (other / "doc" / "adr" / name).write_text("# x\n", encoding="utf-8")
+
+    migrate.run(["--path", str(other)])
+
+    rows = [line for line in (other / "doc" / "adr" / "INDEX.md").read_text(encoding="utf-8").splitlines()
+            if line.startswith("| [")]
+    texts = [row.split("](")[0] for row in rows]
+    assert len(set(texts)) == 2
+
+
+def test_a_config_change_keeps_the_index_in_step(tmp_path):
+    """A header label changed by `config` shows in the index at once."""
+    from adrpy.cli import config
+
+    root, index = _repo(tmp_path)
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    config.run(["--path", str(root), "--headerscope", "Area"])
+
+    header_row = next(line for line in index.read_text(encoding="utf-8").splitlines() if line.startswith("| ") and "Area" in line)
+    assert "Scope" not in header_row
+
+
+def test_a_folderadr_change_writes_the_index_there_and_names_the_one_left_behind(tmp_path):
+    from adrpy.cli import config
+
+    root, old_index = _repo(tmp_path)
+
+    result = config.run(["--path", str(root), "--folderadr", "decisions"])
+
+    assert (root / "decisions" / "INDEX.md").is_file()
+    assert old_index.is_file()
+    assert any(str(old_index) in warning and "previous decisions folder" in warning for warning in result["warnings"])
+
+
 def test_migrate_keeps_the_index_in_step(tmp_path):
     from adrpy.cli import migrate
 

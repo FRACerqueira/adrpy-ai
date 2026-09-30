@@ -22,7 +22,14 @@ from adrpy.core.config import (
 )
 from adrpy.core.consistency import validate_repository
 from adrpy.core.errors import CommandError, FailureCodes, build_failure_codes
-from adrpy.core.fs import cleanup_orphaned_temp_files_for, make_dirs, remove_created_dirs, scan_tree
+from adrpy.core import adr_index
+from adrpy.core.fs import (
+    cleanup_orphaned_temp_files_for,
+    make_dirs,
+    remove_created_dirs,
+    scan_tree,
+    written_by_someone_else,
+)
 from adrpy.core.lifecycle import (
     PATTERN_ADVICE_BEFORE_MIGRATE,
     guarded_fields_changed,
@@ -301,6 +308,13 @@ def run(args):
         warning = retry_warning(attempts)
         if warning:
             warnings.append(warning)
+
+    # The index shows the config's labels and lives in folderadr, so it follows
+    # the change at once; the previous folder's generated one is named, never deleted.
+    adr_index.regenerate(target, new_config, warnings)
+    old_index = folder / adr_index.INDEX_NAME
+    if new_folder != folder and old_index.is_file() and not written_by_someone_else(old_index, adr_index.GENERATED_MARK):
+        warnings.append(f"{old_index} is the index of the previous decisions folder: delete it if it is no longer needed.")
 
     result = {"file": str(config_path), "updated_fields": updated_fields, "warnings": warnings}
     if preview is not None:

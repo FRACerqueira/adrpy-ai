@@ -20,5 +20,8 @@ from adrpy.core.decision_log import regenerate_index
 DECISION_LOG_DIR = Path(__file__).resolve().parent.parent / "doc" / "decision-log"
 
 if __name__ == "__main__":
-    count = regenerate_index(DECISION_LOG_DIR)
+    warnings = []
+    count = regenerate_index(DECISION_LOG_DIR, warnings=warnings)
+    for warning in warnings:
+        print(warning)
     print(f"Regenerated {DECISION_LOG_DIR / 'INDEX.md'} with {count} entries.")

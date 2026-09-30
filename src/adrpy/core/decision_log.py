@@ -21,7 +21,7 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.naming import reject_too_long_filename
 from adrpy.core.header import read_header_lines
-from adrpy.core.fs import scan_tree
+from adrpy.core.fs import scan_tree, written_by_someone_else
 from adrpy.core.warnings import excluded_candidate_warning
 from adrpy.core.security import resolve_within
 from adrpy.core.text import parse_ascii_int
@@ -57,6 +57,8 @@ _REOPEN_WHEN_RE = re.compile(r"^\*\*Reopen-when:\*\*\s*(.+?)\s*$")
 
 _INDEX_FILENAME = "INDEX.md"
 _NON_ENTRY_FILES = {_INDEX_FILENAME, "CYCLES.md"}
+# The line that tells the generated index from a file of the user's.
+_INDEX_MARK = "Generated -- do not edit by hand"
 # Said with every refusal over a file that is not an entry, so an agent
 # does not silently move the user's note away to get its entry written.
 _USERS_FILE = (
@@ -403,15 +405,24 @@ def next_round(decision_log_dir, *, warnings=None):
 def regenerate_index(decision_log_dir, *, warnings=None):
     """Rebuilds INDEX.md from the entry files themselves -- always
     generated, never hand-maintained prose (see that file's own header).
-    Returns the number of entries indexed."""
+    Returns the number of entries indexed. An INDEX.md without _INDEX_MARK
+    is the user's: left as it is, with a warning when `warnings` is given."""
     decision_log_dir = Path(decision_log_dir)
+    index = decision_log_dir / _INDEX_FILENAME
+    if written_by_someone_else(index, _INDEX_MARK):
+        if warnings is not None:
+            warnings.append(
+                f"{index} was not written by adrpy, so it is left as it is and the decision-log index is "
+                "not written: rename or move that file to have the index."
+            )
+        return 0
     entries = _existing_entries(decision_log_dir, warnings=warnings)
     entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"]))
 
     lines = [
         "# Decision log index",
         "",
-        "Generated -- do not edit by hand (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).",
+        f"{_INDEX_MARK} (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).",
         "",
         "## How entries are named",
         "",
@@ -479,5 +490,5 @@ def regenerate_index(decision_log_dir, *, warnings=None):
     # Atomic: a plain write_text() truncates on open, so a concurrent
     # reader (or a process that dies mid-write) could see or leave an
     # empty INDEX.md. atomic_write_text writes THIS host's os.linesep.
-    atomic_write_text(decision_log_dir / _INDEX_FILENAME, "\n".join(lines))
+    atomic_write_text(index, "\n".join(lines))
     return len(entries)

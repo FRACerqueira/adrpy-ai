@@ -114,6 +114,21 @@ def test_log_regenerates_the_index_as_part_of_the_same_write(tmp_path):
     assert "2026-09-18--scope-note--lock--a-note.md" in index_text
 
 
+def test_log_leaves_a_users_own_index_as_it_is_with_a_warning(tmp_path):
+    """An INDEX.md adrpy did not generate is the user's: the entry is
+    written, the file is not touched, and the warning says so."""
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "INDEX.md").write_text("Our own list.\n", encoding="utf-8")
+
+    result = log.run(_plain_entry_args(tmp_path))
+
+    assert (folder / "2026-09-18--scope-note--lock--a-note.md").is_file()
+    assert (folder / "INDEX.md").read_text(encoding="utf-8") == "Our own list.\n"
+    assert any("was not written by adrpy" in warning for warning in result["warnings"])
+
+
 def test_log_refuses_a_colliding_filename_without_writing(tmp_path):
     _init_repo(tmp_path)
     kwargs = [

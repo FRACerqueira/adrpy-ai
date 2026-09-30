@@ -116,6 +116,19 @@ def is_zero_bytes(path):
         return False
 
 
+def written_by_someone_else(path, mark):
+    """True when `path` is a file whose start does not hold `mark`, the line
+    every file adrpy generates at that name carries: the user's file, never
+    to be overwritten. False when there is no such file or it cannot be
+    read, which the write that follows then reports."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(4096)
+    except OSError:
+        return False
+    return mark.encode("utf-8") not in head
+
+
 def unlink_with_retry(path):
     """Deletes `path` (already absent is fine), retrying a transient
     PermissionError with the write side's budget and exponential backoff

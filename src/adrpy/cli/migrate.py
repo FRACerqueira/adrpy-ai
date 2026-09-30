@@ -568,7 +568,7 @@ def run(args):
 
     # The config as migrate left it: a persisted migrationpattern is what
     # recognizes the files it migrated under their legacy names.
-    adr_index.regenerate(target, load_repo_config(config_path), warnings)
+    adr_index.regenerate(target, lambda: load_repo_config(config_path), warnings)
     result = {"migrated": migrated, "warnings": warnings}
     if persisted["pattern"] is not None:
         result["migrationpattern_persisted"] = persisted["pattern"]
