@@ -1,0 +1,5 @@
+# A note's table row ending in a comment of its own was taken for a damaged header
+
+**Front:** Header recognition and the user's own files (round 52) | **Severity:** Medium | **Resolution:** Retraction | **Round:** 52
+
+Round 51's fix counted any table row ending in `<!-- ... -->|` as the migrated fields row's mark, so a decision-named note with a row like `| Cache | Ana | decide next week <!-- follow up --> |` read as a damaged header: check and every lifecycle command refused the repository, migrate refused the whole run, and the texts named marks the file did not have. Found by two passes independently. The mark is now the migrated fields row's own shape: two cells, the second ending in words its comment repeats, any case (the second opinion found that a headermigrated with spaces, which the schema allows, was missed by a one-word version, and migrate stacked a second header). Left, Low: a note's two-cell row ending `Done <!-- Done -->`, or holding a status marker, is still taken for a header; the INVALID_HEADER hint names both shapes and says such a note belongs outside the decisions folder, and a UTF-16 file.

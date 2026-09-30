@@ -38,3 +38,9 @@ r44_adrpy() { HOME="$R44/env/_eval_home" USERPROFILE="$(cygpath -w "$R44/env/_ev
   PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$R44W/pkg" "$BASEPY" -B -s -m adrpy "$@"; }
 
 GIT_SEED=(git -c user.name=agent-eval-seed -c user.email=agent-eval-seed -c core.autocrlf=false -c commit.gpgsign=false)
+
+# Every scenario repository's naming sizes, set explicitly so a run does not change with
+# adrpy's defaults. No script spells a decision name: each one is derived from the
+# repository's own .adrpy.json (adrnames.py), so another scheme needs only these values.
+SEED_SIZES=(--lenseq "${AGENT_EVAL_LENSEQ:-4}" --lenversion "${AGENT_EVAL_LENVERSION:-2}" --lenrevision "${AGENT_EVAL_LENREVISION:-2}")
+adrnames() { "$BASEPY" -B "$R44W/adrnames.py" "$@"; }

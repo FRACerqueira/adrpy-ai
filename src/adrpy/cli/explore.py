@@ -17,7 +17,12 @@ from adrpy.core.config import (
     reject_overlapping_migration_pattern,
     serialize_repo_config,
 )
-from adrpy.core.consistency import check_repository, unheadered_legacy_warning, unrecognized_decision_like_warning
+from adrpy.core.consistency import (
+    check_repository,
+    headered_unrecognized_warning,
+    unheadered_legacy_warning,
+    unrecognized_decision_like_warning,
+)
 from adrpy.core.decision_log import unrecognized_log_files_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
@@ -38,7 +43,8 @@ def describe():
         "name": "explore",
         "summary": "Lists every decision file in the repository, on a best-effort basis.",
         "description": (
-            "Lists every .md file under the decisions folder, recognized or not, and never refuses an "
+            "Lists every .md file under the decisions folder, recognized or not (an INDEX.md at its root, "
+            "generated or not, aside), and never refuses an "
             "inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and "
             "every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's "
             "`header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) "
@@ -47,7 +53,9 @@ def describe():
             "decision) once the repository has a decision with a valid header migrate did not write, and named in "
             "`warnings` with the number read from its name. A file in the decision-log folder (folderlog) that is "
             "not a decision-log entry (INDEX.md and CYCLES.md are the log's own) is named in `warnings` too: "
-            "`adrpy log` refuses to write while it is there. With "
+            "`adrpy log` refuses to write while it is there. So is a file shaped like a decision's name (digits, "
+            "V, digits) that this config does not read but that carries a valid adrpy header (another prefix or "
+            "separator: new could reuse its number). With "
             "--migrationpattern, the result also has `migrationpattern_preview` -- the list `adrpy config "
             "--migrationpattern` would return for that pattern (file, number, version, title of each file it "
             "recognizes), its likely-misreading warnings in `warnings` -- while writing nothing: the inventory "
@@ -164,6 +172,7 @@ def run(args):
         warnings.append(warning)
     for warning in (
         unrecognized_decision_like_warning(scan, config),
+        headered_unrecognized_warning(scan, config),
         unheadered_legacy_warning(snapshot, config),
         unrecognized_log_files_warning(target, config),
     ):

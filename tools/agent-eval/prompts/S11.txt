@@ -1,1 +1,1 @@
-This repo uses adrpy. Record in the decision log a scope-note that ADR001 covers only the primary database, not the caches.
+This repo uses adrpy. Record in the decision log a scope-note that __ADR1__ covers only the primary database, not the caches.

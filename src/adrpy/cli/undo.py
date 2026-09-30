@@ -19,7 +19,7 @@ def describe():
             "blank Created cell makes it a placeholder again (as explore reports it). The whole "
             "repository is validated first (see `adrpy check`), then the target's status and its family rules"
             " (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); "
-            "nothing is written when a rule fails."
+            "nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {

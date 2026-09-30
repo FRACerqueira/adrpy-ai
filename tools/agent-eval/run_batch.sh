@@ -53,6 +53,8 @@ snapshot() {   # $1 = dir name, $2 = before|after
 run_one() {   # $1 = dir name (opus-S3), $2 = scenario (S3), $3 = model id, $4 = timeout, $5 = budget
   local S=$1 B=$2 MODEL=$3 TIMEOUT_S=$4 BUDGET_USD=$5 d="$WORK/$1" prompt
   prompt="$(cat "$R44/prompts/$B.txt")"; prompt="${prompt//__ADRPY_README__/"$README_W"}"
+  # A decision named in a prompt takes the seed's own label (adrnames.py), never a fixed width.
+  [[ "$prompt" != *__ADR1__* ]] || prompt="${prompt//__ADR1__/"$(adrnames label "$R44/seeds/$B" 1)"}"
   rm -rf "$d" "$R44/env/$S"; cp -a "$R44/seeds/$B" "$d"
   rm -f "$OUT/$S".*
   echo "$MODEL" > "$OUT/$S.model"

@@ -11,7 +11,7 @@ Creates a new major version of an `Accepted`/`Rejected` decision.
 
 ## Description
 
-Creates a new major version of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, in the same family; scope and domain default to the target's. The whole repository and the family rules in doc/lifecycle.md are checked first, and the new version number must fit lenversion; nothing is written when a rule fails.
+Creates a new major version of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, in the same family; scope and domain default to the target's. The whole repository and the family rules in doc/lifecycle.md are checked first, and the new version number must fit lenversion; nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -76,7 +76,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
-| `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
+| `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'; or, for headerdisclaimer/headermigrated when a `config` or `installconfig` field flag or a `--seed` sets them, '<!--' or '-->'). |
 | `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
@@ -98,7 +98,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 ## Example
 
 ```bash
-adrpy version --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md --empty
+adrpy version --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md --empty
 ```
 
 ---

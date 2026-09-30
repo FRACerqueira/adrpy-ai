@@ -72,7 +72,7 @@ This project records two different kinds of durable record, and dogfoods its own
 
 **Who reads which.** The decision log is this project's audit trail, written first for tooling and for AI agents recovering the project's history or calibrating a review -- that is why its fields are structured and its vocabulary is closed. You do not need to read it to contribute: to understand the design, read [`doc/adr/`](doc/adr/) and [`doc/architecture.md`](doc/architecture.md). An entry is a pointer, not the final word: before relying on one, check the commit, test or file it names.
 
-See **[Writing a decision-log entry](doc/decision-log-workflow.md)** for the full step-by-step workflow, including which of the two this is for a given change and a diagram of the classification decision tree.
+See **[Writing a decision-log entry](doc/decision-log-workflow.md)** for the full step-by-step workflow, including which of the two this is for a given change.
 
 If your pull request makes a real architectural choice or changes a lifecycle rule, please open an issue to discuss it before implementing — these get recorded, and recording a decision after the fact is a worse process than agreeing on it first.
 

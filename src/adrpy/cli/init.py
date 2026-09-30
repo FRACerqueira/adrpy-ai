@@ -1,9 +1,10 @@
 """`init` command: initializes an ADR repository."""
 
+import re
 from dataclasses import asdict
 from pathlib import Path
 
-from adrpy.core import adr_index
+from adrpy.core import adr_index, decision_log
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.config import (
@@ -15,6 +16,7 @@ from adrpy.core.config import (
     parse_repo_config,
     raise_config_file_empty,
     read_config_text,
+    reject_comment_delimiters,
     reject_overlapping_migration_pattern,
     serialize_repo_config,
 )
@@ -43,7 +45,7 @@ def describe():
             " seeds from this machine's install-level config (see installconfig) or, when there is none, from"
             " the built-in default, and then says so in `warnings`. A decisions folder that already exists is"
             " scanned first: every number already on disk must fit the configured "
-            "lenseq/lenversion/lenrevision."
+            "lenseq/lenversion/lenrevision. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {
@@ -85,16 +87,16 @@ def describe():
                     "folderlog (ADR0007V01) gets the same treatment: folderlog-change-blocked-by-existing-"
                     "entries / folderlog-change-would-adopt-unrelated-files / log-scan-incomplete, same rule "
                     "as the `config` command's own --folderlog guard. Likewise, if the "
-                    "seed's own statusnew/statusacc/statusrej/statussup/separator/prefix/"
+                    "seed's own statusnew/statusacc/statusrej/statussup/separator/prefix/headertablefields/"
                     "migrationpattern differ from the current ones in a way that would break recognition of "
                     "an existing decision, fails with status-or-separator-change-blocked-by-existing-decisions "
                     "(ADR0004V01/V02; same rule as the `config` command's own guard for these fields -- status "
-                    "labels, --separator and --prefix block on any recognized decision (--separator's recognition "
+                    "labels, --separator, --prefix and --headertablefields block on any recognized decision (--separator's recognition "
                     "dependency is current-scheme-only, but a value already present in a legacy filename could "
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
                     "that already has a header (migrated) exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
-                    "migration path -- for the four status fields, --separator and --prefix that means ANY recognized "
+                    "migration path -- for the four status fields, --separator, --prefix and --headertablefields that means ANY recognized "
                     "decision, any scheme (the ADR0004V01 marker future-proofs RECOGNITION of files that already "
                     "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
                     "config change itself -- a marker-protected repository is blocked exactly the same as one "
@@ -152,7 +154,7 @@ def describe():
                 FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderlog already holds a file that would newly parse as a decision-log entry.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking --seed's own folderlog change.",
-                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own status-label/separator/prefix/migrationpattern would break recognition of an existing decision.",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--seed's own status-label/separator/prefix/headertablefields/migrationpattern would break recognition of an existing decision.",
                 FailureCodes.STATUS_OR_SEPARATOR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the OLD folderadr could not be scanned while checking a guarded field change.",
                 FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--seed's own separator would make a file NOT currently recognized as a decision newly parse as one.",
                 FailureCodes.PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--seed's own prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files).",
@@ -216,6 +218,7 @@ def run(args):
         if not seed_path.is_file():
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         config_text = read_config_text(seed_path)
+        reject_comment_delimiters(asdict(parse_repo_config(config_text, source=seed_path)))
     elif language_arg is not None:
         config_text = default_repo_config_text_for_language(language_arg)
     elif install_config_text is not None:
@@ -240,10 +243,14 @@ def run(args):
         # config scopes the change guards in _validate_and_write.
         old_config = load_repo_config(config_path)
         with attach_warnings(warnings):
+            # Before the write, so nothing that can fail runs once the config is on disk.
+            old_folder, new_folder = resolve_within(target, old_config.folderadr), resolve_within(target, config.folderadr)
             created = _validate_and_write(
                 target, config_path, config_text, config, warnings, old_config=old_config
             )
         adr_index.regenerate(target, config, warnings)
+        adr_index.previous_index_warning(old_folder, new_folder, warnings)
+        decision_log.previous_index_warning(target / old_config.folderlog, target / config.folderlog, warnings)
         return {"created": created, "warnings": warnings}
 
     created = _validate_and_write(target, config_path, config_text, config, warnings)
@@ -384,4 +391,29 @@ def _max_existing_numbers(target, config, warnings=None):
         warning = excluded_candidate_warning(excluded)
         if warning:
             warnings.append(warning)
+        warning = _other_widths_warning(names, config)
+        if warning:
+            warnings.append(warning)
     return max_number, max_version, max_revision
+
+
+def _other_widths_warning(names, config):
+    """Names of the current scheme padded to other widths than `config`'s
+    are still decisions, but the next ones would sit next to them in
+    another width: said now, while `adrpy config` can still match them."""
+    # Case-blind, as core/naming reads a current-scheme name.
+    shape = re.compile(rf"^{re.escape(config.prefix or '')}(\d+)V(\d+)(?:R(\d+))?", re.I)
+    other = []
+    for name in names:
+        match = shape.match(Path(name.path).name) if name.scheme == "current" else None
+        if match and (len(match.group(1)) != config.lenseq or len(match.group(2)) != config.lenversion
+                      or len(match.group(3) or "") != config.lenrevision):
+            other.append(Path(name.path).name)
+    if not other:
+        return None
+    return (
+        f"{len(other)} existing decision name(s) use other widths than this config (lenseq {config.lenseq}, "
+        f"lenversion {config.lenversion}, lenrevision {config.lenrevision}), e.g. {', '.join(sorted(other)[:3])}: "
+        "new decisions would be named in the config's widths next to them. To keep one scheme, set those "
+        "sizes with `adrpy config` before the next new decision."
+    )

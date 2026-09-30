@@ -132,7 +132,7 @@ SHARED_FAILURE_CODES = {
     FailureCodes.CONFIG_TEMPLATE_TOO_LONG: f"template exceeds {TEMPLATE_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERDISCLAIMER_TOO_LONG: f"headerdisclaimer exceeds {HEADER_DISCLAIMER_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_FIELD_IS_BLANK: "A field is non-empty but blank after stripping whitespace.",
-    FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->').",
+    FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A field contains '|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'; or, for headerdisclaimer/headermigrated when a `config` or `installconfig` field flag or a `--seed` sets them, '<!--' or '-->').",
     FailureCodes.CONFIG_MIGRATIONPATTERN_INVALID: "migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap).",
     FailureCodes.CONFIG_HEADERTITLEFILE_TOO_LONG: f"headertitlefile exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
     FailureCodes.CONFIG_HEADERVERSION_TOO_LONG: f"headerversion exceeds {HEADER_LABEL_MAX_LENGTH} characters.",
@@ -159,23 +159,27 @@ def _is_relative_path(value):
     (`C:foo`, which PureWindowsPath does NOT consider absolute but which
     still anchors to a specific drive's own current directory), and a UNC
     path -- a hostile config (e.g. from a cloned repo) must never be able to
-    point folderadr outside the repo via `init`/`new`/etc."""
+    point folderadr outside the repo via `init`/`new`/etc. A leading backslash
+    too: rooted at the current drive on Windows, with no drive letter."""
     if PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute():
         return False
-    if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\\\", "//")):
+    if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\", "//")):
         return False
     return True
 
 
 def _stays_inside(value):
-    """Whether `value`, read lexically on either separator, never climbs
-    above its starting folder: `doc/../log` stays, `doc/../../x` does not.
-    resolve_within still resolves links when the folder is used."""
-    depth = 0
-    for part in PureWindowsPath(value).parts:
-        depth += -1 if part == ".." else 0 if part == "." else 1
-        if depth < 0:
-            return False
+    """Whether `value` never climbs above its starting folder, read
+    lexically both ways: with `\\` as a separator (Windows) and as part of
+    a name (POSIX, where `a\\b/../../x` escapes). `doc/../log` stays,
+    `doc/../../x` does not. resolve_within still resolves links when the
+    folder is used."""
+    for parts in (PureWindowsPath(value).parts, PurePosixPath(value).parts):
+        depth = 0
+        for part in parts:
+            depth += -1 if part == ".." else 0 if part == "." else 1
+            if depth < 0:
+                return False
     return True
 
 
@@ -285,7 +289,7 @@ def load_repo_config(path):
     text = read_config_text(path)
     if text == "":
         raise_config_file_empty(path)
-    return parse_repo_config(text)
+    return parse_repo_config(text, source=path)
 
 
 def raise_config_file_empty(path):
@@ -389,7 +393,10 @@ def read_config_text(path):
         raise CommandError(FailureCodes.CONFIG_INVALID_ENCODING, f"{path}: {error}") from error
 
 
-def parse_repo_config(text):
+def parse_repo_config(text, source=None):
+    """The config `text` as a RepoConfig. `source`, the file it was read from,
+    is named in the notice about retired fields; a parse with none (a text
+    built in memory, or one already read and noticed) raises no notice."""
     try:
         raw = json.loads(text)
     except (ValueError, RecursionError) as error:
@@ -409,8 +416,10 @@ def parse_repo_config(text):
         raise CommandError(FailureCodes.CONFIG_INVALID_JSON, "Configuration root must be a JSON object.")
 
     retired = [key for key in raw if key.lower() in _RETIRED_FIELDS]
-    if retired:
-        notice(f"{', '.join(retired)}: no longer config field(s); ignored, and removed at the next write.")
+    if retired and source is not None:
+        notice(f"{source}: {', '.join(retired)}: no longer config field(s); ignored, and never written back by "
+               "adrpy: adrpy drops them from a config it rewrites (`config`, `installconfig`, `init --seed`); a "
+               "file it only reads, such as a seed, keeps them: remove them there by hand.")
     lowered = {key.lower(): value for key, value in raw.items() if key.lower() not in _RETIRED_FIELDS}
 
     missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]
@@ -576,6 +585,26 @@ def parse_repo_config(text):
         )
 
     return RepoConfig(**{name: lowered[name] for name in ALL_FIELDS})
+
+
+# Written inside an HTML comment (build_header), where `-->` ends it early.
+_COMMENT_WRAPPED_FIELDS = ("headerdisclaimer", "headermigrated")
+
+
+def reject_comment_delimiters(flags):
+    """config-field-contains-forbidden-character when a value being set for
+    a field written inside an HTML comment holds `<!--` or `-->` (a field
+    flag's, or a seed's). Only the value being set, as
+    reject_overlapping_migration_pattern: a config that already holds one
+    stays loadable."""
+    for name in _COMMENT_WRAPPED_FIELDS:
+        value = flags.get(name) or ""
+        if "<!--" in value or "-->" in value:
+            raise CommandError(
+                FailureCodes.CONFIG_FIELD_CONTAINS_FORBIDDEN_CHARACTER,
+                f"{name} cannot contain '<!--' or '-->': it is written inside an HTML comment, which that "
+                "would open or close early.",
+            )
 
 
 def reject_overlapping_migration_pattern(pattern_text):

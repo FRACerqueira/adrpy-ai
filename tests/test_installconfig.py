@@ -57,6 +57,21 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
     assert target_path.read_text(encoding="utf-8") == Path(FIXTURE_PATH).read_text(encoding="utf-8")
 
 
+def test_seed_drops_the_retired_plugin_fields(tmp_path):
+    """A seed holding the retired fields is written without them: the
+    warning says an installconfig write removes them."""
+    data = json.loads(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
+    data.update({"activeplugins": [], "disableplugins": False})
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps(data), encoding="utf-8")
+
+    installconfig.run(["--seed", str(seed)])
+
+    text = installconfig.resolve_install_config_path().read_text(encoding="utf-8")
+    assert "activeplugins" not in text and "disableplugins" not in text
+    assert parse_repo_config(text) == parse_repo_config(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
+
+
 def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
     """A --seed file that exists and is readable but fails schema
     validation is refused before anything is written -- removing
@@ -226,3 +241,22 @@ def test_language_replaces_a_config_too_corrupt_to_parse(_isolated_install_confi
 
     assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
     assert installconfig.run([])["configured"] is True
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+def test_installconfig_refuses_a_comment_delimiter_in_a_text_written_inside_one(field):
+    with pytest.raises(CommandError) as raised:
+        installconfig.run([f"--{field}", "Managed --> keep"])
+    assert raised.value.code == "config-field-contains-forbidden-character"
+
+
+def test_installconfig_seed_refuses_a_comment_delimiter_in_a_text_written_inside_one(tmp_path):
+    from adrpy.core.config import default_repo_config_text
+
+    data = json.loads(default_repo_config_text())
+    data["headermigrated"] = "Mig<!--x"
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        installconfig.run(["--seed", str(seed)])
+    assert raised.value.code == "config-field-contains-forbidden-character"

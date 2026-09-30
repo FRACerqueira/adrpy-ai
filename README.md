@@ -42,7 +42,7 @@ Architecture decisions are worth keeping only while they stay true and findable.
 
 - **Create and evolve decisions:** `new`, then `approve` or `reject`, `undo`, `version` (a new major version), `revise` (a wording fix) and `supersede` (a successor that replaces it) -- numbers, versions and revisions assigned by the tool.
 - **A repository that stays consistent:** every lifecycle command validates the whole repository first, and `adrpy check` does the same for a pre-commit hook or CI.
-- **An index that is always true:** every command that writes a decision regenerates `INDEX.md` in the decisions folder, one table of every decision with its title, state, scope and domain ([ADR0013V01R01](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0013V01R01-every-write-regenerates-an-index-of-the-decisions-in-the-decisions-folder.md)).
+- **An index that is always true:** every command that writes a decision, and `config` after a field write, regenerates `INDEX.md` in the decisions folder, one table of every decision with its title, state, scope and domain; an `INDEX.md` you wrote yourself is never replaced ([ADR0013V01R02](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0013V01R02-every-write-regenerates-an-index-of-the-decisions-in-the-decisions-folder.md)).
 - **Adopt what you already have:** `migrate` gives hand-written decision files a header in one run, keeping their names.
 - **Your repository's own conventions:** prefix, number and version widths, separator, case, header and status labels and template, all in `.adrpy.json` and edited with `adrpy config`; a per-user default seeds every new repository.
 - **A decision log** next to the ADRs, for findings and trade-offs that are not architectural decisions (`adrpy log`).
@@ -191,7 +191,7 @@ jobs:
 
 adrpy has no concurrency control, by design:
 
-- **Git coordinates people.** Each person or agent works on their own clone or branch; adrpy never calls git. A merge that breaks a rule — two branches that each created `ADR005`, say — is exactly what `adrpy check` reports, with the hint for the repair.
+- **Git coordinates people.** Each person or agent works on their own clone or branch; adrpy never calls git. A merge that breaks a rule — two branches that each created `ADR0005`, say — is exactly what `adrpy check` reports, with the hint for the repair.
 - **One adrpy command at a time on a working copy.** Don't run adrpy (or `adrpy-skills`) commands in parallel on the same working copy: nothing locks it, and the last command to write a file wins.
 - **What is still guaranteed.** Every file write is atomic (a reader sees the old file or the new one, never a partial one), a new decision is never created over an existing file (`file-already-exists`), and temp files left behind by an interrupted write are cleaned up later.
 - **Detects, does not prevent.** A repository left inconsistent — by a hand edit, a merge, parallel commands, or a multi-file write that stopped halfway — is refused by every lifecycle command until it is repaired, and reported by `adrpy check`.
@@ -224,7 +224,7 @@ Supported providers: `claude` (Claude Code, project or global scope), `cursor`, 
 
 ## Configuration
 
-A repository's own settings (ADR numbering, naming scheme, header labels, status labels) live in `.adrpy.json` at its root -- a dotfile, hidden on Linux and macOS (`ls -a` lists it) -- edited via `adrpy config`. A new repository names its decisions with a 4-digit number, a 2-digit version and a 2-digit revision (`ADR0001V01R01-...`); `lenseq`, `lenversion` and `lenrevision` change that. For a new repository, `adrpy init` seeds those settings from, in order: an explicit `--seed <file>`, a per-user install-level default (`adrpy installconfig`, if one has been set up on this machine), or a built-in default. Status labels, the naming-scheme separator, the prefix and the header's fields label (`headertablefields`, which marks the header of every decision) can only be changed while doing so wouldn't break recognition of an already-written decision (see [ADR004](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0004V02R00-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md)) — in practice this means the four status labels, the separator, the prefix and `headertablefields` become permanently fixed the moment the repository has its first decision of any kind, while the legacy-scheme `migrationpattern` becomes permanently fixed only once the repository has its first migrated legacy-scheme decision (one with a valid header; until then it can also be changed or cleared with `adrpy config --migrationpattern ""`); `adrpy help config` documents the exact failure codes.
+A repository's own settings (ADR numbering, naming scheme, header labels, status labels) live in `.adrpy.json` at its root -- a dotfile, hidden on Linux and macOS (`ls -a` lists it) -- edited via `adrpy config`. A new repository names its decisions with a 4-digit number, a 2-digit version and a 2-digit revision (`ADR0001V01R01-...`); `lenseq`, `lenversion` and `lenrevision` change that. For a new repository, `adrpy init` seeds those settings from, in order: an explicit `--seed <file>`, a per-user install-level default (`adrpy installconfig`, if one has been set up on this machine), or a built-in default. Status labels, the naming-scheme separator, the prefix and the header's fields label (`headertablefields`, which marks the header of every decision) can only be changed while doing so wouldn't break recognition of an already-written decision (see [ADR0004](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0004V02R00-decision-status-recognition-uses-a-hidden-canonical-marker;-status-labels-and-the-filename-separator-both-gain-an-existing-decisions-guard.md)) — in practice this means the four status labels, the separator, the prefix and `headertablefields` become permanently fixed the moment the repository has its first decision of any kind, while the legacy-scheme `migrationpattern` becomes permanently fixed only once the repository has its first migrated legacy-scheme decision (one with a valid header; until then it can also be changed or cleared with `adrpy config --migrationpattern ""`); `adrpy help config` documents the exact failure codes.
 
 `adrpy installconfig` manages that per-user default directly — the same schema as a repository's own config, so it doubles as a way to keep every new repository on a machine consistent without repeating flags every time. Both `init` (while the machine has no install-level config) and `installconfig` also accept `--language` (e.g. `pt-br`), which seeds the built-in header/status labels and default template from a bundled language pack instead of the English defaults; it's a bootstrapping-only convenience — an already-initialized repository's own `config` has no equivalent flag, since its labels are already concrete values on disk, not something to re-derive from a language choice.
 
@@ -251,7 +251,7 @@ A file with an ADR name but no header gets `no-header`; while no decision has a 
 The 12 lines at the top of every decision -- the status read from its label and the hidden `<!-- Accepted -->` marker after the date (a header without the marker is read from the label alone):
 
 ```markdown
-<!-- Do not remove this comment, lines and table (1-12) -->
+<!-- Do not edit or remove this comment, lines and table (1-12) -->
 |Fields|Values|
 |--|--|
 |File title md|Use PostgreSQL|
@@ -262,7 +262,7 @@ The 12 lines at the top of every decision -- the status read from its label and 
 |Created|Proposed (2026-01-10) <!-- Proposed -->|
 |Changed|Accepted (2026-01-12) <!-- Accepted -->|
 |Superseded||
-<!-- Do not remove this comment, lines and table (1-12) -->
+<!-- Do not edit or remove this comment, lines and table (1-12) -->
 ```
 
 A file `migrate` brought in says so on line 2, `|Fields|Values Migrated <!-- Migrated -->|`, and may have blank Version and status cells.
@@ -274,7 +274,7 @@ This project records its own architectural decisions as it makes them:
 - [`doc/architecture.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/architecture.md) — how the codebase is put together and why: module layout, request lifecycle, the single-owner model, configuration layering, and the decision lifecycle, with diagrams.
 - [`doc/adr/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/INDEX.md) — formal Architecture Decision Records, written using adrpy-ai itself (this project dogfoods its own tool), listed with their state, scope and domain in the index adrpy regenerates at each write.
 - [`doc/decision-log/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log/INDEX.md) — the project's audit trail, written first for tooling and for AI agents calibrating a review: audit findings, documentation corrections, and deferred/accepted trade-offs, indexed from individual entries that are never hand-edited. To understand the design, read the ADRs.
-- [`doc/decision-log-workflow.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md) — the step-by-step workflow (with a diagram) for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
+- [`doc/decision-log-workflow.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md) — the step-by-step workflow for deciding whether something belongs in an ADR or in the decision log, and how to write either one.
 - [`doc/skills/`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/skills/README.md) — how `adrpy-skills` installs that same judgment layer for AI coding agents, and how it decides what to write, per provider.
 
 If you're evaluating this project's engineering rigor rather than just its feature set, `doc/adr/` and `doc/decision-log/` are the primary evidence, not this README.

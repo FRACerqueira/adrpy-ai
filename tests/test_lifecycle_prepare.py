@@ -125,7 +125,7 @@ def test_a_decisions_folder_escaping_the_repository_is_refused_before_the_target
     moved = repo / adr_path.name
     adr_path.replace(moved)
     folder = repo / "doc" / "adr"
-    (folder / "INDEX.md").unlink(missing_ok=True)  # the index init wrote (ADR0013V01R01)
+    (folder / "INDEX.md").unlink(missing_ok=True)  # the index init wrote (ADR0013V01R02)
     folder.rmdir()
     outside = tmp_path / "outside"
     outside.mkdir()

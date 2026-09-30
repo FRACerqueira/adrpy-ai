@@ -31,7 +31,7 @@ is filled. `undo` never touches the Superseded cell.
 > The header decides status.**
 
 - **Identity and numbering come from the name.** Which family a file
-  belongs to, which decision a successor points back to (the `--001`
+  belongs to, which decision a successor points back to (the `--0001`
   suffix), and which sequence, version and revision numbers are taken
   are all read from filenames -- every file that matches the naming
   scheme counts, whatever its content. A number held by any file is
@@ -49,7 +49,9 @@ is filled. `undo` never touches the Superseded cell.
   read from its label -- and a file `migrate`
   brought in (`<!-- Migrated -->`) both count. When a status cell has both
   the hidden marker (`<!-- Accepted -->`) and a label, the marker wins; a
-  label that says otherwise is reported as a warning.
+  label that says otherwise is reported as a warning by a command acting on
+  that decision, and in `explore`'s `header.marker_label_mismatches`;
+  `check` does not report it.
 - **Encoding.** A byte that is not valid UTF-8 only matters if it breaks
   the header. One that doesn't is replaced on the next rewrite, with a
   warning. Leading BOMs are ignored.
@@ -87,7 +89,9 @@ A legacy name (`0001-use-postgres.md`) is an ADR name only through the
 `migrationpattern` (see [`config`](commands/config.md)). Anything else --
 a README, an index, `2024-01-15-meeting.md`, a name without the prefix or
 without `V` -- is not a decision: validation and numbering ignore it
-(`explore` still lists it).
+(`explore` still lists it). An `INDEX.md` at the folder's root, generated
+or not, is left out of every scan, `explore`'s too; one adrpy did not write
+there is the user's and is never replaced (ADR0013V01R02).
 
 A legacy name also depends on the repository's **phase**, decided on
 every scan of the folder: once any file with an ADR name (either scheme)
@@ -102,7 +106,7 @@ in `warnings`, each with the number read from its name -- that number
 may already be a decision's, so rename it to a free number before giving
 it a header by hand. When `new`, `version`, `revise` or `supersede` has
 just created a decision with that number, or `supersede` acts on one, the
-same warning says so (`ADR002 now shares number 2 with
+same warning says so (`ADR0002 now shares number 2 with
 0002-team-offsite-notes.md`). Before
 that (the repository not adopted yet), it is a decision with no header
 (`no-header`, until `migrate` runs), as a hand-written repository expects:
@@ -125,7 +129,7 @@ Every lifecycle command -- `new`, `approve`, `reject`, `undo`,
 `supersede`, `version` and `revise` -- first validates the whole
 decisions folder, and `config` does the same before changing a guarded
 field (`folderadr`, `folderlog`, a status label, `separator`, `prefix`,
-`migrationpattern`). If any rule below is broken, the command fails with
+`headertablefields`, `migrationpattern`). If any rule below is broken, the command fails with
 `repository-inconsistent` and writes nothing: `data.errors` lists every
 broken rule, sorted by file, each as `{code, file, related_files, detail,
 hint}`, the `hint` saying how to repair it. `adrpy check` runs the same
@@ -142,7 +146,10 @@ What is validated:
   `.md` whose name is not an ADR name is not a decision and is ignored,
   except that `check` and `explore` warn about one whose name starts with
   a digit (as in `0001-use-x.md`), most likely a decision written before
-  adrpy, and about each legacy name the phase rule leaves out;
+  adrpy, about one shaped like a decision's name (digits, `V`, digits) that
+  this config does not read but that carries a valid adrpy header (another
+  prefix or separator: `new` could reuse its number), and about each legacy
+  name the phase rule leaves out;
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
@@ -198,7 +205,7 @@ The status combinations the tool writes (Created / Changed / Superseded;
 A blank Created cell is valid only on a migrated file.
 
 Not every command validates. `explore` is the inventory: it lists every
-`.md` file, and reports the same errors in `consistency.errors` while still
+`.md` file but an `INDEX.md` at the folder's root, and reports the same errors in `consistency.errors` while still
 succeeding. `help`, `init`, `installconfig` and `log` do not act on
 existing decisions and do not validate. `config` validates only when it
 changes a guarded field, and tolerates `no-header` (it is how
@@ -209,12 +216,12 @@ repository to a state that validates (see Migrated decisions below).
 ## Families
 
 A **family** is every decision sharing the same sequence number:
-`ADR0001V01` and `ADR0001V02` (or, with revisions configured, `ADR0001V01R01`,
-`ADR0001V01R02`, `ADR0001V02R01`) are one family. `version` (a new major
-version) and `revise` (a wording fix, when revisions are configured) add
+`ADR0001V01R01`, `ADR0001V01R02` and `ADR0001V02R01` (or, with `lenrevision`
+0, `ADR0001V01` and `ADR0001V02`) are one family. `version` (a new major
+version) and `revise` (a wording fix; revisions are on by default) add
 a member to the same family. `supersede` starts a new family under the
 next number, whose filename ends with the predecessor's number
-(`ADR0002V01-title--001.md`).
+(`ADR0002V01R01-title--0001.md`).
 
 ## State diagram
 

@@ -139,8 +139,9 @@ def _existing_headers(scan, config):
 def _refuse_damaged_headers(files, warnings):
     raise CommandError(
         FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
-        f"{len(files)} file(s) look like they carry this tool's header (its fields row or "
-        f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
+        f"{len(files)} file(s) look like they carry this tool's header (in the first 12 lines: its "
+        f"`(1-12) -->` comment, a table row holding a hidden status marker or shaped like the migrated "
+        f"fields row, its fields row or an exact `|--|--|` first line), or are not UTF-8 text at all (a NUL "
         f"byte there, e.g. UTF-16), and no header parses: "
         f"{', '.join(files)}. Repair or remove them by hand, then run migrate again.",
         data={"files": files},
@@ -179,7 +180,7 @@ def describe():
             " one; if any fails, data.results names every file's outcome, and a re-run migrates the files still "
             "without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern "
             "reads from each name (number, version, title) without writing anything; `warnings` flags a "
-            "title that starts with a separator or a number far above the others (a likely wrong pattern)."
+            "title that starts with a separator or a number far above the others (a likely wrong pattern). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},
@@ -194,7 +195,7 @@ def describe():
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (its fields row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (in its first 12 lines: its `(1-12) -->` comment, a table row holding a hidden status marker or shaped like the migrated fields row, its fields row, an exact `|--|--|` first line or a NUL byte) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
                 FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",
@@ -568,7 +569,7 @@ def run(args):
 
     # The config as migrate left it: a persisted migrationpattern is what
     # recognizes the files it migrated under their legacy names.
-    adr_index.regenerate(target, load_repo_config(config_path), warnings)
+    adr_index.regenerate(target, lambda: load_repo_config(config_path), warnings)
     result = {"migrated": migrated, "warnings": warnings}
     if persisted["pattern"] is not None:
         result["migrationpattern_persisted"] = persisted["pattern"]

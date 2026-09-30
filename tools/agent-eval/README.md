@@ -66,6 +66,7 @@ Python process.
 | `AGENT_EVAL_EXPECTED_CLAUDE_MD_SHA256` | `swap_and_run.sh` | sha256 of your real global CLAUDE.md; no swap when unset or different |
 | `AGENT_EVAL_CLAUDE_MD` | `swap_and_run.sh` (optional) | File to swap; default `$HOME/.claude/CLAUDE.md` |
 | `AGENT_EVAL_R44_REAL_DIR` | `reference.sh` (optional) | Real Round 44 run artifacts for the `r44-real` control; not archived, and its rows are skipped without it |
+| `AGENT_EVAL_LENSEQ`, `AGENT_EVAL_LENVERSION`, `AGENT_EVAL_LENREVISION` | `seed.sh` (optional) | The scenario repositories' naming sizes; default 4, 2 and 2. Every script derives decision names from each repository's `.adrpy.json` (`adrnames.py`), and the control tables compare them without widths, so any sizes pass the controls |
 | `TIMEOUT_S`, `BUDGET_USD`, `*_<model>`, `MODEL_ID_<model>` | `run_batch.sh` (optional) | Per-run limits and model ID overrides |
 
 ## How to run

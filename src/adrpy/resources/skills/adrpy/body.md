@@ -52,8 +52,8 @@ takes flags and prints one JSON object; none of them prompts.
   approve it is not asking for a review, and a question about the open
   sections alone is not either.
 - **The `<sep><sep>NNN` suffix is part of the name.** A file name ending
-  in a doubled separator and a number (`ADR0002V01-use-x--001.md` with the
-  default `-`) marks the successor of decision `NNN`. Never remove or
+  in a doubled separator and a number (`ADR0002V01R01-use-x--0001.md` with
+  the default `-`) marks the successor of decision `NNN`. Never remove or
   change it, except in a file `migrate` refuses because it carries one
   before adoption (`migration-successor-files-exist`): then rename it only
   as that refusal's detail says, after asking the user.
@@ -74,7 +74,7 @@ takes flags and prints one JSON object; none of them prompts.
   a pattern with `adrpy explore --path . --migrationpattern <pattern>`: it
   writes nothing. Before writing anything, list in one question the files
   in the decisions folder that do not look like decisions and where you
-  intend to move them; move them and migrate only after the answer. If
+  intend to move them (the `INDEX.md` adrpy generates is not one); move them and migrate only after the answer. If
   every file looks like a decision, there is nothing to ask: go ahead. In
   the pattern, N is the number's start:length and T where the title starts,
   after the separator: for `0001-use-x.md`, `N00:04T05` (`T02` would start
@@ -91,6 +91,9 @@ takes flags and prints one JSON object; none of them prompts.
 - **Never move, rename or delete a file adrpy did not write to get past a
   refusal**: a note in the decisions or decision-log folder is the user's.
   Report the refusal and ask where the file belongs.
+- **`INDEX.md` in the decisions folder is generated** by every command
+  that writes a decision and by `config`: never edit, move or delete it by
+  hand. One adrpy did not write is the user's, and a warning says so.
 - **Relay every warning** a command returns about the files you touched
   (a number shared with a file that is not a decision, say), in your reply.
 - **Run one command at a time per working copy.** adrpy does not lock
@@ -101,8 +104,8 @@ takes flags and prints one JSON object; none of them prompts.
 ## Commands
 
 - `adrpy help` -- lists every command; `adrpy help <command>` describes one.
-- `adrpy init --path .` -- creates `.adrpy.json` and the decisions folder.
-- `adrpy explore --path .` -- lists every `.md` file in the decisions folder, decision or not; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
+- `adrpy init --path .` -- creates `.adrpy.json`, the decisions folder and its generated `INDEX.md`.
+- `adrpy explore --path .` -- lists every `.md` file in the decisions folder, decision or not, but an `INDEX.md` at its root; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
 - `adrpy check --path .` -- validates the repository; each error has a `hint`.
 - `adrpy new --path . --title "..."` -- creates a decision, status Proposed.
 - `adrpy approve --file <file>` -- marks a Proposed decision (or a migrated one with no status yet) Accepted.

@@ -15,7 +15,7 @@ def describe():
             "Marks a Proposed decision (or a migrated placeholder) Accepted. The whole repository is "
             "validated first (see `adrpy check`), then the target's status and its family rules "
             "(doc/lifecycle.md: only the latest member is alive, a superseded family is frozen); nothing is "
-            "written when a rule fails."
+            "written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {

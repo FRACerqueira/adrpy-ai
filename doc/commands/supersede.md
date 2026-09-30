@@ -11,7 +11,7 @@ Marks an `Accepted` decision `Superseded` and creates its successor.
 
 ## Description
 
-Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair).
+Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -79,7 +79,7 @@ Marks an Accepted decision (or a migrated placeholder) Superseded and creates it
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
 | `config-field-is-blank` | A field is non-empty but blank after stripping whitespace. |
-| `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'). |
+| `config-field-contains-forbidden-character` | A field contains '\|' or a line-break-like character (or, for the 4 status labels, '(', ')', '<!--', '-->', or ':'; or, for headertablefields/headertablevalues, '<!--' or '-->'; or, for headerdisclaimer/headermigrated when a `config` or `installconfig` field flag or a `--seed` sets them, '<!--' or '-->'). |
 | `config-migrationpattern-invalid` | migrationpattern is non-empty but does not match N##:##T##[V##:##][R##:##][P##:##]; or, where a migrationpattern is set (config, installconfig, init, explore's preview) and at migrate, its T starts inside its N/V/R/P range or two of those ranges overlap (the detail names the overlap). |
 | `config-headertitlefile-too-long` | headertitlefile exceeds 40 characters. |
 | `config-headerversion-too-long` | headerversion exceeds 40 characters. |
@@ -102,7 +102,7 @@ Marks an Accepted decision (or a migrated placeholder) Superseded and creates it
 
 ```bash
 # The successor is dated today; --refdate YYYY-MM-DD gives another date (not in the future)
-adrpy supersede --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy supersede --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

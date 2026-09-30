@@ -14,17 +14,19 @@ recursively. It defaults to 'decision-log' next to folderadr when the
 config has no folderlog (core/config.py's parse_repo_config).
 """
 
+import os
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes
 from adrpy.core.naming import reject_too_long_filename
 from adrpy.core.header import read_header_lines
-from adrpy.core.fs import scan_tree
+from adrpy.core.fs import same_folder, scan_tree, written_by_someone_else
 from adrpy.core.warnings import excluded_candidate_warning
 from adrpy.core.security import resolve_within
-from adrpy.core.text import parse_ascii_int
+from adrpy.core.text import markdown_literal, parse_ascii_int, without_surrogates
 
 CLASSIFICATIONS = (
     "audit-finding",
@@ -57,6 +59,8 @@ _REOPEN_WHEN_RE = re.compile(r"^\*\*Reopen-when:\*\*\s*(.+?)\s*$")
 
 _INDEX_FILENAME = "INDEX.md"
 _NON_ENTRY_FILES = {_INDEX_FILENAME, "CYCLES.md"}
+# The line that tells the generated index from a file of the user's.
+_INDEX_MARK = "Generated -- do not edit by hand"
 # Said with every refusal over a file that is not an entry, so an agent
 # does not silently move the user's note away to get its entry written.
 _USERS_FILE = (
@@ -173,16 +177,18 @@ def build_entry_content(summary, body, *, front=None, severity=None, resolution=
     return "\n".join(lines)
 
 
-def _parse_entry(path):
+def _parse_entry(path, name):
+    """`name` is the entry's path in the log folder, which may have
+    subfolders (ADR0007V01): what its link and every message name."""
     try:
         date, classification, scope, _slug = path.stem.split("--", 3)
     except ValueError as error:
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
-            f"{path.name} does not match the expected "
+            f"{name} does not match the expected "
             "{ISO date}--{classification}--{scope}--{slug}.md shape -- cannot safely compute the next "
             "Round or regenerate INDEX.md while this file is present." + _USERS_FILE,
-            data={"file": path.name},
+            data={"file": name},
         ) from error
     if classification not in CLASSIFICATIONS:
         # Same failure as an unparseable filename shape, not a softer one:
@@ -193,9 +199,9 @@ def _parse_entry(path):
         # duplicate Round.
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
-            f"{path.name} has an unrecognized classification ('{classification}') -- cannot safely "
+            f"{name} has an unrecognized classification ('{classification}') -- cannot safely "
             "compute the next Round or regenerate INDEX.md while this file is present." + _USERS_FILE,
-            data={"file": path.name},
+            data={"file": name},
         )
     # Bounded read: only lines[0] (heading) and lines[1:5] are used, and
     # no field written via `log` has a length limit, so one oversized
@@ -206,9 +212,9 @@ def _parse_entry(path):
         # heading-less) file is just as unsafe to guess past.
         raise CommandError(
             FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
-            f"{path.name} has no content -- cannot safely compute the next Round or regenerate "
+            f"{name} has no content -- cannot safely compute the next Round or regenerate "
             "INDEX.md while this file is present." + _USERS_FILE,
-            data={"file": path.name},
+            data={"file": name},
         )
     heading = lines[0].lstrip("#").strip()
     front, severity, resolution, round_, reopen_when = "", "", "", "", ""
@@ -231,7 +237,7 @@ def _parse_entry(path):
                 reopen_when = match.group(1)
                 break
     return {
-        "path": path.name,
+        "path": name,
         "classification": classification,
         "date": date,
         "scope": scope,
@@ -256,7 +262,7 @@ def _existing_entries(decision_log_dir, *, warnings=None):
     decision_log_dir = Path(decision_log_dir)
     if not decision_log_dir.is_dir():
         return []
-    scan = scan_tree(decision_log_dir)
+    scan = scan_tree(decision_log_dir, markdown_any_case=True)
     if warnings is not None:
         warning = excluded_candidate_warning(list(scan.excluded))
         if warning and warning not in warnings:
@@ -270,13 +276,15 @@ def _existing_entries(decision_log_dir, *, warnings=None):
             data={"folder": str(decision_log_dir), "unreadable": unreadable},
             warnings=warnings,
         )
-    return [_parse_entry(path) for path in _entry_candidates(scan)]
+    return [_parse_entry(path, path.relative_to(decision_log_dir).as_posix()) for path in _entry_candidates(scan)]
 
 
 def _entry_candidates(scan):
     """The files of `scan` that must each be an entry: every `.md` but
-    the log's own INDEX.md and CYCLES.md, sorted."""
-    return [path for path in sorted(scan.markdown) if path.name not in _NON_ENTRY_FILES]
+    the log's own INDEX.md and CYCLES.md, their names compared in any
+    case as the log's `.md` is (the same on every system), sorted."""
+    own = {name.lower() for name in _NON_ENTRY_FILES}
+    return [path for path in sorted(scan.markdown) if path.name.lower() not in own]
 
 
 def unrecognized_log_files_warning(target, config):
@@ -294,9 +302,9 @@ def unrecognized_log_files_warning(target, config):
     if not decision_log_dir.is_dir():
         return None
     names = []
-    for path in _entry_candidates(scan_tree(decision_log_dir)):
+    for path in _entry_candidates(scan_tree(decision_log_dir, markdown_any_case=True)):
         try:
-            _parse_entry(path)
+            _parse_entry(path, path.relative_to(decision_log_dir).as_posix())
         except CommandError as error:
             if error.code != FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE:
                 raise
@@ -338,7 +346,8 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
     would silently become recognized decision-log history (round
     allocation, INDEX.md) the moment anything scans it. Skipped when the
     new directory does not exist yet."""
-    if new_folderlog == old_folderlog:
+    new_log_dir = resolve_within(target, new_folderlog)
+    if new_folderlog == old_folderlog or same_folder(old_log_dir, new_log_dir):
         return
     existing = _existing_entries(old_log_dir, warnings=warnings)
     if existing:
@@ -351,7 +360,6 @@ def reject_folderlog_change_if_entries_exist(old_log_dir, old_folderlog, new_fol
             warnings=warnings,
         )
 
-    new_log_dir = resolve_within(target, new_folderlog)
     if new_log_dir.is_dir():
         adopted = _existing_entries(new_log_dir, warnings=warnings)
         if adopted:
@@ -370,7 +378,7 @@ def max_existing_round(decision_log_dir, *, warnings=None):
     --round's lower-bound check are built on.
 
     Fails closed (rather than silently skipping) on a structured entry
-    whose Round is missing or not a plain integer -- e.g. a hand-written
+    whose Round is missing or not a positive integer -- e.g. a hand-written
     entry with no structured line at all, or one written "5 (tentative)":
     skipping it would under-report the real max, and a later call could
     allocate a Round that duplicates the one on that file."""
@@ -380,11 +388,13 @@ def max_existing_round(decision_log_dir, *, warnings=None):
             continue
         try:
             rounds.append(parse_ascii_int(entry["round"]))
+            if rounds[-1] < 1:
+                raise ValueError(entry["round"])
         except (AttributeError, TypeError, ValueError) as error:
             raise CommandError(
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE,
                 f"{entry['path']} is classified '{entry['classification']}' but its Round "
-                f"({entry['round']!r}) is missing or not a plain integer -- cannot safely compute "
+                f"({entry['round']!r}) is missing or not a positive integer -- cannot safely compute "
                 "the next Round while this file is present.",
                 data={"file": entry["path"]},
             ) from error
@@ -400,18 +410,53 @@ def next_round(decision_log_dir, *, warnings=None):
     return max_existing_round(decision_log_dir, warnings=warnings) + 1
 
 
+def _cell(text):
+    """A table cell from a hand-written entry's text: a lone surrogate
+    (valid in an NTFS name, not in UTF-8) shown as U+FFFD, so one odd name
+    cannot stop the page, and `|` escaped, so the row keeps its columns
+    (a backslash is left as written: a code span shows it as is)."""
+    return without_surrogates(str(text)).replace("|", "\\|")
+
+
+def previous_index_warning(old_dir, new_dir, warnings):
+    """After a folderlog change, names the generated index the previous
+    folder still holds (never deleted: it is the user's call). Never
+    raises, not even Ctrl+C: the config is already written. The folders
+    are compared as the file system resolves them, so the same folder
+    spelled another way (`doc/../doc/log`, a link to it) is no previous one."""
+    old_index = Path(old_dir) / _INDEX_FILENAME
+    try:
+        if not same_folder(old_dir, new_dir) and old_index.is_file() and not written_by_someone_else(old_index, _INDEX_MARK):
+            warnings.append(f"{old_index} is the index of the previous decision-log folder: delete it if it is no "
+                            "longer needed.")
+    except KeyboardInterrupt:
+        warnings.append(f"{old_index} was not looked at: interrupted (Ctrl+C). The config is written.")
+    except OSError:
+        pass
+
+
 def regenerate_index(decision_log_dir, *, warnings=None):
     """Rebuilds INDEX.md from the entry files themselves -- always
     generated, never hand-maintained prose (see that file's own header).
-    Returns the number of entries indexed."""
+    Returns the number of entries indexed. An INDEX.md without _INDEX_MARK
+    is the user's: left as it is, with a warning when `warnings` is given."""
     decision_log_dir = Path(decision_log_dir)
+    index = decision_log_dir / _INDEX_FILENAME
+    if written_by_someone_else(index, _INDEX_MARK):
+        if warnings is not None:
+            warnings.append(
+                f"{index} was not written by adrpy (or cannot be read), so it is left as it is and the decision-log index is "
+                "not written: rename or move that file to have the index."
+            )
+        return 0
     entries = _existing_entries(decision_log_dir, warnings=warnings)
-    entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"]))
+    # The path last, as text: the same order on every system.
+    entries.sort(key=lambda entry: (entry["date"], entry["classification"], entry["scope"], entry["path"]))
 
     lines = [
         "# Decision log index",
         "",
-        "Generated -- do not edit by hand (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).",
+        f"{_INDEX_MARK} (see [the decision-log workflow](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/decision-log-workflow.md)).",
         "",
         "## How entries are named",
         "",
@@ -469,15 +514,14 @@ def regenerate_index(decision_log_dir, *, warnings=None):
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for entry in entries:
-        lines.append(
-            f"| {entry['date']} | {entry['classification']} | {entry['scope']} "
-            f"| {entry['front']} | {entry['severity']} | {entry['resolution']} | {entry['round']} "
-            f"| {entry['reopen_when']} | {entry['summary']} | [{entry['path']}]({entry['path']}) |"
-        )
+        cells = [_cell(entry[key]) for key in ("date", "classification", "scope", "front", "severity",
+                                                "resolution", "round", "reopen_when", "summary")]
+        cells.append(f"[{markdown_literal(str(entry['path']))}]({quote(entry['path'], safe='/-_.,;', errors='surrogatepass')})")
+        lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
 
     # Atomic: a plain write_text() truncates on open, so a concurrent
     # reader (or a process that dies mid-write) could see or leave an
     # empty INDEX.md. atomic_write_text writes THIS host's os.linesep.
-    atomic_write_text(decision_log_dir / _INDEX_FILENAME, "\n".join(lines))
+    atomic_write_text(index, "\n".join(lines))
     return len(entries)

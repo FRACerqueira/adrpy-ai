@@ -42,7 +42,7 @@ def describe():
             "created by supersede, its predecessor's Superseded cell is reverted first and named in "
             "`undone_predecessor`. Both files are prepared before either is written; if only the predecessor "
             "could be written, the failure names what was and was not written and the Rejected row to put in "
-            "this decision by hand (data.applied, data.pending, data.repair)."
+            "this decision by hand (data.applied, data.pending, data.repair). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {

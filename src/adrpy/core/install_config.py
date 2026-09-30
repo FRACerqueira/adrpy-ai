@@ -40,7 +40,7 @@ def read_install_config_text(path=None):
     if not target.is_file():
         return None
     text = read_config_text(target)
-    parse_repo_config(text)  # validates; raises CommandError on corruption
+    parse_repo_config(text, source=target)  # validates; raises CommandError on corruption
     return text
 
 

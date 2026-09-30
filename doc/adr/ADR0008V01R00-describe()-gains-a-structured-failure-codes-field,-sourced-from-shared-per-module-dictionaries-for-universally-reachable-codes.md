@@ -60,7 +60,7 @@ The chosen shape does not actually reopen that position for those codes -- it re
 
 * A new field on a public JSON contract every consumer (human or agent) already depends on -- additive and backward-compatible, but still a real shape change worth this ADR existing at all.
 * `failure_codes` and `description` can now say the same thing in two places (a full-prose explanation and a terser structured one) for the 75 already-documented codes -- accepted deliberately (`description` keeps its narrative depth; `failure_codes` is the mechanically-complete list), not an oversight.
-* `doc/commands/*.md` stays hand-maintained (no generator script exists today) -- this ADR does not introduce one, so the new field's own table still needs the same manual-sync discipline every other part of that page already requires.
+* `doc/commands/*.md` stayed hand-maintained when this was decided (no generator script existed) -- this ADR did not introduce one. Since 2026-09-24 the pages are generated from `describe()` by `scripts/generate_command_docs.py`, and `tests/test_command_docs.py` fails when one drifts.
 
 ## Pros and Cons of the Options
 
@@ -83,7 +83,7 @@ The chosen shape does not actually reopen that position for those codes -- it re
 * Good, because the ~53 shared-grammar codes get exactly one authored source, reused everywhere they're reachable.
 * Good, because the completeness test becomes a structured-data check instead of a prose substring search.
 * Bad, because it is a real shape change to a contract every consumer already depends on (mitigated: additive, existing fields unchanged).
-* Bad, because `doc/commands/*.md` still needs hand-maintained syncing for the new field, same as every other part of that page today.
+* Bad, because `doc/commands/*.md` still needed hand-maintained syncing for the new field, as every other part of that page did then (generated since 2026-09-24).
 
 ## Links
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.errors import CommandError, FailureCodes, UsageError
-from adrpy.core.hashing import build_marker, check_drift
+from adrpy.core.hashing import FRONTMATTER_RE, build_marker, check_drift
 from adrpy.core.fs import cleanup_orphaned_temp_files_for, read_bounded, read_with_permission_retry, unlink_with_retry
 from adrpy.core.output import explain
 from adrpy.core.security import is_within
@@ -18,8 +18,6 @@ from adrpy.core.text import strip_leading_boms
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 from adrpy.skills import resources
 from adrpy.skills.providers import PROVIDERS, SHARED_DOC_PATH
-
-_FRONTMATTER_RE = re.compile(r"\A(---\n.*?\n---\n)", re.DOTALL)
 
 # Deliberately much larger than core/config.py's own CONFIG_READ_MAX_BYTES
 # (64KB) -- that cap bounds a schema-fixed JSON file, this one bounds
@@ -95,30 +93,6 @@ def _resolve_path(provider_name, skill_name, target_dir, scope):
     return Path(target_dir) / spec["project_path"].format(name=skill_name)
 
 
-def _validate_scope(provider_names, scope):
-    """Rejects an unrecognized --target value, and --target global for a
-    provider without a global-scope concept, up front for every
-    requested provider at once, before any write/removal begins -- a
-    call naming several providers must never leave a partial effect on
-    disk just because a later provider in the list turns out to be the
-    one that fails.
-
-    An unrecognized --target (a typo like "golbal") must fail loudly, never
-    fall through to the "project" branch in _resolve_path and write into
-    the current directory."""
-    if scope not in ("project", "global"):
-        raise UsageError(f"Unknown --target value: {scope!r}. Valid values: global, project.")
-    if scope != "global":
-        return
-    unsupported = [name for name in provider_names if PROVIDERS[name]["global_path"] is None]
-    if unsupported:
-        supported = ", ".join(name for name, spec in PROVIDERS.items() if spec["global_path"] is not None)
-        raise UsageError(
-            f"--target global is not supported for provider(s): {', '.join(unsupported)}. "
-            f"Use --provider {supported} (or omit --provider)."
-        )
-
-
 def _blocks_write(status, force):
     """A 'foreign' (no marker at all) or 'drifted' (marker present, hash
     no longer matches) file/block must never be silently written to or
@@ -139,7 +113,7 @@ def _insert_marker(content, marker_version):
     marker(content, v)) == content` for any content, so a freshly
     (re)generated file always re-hashes as "clean", never "drifted"."""
     marker = build_marker(marker_version, content)
-    match = _FRONTMATTER_RE.match(content)
+    match = FRONTMATTER_RE.match(content)
     if match:
         end = match.end()
         return content[:end] + marker + "\n" + content[end:]
@@ -416,7 +390,13 @@ def _expand_all(providers, skills, scope=None, retired=False):
     """Validates --provider, --skill and (when given) --target together,
     reporting every problem in one usage-error instead of stopping at the
     first flag. With `retired`, --skill also accepts (and 'all' also
-    covers) the skills an older version shipped."""
+    covers) the skills an older version shipped.
+
+    Runs before any write or removal: an unknown --target (a typo like
+    "golbal") must never fall through to _resolve_path's "project" branch
+    and write into the current directory, and --target global is checked
+    for every provider at once, so a later one failing leaves no partial
+    effect."""
     skill_universe = resources.SKILL_NAMES + (resources.RETIRED_SKILL_NAMES if retired else ())
     target_problem = None
     if scope is not None and scope not in ("project", "global"):
@@ -525,7 +505,6 @@ def _report_partial_effects(data, warnings):
 
 def install(target_dir, providers, skills, scope, force, allow_external_links=False):
     provider_names, skill_names = _expand_all(providers, skills, scope)
-    _validate_scope(provider_names, scope)
     _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
         _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links
@@ -659,7 +638,6 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
 
 def remove(target_dir, providers, skills, scope, force, allow_external_links=False):
     provider_names, skill_names = _expand_all(providers, skills, scope, retired=True)
-    _validate_scope(provider_names, scope)
     _require_target_dir(target_dir, scope)
     _reject_paths_leaving_the_target(
         _write_surface(target_dir, provider_names, skill_names, scope), target_dir, scope, allow_external_links

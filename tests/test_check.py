@@ -313,3 +313,80 @@ def test_check_reads_a_decision_whose_name_holds_an_unpaired_surrogate(tmp_path)
     os.rename(adr / "ADR001V01-alpha-one.md", adr / "ADR001V01-alpha-\ud800.md")
 
     assert check.run(["--path", str(tmp_path)])["decisions"] == 1
+
+
+def test_a_note_with_a_compact_table_under_its_title_never_blocks_the_repository(tmp_path):
+    """After adoption a note is left out of every rule (ADR0012V01R01); one
+    whose second line is a compact table holding the fields label is no
+    exception, and new still writes."""
+    import json
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
+    config["migrationpattern"] = "N00:04T05"
+    (tmp_path / ".adrpy.json").write_text(json.dumps(config), encoding="utf-8")
+    new.run(["--path", str(tmp_path), "--title", "Real one", "--refdate", "2026-09-20"])
+    (tmp_path / "doc" / "adr" / "0002-form-layout.md").write_text(
+        f"# Form layout notes\n|Custom {config['headertablefields']}|Meaning|\n|---|---|\n|a|b|\n", encoding="utf-8")
+
+    assert check.run(["--path", str(tmp_path)])["decisions"] == 1
+    assert new.run(["--path", str(tmp_path), "--title", "Second", "--refdate", "2026-09-20"])["status"] == "Proposed"
+
+
+@pytest.mark.parametrize("renamed", ["DEC0001V01R01-a.md", "ADR0001V01R01_a.md"])
+def test_a_file_with_an_adrpy_header_and_a_name_this_config_does_not_read_is_named(tmp_path, renamed):
+    """Another prefix or separator: no rule sees the file, and new would
+    reuse its number, so check and explore say so."""
+    from pathlib import Path
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    created = Path(new.run(["--path", str(tmp_path), "--title", "A", "--refdate", "2026-09-20"])["created"])
+    created.rename(created.with_name(renamed))
+    (created.parent / "README.md").write_text("# About these decisions\n", encoding="utf-8")
+
+    for answer in (check.run(["--path", str(tmp_path)]), explore.run(["--path", str(tmp_path)])):
+        [warning] = [w for w in answer["warnings"] if "carry an adrpy header" in w]
+        assert renamed in warning and "README.md" not in warning
+
+
+def test_the_headered_warning_never_opens_a_file_whose_name_is_no_decision_s(tmp_path, monkeypatch):
+    """Only a name shaped like a decision's (digits, V, digits) can be one
+    with another prefix or separator: a plain note is never opened."""
+    from adrpy.cli import check, init
+    from adrpy.core import consistency
+
+    init.run(["--path", str(tmp_path)])
+    (tmp_path / "doc" / "adr" / "meeting-notes.md").write_text("# Notes\n", encoding="utf-8")
+    opened = []
+    real = consistency.read_header_lines_with_report
+    monkeypatch.setattr(consistency, "read_header_lines_with_report", lambda path, *a, **k: (opened.append(path.name), real(path, *a, **k))[1])
+
+    check.run(["--path", str(tmp_path)])
+
+    assert "meeting-notes.md" not in opened
+
+
+def test_the_headered_warning_says_to_rename_to_a_free_number_not_to_change_the_config(tmp_path):
+    from pathlib import Path
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    created = Path(new.run(["--path", str(tmp_path), "--title", "A", "--refdate", "2026-09-20"])["created"])
+    created.rename(created.with_name("DEC0001V01R01-a.md"))
+
+    [warning] = [w for w in check.run(["--path", str(tmp_path)])["warnings"] if "carry an adrpy header" in w]
+    assert "free number" in warning and "adrpy config" not in warning
+
+
+
+def test_a_digit_named_file_in_a_subfolder_is_named_by_its_path_in_the_folder(tmp_path, capsys):
+    repo = make_repo(tmp_path, files=[D(1)])
+    (repo.folder / "sub").mkdir()
+    (repo.folder / "sub" / "0007-later.md").write_text("# later\n", encoding="utf-8")
+    code, payload = _run(capsys, ["check", "--path", str(repo.root)])
+    assert any("sub/0007-later.md" in warning for warning in payload["data"]["warnings"])

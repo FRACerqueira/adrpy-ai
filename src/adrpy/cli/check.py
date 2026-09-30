@@ -6,6 +6,7 @@ from adrpy.core.consistency import (
     check_repository,
     inconsistent_repository,
     unheadered_legacy_warning,
+    headered_unrecognized_warning,
     unrecognized_decision_like_warning,
 )
 from adrpy.core.decision_log import unrecognized_log_files_warning
@@ -57,7 +58,9 @@ def describe():
             "Succeeds with the number of decisions when every rule holds; otherwise fails with "
             "repository-inconsistent, every broken rule listed in data.errors (code, file, related_files, "
             "detail, hint), sorted by file. A .md file with no ADR name that looks like a decision (its name "
-            "starts with a digit) is named in `warnings`, on success or failure, as is a file whose name only "
+            "starts with a digit) is named in `warnings`, on success or failure, as is one shaped like a "
+            "decision's name (digits, V, digits) that this config does not read but that carries a valid adrpy "
+            "header (another prefix or separator: new could reuse its number), as is a file whose name only "
             "migrationpattern matches and that has no header once the repository has a decision with a valid "
             "header migrate did not write (then it is not a decision: see doc/lifecycle.md, ADR names; the "
             "warning gives the number read from each name), as is a file in the decision-log folder "
@@ -103,6 +106,7 @@ def run(args):
         warning
         for warning in (
             unrecognized_decision_like_warning(scan, config),
+            headered_unrecognized_warning(scan, config),
             unheadered_legacy_warning(snapshot, config),
             unrecognized_log_files_warning(target, config),
             names_too_long_to_rewrite_warning(decision.path for decision in snapshot.decisions),

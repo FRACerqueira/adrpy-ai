@@ -9,6 +9,7 @@ from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.naming import parse_any_filename
 
 import pytest
+from pathlib import Path
 
 
 def _init_repo(tmp_path):
@@ -1327,6 +1328,47 @@ def test_a_config_with_the_retired_plugin_fields_is_read_with_a_warning(tmp_path
     assert any("activeplugins" in warning and "disableplugins" in warning for warning in answer["data"]["warnings"])
 
 
+@pytest.mark.parametrize("raised, code", [(OSError(5, "denied"), "io-error"), (ValueError("x"), "internal-error"),
+                                          (KeyboardInterrupt(), "interrupted")])
+def test_the_retired_field_warning_reaches_every_failure(tmp_path, capsys, monkeypatch, raised, code):
+    """The config-read warning is part of the answer whatever way the
+    command then fails, not only on a CommandError."""
+    import json
+
+    from adrpy import __main__ as entry
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    real_run = config.run
+
+    def failing(args):
+        real_run(["--path", str(tmp_path)])
+        raise raised
+
+    monkeypatch.setattr(config, "run", failing)
+    entry.main(["config", "--path", str(tmp_path)])
+    answer = json.loads(capsys.readouterr().out)
+
+    assert answer["code"] == code
+    assert any("activeplugins" in warning for warning in answer.get("warnings", []))
+
+
+def test_the_retired_field_warning_never_promises_a_removal(tmp_path, capsys):
+    """Only config and installconfig rewrite a config file: the warning must
+    not promise that any write does."""
+    import json
+
+    from adrpy.__main__ import main
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    main(["config", "--path", str(tmp_path)])
+    [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
+
+    assert "removed at the next write" not in warning
+    assert "never written back" in warning
+
+
 def test_a_write_drops_the_retired_plugin_fields(tmp_path):
     tmp_path = _init_repo(tmp_path)
     config_path = _with_retired_fields(tmp_path)
@@ -1357,3 +1399,89 @@ def test_the_plugin_flags_are_gone(tmp_path, flag):
     tmp_path = _init_repo(tmp_path)
     with pytest.raises(UsageError):
         config.run(["--path", str(tmp_path), flag, "true"])
+
+
+def test_the_retired_field_warning_reaches_a_usage_error(tmp_path, capsys, monkeypatch):
+    """init refuses --language once an install-level config exists, after
+    reading that config: the warning its read raised is still in the answer."""
+    import json
+
+    from adrpy import __main__ as entry
+    from adrpy.cli import init as init_module
+
+    install = tmp_path / "install-config.json"
+    data = json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
+    data["activeplugins"] = []
+    install.write_text(json.dumps(data), encoding="utf-8")
+    from adrpy.core.config import parse_repo_config, read_config_text
+
+    def read_install(*args, **kwargs):  # what the real read does (conftest stubs it out)
+        text = read_config_text(install)
+        parse_repo_config(text, source=install)
+        return text
+
+    monkeypatch.setattr(init_module, "read_install_config_text", read_install)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    code = entry.main(["init", "--path", str(repo), "--language", "en-us"])
+    answer = json.loads(capsys.readouterr().out)
+
+    assert code == 2 and answer["code"] == "usage-error"
+    assert any("activeplugins" in warning and str(install) in warning for warning in answer.get("warnings", []))
+
+
+def test_the_retired_field_warning_says_which_commands_drop_them(tmp_path, capsys):
+    """config just rewrote the file without them: the warning must not
+    leave the reader removing fields that are already gone."""
+    import json
+
+    from adrpy.__main__ import main
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    main(["config", "--path", str(tmp_path), "--lenseq", "5"])
+    [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
+    assert "adrpy drops them from a config it rewrites (`config`, `installconfig`, `init --seed`)" in warning
+    assert "a file it only reads, such as a seed, keeps them" in warning
+    assert "activeplugins" not in (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+@pytest.mark.parametrize("value", ["Managed by adrpy --> keep", "Keep <!-- this"])
+def test_a_text_written_inside_a_comment_cannot_close_or_open_one(tmp_path, field, value):
+    """Both are written inside an HTML comment: `-->` would end it early,
+    and the rest would show as text."""
+    tmp_path = _init_repo(tmp_path)
+    with pytest.raises(CommandError) as raised:
+        config.run(["--path", str(tmp_path), f"--{field}", value])
+    assert raised.value.code == "config-field-contains-forbidden-character"
+
+
+def test_a_stored_disclaimer_holding_a_comment_end_still_loads(tmp_path):
+    """Refused where it is set, never where it is read: a config written
+    before stays usable."""
+    import json
+
+    tmp_path = _init_repo(tmp_path)
+    path = tmp_path / ".adrpy.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["headerdisclaimer"] = "Managed --> keep"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    assert config.run(["--path", str(tmp_path), "--lenseq", "4"])["updated_fields"] == ["lenseq"]
+
+
+@pytest.mark.parametrize("field", ["headerdisclaimer", "headermigrated"])
+def test_init_seed_refuses_a_comment_delimiter_in_a_text_written_inside_one(tmp_path, field):
+    import json
+
+    (tmp_path / "source").mkdir()
+    (tmp_path / "target").mkdir()
+    source = _init_repo(tmp_path / "source") / ".adrpy.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data[field] = "Mig<!--x"
+    seed_path = tmp_path / "seed.json"
+    seed_path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(CommandError) as raised:
+        init.run(["--path", str(tmp_path / "target"), "--seed", str(seed_path)])
+    assert raised.value.code == "config-field-contains-forbidden-character"

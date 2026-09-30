@@ -16,18 +16,18 @@ from adrpy.core.text import strip_leading_boms
 # block, never anywhere else -- an unanchored search would read a foreign
 # file with a marker-shaped comment embedded mid-body as "clean"/
 # "drifted". Frontmatter is matched on its own first, up to its FIRST
-# closing `---` (the same boundary installer.py's _FRONTMATTER_RE uses to
-# insert the marker): a single regex with an optional lazy frontmatter
-# group backtracks past that boundary, over later `---` rule lines, to
-# reach a marker-shaped comment further down the body.
-_FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
+# closing `---`, the boundary `_insert_marker` inserts at through this same
+# regex: a single regex with an optional lazy frontmatter group
+# backtracks past that boundary, over later `---` rule lines, to reach a
+# marker-shaped comment further down the body.
+FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 _MARKER_RE = re.compile(r"<!-- adrpy-skills: v(?P<version>\S+) sha256:(?P<hash>[0-9a-f]{64}) -->\n?")
 
 
 def _leading_marker(text):
     """(frontmatter, marker match) for the marker at its one legitimate
     position, or (frontmatter, None) when there is no marker there."""
-    frontmatter = _FRONTMATTER_RE.match(text)
+    frontmatter = FRONTMATTER_RE.match(text)
     position = frontmatter.end() if frontmatter else 0
     return (frontmatter.group(0) if frontmatter else ""), _MARKER_RE.match(text, position)
 
