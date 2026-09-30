@@ -280,7 +280,7 @@ def run(args):
         if not seed_path.is_file():
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
-        seed = parse_repo_config(seed_text)  # validates before writing
+        seed = parse_repo_config(seed_text, source=seed_path)  # validates before writing
         reject_overlapping_migration_pattern(seed.migrationpattern)
         # Written as given, except that the retired fields do not survive the write.
         if any(key.lower() in _RETIRED_FIELDS for key in json.loads(seed_text)):
@@ -312,7 +312,7 @@ def run(args):
     if not any(field in flags for field in _EDITABLE_FIELDS):
         if not target.is_file():
             return {"file": str(target), "configured": False, "updated_fields": [], "warnings": []}
-        current = parse_repo_config(read_config_text(target))
+        current = parse_repo_config(read_config_text(target), source=target)
         current_fields = {field: getattr(current, field) for field in _EDITABLE_FIELDS}
         return {
             "file": str(target),

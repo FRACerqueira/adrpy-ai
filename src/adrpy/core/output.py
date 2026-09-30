@@ -50,7 +50,7 @@ def emit_failure(code, detail=None, data=None, warnings=None):
     return EXIT_FAILURE
 
 
-def emit_usage_failure(code, detail=None):
+def emit_usage_failure(code, detail=None, warnings=None):
     """Same JSON envelope as emit_failure, for a malformed CLI invocation
     (unknown verb, unknown flag, missing required value), with exit code
     2 instead of 1 -- one failure shape on stdout, whichever layer caught
@@ -58,6 +58,8 @@ def emit_usage_failure(code, detail=None):
     payload = {"success": False, "code": code}
     if detail:
         payload["detail"] = detail
+    if warnings is not None:  # the same rule as emit_failure
+        payload["warnings"] = warnings
     print(json.dumps(payload))
     if detail:
         print(detail, file=sys.stderr)

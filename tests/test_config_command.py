@@ -9,6 +9,7 @@ from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.naming import parse_any_filename
 
 import pytest
+from pathlib import Path
 
 
 def _init_repo(tmp_path):
@@ -1352,7 +1353,7 @@ def test_the_retired_field_warning_reaches_every_failure(tmp_path, capsys, monke
     assert any("activeplugins" in warning for warning in answer.get("warnings", []))
 
 
-def test_the_retired_field_warning_names_the_writes_that_remove_them(tmp_path, capsys):
+def test_the_retired_field_warning_never_promises_a_removal(tmp_path, capsys):
     """Only config and installconfig rewrite a config file: the warning must
     not promise that any write does."""
     import json
@@ -1365,7 +1366,7 @@ def test_the_retired_field_warning_names_the_writes_that_remove_them(tmp_path, c
     [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
 
     assert "removed at the next write" not in warning
-    assert "adrpy config" in warning
+    assert "never written back" in warning
 
 
 def test_a_write_drops_the_retired_plugin_fields(tmp_path):
@@ -1398,3 +1399,33 @@ def test_the_plugin_flags_are_gone(tmp_path, flag):
     tmp_path = _init_repo(tmp_path)
     with pytest.raises(UsageError):
         config.run(["--path", str(tmp_path), flag, "true"])
+
+
+def test_the_retired_field_warning_reaches_a_usage_error(tmp_path, capsys, monkeypatch):
+    """init refuses --language once an install-level config exists, after
+    reading that config: the warning its read raised is still in the answer."""
+    import json
+
+    from adrpy import __main__ as entry
+    from adrpy.cli import init as init_module
+
+    install = tmp_path / "install-config.json"
+    data = json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
+    data["activeplugins"] = []
+    install.write_text(json.dumps(data), encoding="utf-8")
+    from adrpy.core.config import parse_repo_config, read_config_text
+
+    def read_install(*args, **kwargs):  # what the real read does (conftest stubs it out)
+        text = read_config_text(install)
+        parse_repo_config(text, source=install)
+        return text
+
+    monkeypatch.setattr(init_module, "read_install_config_text", read_install)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    code = entry.main(["init", "--path", str(repo), "--language", "en-us"])
+    answer = json.loads(capsys.readouterr().out)
+
+    assert code == 2 and answer["code"] == "usage-error"
+    assert any("activeplugins" in warning and str(install) in warning for warning in answer.get("warnings", []))

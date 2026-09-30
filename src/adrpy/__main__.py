@@ -73,7 +73,7 @@ def _run(verb, command, rest, notices):
         if error.unknown in ("--help", "-h"):
             # `adrpy <command> --help` is `adrpy help <command>`.
             return emit_success(COMMANDS["help"].run([verb]))
-        return emit_usage_failure(error.code, _with_example(verb, error))
+        return emit_usage_failure(error.code, _with_example(verb, error), warnings=notices or None)
     except CommandError as error:
         warnings = error.warnings if not notices else [*(error.warnings or []), *notices]
         return emit_failure(error.code, error.detail, error.data, warnings)

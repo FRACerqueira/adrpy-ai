@@ -217,6 +217,7 @@ def run(args):
         if not seed_path.is_file():
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         config_text = read_config_text(seed_path)
+        parse_repo_config(config_text, source=seed_path)
     elif language_arg is not None:
         config_text = default_repo_config_text_for_language(language_arg)
     elif install_config_text is not None:

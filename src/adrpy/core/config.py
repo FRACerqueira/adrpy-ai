@@ -289,7 +289,7 @@ def load_repo_config(path):
     text = read_config_text(path)
     if text == "":
         raise_config_file_empty(path)
-    return parse_repo_config(text)
+    return parse_repo_config(text, source=path)
 
 
 def raise_config_file_empty(path):
@@ -393,7 +393,10 @@ def read_config_text(path):
         raise CommandError(FailureCodes.CONFIG_INVALID_ENCODING, f"{path}: {error}") from error
 
 
-def parse_repo_config(text):
+def parse_repo_config(text, source=None):
+    """The config `text` as a RepoConfig. `source`, the file it was read from,
+    is named in the notice about retired fields; a parse with none (a text
+    built in memory, or one already read and noticed) raises no notice."""
     try:
         raw = json.loads(text)
     except (ValueError, RecursionError) as error:
@@ -413,8 +416,9 @@ def parse_repo_config(text):
         raise CommandError(FailureCodes.CONFIG_INVALID_JSON, "Configuration root must be a JSON object.")
 
     retired = [key for key in raw if key.lower() in _RETIRED_FIELDS]
-    if retired:
-        notice(f"{', '.join(retired)}: no longer config field(s); ignored, and removed when `adrpy config` or `adrpy installconfig` next writes that file.")
+    if retired and source is not None:
+        notice(f"{source}: {', '.join(retired)}: no longer config field(s); ignored, and never written back by "
+               "adrpy -- remove them from that file.")
     lowered = {key.lower(): value for key, value in raw.items() if key.lower() not in _RETIRED_FIELDS}
 
     missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]
