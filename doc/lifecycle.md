@@ -31,7 +31,7 @@ is filled. `undo` never touches the Superseded cell.
 > The header decides status.**
 
 - **Identity and numbering come from the name.** Which family a file
-  belongs to, which decision a successor points back to (the `--001`
+  belongs to, which decision a successor points back to (the `--0001`
   suffix), and which sequence, version and revision numbers are taken
   are all read from filenames -- every file that matches the naming
   scheme counts, whatever its content. A number held by any file is
@@ -87,9 +87,9 @@ A legacy name (`0001-use-postgres.md`) is an ADR name only through the
 `migrationpattern` (see [`config`](commands/config.md)). Anything else --
 a README, an index, `2024-01-15-meeting.md`, a name without the prefix or
 without `V` -- is not a decision: validation and numbering ignore it
-(`explore` still lists it). The `INDEX.md` adrpy generates at the folder's
-root is left out of every scan, `explore`'s too; one it did not write there
-is the user's and is never replaced (ADR0013V01R02).
+(`explore` still lists it). An `INDEX.md` at the folder's root, generated
+or not, is left out of every scan, `explore`'s too; one adrpy did not write
+there is the user's and is never replaced (ADR0013V01R02).
 
 A legacy name also depends on the repository's **phase**, decided on
 every scan of the folder: once any file with an ADR name (either scheme)
@@ -144,7 +144,10 @@ What is validated:
   `.md` whose name is not an ADR name is not a decision and is ignored,
   except that `check` and `explore` warn about one whose name starts with
   a digit (as in `0001-use-x.md`), most likely a decision written before
-  adrpy, and about each legacy name the phase rule leaves out;
+  adrpy, about one shaped like a decision's name (digits, `V`, digits) that
+  this config does not read but that carries a valid adrpy header (another
+  prefix or separator: `new` could reuse its number), and about each legacy
+  name the phase rule leaves out;
 - a file-targeted command (`--file`) acts only on a decision inside the
   decisions folder: any other file is refused with
   `target-outside-folderadr`.
@@ -200,7 +203,7 @@ The status combinations the tool writes (Created / Changed / Superseded;
 A blank Created cell is valid only on a migrated file.
 
 Not every command validates. `explore` is the inventory: it lists every
-`.md` file but the generated `INDEX.md`, and reports the same errors in `consistency.errors` while still
+`.md` file but an `INDEX.md` at the folder's root, and reports the same errors in `consistency.errors` while still
 succeeding. `help`, `init`, `installconfig` and `log` do not act on
 existing decisions and do not validate. `config` validates only when it
 changes a guarded field, and tolerates `no-header` (it is how

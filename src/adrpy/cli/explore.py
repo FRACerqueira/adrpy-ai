@@ -43,8 +43,8 @@ def describe():
         "name": "explore",
         "summary": "Lists every decision file in the repository, on a best-effort basis.",
         "description": (
-            "Lists every .md file under the decisions folder, recognized or not (the INDEX.md adrpy "
-            "generates at its root aside), and never refuses an "
+            "Lists every .md file under the decisions folder, recognized or not (an INDEX.md at its root, "
+            "generated or not, aside), and never refuses an "
             "inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and "
             "every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's "
             "`header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) "
@@ -53,7 +53,9 @@ def describe():
             "decision) once the repository has a decision with a valid header migrate did not write, and named in "
             "`warnings` with the number read from its name. A file in the decision-log folder (folderlog) that is "
             "not a decision-log entry (INDEX.md and CYCLES.md are the log's own) is named in `warnings` too: "
-            "`adrpy log` refuses to write while it is there. With "
+            "`adrpy log` refuses to write while it is there. So is a file shaped like a decision's name (digits, "
+            "V, digits) that this config does not read but that carries a valid adrpy header (another prefix or "
+            "separator: new could reuse its number). With "
             "--migrationpattern, the result also has `migrationpattern_preview` -- the list `adrpy config "
             "--migrationpattern` would return for that pattern (file, number, version, title of each file it "
             "recognizes), its likely-misreading warnings in `warnings` -- while writing nothing: the inventory "

@@ -95,7 +95,7 @@ def describe():
                     "silently reclassify it under the current-scheme parser, so it cannot be scoped the way "
                     "--migrationpattern safely can); --migrationpattern blocks only if a LEGACY-scheme decision "
                     "that already has a header (migrated) exists. This is a PERMANENT block once the decisions it actually protects exist, with no "
-                    "migration path -- for the four status fields, --separator and --prefix that means ANY recognized "
+                    "migration path -- for the four status fields, --separator, --prefix and --headertablefields that means ANY recognized "
                     "decision, any scheme (the ADR0004V01 marker future-proofs RECOGNITION of files that already "
                     "carry it against a later label change, but does not exempt THIS GUARD from refusing the "
                     "config change itself -- a marker-protected repository is blocked exactly the same as one "

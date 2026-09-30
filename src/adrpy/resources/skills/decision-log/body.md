@@ -232,8 +232,9 @@ event" rule above).
 A **cycle** groups a range of `Round` numbers under a human-friendly
 name, for narrative/retrospective reference only. It is deliberately
 **never a field on individual entries** — only `Round` lives there. A
-sibling file, `CYCLES.md` (same directory as the entries — a project may
-rename it, but never fold it into `INDEX.md`, which stays generated,
+sibling file, `CYCLES.md` (same directory as the entries, and exactly
+that name: `adrpy log` refuses any other `.md` file there; never fold it into
+`INDEX.md`, which stays generated,
 never hand-written), is the *only* place a cycle's name is ever
 recorded, as a small table (round range, date range, name, and a
 one-line justification).

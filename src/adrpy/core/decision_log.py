@@ -412,7 +412,7 @@ def regenerate_index(decision_log_dir, *, warnings=None):
     if written_by_someone_else(index, _INDEX_MARK):
         if warnings is not None:
             warnings.append(
-                f"{index} was not written by adrpy, so it is left as it is and the decision-log index is "
+                f"{index} was not written by adrpy (or cannot be read), so it is left as it is and the decision-log index is "
                 "not written: rename or move that file to have the index."
             )
         return 0

@@ -264,7 +264,7 @@ activation models.
 `adrpy`'s own command surface never mentions `adrpy-skills`; installing or
 running it is entirely opt-in. One of the shipped skills, `adrpy`, tells an
 agent to change decision files only through the CLI -- see
-[ADR0011V01](adr/ADR0011V01R00-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md).
+[ADR0011V01](adr/ADR0011V01R01-adrpy-skills-ships-an-adrpy-skill-that-makes-an-ai-agent-use-the-cli-instead-of-editing-adr-files-by-hand.md).
 
 ### Module map
 
@@ -346,10 +346,10 @@ succeeds or fails:
 ```
 
 ```json
-{"success": false, "code": "repository-inconsistent", "detail": "...", "data": {"errors": [{"code": "duplicate-number", "file": "...", "related_files": ["..."], "detail": null, "hint": "..."}]}, "warnings": []}
+{"success": false, "code": "repository-inconsistent", "detail": "...", "data": {"errors": [{"code": "duplicate-number", "file": "...", "related_files": ["..."], "detail": null, "hint": "..."}]}}
 ```
 
-(`adrpy check`'s own refusal carries a `warnings` key only when reading the config raised one, such as a retired field.)
+(`adrpy check`'s own refusal carries `warnings` only when there is one to give, its own or one reading the config raised, never an empty list; every other command's failure follows the rule below.)
 
 `code` is always a stable, documented string (`repository-inconsistent`,
 `config-already-exists`, ...), never a free-text message a caller has to
@@ -358,9 +358,11 @@ command's own [`doc/commands/`](commands/INDEX.md) page, next to the
 exact condition that triggers it. On success, `data.warnings` is always
 present, even when empty. On a failure the command reports (a documented
 `code`), `warnings` is present once the command has started collecting
-them; it is absent for `usage-error`, `unknown-command`, `internal-error`,
-an `io-error` or `interrupted` caught at the entry point, and failures
-raised before that point (a missing file, no repository found) -- see the
+them; it is absent for `unknown-command`, and for a `usage-error`, an
+`internal-error`, an `io-error` or `interrupted` caught at the entry point,
+or a failure raised before that point (a missing file, no repository
+found), unless reading a config raised a warning (a retired field), which
+every answer carries -- see the
 `adrpy-skills` subsystem section above for how that entry point's own
 envelope differs. An `interrupted` the command raises itself, once it
 has written something -- on Ctrl+C, or on any unexpected error from that

@@ -117,7 +117,7 @@ def regenerate(root, config, warnings):
         path = folder / INDEX_NAME
         if written_by_someone_else(path, GENERATED_MARK):
             warnings.append(
-                f"{path} was not written by adrpy, so it is left as it is and the decisions index is not "
+                f"{path} was not written by adrpy (or cannot be read), so it is left as it is and the decisions index is not "
                 "written: rename or move that file to have the index."
             )
             return

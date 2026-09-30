@@ -1,0 +1,3 @@
+# Piping adrpy into a reader that stops early prints a BrokenPipeError traceback, left as it is
+
+A reader that closes the pipe early makes the interpreter print a BrokenPipeError traceback; the answer already written is intact. A fix was tried in round 51 and reverted before its commit: the independent second opinion found it turned a stdout closed before any write into a traceback with exit 1 on every path (a regression), did not work on Windows (a gone reader raises OSError errno 22 there, not BrokenPipeError), and left sys.stdout swapped for later in-process calls. A fix that holds on every platform and every stream costs far more than a cosmetic traceback after the JSON was delivered.
