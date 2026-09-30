@@ -11,7 +11,7 @@ Creates a new revision (wording fix) of an `Accepted`/`Rejected` decision.
 
 ## Description
 
-Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails.
+Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, numbered after the highest revision its version holds. Needs the repository's lenrevision to be greater than 0 (see config), which a freshly initialized repository's is not. The whole repository and the family rules in doc/lifecycle.md are checked first; nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -93,15 +93,15 @@ Creates a new revision (a wording fix) of an Accepted or Rejected decision (or a
 
 ## Example
 
-Revisions are off until the repository's `lenrevision` is set (it is 0 by default):
+Revisions are on by default (`lenrevision` 2), so a new decision is already revision 1. Revising an
+Accepted one:
 
 ```bash
-adrpy config --path . --lenrevision 2
-adrpy revise --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy revise --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
-This creates `ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md`. Once `lenrevision` is set, the
-decisions the tool creates afterwards carry a revision in their names too (`ADR0002V01R01-...`).
+This creates `ADR0001V01R02-use-postgre-sql-for-the-primary-datastore.md`, Proposed. A repository
+with `lenrevision` 0 has no revisions, and `revise` refuses there (`revision-not-configured`).
 
 ---
 

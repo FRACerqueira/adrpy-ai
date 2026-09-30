@@ -11,7 +11,7 @@ Marks a `Proposed` decision `Rejected`.
 
 ## Description
 
-Marks a Proposed decision (or a migrated placeholder) Rejected, after the same repository validation and family rules as approve (doc/lifecycle.md). When the target is a successor created by supersede, its predecessor's Superseded cell is reverted first and named in `undone_predecessor`. Both files are prepared before either is written; if only the predecessor could be written, the failure names what was and was not written and the Rejected row to put in this decision by hand (data.applied, data.pending, data.repair).
+Marks a Proposed decision (or a migrated placeholder) Rejected, after the same repository validation and family rules as approve (doc/lifecycle.md). When the target is a successor created by supersede, its predecessor's Superseded cell is reverted first and named in `undone_predecessor`. Both files are prepared before either is written; if only the predecessor could be written, the failure names what was and was not written and the Rejected row to put in this decision by hand (data.applied, data.pending, data.repair). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -92,7 +92,7 @@ Marks a Proposed decision (or a migrated placeholder) Rejected, after the same r
 ## Example
 
 ```bash
-adrpy reject --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy reject --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

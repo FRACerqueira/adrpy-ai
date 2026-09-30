@@ -162,7 +162,7 @@ def describe():
         "description": (
             "With no field flags, reads the repository's .adrpy.json back (the result has a `config` "
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
-            "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
+            "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix, headertablefields or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
             "reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config "
             "and also returns `migrationpattern_preview` (file, number, version, title of each file it "
@@ -170,7 +170,7 @@ def describe():
             "without writing anything, so preview there first. While the repository is not adopted yet, check "
             "then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a "
             "decision migrate did not write exists, such a file is only warned about. To back out, "
-            "--migrationpattern \"\"."
+            "--migrationpattern \"\". After writing a field it also regenerates `<folderadr>/INDEX.md` (ADR0013V01R02), and after a folderadr change names the previous folder's generated one, which it never deletes."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -198,7 +198,7 @@ def describe():
                 FailureCodes.FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "The NEW folderlog already holds a file that would newly parse as a decision-log entry.",
                 FailureCodes.LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE: "The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry.",
                 FailureCodes.LOG_SCAN_INCOMPLETE: "A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change.",
-                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "A status-label/--separator/--prefix change would break recognition of an existing decision, or a --migrationpattern change that of a legacy-scheme decision that already has a header (migrated).",
+                FailureCodes.STATUS_OR_SEPARATOR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "A status-label/--separator/--prefix/--headertablefields change would break recognition of an existing decision, or a --migrationpattern change that of a legacy-scheme decision that already has a header (migrated).",
                 FailureCodes.SEPARATOR_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--separator would make a file NOT currently recognized as a decision newly parse as one.",
                 FailureCodes.PREFIX_CHANGE_WOULD_ADOPT_UNRELATED_FILES: "--prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files).",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",

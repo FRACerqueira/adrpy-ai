@@ -1,4 +1,4 @@
-"""The decisions folder's INDEX.md (ADR0013V01R01): one table of every
+"""The decisions folder's INDEX.md (ADR0013V01R02): one table of every
 decision, regenerated at the end of every command that writes one. Built
 from the same snapshot `check` reads, with the repository's own header
 labels, and deterministic -- an unchanged repository rewrites it byte for

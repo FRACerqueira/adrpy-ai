@@ -38,7 +38,8 @@ def describe():
         "name": "explore",
         "summary": "Lists every decision file in the repository, on a best-effort basis.",
         "description": (
-            "Lists every .md file under the decisions folder, recognized or not, and never refuses an "
+            "Lists every .md file under the decisions folder, recognized or not (the INDEX.md adrpy "
+            "generates at its root aside), and never refuses an "
             "inconsistent repository: it is the inventory, so what it could not read goes to `warnings` and "
             "every rule `adrpy check` would report as broken goes to `consistency.errors`. Each entry's "
             "`header.state` is `valid`, `adulterated` (it looks like this tool's header but does not parse) "

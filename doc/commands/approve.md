@@ -11,7 +11,7 @@ Marks a `Proposed` decision `Accepted`.
 
 ## Description
 
-Marks a Proposed decision (or a migrated placeholder) Accepted. The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: only the latest member is alive, a superseded family is frozen); nothing is written when a rule fails.
+Marks a Proposed decision (or a migrated placeholder) Accepted. The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: only the latest member is alive, a superseded family is frozen); nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -89,7 +89,7 @@ Marks a Proposed decision (or a migrated placeholder) Accepted. The whole reposi
 ## Example
 
 ```bash
-adrpy approve --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy approve --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

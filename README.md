@@ -42,7 +42,7 @@ Architecture decisions are worth keeping only while they stay true and findable.
 
 - **Create and evolve decisions:** `new`, then `approve` or `reject`, `undo`, `version` (a new major version), `revise` (a wording fix) and `supersede` (a successor that replaces it) -- numbers, versions and revisions assigned by the tool.
 - **A repository that stays consistent:** every lifecycle command validates the whole repository first, and `adrpy check` does the same for a pre-commit hook or CI.
-- **An index that is always true:** every command that writes a decision regenerates `INDEX.md` in the decisions folder, one table of every decision with its title, state, scope and domain ([ADR0013V01R01](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0013V01R01-every-write-regenerates-an-index-of-the-decisions-in-the-decisions-folder.md)).
+- **An index that is always true:** every command that writes a decision, and `config` after a field write, regenerates `INDEX.md` in the decisions folder, one table of every decision with its title, state, scope and domain; an `INDEX.md` you wrote yourself is never replaced ([ADR0013V01R02](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/adr/ADR0013V01R02-every-write-regenerates-an-index-of-the-decisions-in-the-decisions-folder.md)).
 - **Adopt what you already have:** `migrate` gives hand-written decision files a header in one run, keeping their names.
 - **Your repository's own conventions:** prefix, number and version widths, separator, case, header and status labels and template, all in `.adrpy.json` and edited with `adrpy config`; a per-user default seeds every new repository.
 - **A decision log** next to the ADRs, for findings and trade-offs that are not architectural decisions (`adrpy log`).

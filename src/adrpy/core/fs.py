@@ -422,7 +422,7 @@ def scan_tree(folder):
     neither entered nor reported in `excluded`, wherever it points. The extension match follows the OS's own case
     rule (os.path.normcase), as rglob's does. A missing `folder` is
     reported as unreadable. The folder's own INDEX.md is not listed: it is
-    the page adrpy generates there (ADR0013V01R01, and the decision log's
+    the page adrpy generates there (ADR0013V01R02, and the decision log's
     own index).
 
     Only a link is resolved: a file or directory reached from the

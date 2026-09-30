@@ -11,7 +11,7 @@ Marks an `Accepted` decision `Superseded` and creates its successor.
 
 ## Description
 
-Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair).
+Marks an Accepted decision (or a migrated placeholder) Superseded and creates its successor, status Proposed, in a new family whose filename ends with the predecessor's number (--NNN). The whole repository and the family rules in doc/lifecycle.md are checked first, and both files are prepared before either is written. The successor is written first; if only it could be written, the failure names what was and was not written and the header row to put in the predecessor by hand (data.applied, data.pending, data.repair). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -102,7 +102,7 @@ Marks an Accepted decision (or a migrated placeholder) Superseded and creates it
 
 ```bash
 # The successor is dated today; --refdate YYYY-MM-DD gives another date (not in the future)
-adrpy supersede --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy supersede --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

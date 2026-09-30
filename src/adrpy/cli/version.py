@@ -22,7 +22,7 @@ def describe():
             "Creates a new major version of an Accepted or Rejected decision (or a migrated placeholder), status Proposed, in the same "
             "family; scope and domain default to the target's. The whole repository and the family rules in "
             "doc/lifecycle.md are checked first, and the new version number must fit lenversion; nothing is "
-            "written when a rule fails."
+            "written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {

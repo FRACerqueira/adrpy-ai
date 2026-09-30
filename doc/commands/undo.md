@@ -11,7 +11,7 @@ Reverts a decision's `Accepted`/`Rejected` status back to `Proposed`.
 
 ## Description
 
-Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell; the result is {file, status, warnings}, `status` being "Proposed", or null for a migrated decision, whose blank Created cell makes it a placeholder again (as explore reports it). The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); nothing is written when a rule fails.
+Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cell; the result is {file, status, warnings}, `status` being "Proposed", or null for a migrated decision, whose blank Created cell makes it a placeholder again (as explore reports it). The whole repository is validated first (see `adrpy check`), then the target's status and its family rules (doc/lifecycle.md: no other open Proposed member, a rejected successor's family is final); nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 
@@ -86,7 +86,7 @@ Reverts an Accepted or Rejected decision to Proposed by clearing its Changed cel
 ## Example
 
 ```bash
-adrpy undo --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md
+adrpy undo --file doc/adr/ADR0001V01R01-use-postgre-sql-for-the-primary-datastore.md
 ```
 
 ---

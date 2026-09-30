@@ -179,7 +179,7 @@ def describe():
             " one; if any fails, data.results names every file's outcome, and a re-run migrates the files still "
             "without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern "
             "reads from each name (number, version, title) without writing anything; `warnings` flags a "
-            "title that starts with a separator or a number far above the others (a likely wrong pattern)."
+            "title that starts with a separator or a number far above the others (a likely wrong pattern). It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure."
         ),
         "arguments": [
             {"name": "path", "alias": "-p", "type": "string", "required": True, "description": "Repository root directory."},

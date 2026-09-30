@@ -11,7 +11,7 @@ Creates a new decision, status `Proposed`.
 
 ## Description
 
-Creates a new decision, status Proposed, in a new family under the number after the highest one held (gaps are not reused). The whole repository is validated first (see `adrpy check`), and the title must be unique in it once case-transform normalized; nothing is written when a rule fails.
+Creates a new decision, status Proposed, in a new family under the number after the highest one held (gaps are not reused). The whole repository is validated first (see `adrpy check`), and the title must be unique in it once case-transform normalized; nothing is written when a rule fails. It also regenerates `<folderadr>/INDEX.md`, the table of every decision (ADR0013V01R02); a failure there, or an INDEX.md adrpy did not write, is a warning, never the command's failure.
 
 ## Arguments
 

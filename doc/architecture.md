@@ -51,24 +51,25 @@ graph TD
     CALLER["Caller<br/>(human or AI agent)"] --> MAIN
     MAIN["__main__.py<br/>entry point + dispatch"] --> CLI
     CLI["cli/*.py<br/>15 thin command modules,<br/>one per adrpy verb"] --> CORE
-    CORE["core/*.py<br/>19 shared modules: 18 grouped by<br/>concern in the table below,<br/>plus hashing.py"] --> FS[("Filesystem")]
+    CORE["core/*.py<br/>21 shared modules: 20 grouped by<br/>concern in the table below,<br/>plus hashing.py"] --> FS[("Filesystem")]
 ```
 
 No single command uses every `core/` module -- Dispatch & contract's four
 modules are the one exception, used by every command -- the table below is
 the accurate picture; the diagram above is deliberately just the
 layering, not a full edge list, because a command-by-module graph for 15
-commands x 18 modules is a hairball no one can actually read.
+commands x 20 modules is a hairball no one can actually read.
 
 | Concern | Modules | Responsibility |
 |---|---|---|
 | Dispatch & contract | `registry.py`, `args.py`, `output.py`, `errors.py` | Maps each verb to its command module; parses `--flag value` pairs; builds the JSON envelope and exit code; defines `CommandError`/`UsageError`. Used by every command. |
 | Storage | `fs.py`, `atomic_write.py` | Every file read, write and delete goes through `fs.py` (a source-scan test enforces it for the `read_*`/`write_*`/`unlink`/`os.replace`/`remove`/`rename`/`link` calls; a few plain `open()` reads remain outside it): bounded reads with a short retry on a transient `PermissionError`, the two-step write (`prepare_write` puts the complete content in a temp file next to the target, `commit_write` moves it into place, or creates it exclusively, never over an existing file), the one walk of a folder (`scan_tree`) and the cleanup of orphaned temp files. `atomic_write.py` wraps the write for text, bytes and streamed chunks, with the host line endings. |
-| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR0002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
+| Configuration | `config.py`, `install_config.py` | A repository's own `.adrpy.json` schema; the per-user install-level config ([ADR0002](adr/ADR0002V01R01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md)). |
 | Repository model & validation | `consistency.py`, `family.py` | One scan of the decisions folder into a snapshot of `Decision`s, each with a status derived once from the closed set of combinations, and the validator that checks every invariant ([lifecycle.md](lifecycle.md#validate-the-whole-repository-before-acting)); the family rules both it and the commands share (which filename names a successor, which member is live). |
 | Decision file mechanics | `lifecycle.py`, `header.py`, `naming.py`, `casing.py`, `security.py`, `text.py` | The shared preamble of the file commands (`prepare`) and the transition table it follows; the 12-line header format, its free-text rules included; filename parsing/building for both naming schemes; title case transforms; path-escape guards; small text rules (plain ASCII numbers, leading BOMs). |
 | Decision log | `decision_log.py` | The mechanical half of a decision-log entry ([ADR0003V01](adr/ADR0003V01R00-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)): filename/structured-line construction, `Round` allocation, and `INDEX.md` regeneration -- judgment (classification, wording) stays outside the tool, in the [decision-log workflow](decision-log-workflow.md). Its own directory (`folderlog`) is independently configurable and recursively scanned, decoupled from `folderadr` ([ADR0007V01](adr/ADR0007V01R00-decision-log-directory-becomes-an-independent,-recursively-scanned-config-field-instead-of-a-fixed-sibling-of-folderadr--0003.md), superseding ADR0003V01's own schema driver). |
-| Diagnostics | `warnings.py` | Builds the warning strings a result's `warnings` list carries for automatic, non-fatal actions (a retried write, orphan cleanup, an encoding repair, a file excluded for escaping the repository, a status marker that disagrees with its label). |
+| Decisions index | `adr_index.py` | The decisions folder's `INDEX.md` ([ADR0013](adr/ADR0013V01R02-every-write-regenerates-an-index-of-the-decisions-in-the-decisions-folder.md)): one table of every decision, regenerated after every command that writes a decision and after a `config` field write. Any failure there is a warning, and an `INDEX.md` adrpy did not write is left as it is. |
+| Diagnostics | `warnings.py`, `notices.py` | `notices.py` collects the warnings the config read raises (a retired field), which `__main__` merges into every answer, success or failure. Builds the warning strings a result's `warnings` list carries for automatic, non-fatal actions (a retried write, orphan cleanup, an encoding repair, a file excluded for escaping the repository, a status marker that disagrees with its label). |
 
 Every write command (`init`, `new`, `approve`, `reject`, `undo`,
 `supersede`, `version`, `revise`, `migrate`, `config`, `installconfig`,
@@ -112,7 +113,7 @@ sequenceDiagram
     participant Val as core/consistency
     participant FS as core/fs + Filesystem
 
-    Caller->>Main: adrpy approve --file doc/adr/ADR0001V01-....md
+    Caller->>Main: adrpy approve --file doc/adr/ADR0001V01R01-....md
     Main->>Main: look up verb in core/registry.py
     Main->>Cmd: command.run(args)
     Cmd->>Cmd: parse_flags(args, ...) (or raises UsageError)
@@ -176,7 +177,7 @@ no lock, atomic writes, one invocation at a time.
 ## Configuration layering
 
 `adrpy-ai` has two independent config scopes, and a defined precedence
-between them, decided in [ADR0002](adr/ADR0002V01R00-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
+between them, decided in [ADR0002](adr/ADR0002V01R01-install-level-config-is-a-per-user-file-that-seeds-init-and-migrate-instead-of-an-install-directory-template.md):
 
 ```mermaid
 graph LR
@@ -348,7 +349,7 @@ succeeds or fails:
 {"success": false, "code": "repository-inconsistent", "detail": "...", "data": {"errors": [{"code": "duplicate-number", "file": "...", "related_files": ["..."], "detail": null, "hint": "..."}]}, "warnings": []}
 ```
 
-(`adrpy check`'s own refusal carries no `warnings` key: it collects none.)
+(`adrpy check`'s own refusal carries a `warnings` key only when reading the config raised one, such as a retired field.)
 
 `code` is always a stable, documented string (`repository-inconsistent`,
 `config-already-exists`, ...), never a free-text message a caller has to

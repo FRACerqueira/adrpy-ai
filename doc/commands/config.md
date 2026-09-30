@@ -11,7 +11,7 @@ Reads or updates an existing repository's own `.adrpy.json`.
 
 ## Description
 
-With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "".
+With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix, headertablefields or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". After writing a field it also regenerates `<folderadr>/INDEX.md` (ADR0013V01R02), and after a folderadr change names the previous folder's generated one, which it never deletes.
 
 ## Arguments
 
@@ -61,7 +61,7 @@ With no field flags, reads the repository's .adrpy.json back (the result has a `
 | `folderlog-change-would-adopt-unrelated-files` | The NEW folderlog already holds a file that would newly parse as a decision-log entry. |
 | `log-directory-contains-unrecognized-file` | The OLD or NEW folderlog contains a .md file that does not parse as a valid decision-log entry. |
 | `log-scan-incomplete` | A subdirectory under the OLD or NEW folderlog could not be scanned while checking a --folderlog change. |
-| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--prefix change would break recognition of an existing decision, or a --migrationpattern change that of a legacy-scheme decision that already has a header (migrated). |
+| `status-or-separator-change-blocked-by-existing-decisions` | A status-label/--separator/--prefix/--headertablefields change would break recognition of an existing decision, or a --migrationpattern change that of a legacy-scheme decision that already has a header (migrated). |
 | `separator-change-would-adopt-unrelated-files` | --separator would make a file NOT currently recognized as a decision newly parse as one. |
 | `prefix-change-would-adopt-unrelated-files` | --prefix would make a file NOT currently recognized as a decision newly parse as one (data.adopted_files). |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
@@ -184,7 +184,7 @@ adrpy explore --path . --migrationpattern N00:04T05
 adrpy config --path . --migrationpattern N00:04T05
 
 # Update one field
-adrpy config --path . --lenrevision 2
+adrpy config --path . --headerscope Area
 
 # Clear the migration pattern (no migrated legacy-scheme decision may exist)
 adrpy config --path . --migrationpattern ""

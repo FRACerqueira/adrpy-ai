@@ -87,7 +87,9 @@ A legacy name (`0001-use-postgres.md`) is an ADR name only through the
 `migrationpattern` (see [`config`](commands/config.md)). Anything else --
 a README, an index, `2024-01-15-meeting.md`, a name without the prefix or
 without `V` -- is not a decision: validation and numbering ignore it
-(`explore` still lists it).
+(`explore` still lists it). The `INDEX.md` adrpy generates at the folder's
+root is left out of every scan, `explore`'s too; one it did not write there
+is the user's and is never replaced (ADR0013V01R02).
 
 A legacy name also depends on the repository's **phase**, decided on
 every scan of the folder: once any file with an ADR name (either scheme)
@@ -125,7 +127,7 @@ Every lifecycle command -- `new`, `approve`, `reject`, `undo`,
 `supersede`, `version` and `revise` -- first validates the whole
 decisions folder, and `config` does the same before changing a guarded
 field (`folderadr`, `folderlog`, a status label, `separator`, `prefix`,
-`migrationpattern`). If any rule below is broken, the command fails with
+`headertablefields`, `migrationpattern`). If any rule below is broken, the command fails with
 `repository-inconsistent` and writes nothing: `data.errors` lists every
 broken rule, sorted by file, each as `{code, file, related_files, detail,
 hint}`, the `hint` saying how to repair it. `adrpy check` runs the same
@@ -198,7 +200,7 @@ The status combinations the tool writes (Created / Changed / Superseded;
 A blank Created cell is valid only on a migrated file.
 
 Not every command validates. `explore` is the inventory: it lists every
-`.md` file, and reports the same errors in `consistency.errors` while still
+`.md` file but the generated `INDEX.md`, and reports the same errors in `consistency.errors` while still
 succeeding. `help`, `init`, `installconfig` and `log` do not act on
 existing decisions and do not validate. `config` validates only when it
 changes a guarded field, and tolerates `no-header` (it is how
@@ -209,12 +211,12 @@ repository to a state that validates (see Migrated decisions below).
 ## Families
 
 A **family** is every decision sharing the same sequence number:
-`ADR0001V01` and `ADR0001V02` (or, with revisions configured, `ADR0001V01R01`,
-`ADR0001V01R02`, `ADR0001V02R01`) are one family. `version` (a new major
-version) and `revise` (a wording fix, when revisions are configured) add
+`ADR0001V01R01`, `ADR0001V01R02` and `ADR0001V02R01` (or, with `lenrevision`
+0, `ADR0001V01` and `ADR0001V02`) are one family. `version` (a new major
+version) and `revise` (a wording fix; revisions are on by default) add
 a member to the same family. `supersede` starts a new family under the
 next number, whose filename ends with the predecessor's number
-(`ADR0002V01-title--001.md`).
+(`ADR0002V01R01-title--0001.md`).
 
 ## State diagram
 
