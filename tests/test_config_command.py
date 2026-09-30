@@ -1327,6 +1327,47 @@ def test_a_config_with_the_retired_plugin_fields_is_read_with_a_warning(tmp_path
     assert any("activeplugins" in warning and "disableplugins" in warning for warning in answer["data"]["warnings"])
 
 
+@pytest.mark.parametrize("raised, code", [(OSError(5, "denied"), "io-error"), (ValueError("x"), "internal-error"),
+                                          (KeyboardInterrupt(), "interrupted")])
+def test_the_retired_field_warning_reaches_every_failure(tmp_path, capsys, monkeypatch, raised, code):
+    """The config-read warning is part of the answer whatever way the
+    command then fails, not only on a CommandError."""
+    import json
+
+    from adrpy import __main__ as entry
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    real_run = config.run
+
+    def failing(args):
+        real_run(["--path", str(tmp_path)])
+        raise raised
+
+    monkeypatch.setattr(config, "run", failing)
+    entry.main(["config", "--path", str(tmp_path)])
+    answer = json.loads(capsys.readouterr().out)
+
+    assert answer["code"] == code
+    assert any("activeplugins" in warning for warning in answer.get("warnings", []))
+
+
+def test_the_retired_field_warning_names_the_writes_that_remove_them(tmp_path, capsys):
+    """Only config and installconfig rewrite a config file: the warning must
+    not promise that any write does."""
+    import json
+
+    from adrpy.__main__ import main
+
+    tmp_path = _init_repo(tmp_path)
+    _with_retired_fields(tmp_path)
+    main(["config", "--path", str(tmp_path)])
+    [warning] = [w for w in json.loads(capsys.readouterr().out)["data"]["warnings"] if "activeplugins" in w]
+
+    assert "removed at the next write" not in warning
+    assert "adrpy config" in warning
+
+
 def test_a_write_drops_the_retired_plugin_fields(tmp_path):
     tmp_path = _init_repo(tmp_path)
     config_path = _with_retired_fields(tmp_path)

@@ -159,23 +159,27 @@ def _is_relative_path(value):
     (`C:foo`, which PureWindowsPath does NOT consider absolute but which
     still anchors to a specific drive's own current directory), and a UNC
     path -- a hostile config (e.g. from a cloned repo) must never be able to
-    point folderadr outside the repo via `init`/`new`/etc."""
+    point folderadr outside the repo via `init`/`new`/etc. A leading `\`
+    too: rooted at the current drive on Windows, with no drive letter."""
     if PureWindowsPath(value).is_absolute() or PurePosixPath(value).is_absolute():
         return False
-    if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\\\", "//")):
+    if re.match(r"^[A-Za-z]:", value) or value.startswith(("\\", "//")):
         return False
     return True
 
 
 def _stays_inside(value):
-    """Whether `value`, read lexically on either separator, never climbs
-    above its starting folder: `doc/../log` stays, `doc/../../x` does not.
-    resolve_within still resolves links when the folder is used."""
-    depth = 0
-    for part in PureWindowsPath(value).parts:
-        depth += -1 if part == ".." else 0 if part == "." else 1
-        if depth < 0:
-            return False
+    """Whether `value` never climbs above its starting folder, read
+    lexically both ways: with `\\` as a separator (Windows) and as part of
+    a name (POSIX, where `a\\b/../../x` escapes). `doc/../log` stays,
+    `doc/../../x` does not. resolve_within still resolves links when the
+    folder is used."""
+    for parts in (PureWindowsPath(value).parts, PurePosixPath(value).parts):
+        depth = 0
+        for part in parts:
+            depth += -1 if part == ".." else 0 if part == "." else 1
+            if depth < 0:
+                return False
     return True
 
 
@@ -410,7 +414,7 @@ def parse_repo_config(text):
 
     retired = [key for key in raw if key.lower() in _RETIRED_FIELDS]
     if retired:
-        notice(f"{', '.join(retired)}: no longer config field(s); ignored, and removed at the next write.")
+        notice(f"{', '.join(retired)}: no longer config field(s); ignored, and removed when `adrpy config` or `adrpy installconfig` next writes that file.")
     lowered = {key.lower(): value for key, value in raw.items() if key.lower() not in _RETIRED_FIELDS}
 
     missing = [name for name in ALL_FIELDS if name != "folderlog" and name not in lowered]

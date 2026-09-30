@@ -81,15 +81,15 @@ def _run(verb, command, rest, notices):
         # Any OSError a command did not translate into a CommandError (a
         # permission failure, a full disk) would otherwise propagate as a
         # raw traceback with EMPTY stdout, breaking the JSON contract.
-        return emit_failure("io-error", explain(error))
+        return emit_failure("io-error", explain(error), warnings=notices or None)
     except KeyboardInterrupt:
         # Ctrl+C is a BaseException, not an Exception -- the catch-all
         # below never sees it, so without this it propagates raw, with
         # EMPTY stdout. (core/fs.py cleans up its temp file on
         # any BaseException; this keeps the JSON answer.)
-        return emit_failure("interrupted", "Interrupted (Ctrl+C).")
+        return emit_failure("interrupted", "Interrupted (Ctrl+C).", warnings=notices or None)
     except Exception as error:  # noqa: BLE001 -- last-resort contract guard, see above
-        return emit_failure("internal-error", explain(error))
+        return emit_failure("internal-error", explain(error), warnings=notices or None)
 
     return emit_success(data)
 

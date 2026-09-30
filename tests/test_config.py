@@ -799,7 +799,8 @@ def test_config_invalid_json_says_to_repair_the_file_by_hand():
 
 
 @pytest.mark.parametrize("field", ["folderadr", "folderlog"])
-@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", "a\..\..\outside", "./../outside"])
+@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", "a\..\..\outside", "./../outside",
+                                   r"\outside", r"\..", r"a\b/../../x"])
 def test_a_folder_leading_outside_the_repository_is_rejected_on_read(field, value):
     """The read accepted a relative folder that leads outside the
     repository: `adrpy config` reported a hand-edited `../outside` as valid,
@@ -814,7 +815,7 @@ def test_a_folder_leading_outside_the_repository_is_rejected_on_read(field, valu
     assert excinfo.value.code == f"config-{field}-not-relative"
 
 
-@pytest.mark.parametrize("value", ["doc/../log", "./log", "..hidden/log", "log..", "a/b/../c"])
+@pytest.mark.parametrize("value", ["doc/../log", "./log", "..hidden/log", "log..", "a/b/../c", r"a\b/../c"])
 def test_a_folder_that_stays_inside_the_repository_is_accepted(value):
     data = _valid_config_dict()
     data["folderlog"] = value

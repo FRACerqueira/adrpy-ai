@@ -57,6 +57,21 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
     assert target_path.read_text(encoding="utf-8") == Path(FIXTURE_PATH).read_text(encoding="utf-8")
 
 
+def test_seed_drops_the_retired_plugin_fields(tmp_path):
+    """A seed holding the retired fields is written without them: the
+    warning says an installconfig write removes them."""
+    data = json.loads(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
+    data.update({"activeplugins": [], "disableplugins": False})
+    seed = tmp_path / "seed.json"
+    seed.write_text(json.dumps(data), encoding="utf-8")
+
+    installconfig.run(["--seed", str(seed)])
+
+    text = installconfig.resolve_install_config_path().read_text(encoding="utf-8")
+    assert "activeplugins" not in text and "disableplugins" not in text
+    assert parse_repo_config(text) == parse_repo_config(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
+
+
 def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
     """A --seed file that exists and is readable but fails schema
     validation is refused before anything is written -- removing

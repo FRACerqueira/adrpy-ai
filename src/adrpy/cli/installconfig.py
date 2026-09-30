@@ -45,6 +45,7 @@ from adrpy.core import config as config_schema
 from adrpy.core.config import (
     INT_FIELD_BOUNDS,
     _INT_FIELDS,
+    _RETIRED_FIELDS,
     _STRING_FIELDS,
     SUPPORTED_LANGUAGES,
     default_repo_config_text,
@@ -52,6 +53,7 @@ from adrpy.core.config import (
     parse_repo_config,
     read_config_text,
     reject_overlapping_migration_pattern,
+    serialize_repo_config,
 )
 from adrpy.core.errors import CommandError, FailureCodes, UsageError, build_failure_codes
 from adrpy.core.install_config import resolve_install_config_path
@@ -278,7 +280,11 @@ def run(args):
         if not seed_path.is_file():
             raise CommandError(FailureCodes.CONFIG_FILE_NOT_FOUND, f"File not found: {seed_arg}")
         seed_text = read_config_text(seed_path)
-        reject_overlapping_migration_pattern(parse_repo_config(seed_text).migrationpattern)  # validates before writing
+        seed = parse_repo_config(seed_text)  # validates before writing
+        reject_overlapping_migration_pattern(seed.migrationpattern)
+        # Written as given, except that the retired fields do not survive the write.
+        if any(key.lower() in _RETIRED_FIELDS for key in json.loads(seed_text)):
+            seed_text = serialize_repo_config(asdict(seed))
         replaced = _replaced_values_warning(seed_text)
         return {
             "file": str(target),
