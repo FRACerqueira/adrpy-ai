@@ -59,7 +59,7 @@ def describe():
                 "alias": "-p",
                 "type": "string",
                 "required": True,
-                "description": "Repository root directory (must contain adr-config.adrplus).",
+                "description": "Repository root directory (must contain .adrpy.json).",
             },
             {
                 "name": "migrationpattern",
@@ -77,7 +77,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.PATH_INVALID: "A resolved path is not usable (e.g. contains a NUL byte).",
                 FailureCodes.PATH_OUTSIDE_REPOSITORY: "A resolved path escapes the repository boundary.",
             },
@@ -120,10 +120,8 @@ def run(args):
         not_decisions = set(snapshot.unheadered_legacy)
         for candidate in scan.markdown:
             # Best-effort: a single persistently unreadable file (locked by
-            # an editor, backup tool, or antivirus -- ordinary in a folder
-            # of Markdown files people also open by hand) is reported here
-            # rather than killing this entire inventory, matching the
-            # unreadable-subdirectory handling just below.
+            # an editor, backup tool, or antivirus) is reported rather than
+            # killing this entire inventory, like an unreadable subdirectory.
             decision = decisions.get(candidate)
             if decision is not None and decision.header is not None:
                 header_state = (
@@ -156,13 +154,10 @@ def run(args):
         )
     )
 
-    # Every mutating command's result carries "warnings" unconditionally,
-    # even when empty (see config's own read-mode) -- explore never
-    # generates one from a write (it's read-only), but omitting the key
-    # entirely breaks a generic wrapper that assumes `data["warnings"]`
-    # always exists across all commands. is_within's own exclusion is
-    # reported here too, since explore's own docstring promises no file is
-    # ever dropped silently from this report.
+    # "warnings" is present even when empty, as in every command's result:
+    # a generic wrapper assumes `data["warnings"]` always exists.
+    # is_within's own exclusion is reported here too, since explore's own
+    # docstring promises no file is ever dropped silently from this report.
     warnings = []
     warning = excluded_candidate_warning(excluded)
     if warning:
@@ -202,20 +197,15 @@ def _build_entry(path, config, not_a_decision=False):
     found = None if not_a_decision else parse_any_filename(path.name, config)
     scheme, parsed = found if found else (None, None)
 
-    # Reading and decoding the file's ENTIRE content (path.read_bytes())
-    # would be wasteful -- parse_header only ever consumes the first 12
-    # lines, and for a large or hostile file (explore is the natural
-    # "safe first look" an agent runs against an unfamiliar repository,
-    # with no size warning), that's an unbounded memory read for zero
-    # benefit (an 800MB matching file once drove peak memory to ~2.5GB
-    # for this single candidate). Uses the same bounded header read as
-    # the repository scan (core/consistency) and migrate's scan -- same
-    # PermissionError-retry tolerance, same lossy-decode detection, just
-    # never loading the body.
+    # The bounded header read, never the whole file: parse_header only
+    # consumes the first 12 lines, and explore is the natural first look
+    # at an unfamiliar, possibly hostile repository (an 800MB matching
+    # file once drove peak memory to ~2.5GB). Same read as the repository
+    # scan (core/consistency) and migrate's scan.
     header_lines, encoding_repaired = read_header_lines_with_report(path)
     header = parse_header(header_lines, config)
     # "adulterated": this tool's header, damaged; "no-header": none.
-    header_state = "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines) else "no-header")
+    header_state = "valid" if header.is_valid else ("adulterated" if has_header_shape(header_lines, config) else "no-header")
     return _entry(path, scheme, parsed, header, header_state, encoding_repaired)
 
 
@@ -244,11 +234,9 @@ def _entry(path, scheme, parsed, header, header_state, encoding_repaired):
             "status_change": header.status_change,
             "date_change": header.date_change.isoformat() if header.date_change else None,
             "superseded_by_file": header.superseded_by_file,
-            # Tells the caller this specific file's bytes were
-            # lossy-decoded -- explore is a read-only report, the natural
-            # place for this visibility.
+            # True when this file's bytes were lossy-decoded.
             "encoding_repaired": encoding_repaired,
-            # ADR004V01: names which status field(s), if any, had a
+            # ADR0004V01: names which status field(s), if any, had a
             # marker/label disagreement -- explore lists every decision,
             # not just the one a write command happens to be acting on,
             # so this is per-file data here rather than a warning.

@@ -7,7 +7,7 @@ from adrpy.cli import installconfig
 from adrpy.core.config import parse_repo_config
 from adrpy.core.errors import CommandError, UsageError
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 @pytest.fixture(autouse=True)
@@ -49,17 +49,6 @@ def test_second_write_merges_onto_the_existing_file_not_the_bundled_default(tmp_
     assert read_back["config"]["lenseq"] == 4
 
 
-def test_activeplugins_is_preserved_across_writes_even_though_never_exposed(tmp_path):
-    installconfig.run(["--seed", FIXTURE_PATH])  # fixture's activeplugins == ["AdrIndexer"]
-
-    installconfig.run(["--prefix", "XYZ"])
-
-    target_path = installconfig.resolve_install_config_path()
-    written = parse_repo_config(target_path.read_text(encoding="utf-8"))
-    assert written.activeplugins == ["AdrIndexer"]
-    assert written.prefix == "XYZ"
-
-
 def test_seed_replaces_the_file_wholesale(tmp_path):
     result = installconfig.run(["--seed", FIXTURE_PATH])
 
@@ -69,11 +58,10 @@ def test_seed_replaces_the_file_wholesale(tmp_path):
 
 
 def test_seed_rejects_content_that_fails_schema_validation(tmp_path):
-    """Zero coverage existed for a --seed
-    file that exists and is readable but fails schema validation --
-    mutation-confirmed that removing installconfig.py's own
-    `parse_repo_config(seed_text)` validate-before-write call left every
-    existing test green."""
+    """A --seed file that exists and is readable but fails schema
+    validation is refused before anything is written -- removing
+    installconfig.py's own `parse_repo_config(seed_text)`
+    validate-before-write call leaves every other test green."""
     data = json.loads(Path(FIXTURE_PATH).read_text(encoding="utf-8"))
     del data["lenseq"]
     bad_seed = tmp_path / "bad-seed.json"
@@ -109,7 +97,7 @@ def test_language_replaces_the_file_wholesale_with_localized_labels_and_template
     """Mirrors init's own test_init_with_language_seeds_localized_labels_
     and_template -- same language packs, same merge-onto-built-in-default
     semantics, just written to the install-level file instead of a fresh
-    repository's adr-config.adrplus."""
+    repository's .adrpy.json."""
     result = installconfig.run(["--language", "pt-br"])
 
     assert set(result["updated_fields"]) == set(installconfig._EDITABLE_FIELDS)
@@ -160,20 +148,6 @@ def test_invalid_field_value_is_rejected(tmp_path):
         installconfig.run(["--lenseq", "2"])
 
     assert excinfo.value.code == "config-lenseq-too-small"
-
-
-def test_disableplugins_accepts_true_and_false(tmp_path):
-    result = installconfig.run(["--disableplugins", "true"])
-
-    assert result["updated_fields"] == ["disableplugins"]
-    assert installconfig.run([])["config"]["disableplugins"] is True
-
-
-def test_disableplugins_rejects_a_non_boolean_value(tmp_path):
-    with pytest.raises(CommandError) as excinfo:
-        installconfig.run(["--disableplugins", "maybe"])
-
-    assert excinfo.value.code == "field-not-a-boolean"
 
 
 def test_describe_has_no_path_argument_and_no_activeplugins_flag():

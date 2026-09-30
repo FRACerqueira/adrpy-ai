@@ -104,9 +104,10 @@ def test_a_markdown_file_without_an_adr_name_is_ignored(tmp_path):
     assert len(validate_repository(repo.folder, repo.config).decisions) == 1
 
 
-def test_an_adrplus_header_without_canonical_markers_passes(tmp_path):
-    """AdrPlus 1.0.0 writes no `<!-- Status -->` marker: the status is read
-    from the label text alone, and every state it names passes."""
+def test_a_header_without_canonical_markers_passes(tmp_path):
+    """A header with no `<!-- Status -->` marker (written by hand, or before
+    ADR0004V01): the status is read from the label text alone, and every
+    state it names passes."""
     probe = make_repo(tmp_path / "probe")
     specs = [
         D(1, state="superseded", successor=2),
@@ -447,10 +448,10 @@ def test_a_proposed_decision_older_than_a_rejected_one_is_still_live(tmp_path):
     assert _codes(repo) == []
 
 
-# ------------------------------------------ the 4 states AdrPlus produces --
+# ------------------- 4 states a repository adopted as it is can hold --
 
 
-def test_adrplus_v01_superseded_next_to_v02_accepted(tmp_path):
+def test_v01_superseded_next_to_v02_accepted(tmp_path):
     repo = make_repo(
         tmp_path,
         files=[D(1, state="superseded", successor=3), D(1, version=2, state="accepted"), D(3, suffix=1)],
@@ -464,7 +465,7 @@ def test_adrplus_v01_superseded_next_to_v02_accepted(tmp_path):
     assert "move the Superseded cell to the live member" in errors[0]["hint"]
 
 
-def test_adrplus_two_superseded_members_in_one_family(tmp_path):
+def test_two_superseded_members_in_one_family(tmp_path):
     repo = make_repo(
         tmp_path,
         files=[
@@ -481,7 +482,7 @@ def test_adrplus_two_superseded_members_in_one_family(tmp_path):
     assert duplicate["hint"] == HINTS[FailureCodes.SUPERSEDED_DUPLICATE]
 
 
-def test_adrplus_two_live_successors_of_one_predecessor(tmp_path):
+def test_two_live_successors_of_one_predecessor(tmp_path):
     repo = make_repo(
         tmp_path,
         files=[D(1, state="superseded", successor=2), D(2, suffix=1), D(3, state="accepted", suffix=1)],
@@ -495,7 +496,7 @@ def test_adrplus_two_live_successors_of_one_predecessor(tmp_path):
     assert live[0]["hint"] == HINTS[FailureCodes.MULTIPLE_LIVE_SUCCESSORS]
 
 
-def test_adrplus_superseded_pointing_at_a_rejected_successor(tmp_path):
+def test_superseded_pointing_at_a_rejected_successor(tmp_path):
     repo = make_repo(tmp_path, files=[D(1, state="superseded", successor=2), D(2, state="rejected", suffix=1)])
 
     errors = _raised(repo)

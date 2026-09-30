@@ -13,7 +13,7 @@ A third skill, `adrpy`, tells an agent how to drive the CLI itself: run
 decision files only through the commands, never by hand.
 `adrpy-skills` installs those skills into a repository (or your own global
 config), for whichever AI coding assistants you actually use. See
-[ADR009V01](../adr/ADR009V01-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
+[ADR0009V01](../adr/ADR0009V01R00-ai-coding-agent-skills-installer-ships-as-a-separate-adrpy-skills-entry-point-with-per-provider-full-body-or-stub-delivery.md)
 for the full design rationale -- this page is the *how*, not the *why*.
 
 ## Two commands, one package, no runtime coupling
@@ -36,7 +36,7 @@ pieces, concatenated in this order:
    to run, rewritten to stand on its own without the maintainer's personal
    global instructions. Every bundled skill has one: `pre-release-audit`
    and `decision-log` say when they may run, and `adrpy`'s says it applies
-   to ADR tasks in a repository that has `adr-config.adrplus`.
+   to ADR tasks in a repository that has `.adrpy.json`.
 2. **`body.md`** -- the skill's own vendor-neutral mechanics: the *how*,
    once the gate (if any) says this is allowed to run.
 3. **`glue.md`** (decision-log only) -- the adrpy-specific instantiation:

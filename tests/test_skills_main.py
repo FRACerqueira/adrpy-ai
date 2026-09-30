@@ -105,13 +105,10 @@ class TestCliDispatch:
         assert out.startswith("adrpy-skills ")
 
     def test_remove_via_short_aliases(self, tmp_path, capsys):
-        # Round 35, Test-Adequacy front: -p/-s were exercised via the real
-        # CLI (test_install_via_short_aliases above), but -t and -f never
-        # were -- describe()'s own alias metadata was checked, and so was
-        # parse_flags' aliases= dict via AST inspection, but neither of
-        # those actually invokes the CLI with -t/-f, so either could drop
-        # from the real aliases={...} kwarg with every existing test still
-        # green.
+        # -t and -f through the real CLI: describe()'s alias metadata and the
+        # AST check of parse_flags' aliases= dict never invoke the CLI, so
+        # either alias could drop from the real aliases={...} kwarg with those
+        # tests still green.
         main(["install", "--path", str(tmp_path), "-s", "pre-release-audit", "-p", "cursor"])
         capsys.readouterr()
         exit_code, out = _run(["remove", "--path", str(tmp_path), "-s", "pre-release-audit", "-p", "cursor", "-f"], capsys)
@@ -128,12 +125,10 @@ class TestCliDispatch:
         assert (home / ".claude" / "skills" / "pre-release-audit" / "SKILL.md").exists()
 
     def test_provider_comma_with_nothing_after_is_a_usage_error_via_cli(self, tmp_path, capsys):
-        # Round 35, Test-Adequacy front: the empty-after-split rejection was
-        # only ever tested by calling installer.install([], ...) directly,
-        # bypassing commands/install.py's own _split() entirely -- a
-        # regression there (e.g. `... or ["all"]`, silently widening the
-        # blast radius to "all providers" on a mistyped flag) would pass
-        # every existing test.
+        # Through commands/install.py's own _split(), not installer.install([],
+        # ...) directly: a regression there (e.g. `... or ["all"]`, silently
+        # widening the blast radius to "all providers" on a mistyped flag) must
+        # fail here.
         exit_code, out = _run(["install", "--path", str(tmp_path), "--provider", ","], capsys)
         assert exit_code == 2
         assert out["code"] == "usage-error"
@@ -145,10 +140,9 @@ class TestCliDispatch:
         assert {c["name"] for c in out["data"]["commands"]} == {"help", "install", "remove", "list"}
 
     def test_unexpected_exception_is_reported_as_internal_error_not_a_raw_traceback(self, tmp_path, capsys, monkeypatch):
-        # Round 32, Class F: an exception outside UsageError/OSError (e.g. a
-        # UnicodeDecodeError from a pre-existing non-UTF-8 file) must still
-        # come back as a JSON envelope, never an uncaught traceback with
-        # empty stdout.
+        # An exception outside UsageError/OSError (e.g. a UnicodeDecodeError
+        # from a pre-existing non-UTF-8 file) must still come back as a JSON
+        # envelope, never an uncaught traceback with empty stdout.
         import adrpy.skills.installer as installer_module
 
         def boom(*args, **kwargs):
@@ -161,10 +155,9 @@ class TestCliDispatch:
         assert out["code"] == "internal-error"
 
     def test_keyboard_interrupt_still_emits_json_on_stdout(self, tmp_path, capsys, monkeypatch):
-        # Round 37, Class P1: adrpy/__main__.py already catches
-        # KeyboardInterrupt (a BaseException, not an Exception -- the
-        # generic except Exception above never sees it); this sibling
-        # entry point never got the same fix until now.
+        # KeyboardInterrupt is a BaseException, not an Exception -- the generic
+        # except Exception above never sees it; this entry point catches it as
+        # adrpy/__main__.py does.
         import adrpy.skills.installer as installer_module
 
         def boom(*args, **kwargs):
@@ -307,7 +300,7 @@ class TestCliErgonomics:
 
 
 class TestFailureDetailOnStdout:
-    """ADR010V01: a failure's human-readable explanation is in the stdout
+    """ADR0010V01: a failure's human-readable explanation is in the stdout
     JSON as `detail`, and stderr keeps the same text as a copy."""
 
     def test_a_usage_error_carries_its_detail_on_stdout_and_the_same_text_on_stderr(self, tmp_path, capsys):

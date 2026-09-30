@@ -9,7 +9,7 @@ stops a command. Every rule here is checked by `adrpy` itself, from the
 files on disk, on every call; a command that is not allowed changes no
 decision file and returns the failure code named below. (Housekeeping can
 still happen first: removing its own orphaned temp files, and `migrate`
-persisting its fallback pattern into `adr-config.adrplus`.)
+persisting its fallback pattern into `.adrpy.json`.)
 
 ## Where status lives
 
@@ -45,8 +45,8 @@ is filled. `undo` never touches the Superseded cell.
   the two share it.
 - **Status comes from the header.** Every file with an ADR name must have
   a header that parses, with a status combination the tool writes (see
-  the next section). A header written by AdrPlus 1.0.0 -- the status read
-  from its label, with no hidden canonical marker -- and a file `migrate`
+  the next section). A header with no hidden canonical marker -- the status
+  read from its label -- and a file `migrate`
   brought in (`<!-- Migrated -->`) both count. When a status cell has both
   the hidden marker (`<!-- Accepted -->`) and a label, the marker wins; a
   label that says otherwise is reported as a warning.
@@ -77,9 +77,9 @@ A file is a decision only when its name is an **ADR name**:
   separator is read as the suffix: a name where that part is not all
   digits, or with more than one doubled separator, is not an ADR name.
   The suffix is read only after a title, that is, when a single separator
-  comes before the doubled one: `ADR002V01--001.md` has no title and is
+  comes before the doubled one: `ADR0002V01--001.md` has no title and is
   not an ADR name.
-- The `.md` extension is compared case-insensitively (`ADR001V01-x.MD`
+- The `.md` extension is compared case-insensitively (`ADR0001V01-x.MD`
   counts). The folder scan follows the platform's file-name case rule,
   so on a case-sensitive file system only a lower-case `.md` is scanned.
 
@@ -91,8 +91,8 @@ without `V` -- is not a decision: validation and numbering ignore it
 
 A legacy name also depends on the repository's **phase**, decided on
 every scan of the folder: once any file with an ADR name (either scheme)
-has a valid header `migrate` did not write -- one the tool or AdrPlus
-created, or one copied by hand; from then on `migrate` no longer runs
+has a valid header `migrate` did not write -- one the tool created, or
+one copied by hand; from then on `migrate` no longer runs
 (`already-tool-created-adrs-exist`) -- a legacy name **without a header**
 is not a decision anywhere: validation, numbering, the config guards and
 `init`'s existing-number check ignore it, a command given it as `--file`
@@ -209,12 +209,12 @@ repository to a state that validates (see Migrated decisions below).
 ## Families
 
 A **family** is every decision sharing the same sequence number:
-`ADR001V01` and `ADR001V02` (or, with revisions configured, `ADR001V01R01`,
-`ADR001V01R02`, `ADR001V02R01`) are one family. `version` (a new major
+`ADR0001V01` and `ADR0001V02` (or, with revisions configured, `ADR0001V01R01`,
+`ADR0001V01R02`, `ADR0001V02R01`) are one family. `version` (a new major
 version) and `revise` (a wording fix, when revisions are configured) add
 a member to the same family. `supersede` starts a new family under the
 next number, whose filename ends with the predecessor's number
-(`ADR002V01-title--001.md`).
+(`ADR0002V01-title--001.md`).
 
 ## State diagram
 
@@ -447,8 +447,7 @@ in this order:
 
 1. a file that looks like this tool's header but does not parse
    (`migration-invalid-headers-exist`), then a file with a valid header
-   `migrate` did not write -- AdrPlus's or adrpy's
-   (`already-tool-created-adrs-exist`); both before the pattern is needed;
+   `migrate` did not write (`already-tool-created-adrs-exist`); both before the pattern is needed;
 2. the repository's own pattern reads part of a name twice
    (`config-migrationpattern-invalid`), unless a decision was already
    migrated with it (then `migrate` goes on with a warning, as above);

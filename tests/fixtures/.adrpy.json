@@ -23,9 +23,5 @@
   "headertitlestatussuperseded": "Superseded",
   "headertablefields": "Fields",
   "headertablevalues": "Values",
-  "headermigrated": "Migrated",
-  "activeplugins": [
-    "AdrIndexer"
-  ],
-  "disableplugins": false
+  "headermigrated": "Migrated"
 }

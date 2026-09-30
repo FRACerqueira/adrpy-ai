@@ -3,22 +3,21 @@ hand-written decision files. Refuses outright if ANY file already has a
 valid, non-migrated header (current-scheme, tool-created) -- migration is
 a one-time operation for repositories with only manually-created
 decisions. Rewrites only the header in place, and the filename is never
-changed; the file's own content passes through byte-for-byte after the
-new header, with the one confirmed exception (see the BOM-stripping
-comment below) of a leading UTF-8 BOM, which is discarded rather than
-carried through -- "preserved verbatim" refers to the body's own line
-endings and bytes otherwise, not literally its every byte.
+changed; the file's own content (line endings included) passes through
+byte-for-byte after the new header, except that any run of leading UTF-8
+BOMs is discarded (see _stream_migrated_candidate).
 
 If the repository's own `migrationpattern` is empty, falls back to the
 install-level config's own `migrationpattern` (see the `installconfig`
-command; ADR002V01) when one is set there, and persists the found value
-back into this repository's own `adr-config.adrplus`.
+command; ADR0002V01) when one is set there, and persists the found value
+back into this repository's own `.adrpy.json`.
 """
 
 import contextlib
 from dataclasses import asdict
 from pathlib import Path
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import STREAM_CHUNK_SIZE, normalize_newlines
 from adrpy.core.fs import (
@@ -33,6 +32,7 @@ from adrpy.core.fs import (
 )
 from adrpy.core.config import (
     SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
+    load_repo_config,
     parse_repo_config,
     reject_overlapping_migration_pattern,
     serialize_repo_config,
@@ -71,14 +71,11 @@ from adrpy.core.warnings import attach_warnings, excluded_candidate_warning, orp
 
 
 def _stream_migrated_candidate(candidate_path, header_text):
-    """ADR006V01: the candidate's own content has no schema-imposed size
-    bound (unlike a header) -- the new header (already fully built,
-    schema-bounded), followed by the candidate's own content streamed
-    through unmodified in STREAM_CHUNK_SIZE-sized pieces straight from
-    the source file into the destination temp file (via
-    core/fs.prepare_write), never assembled as one in-memory bytes object
-    -- except any run of leading UTF-8 BOMs, stripped from the very first chunk
-    only (see this module's own docstring)."""
+    """ADR0006V01: the new header (schema-bounded), then the candidate's
+    own content (no size bound) streamed unmodified in STREAM_CHUNK_SIZE
+    pieces into the destination temp file (via core/fs.prepare_write),
+    never assembled as one in-memory bytes object -- except any run of
+    leading UTF-8 BOMs, stripped from the very first chunk only."""
     yield header_text.encode("utf-8")
     with Path(candidate_path).open("rb") as source:
         first_chunk = True
@@ -121,7 +118,7 @@ def _existing_headers(scan, config):
     """(damaged, not_written_by_migrate): the files of `scan` recognized
     under `config` whose header has this tool's shape but does not parse,
     and those whose header parses and is not migrate's placeholder
-    (written by AdrPlus or adrpy). A file that cannot be read is left to
+    (written by adrpy's other commands, or by hand). A file that cannot be read is left to
     the full scan in run(), which refuses it."""
     damaged, not_written_by_migrate = [], []
     for candidate in scan.markdown:
@@ -132,7 +129,7 @@ def _existing_headers(scan, config):
         except OSError:
             continue
         header = parse_header(lines, config)
-        if not header.is_valid and has_header_shape(lines):
+        if not header.is_valid and has_header_shape(lines, config):
             damaged.append(str(candidate))
         elif header.is_valid and not header.is_migrated:
             not_written_by_migrate.append(str(candidate))
@@ -142,7 +139,7 @@ def _existing_headers(scan, config):
 def _refuse_damaged_headers(files, warnings):
     raise CommandError(
         FailureCodes.MIGRATION_INVALID_HEADERS_EXIST,
-        f"{len(files)} file(s) look like they carry this tool's header (a `|Adr-Plus ` row or "
+        f"{len(files)} file(s) look like they carry this tool's header (its fields row or "
         f"an exact `|--|--|` separator in the first 12 lines), or are not UTF-8 text at all (a NUL "
         f"byte there, e.g. UTF-16), and no header parses: "
         f"{', '.join(files)}. Repair or remove them by hand, then run migrate again.",
@@ -154,7 +151,7 @@ def _refuse_damaged_headers(files, warnings):
 def _refuse_headers_migrate_did_not_write(files, warnings):
     raise CommandError(
         FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST,
-        f"{len(files)} file(s) already have a valid header migrate did not write (AdrPlus or adrpy): "
+        f"{len(files)} file(s) already have a valid header migrate did not write: "
         f"{', '.join(files)}. migrate only runs on a repository with no such header: give each remaining "
         "file without one a header by hand (copy it from one of these), or rename or remove it.",
         data={"files": files},
@@ -175,7 +172,7 @@ def describe():
             " with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the"
             " titles begin with part of the number). It is a one-time step, refused as a whole"
             " when a file already has a valid header migrate did not write (checked first, before anything is "
-            "written); a fallback value is then persisted into adr-config.adrplus (reported as "
+            "written); a fallback value is then persisted into .adrpy.json (reported as "
             "migrationpattern_persisted) and survives a later refusal, in which case no decision file is "
             "touched. It is also refused as a whole when a scanned file has a damaged header, carries a "
             "supersede suffix, shares a number with another or cannot be read. Files are then migrated one by"
@@ -190,15 +187,15 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED: "Both the repository's own migrationpattern and the install-level config's own fallback are empty.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "A candidate's own title (sourced from its raw legacy filename) contains '|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort.",
                 FailureCodes.MIGRATION_SCAN_FAILED: "A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run.",
                 FailureCodes.MIGRATION_SCAN_INCOMPLETE: "A subdirectory under the decisions folder could not be scanned -- refuses the whole run.",
                 FailureCodes.MIGRATION_SUCCESSOR_FILES_EXIST: "A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run.",
                 FailureCodes.MIGRATION_DUPLICATE_NUMBERS_EXIST: "Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own.",
-                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (a `|Adr-Plus ` row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
-                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
+                FailureCodes.MIGRATION_INVALID_HEADERS_EXIST: "A scanned file looks like it carries this tool's header (its fields row, an exact `|--|--|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand.",
+                FailureCodes.ALREADY_TOOL_CREATED_ADRS_EXIST: "At least one scanned file already has a valid header migrate did not write (data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand.",
                 FailureCodes.NO_DECISIONS_FOUND: "No .md files matching a recognized naming scheme were found.",
                 FailureCodes.NO_ELIGIBLE_FILES_TO_MIGRATE: "Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration.",
                 FailureCodes.MIGRATION_WRITE_FAILED: "At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite, or a candidate that is a symbolic link, fails that way too, with nothing written to it (its error says what to do).",
@@ -275,7 +272,7 @@ def run(args):
             warnings.append(warning)
 
         # Before migrationpattern is even needed (or persisted from the
-        # fallback): a repository AdrPlus or adrpy already manages is
+        # fallback): a repository whose decisions already carry headers is
         # told so (a damaged header first, as below), never sent to
         # configure a pattern first. The same checks run again below,
         # over the names a fallback pattern adds.
@@ -303,7 +300,7 @@ def run(args):
                     "file's `File title md` row by hand."
                 )
 
-        # ADR002V01: the install-level fallback is only consulted when
+        # ADR0002V01: the install-level fallback is only consulted when
         # the repository's own migrationpattern is empty.
         if not config.migrationpattern:
             fallback_text = read_install_config_text()
@@ -311,7 +308,7 @@ def run(args):
             if not fallback_pattern:
                 raise CommandError(
                     FailureCodes.MIGRATION_PATTERN_NOT_CONFIGURED,
-                    "adr-config.adrplus has no migrationpattern configured, and the install-level "
+                    ".adrpy.json has no migrationpattern configured, and the install-level "
                     "config (see installconfig) has none either.",
                     warnings=warnings,
                 )
@@ -340,7 +337,7 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
-        entries = []  # (ParsedFileName, Path, HeaderParseResult)
+        entries = []
         adulterated_files = []
         # 0-byte files, never a decision to migrate: with a current-scheme
         # name, an interrupted create's name reservation; with a legacy
@@ -368,14 +365,9 @@ def run(args):
                     # the whole candidate.
                     lines, _encoding_repaired = read_header_lines_with_report(candidate)
                 except OSError as error:
-                    # This scan-phase read must not run outside a
-                    # try/except: a real failure here (permission
-                    # denied, a locked file, a network-drive hiccup)
-                    # would otherwise escape as a raw OSError,
-                    # discarding the orphan-cleanup warning already
-                    # appended above and skipping the deterministic
-                    # per-file reporting the best-effort design
-                    # otherwise guarantees.
+                    # A raw OSError here (permission denied, a locked
+                    # file, a network-drive hiccup) would discard the
+                    # warnings already collected above.
                     raise CommandError(
                         FailureCodes.MIGRATION_SCAN_FAILED,
                         f"{candidate}: {error}",
@@ -383,15 +375,14 @@ def run(args):
                         warnings=warnings,
                     ) from error
                 # Deliberately does not surface header.marker_label_
-                # mismatches (ADR004V01) here -- this scan is a bulk
-                # eligibility pass over every candidate, not a report
-                # on one specific target file the way prepare's
-                # own warning already covers.
+                # mismatches (ADR0004V01): this scan is a bulk
+                # eligibility pass, not a report on one target file
+                # (prepare's own warning covers that).
                 if not lines and is_zero_bytes(candidate):
                     (empty_legacy_files if scheme == "legacy" else empty_files).append(candidate)
                     continue
                 header = parse_header(lines, config)
-                if not header.is_valid and has_header_shape(lines):
+                if not header.is_valid and has_header_shape(lines, config):
                     adulterated_files.append(str(candidate))
                 entries.append((parsed, candidate, header))
 
@@ -413,15 +404,12 @@ def run(args):
             warning = excluded_candidate_warning(excluded)
             if warning:
                 warnings.append(warning)
-            # A subdirectory the scan could not list fails closed
-            # instead of warning -- unlike explore's own best-effort
-            # listing, this scan feeds already-tool-created-adrs-exist
-            # below, a real safety decision (a hidden already-migrated
-            # file could make that check silently answer "no" when the
-            # true answer is "yes"). Same fail-closed treatment this
-            # command already gives an unreadable FILE
-            # (migration-scan-failed) -- a directory it can't enter is
-            # the identical risk, just one level up.
+            # A subdirectory the scan could not list fails closed,
+            # unlike explore's own best-effort listing: this scan feeds
+            # already-tool-created-adrs-exist below, which a hidden
+            # already-migrated file could make answer "no" when the
+            # true answer is "yes" -- the same risk as an unreadable
+            # FILE (migration-scan-failed).
             unreadable_dirs = list(scan.unreadable)
             if unreadable_dirs:
                 raise CommandError(
@@ -512,8 +500,7 @@ def run(args):
                 # Unlike every other command's own title, this one is
                 # sourced from a raw, untrusted legacy filename, sliced
                 # positionally with zero character filtering
-                # (naming.parse_legacy_filename) -- never validated
-                # before, so a hostile legacy file's own name could embed
+                # (naming.parse_legacy_filename): it could embed
                 # '|'/a line-break (forging the header table this write
                 # is about to build) or a filesystem-unsafe character
                 # (e.g. ':', an NTFS Alternate-Data-Stream separator,
@@ -527,18 +514,13 @@ def run(args):
                 reject_too_long_filename(candidate_path.name, REWRITE_TOO_LONG_REMEDY)
                 record = DecisionRecord(number=parsed.number, title=title, version=0)
                 header_text = build_header(config, record, migrated=True)
-                # ADR006V01: streams the candidate's own content
-                # straight from disk into the destination temp file --
-                # never assembled as one in-memory bytes object (the
-                # original content's own line endings, and anything
-                # else about its bytes, still pass through completely
-                # untouched; only the header text is new). A transient
-                # PermissionError on EITHER the source read or the temp
-                # write retries the whole temp write, the chunk
-                # generator included, from one shared budget; the
-                # commit that follows has its own and never reads the
-                # source again. Each candidate is prepared and committed
-                # on its own: best-effort per file.
+                # ADR0006V01: streamed from disk into the temp file,
+                # never held in memory. A transient PermissionError on
+                # EITHER the source read or the temp write retries the
+                # whole temp write, the chunk generator included, from
+                # one shared budget; the commit that follows has its own
+                # and never reads the source again. Each candidate is
+                # prepared and committed on its own: best-effort per file.
                 prepared = prepare_write(
                     candidate_path,
                     lambda: _stream_migrated_candidate(candidate_path, header_text),
@@ -557,13 +539,10 @@ def run(args):
                     warnings.append(warning)
             except (OSError, UnicodeError, CommandError) as error:
                 # UnicodeError (e.g. a UnicodeEncodeError from a title
-                # containing a lone surrogate) is not an OSError, but is
-                # just as plausible here as a real per-file failure --
-                # catching only OSError would let it escape the whole
-                # loop, discarding every result already collected.
-                # CommandError is the title-validation check just above
-                # (a hostile legacy filename) -- same per-file treatment,
-                # not a whole-batch abort.
+                # containing a lone surrogate) is not an OSError;
+                # CommandError is the title validation above (a hostile
+                # legacy filename). Both are per-file failures: escaping
+                # the loop would discard every result already collected.
                 persisted["in_flight"] = None
                 results.append({"file": str(candidate_path), "status": "failed", "error": explain(error)})
 
@@ -587,6 +566,9 @@ def run(args):
 
         migrated = [entry["file"] for entry in results]
 
+    # The config as migrate left it: a persisted migrationpattern is what
+    # recognizes the files it migrated under their legacy names.
+    adr_index.regenerate(target, load_repo_config(config_path), warnings)
     result = {"migrated": migrated, "warnings": warnings}
     if persisted["pattern"] is not None:
         result["migrationpattern_persisted"] = persisted["pattern"]

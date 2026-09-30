@@ -41,7 +41,8 @@ _IS_WINDOWS = os.name == "nt"
 _HAS_REPARSE_POINTS = os.name == "nt"
 
 # prepare_write names its temp file `<target name>.<16 hex>.tmp` (16 of a
-# uuid4's hex digits; earlier builds used all 32); the orphan sweeps below
+# uuid4's hex digits; the 32-digit form earlier builds wrote is still
+# matched); the orphan sweeps below
 # match only those exact shapes, so no other *.tmp a user keeps in the
 # same folder is ever mistaken for one of these. The folder sweep also
 # needs a `.md` target name, in any case (Windows reads `.MD` as a
@@ -407,7 +408,9 @@ def scan_tree(folder):
     `folder` is excluded as a whole, not entered. A directory symlink is
     neither entered nor reported in `excluded`, wherever it points. The extension match follows the OS's own case
     rule (os.path.normcase), as rglob's does. A missing `folder` is
-    reported as unreadable.
+    reported as unreadable. The folder's own INDEX.md is not listed: it is
+    the page adrpy generates there (ADR0013V01R01, and the decision log's
+    own index).
 
     Only a link is resolved: a file or directory reached from the
     resolved folder through plain directories has the real path of its
@@ -493,9 +496,9 @@ def scan_tree(folder):
                 through_links.append((path, real_sub))
             else:
                 pending.append((path, real_sub))
-    return TreeScan(
-        tuple(found[".md"].values()), tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links)
-    )
+    index = os.path.normcase(str(folder / "INDEX.md"))
+    markdown = tuple(path for path in found[".md"].values() if os.path.normcase(str(path)) != index)
+    return TreeScan(markdown, tuple(found[".tmp"].values()), tuple(excluded), tuple(unreadable), tuple(links))
 
 
 def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECONDS, warnings=None, scan=None):
@@ -504,12 +507,10 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     process, a full disk) once older than `max_age_seconds`. Returns the
     paths removed, so the caller can warn about it.
 
-    Another process could hold a temp file open (or have already removed
-    it) at the exact moment this scan reaches it. Best-effort per
-    candidate: a transient OSError here does not
-    fail the caller's entire command over best-effort housekeeping
-    unrelated to what it was actually asked to do -- left in place for a
-    later cleanup pass instead, and reported via `warnings` when given.
+    Best-effort per candidate: another process may hold a temp file open,
+    or have removed it, when the sweep reaches it. An OSError leaves that
+    file for a later pass (reported via `warnings` when given) instead of
+    failing the caller's command over housekeeping.
 
     Known limitation (decided, not fixed): the 30s age is measured against
     the temp file's own mtime. On a network share whose server clock runs
@@ -525,11 +526,10 @@ def cleanup_orphaned_temp_files(directory, max_age_seconds=ORPHAN_MAX_AGE_SECOND
     per-file failure in migrate's migration-write-failed, where re-running
     migrates what is left.
 
-    Recursive, not glob -- every other scan in this codebase (scan_tree)
-    already covers subfolders under folderadr; a non-recursive scan here would
-    leave an orphan inside a subfolder unfound and unreported (a
-    housekeeping leak, not a correctness issue -- temp files never
-    collide by name and are never read by anything)."""
+    Recursive, like scan_tree: a non-recursive sweep would leave an orphan
+    in a subfolder of folderadr unfound and unreported (a housekeeping
+    leak, not a correctness issue -- temp files never collide by name and
+    are never read by anything)."""
     # `scan`: the folder's scan_tree when the caller already walked it
     # (its `.tmp` files are already inside the folder's real boundary);
     # otherwise the folder is walked here.

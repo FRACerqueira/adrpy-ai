@@ -1,8 +1,7 @@
 """Shared lifecycle-transition helpers: date-reference validation,
 title-uniqueness/next-number resolution, and the read-mutate-rewrite
 mechanics every status-transition command
-(approve/reject/undo/supersede/version/revise) shares -- one function per
-concern, not copies."""
+(approve/reject/undo/supersede/version/revise) shares."""
 
 import codecs
 import os
@@ -18,6 +17,7 @@ from adrpy.core.atomic_write import (
 from adrpy.core.casing import unique_title_key
 from adrpy.core.config import (
     LENREVISION_MAX,
+    REPO_CONFIG_NAME,
     LENVERSION_MAX,
     SHARED_FAILURE_CODES as CONFIG_FAILURE_CODES,
     VALID_SEPARATORS,
@@ -88,7 +88,7 @@ def validate_refdate_not_before(refdate, not_before):
         )
 
 
-# ADR004V02: two groups, not one flat list -- `migrationpattern` only
+# ADR0004V02: two groups, not one flat list -- `migrationpattern` only
 # affects recognition of LEGACY-scheme files (naming.py's
 # parse_legacy_filename is its only reader); every other guarded field
 # is blanket (blocks on any recognized decision, any scheme).
@@ -105,7 +105,8 @@ def validate_refdate_not_before(refdate, not_before):
 # current-scheme file can never be reclassified legacy by a
 # migrationpattern change. `prefix` is blanket for the same reason as
 # separator: every current-scheme name starts with it.
-_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator", "prefix")
+# headertablefields too: the header's fields row is recognized by it.
+_BLANKET_GUARD_FIELDS = _STATUS_LABEL_FIELDS + ("separator", "prefix", "headertablefields")
 # The naming fields whose change alone can make an unrecognized file
 # parse as a decision, each with its own refusal code.
 _ADOPTION_CODES = {
@@ -162,7 +163,7 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
       affect). A separator or prefix change must also not newly recognize
       a file (separator-/prefix-change-would-adopt-unrelated-files) --
       checked with a config where only that field changed, so
-      migrationpattern's own intended adoption (ADR002V01) is never
+      migrationpattern's own intended adoption (ADR0002V01) is never
       blamed on it.
     - folderlog: core/decision_log.reject_folderlog_change_if_entries_exist.
 
@@ -172,8 +173,8 @@ def validate_config_change(old_config, new_config, old_folder, *, target, scan=N
     legacy_scheme_fields_changed = [field for field in _LEGACY_SCHEME_GUARD_FIELDS if field in changed]
     status_fields_changed = blanket_fields_changed + legacy_scheme_fields_changed
     if scan is None and ("folderadr" in changed or status_fields_changed):
-        # A missing folder is reported unreadable, as before (config
-        # creates it first; init --seed does not).
+        # A missing folder is reported unreadable (config creates it
+        # first; init --seed does not).
         scan = scan_tree(old_folder)
 
     if "folderadr" in changed:
@@ -320,7 +321,7 @@ def legacy_pattern_preview(paths, config):
 
 
 # What to do about a likely misreading: before migrate the pattern can
-# still change; after it, the migrated files block any change (ADR004V02).
+# still change; after it, the migrated files block any change (ADR0004V02).
 PATTERN_ADVICE_BEFORE_MIGRATE = (
     "Preview another with `adrpy explore --path . --migrationpattern <pattern>` (it writes nothing), set the "
     "right one with `adrpy config --migrationpattern` (it writes the config), then run `adrpy migrate`."
@@ -387,7 +388,7 @@ def find_by_unique_title(title, config, decisions):
 
 def find_repo_root(file_path):
     """Walks up from the file's own directory looking for
-    adr-config.adrplus. Returns the config file's Path, or None if never
+    .adrpy.json. Returns the config file's Path, or None if never
     found. The path is made absolute with `..` collapsed but no link
     followed (os.path.abspath): a relative path's own parents stop at '.',
     an uncollapsed `..` walks through folders that are not the file's
@@ -395,7 +396,7 @@ def find_repo_root(file_path):
     find another (the boundary checks then refuse a link out of it)."""
     directory = Path(os.path.abspath(file_path)).parent
     while True:
-        candidate = directory / "adr-config.adrplus"
+        candidate = directory / REPO_CONFIG_NAME
         if candidate.is_file():
             return candidate
         parent = directory.parent
@@ -409,9 +410,8 @@ def _body_start_offset(header_buffer, count):
     -- the end of the `count`-th real line terminator within
     `header_buffer` (a byte-exact prefix of that file, from
     _read_header_bytes). None if `header_buffer` doesn't contain that
-    many real terminators (the file is too-short/malformed -- the same
-    condition parse_header's own existing check already handles; no new
-    handling needed here)."""
+    many real terminators (a too-short file, which parse_header already
+    rejects)."""
     matches = list(_REAL_NEWLINE_BYTES.finditer(header_buffer))
     if len(matches) < count:
         return None
@@ -423,8 +423,8 @@ _BODY_DECODE_ERROR_HANDLER_NAME = "adrpy-body-stream-replace"
 
 def stream_normalized_body_chunks(source_path, report):
     """Streams `source_path`'s own BODY (everything past its 12-line
-    header), reproducing the whole-file read it replaced byte-for-byte
-    (ADR006V01; tests/test_lifecycle.py keeps that read as its reference) -- every real line
+    header), byte for byte what a whole-file read would give (ADR0006V01;
+    tests/test_lifecycle.py keeps that read as its reference) -- every real line
     terminator converted to this host's os.linesep, invalid UTF-8 bytes
     replaced with U+FFFD, exactly one trailing terminator ensured for a
     non-empty body -- without ever holding the whole body in memory. The
@@ -502,7 +502,7 @@ def stream_normalized_body_chunks(source_path, report):
         yield LINESEP_BYTES
 
 
-# ADR008V01: the one text for every code the 6 per-file lifecycle
+# ADR0008V01: the one text for every code the 6 per-file lifecycle
 # commands (approve/reject/undo/supersede/version/revise) reach through
 # prepare() -- the ones all of them reach while resolving the target and
 # validating the repository,
@@ -519,7 +519,7 @@ def stream_normalized_body_chunks(source_path, report):
 # invalid, one of repository-inconsistent's data.errors. The two
 # commands that can reach them list them in their own inline dict.
 SHARED_FAILURE_CODES = {
-    FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No adr-config.adrplus was found by walking up from --file.",
+    FailureCodes.CANNOT_DETERMINE_ROOT_PATH: "No .adrpy.json was found by walking up from --file.",
     FailureCodes.FILE_NOT_FOUND: "--file does not point to an existing file (a bare name with no extension gets '.md' appended first).",
     FailureCodes.FILENAME_NOT_RECOGNIZED: (
         "--file's own name matches neither naming scheme, or only migrationpattern matches it and it has no "
@@ -554,11 +554,11 @@ SHARED_FAILURE_CODES = {
 
 
 def resolve_target_and_config(path, *, require_config=True):
-    """The path-rooted counterpart to prepare's --file resolution below:
-    check/config/explore/log/migrate/new all take a repository --path directly
-    (rather than a decision file to walk up from), and each used to
-    hand-roll the identical target-directory-not-found/config-not-found
-    checks. `require_config=False` (init's own case) skips the
+    """The path-rooted counterpart to prepare's --file resolution below,
+    for check/config/explore/log/migrate/new, which take a repository
+    --path directly (rather than a decision file to walk up from):
+    target-directory-not-found, then config-not-found.
+    `require_config=False` (init's own case) skips the
     config-not-found check and the load entirely -- a missing config is
     init's normal, expected state, not an error, and init decides for
     itself, from `config_path.exists()`, whether this is a fresh
@@ -566,13 +566,13 @@ def resolve_target_and_config(path, *, require_config=True):
     target = Path(path)
     if not target.is_dir():
         raise CommandError(FailureCodes.TARGET_DIRECTORY_NOT_FOUND, f"Directory does not exist: {path}")
-    config_path = target / "adr-config.adrplus"
+    config_path = target / REPO_CONFIG_NAME
     if not require_config:
         return target, config_path, None
     if not config_path.is_file():
         raise CommandError(
             FailureCodes.CONFIG_NOT_FOUND,
-            f"No adr-config.adrplus found at: {config_path.absolute()} -- run `adrpy init --path {shell_argument(path, '<repository folder>')}` to create "
+            f"No .adrpy.json found at: {config_path.absolute()} -- run `adrpy init --path {shell_argument(path, '<repository folder>')}` to create "
             "one, or give --path the repository's root.",
         )
     return target, config_path, load_repo_config(config_path)
@@ -981,7 +981,7 @@ def _validated_field(name, source, flags, header, filename_info):
 
 def _resolve_file(fileadr):
     """--file's path (a bare name gets '.md'), its repository's config
-    (found by walking up for adr-config.adrplus) and root, and its
+    (found by walking up for .adrpy.json) and root, and its
     filename identity ((scheme, ParsedFileName)) -- nothing read from the file itself yet."""
     fileadr = Path(fileadr)
     if fileadr.suffix == "":
@@ -991,7 +991,7 @@ def _resolve_file(fileadr):
     config_path = find_repo_root(fileadr)
     if config_path is None:
         detail = (
-            f"Cannot determine the repository root for: {fileadr} -- no adr-config.adrplus in its folder or any "
+            f"Cannot determine the repository root for: {fileadr} -- no .adrpy.json in its folder or any "
             "folder above it (run `adrpy init --path .` at the repository's root)."
         )
         real = fileadr.resolve()
@@ -1074,7 +1074,7 @@ def prepare(command, fileadr, flags):
         if row.numbering is None:
             reject_linked_file(path)
             reject_too_long_filename(path.name, REWRITE_TOO_LONG_REMEDY)
-        # ADR004V01: a marker/label disagreement on the target itself, not
+        # ADR0004V01: a marker/label disagreement on the target itself, not
         # on a sibling (that would misattribute it to this command).
         warning = marker_label_mismatch_warning(header)
         if warning:
@@ -1162,7 +1162,7 @@ def _record_from_header(config, filename_info, header):
 
 
 def _streamed_rewrite_chunks(path, config, record, migrated, report):
-    """The chunk factory of a rewrite of `path` (ADR006V01): the new
+    """The chunk factory of a rewrite of `path` (ADR0006V01): the new
     header (schema-bounded, safe in memory), then the ORIGINAL body
     streamed straight from `path` -- the file being rewritten is also the
     source of its own preserved body, safe because the write goes to a
@@ -1188,7 +1188,7 @@ def rewrite_status_field(path, config, header, filename_info, *, field, status, 
     """Mutates exactly one status+date pair (`field="update"` or
     `field="change"`) on the already-parsed header, rebuilds via
     build_header preserving every other field, streams the original body
-    verbatim from `path` (ADR006V01), and writes the file. Returns the
+    verbatim from `path` (ADR0006V01), and writes the file. Returns the
     write's own attempt count too -- callers can surface it as a warning
     when it's more than 1 -- and the BODY's own encoding_repaired signal
     (combine with the header's own, from prepare, via `or`)."""
@@ -1213,7 +1213,7 @@ def prepare_mark_superseded(path, config, header, filename_info, successor_numbe
     """Like prepare_status_field_rewrite's "change" field, but also stamps
     the successor's own zero-padded sequence number into the Superseded
     row. NOT a filename, despite DecisionRecord's `superseded_by_file`
-    name: the value is a bare padded number, as in AdrPlus's header row."""
+    name: the value is a bare padded number."""
     record = _record_from_header(config, filename_info, header)
     record.status_change = "Superseded"
     record.date_change = refdate

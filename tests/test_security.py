@@ -31,10 +31,8 @@ def test_is_within_rejects_a_candidate_that_escapes_the_base_dir(tmp_path, tmp_p
 
 
 def test_is_within_returns_false_instead_of_raising_on_an_unresolvable_candidate():
-    """is_within's own except
-    (OSError, ValueError) fail-path had zero direct coverage
-    -- only reached indirectly via test_lifecycle.py's Windows-junction
-    test, which never exercises this branch."""
+    """is_within's except (OSError, ValueError) fail-path, tested directly:
+    test_lifecycle.py's Windows-junction test never exercises this branch."""
     assert is_within("some_base", "bad\x00path") is False
 
 
@@ -99,10 +97,9 @@ def test_resolve_within_rejects_a_candidate_that_collapses_onto_the_base_itself(
 
 
 def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
-    """A NUL byte in folderadr raised a raw ValueError
-    (\"embedded null character in path\") with empty stdout instead of a
-    structured CommandError -- same JSON-contract violation as the other
-    audit fronts' unhandled-exception findings, just a different trigger."""
+    """A NUL byte in folderadr is a structured CommandError, not a raw
+    ValueError ("embedded null character in path") with empty stdout -- the
+    JSON contract holds for every trigger."""
     with pytest.raises(CommandError) as excinfo:
         resolve_within(tmp_path, "doc\x00adr")
 
@@ -111,13 +108,11 @@ def test_resolve_within_rejects_nul_byte_in_candidate(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_resolve_within_rejects_a_path_that_escapes_via_a_real_junction(tmp_path):
-    """resolve_within's own
-    docstring claims it follows real symlinks when resolving ("real path
-    resolution (following `..` and symlinks)") -- no existing test
-    constructed an actual symlink/junction against this function
-    directly, only indirectly via is_within/scan_decisions
-    (test_lifecycle.py's own junction test targets a different
-    function)."""
+    """resolve_within's docstring says it follows real symlinks when resolving
+    ("real path resolution (following `..` and symlinks)"): this checks it
+    against an actual junction, directly, not only through
+    is_within/scan_tree (test_lifecycle.py's junction test targets a
+    different function)."""
     base = tmp_path / "repo"
     base.mkdir()
     outside = tmp_path / "outside"
@@ -140,25 +135,23 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_junction(tmp_path
 def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp_path):
     """POSIX-side counterpart to the Windows junction test above -- same
     invariant (resolve_within's own docstring claim of following real
-    symlinks), a different real filesystem construct. Closes the gap
-    named in decision-log: 2026-09-18--deferred--security--posix-
-    symlink-escape-coverage-for-resolve-within.md -- no equivalent test
-    constructed a real symlink on a POSIX host before this one. Written
-    on a Windows host (this repository's own dev machine), where it
-    cannot run directly under pytest -- creating a real Windows symlink
-    here requires Developer Mode or admin privileges neither present in
-    this environment (confirmed: os.symlink raised WinError 1314, "a
-    required privilege is not held by the client"). This exact scenario
-    (same variables, same escape target, same assertion) was
-    independently confirmed live on a real POSIX host via WSL Ubuntu
-    (round 28): `link.symlink_to(outside, ...)` then
-    `resolve_within(base, "linked/escaped.md")` correctly raised
-    path-outside-repository, run as a standalone script rather than
-    through pytest itself (this WSL distro's minimal Python install has
-    neither pip nor venv, and installing them requires sudo, not taken
-    without being asked) -- the invariant this test encodes is
-    confirmed, this specific pytest invocation of it is not, and still
-    skips cleanly rather than erroring on Windows."""
+    symlinks), a different real filesystem construct. The gap is named in
+    decision-log:
+    2026-09-18--deferred--security--posix-symlink-escape-coverage-for-resolve-within.md.
+    Written on a Windows host (this repository's own dev machine), where it
+    cannot run directly under pytest -- creating a real Windows symlink here
+    requires Developer Mode or admin privileges neither present in this
+    environment (confirmed: os.symlink raised WinError 1314, "a required
+    privilege is not held by the client"). This exact scenario (same
+    variables, same escape target, same assertion) was independently
+    confirmed live on a real POSIX host via WSL Ubuntu:
+    `link.symlink_to(outside, ...)` then `resolve_within(base,
+    "linked/escaped.md")` correctly raised path-outside-repository, run as a
+    standalone script rather than through pytest itself (this WSL distro's
+    minimal Python install has neither pip nor venv, and installing them
+    requires sudo, not taken without being asked) -- the invariant this test
+    encodes is confirmed, this specific pytest invocation of it is not, and
+    still skips cleanly rather than erroring on Windows."""
     base = tmp_path / "repo"
     base.mkdir()
     outside = tmp_path / "outside"
@@ -174,16 +167,15 @@ def test_resolve_within_rejects_a_path_that_escapes_via_a_real_posix_symlink(tmp
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_reject_aliased_repo_folders_rejects_a_junction_aliasing_folderlog_onto_folderadr(tmp_path):
-    """core/config.py's own folderadr/folderlog containment
-    guard runs at schema-PARSE time, on the config's own text alone --
-    it can never see a junction/symlink planted inside the repo tree
-    that makes two strings sharing NO path-component prefix (here,
-    'adr' and 'other') alias the identical real directory. Confirmed
-    live: without a real-filesystem-resolution guard, a hostile repo can
-    ship both such a config and such a junction, and `init` + `new` +
-    `log` would silently corrupt the same physical directory. This targets
-    reject_aliased_repo_folders directly, the real-filesystem-
-    resolution counterpart the schema-time guard cannot be."""
+    """core/config.py's own folderadr/folderlog containment guard runs at
+    schema-PARSE time, on the config's own text alone -- it can never see a
+    junction/symlink planted inside the repo tree that makes two strings
+    sharing NO path-component prefix (here, 'adr' and 'other') alias the
+    identical real directory. Without a real-filesystem-resolution guard, a
+    hostile repo could ship both such a config and such a junction, and
+    `init` + `new` + `log` would silently corrupt the same physical
+    directory. This targets reject_aliased_repo_folders directly, the
+    real-filesystem-resolution counterpart the schema-time guard cannot be."""
     from types import SimpleNamespace
 
     target = tmp_path
@@ -268,14 +260,12 @@ def test_reject_embedded_delimiter_accepts_a_literal_empty_string():
     ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
 )
 def test_reject_embedded_delimiter_rejects_unicode_line_separators(char):
-    """These aren't real line terminators (confirmed
-    live, see atomic_write.split_real_lines), so they no longer corrupt
-    the file's line structure -- but they must still be rejected outright
-    for a single-line header cell, the same as '|'/newline: a title
-    silently carrying an invisible control/separator character forever is
-    exactly the data-hygiene defect the original blacklist existed to
-    prevent, even though its narrow (\"|\", \"\\n\", \"\\r\") list missed
-    every one of these."""
+    """These aren't real line terminators (see atomic_write.split_real_lines),
+    so they don't corrupt the file's line structure -- but they must still
+    be rejected outright for a single-line header cell, the same as
+    '|'/newline: a title silently carrying an invisible control/separator
+    character forever is a data-hygiene defect, and a narrow (\"|\",
+    \"\\n\", \"\\r\") list misses every one of these."""
     with pytest.raises(CommandError) as excinfo:
         reject_embedded_delimiter(f"before{char}after", "title")
 

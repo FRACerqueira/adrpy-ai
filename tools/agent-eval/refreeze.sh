@@ -90,7 +90,7 @@ for S in $SCENARIOS_ALL; do
 done
 ( cd "$R44/seeds/S8" && r44_adrpy check --path . ) | "$BASEPY" -B -c "import json,sys; d=json.load(sys.stdin); w=' '.join(d['data']['warnings']); sys.exit(0 if d['success'] and d['data']['decisions']==1 and '0002-team-offsite-notes.md' in w and 'not decisions' in w else 10)" \
   || { echo "S8 seed: expected check success, 1 decision and the phase warning on 0002-team-offsite-notes.md" >&2; exit 10; }
-"$BASEPY" -B -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding='utf-8')).get('migrationpattern') in ('', None) else 11)" "$R44/seeds/S9/adr-config.adrplus" \
+"$BASEPY" -B -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1], encoding='utf-8')).get('migrationpattern') in ('', None) else 11)" "$R44/seeds/S9/.adrpy.json" \
   || { echo "S9 seed: migrationpattern is not empty" >&2; exit 11; }
 ( cd "$R44/seeds/S10" && r44_adrpy check --path . ) | "$BASEPY" -B -c "import json,sys; d=json.load(sys.stdin); w=' '.join(d['data']['warnings']); sys.exit(0 if d['success'] and '2 .md file(s)' in w else 12)" \
   || { echo "S10 seed: expected check success with 2 unrecognized .md files" >&2; exit 12; }

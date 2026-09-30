@@ -5,7 +5,7 @@ maintained prose. Run this after adding, never after editing, an entry
 (entries are never edited in place -- a correction is a new `retraction`
 entry instead).
 
-`adrpy log` (ADR003V01) regenerates the index itself as part of writing
+`adrpy log` (ADR0003V01) regenerates the index itself as part of writing
 an entry; this script exists for the manual/legacy path -- an entry
 written by hand, or a repo predating that command.
 

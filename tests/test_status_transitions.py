@@ -13,7 +13,7 @@ from adrpy.core.atomic_write import atomic_write_text
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 
@@ -56,21 +56,18 @@ def test_approve_happy_path(tmp_path):
     assert result["status"] == "Accepted"
     text = adr_path.read_text(encoding="utf-8")
     assert "|Changed|Accepted (2026-01-02) <!-- Accepted -->|" in text
-    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text  # untouched
+    assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in text
 
 
 def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
-    """approve (unlike version/revise/supersede/migrate)
-    must re-validate header.title/scope/domain before reusing them in
-    its own rewrite -- inert only because _extract_cell structurally
-    prevents an embedded '|' or real newline from ever reaching a parsed
-    header value, but a colon (a genuine NTFS Alternate-Data-Stream
-    separator, not blocked by parse_header's own extraction) survives
-    untouched. A hand-edited file's title, never touched by any
-    validation until this write, would otherwise embed it into the
-    rewritten header with no error at all."""
+    """A hand-edited header title carrying a colon (a genuine NTFS
+    Alternate-Data-Stream separator, which parse_header's cell extraction
+    does not block, unlike an embedded '|' or real newline) must never be
+    embedded into approve's rewritten header: the header does not parse, and
+    the validator refuses the repository (invalid-header) before approve
+    reads it."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
 
     with pytest.raises(CommandError) as excinfo:
@@ -83,31 +80,29 @@ def test_approve_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
 
 
 def test_approve_reports_a_marker_label_mismatch_warning(tmp_path):
-    """ADR004V01: end-to-end through a real write command (approve is
-    representative of all 6 -- read_target's own warning is shared code),
-    not just core/header.py's own unit test for this scenario. A hand-
-    edited visible label that disagrees with the hidden marker must
-    surface as a warning, but must NOT block approve -- the marker is
-    still authoritative and the write still proceeds normally."""
+    """ADR0004V01: end-to-end through a real write command (approve is
+    representative: the warning comes from lifecycle.prepare, shared code),
+    not just core/header.py's own unit test for this scenario. A hand-edited
+    visible label that disagrees with the hidden marker must surface as a
+    warning, but must NOT block approve -- the marker is still authoritative
+    and the write still proceeds normally."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     text = adr_path.read_text(encoding="utf-8")
     assert f"{config.statusnew} (2026-01-01) <!-- Proposed -->" in text
     atomic_write_text(adr_path, text.replace(config.statusnew, config.statusacc, 1))
 
     result = approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
 
-    assert result["status"] == "Accepted"  # the write still proceeds
+    assert result["status"] == "Accepted"
     assert any("status_create" in w and "marker" in w for w in result["warnings"])
 
 
 def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Decision log claims approve/reject/undo/version/revise "inherit [the
-    family_members fail-closed fix] for free" from family_members' own
-    strict=True -- but nothing end-to-end proved that for THIS command.
-    Demonstrated: wrapping this command's own family_members call in
-    try/except CommandError (a plausible future "degrade gracefully"
-    refactor) left the full suite green with no test noticing."""
+    """End to end: an unreadable subdirectory stops approve through the
+    repository validation (scan-incomplete), with no write made -- a
+    plausible "degrade gracefully" refactor that swallowed that CommandError
+    must fail a test."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -127,7 +122,6 @@ def test_approve_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    # unchanged, no write made
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
 
@@ -142,14 +136,13 @@ def test_approve_rejects_already_approved(tmp_path):
 
 
 def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
-    """Audit A
-    hand-edited/corrupted file whose "Changed" cell holds the "Proposed"
-    label text (structurally valid, so header.is_valid stays True) was
-    silently accepted by `approve` -- ineligibility_reason_for_approve_or_
-    reject fell through to eligible for any status_update other than
-    exactly "Accepted"/"Rejected", instead of requiring None."""
+    """A hand-edited/corrupted file whose "Changed" cell holds the "Proposed"
+    label text (structurally valid, so header.is_valid stays True) must not
+    be accepted by `approve`: eligibility requires no status_update at all,
+    not merely one other than "Accepted"/"Rejected". The validator refuses
+    it (invalid-status-combination)."""
     _, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     lines = adr_path.read_text(encoding="utf-8").splitlines()
     lines[9] = lines[9].replace("|Changed||", f"|Changed|{config.statusnew} (2026-01-02)|")
     atomic_write_text(adr_path, "\n".join(lines) + "\n")
@@ -164,12 +157,10 @@ def test_approve_rejects_a_corrupted_status_update_end_to_end(tmp_path):
 
 
 def test_approve_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """encoding_repaired_
-    warning claims "the file has been rewritten... bytes are now lost" --
-    false whenever the command fails before ever reaching its own write.
-    Confirmed live: approve on an already-Accepted, encoding-corrupted
-    file must not report this claim, since the file is never touched by
-    such a call."""
+    """The encoding_repaired warning's claim "the file has been rewritten...
+    bytes are now lost" is false whenever the command fails before reaching
+    its own write: approve on an already-Accepted, encoding-corrupted file
+    must not make it, since the file is never touched by such a call."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
     with open(adr_path, "ab") as handle:
@@ -194,14 +185,11 @@ def test_approve_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage
-    proving it actually reaches a command's own result (only approve.py's
-    encoding-repair warning, and new.py's happy path, were ever checked
-    for warnings content at all). approve/reject/undo write through
+    """retry_warning's "succeeded only after N attempts" message reaches
+    approve's result. approve/reject/undo write through
     core.lifecycle.rewrite_status_field, which calls atomic_write_chunks
-    (ADR006V01) from ITS OWN module namespace -- patching approve.py's own
-    (absent) reference would silently no-op."""
+    (ADR0006V01) from ITS OWN module namespace -- patching a reference in
+    approve.py (there is none) would silently no-op."""
     from adrpy.core import lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
@@ -219,16 +207,13 @@ def test_approve_reports_a_retry_warning_when_the_write_needed_several_attempts(
 
 
 def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
-    """Class-closure check (advisor-caught gap): the fix above only threaded
-    `warnings` through raise sites living directly in the 8 command files.
-    The same invariant is violated just as easily by a CommandError raised
-    from a shared core/ helper (here, validate_refdate_not_before, called
-    from approve.py) while `warnings` already has entries in scope --
-    textually unrelated to the sites already patched, but the same bug.
+    """Warnings already accumulated also reach a CommandError raised from a
+    shared core/ helper (here, validate_refdate_not_before, called from
+    approve.py), not only one raised directly in a command file.
 
-    Uses an orphaned temp-file
-    cleanup instead of an encoding-repair warning for the same reason as
-    the test above -- refdate-before-history also fails before any write."""
+    Uses an orphaned temp-file cleanup instead of an encoding-repair warning
+    because refdate-before-history also fails before any write, so no
+    rewrite is claimed."""
     _, adr_path = _setup_repo(tmp_path)  # created with refdate 2026-01-01
     orphan_path = adr_path.parent / "orphan.md.0123456789abcdef0123456789abcdef.tmp"
     orphan_path.write_text("stale", encoding="utf-8")
@@ -244,10 +229,9 @@ def test_approve_reports_warnings_when_a_core_helper_raises(tmp_path):
 
 
 def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp_path, capsys):
-    """End-to-end closure of the same class, through the actual CLI entry
-    point rather than the CommandError object directly -- proves the
-    warnings genuinely reach the JSON an external caller would parse, not
-    just the in-process exception attribute."""
+    """Through the actual CLI entry point rather than the CommandError object
+    directly: the warnings genuinely reach the JSON an external caller would
+    parse, not just the in-process exception attribute."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path), "--refdate", "2026-01-02"])
     orphan_path = adr_path.parent / "orphan.md.0123456789abcdef0123456789abcdef.tmp"
@@ -265,15 +249,13 @@ def test_accumulated_warnings_reach_the_real_stdout_json_envelope_on_failure(tmp
 
 
 def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
-    """Round 36 retraction: an earlier version of this command wrote this
-    decision's own status FIRST, so a missing predecessor still reported a
-    successful mutation despite the overall failure. The predecessor
-    lookup now runs BEFORE any write -- and a successor with no
-    predecessor pointing at it is a broken repository rule
+    """The predecessor lookup runs BEFORE any write, so a missing predecessor
+    never leaves this decision's status written behind a failure -- and a
+    successor with no predecessor pointing at it is a broken repository rule
     (successor-without-predecessor): nothing is committed at all."""
     target = tmp_path
     init.run(["--path", str(target)])
-    config = load_repo_config(target / "adr-config.adrplus")
+    config = load_repo_config(target / ".adrpy.json")
     adr_dir = target / "doc" / "adr"
     # A real successor shape (its number is higher than the one it names),
     # whose predecessor file does not exist.
@@ -298,21 +280,13 @@ def test_reject_reveals_no_write_was_made_when_predecessor_is_missing(tmp_path):
 
 
 def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failure(tmp_path, monkeypatch):
-    """No existing test had more than one
-    warning accumulated simultaneously before a later failure -- which
-    quietly weakens every `assert excinfo.value.warnings` check elsewhere
-    (they'd still pass even with a duplicated warning or the wrong
-    order). This combines two distinct real side effects (an orphaned
-    temp-file cleanup AND an encoding repair) surviving together to a
-    later, unrelated CommandError, and checks both content and order.
-
-    Round 36 retraction: previously this used the predecessor-missing
-    scenario, since the target's own write ran first and its encoding
-    repair was already real by the time that later, unrelated failure hit.
-    With the predecessor reverted FIRST now, that specific scenario has no
-    write before the failure at all -- so this uses the predecessor's OWN
-    encoding repair (real once ITS write succeeds) followed by the
-    target's own write failing as the later, unrelated failure instead."""
+    """Two warnings accumulated together before a later failure: with only
+    single-warning tests, every `assert excinfo.value.warnings` check would
+    still pass with a duplicated warning or the wrong order. Two distinct
+    real side effects -- an orphaned temp-file cleanup AND the predecessor's
+    own encoding repair (real once ITS write succeeds; the predecessor is
+    reverted first) -- survive together to the target's own write failing, a
+    later, unrelated CommandError; both content and order are checked."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -346,10 +320,9 @@ def test_reject_reports_two_warnings_together_in_order_before_an_unrelated_failu
 
 
 def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tmp_path, monkeypatch):
-    """Round 36 retraction: with the predecessor reverted FIRST now, a
-    failure on the SECOND rewrite_status_field call hits this decision's
-    OWN write, AFTER the predecessor has already, for real, been reverted
-    -- the inverse of the old order's partial-success shape."""
+    """The predecessor is reverted first: a failure on the SECOND
+    rewrite_status_field call hits this decision's OWN write, AFTER the
+    predecessor has already, for real, been reverted."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -372,11 +345,9 @@ def test_reject_reveals_predecessor_already_reverted_when_its_own_write_fails(tm
 
 
 def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monkeypatch):
-    """Round 36: a failure on the FIRST rewrite_status_field call now hits
-    the predecessor's own write, before this decision's own write has
-    even been attempted -- nothing committed at all, unlike the old
-    order's second-write failure (covered by the sibling tests above,
-    which now hit this decision's own write instead)."""
+    """A failure on the FIRST rewrite_status_field call hits the predecessor's
+    own write, before this decision's own write has even been attempted --
+    nothing committed at all."""
     from adrpy.cli import supersede
 
     _, adr_path = _setup_repo(tmp_path)
@@ -394,7 +365,7 @@ def test_reject_predecessor_write_itself_fails_with_no_write_made(tmp_path, monk
 
     assert excinfo.value.code == "reject-predecessor-write-failed"
     assert excinfo.value.data == {"failed_file": str(adr_path)}
-    assert adr_path.read_text(encoding="utf-8") == predecessor_text_before  # untouched
+    assert adr_path.read_text(encoding="utf-8") == predecessor_text_before
     assert "|Changed|Rejected" not in successor_path.read_text(encoding="utf-8")  # successor NOT written
 
 
@@ -453,7 +424,7 @@ def test_following_a_partial_rejects_repair_literally_leaves_a_consistent_reposi
         "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
     )
 
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     assert check_repository(adr_path.parent, config)[1] == []
 
 
@@ -486,9 +457,8 @@ def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
     """A body containing
     a Unicode line-separator character that is NOT a real line terminator
     (form feed, NEL, LINE SEPARATOR, ...) must survive a status rewrite
-    byte-for-byte. Confirmed live against the reference tool: none of these
-    is treated as a line break there, so the body's line count and content
-    are unchanged by `approve`."""
+    byte-for-byte: none of these is a line break, so the body's line count
+    and content are unchanged by `approve`."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     exotic_body = "Body line one.\x0cAfter form-feed.\nNEL here:After NEL.\nLS here: After LS.\n"
     with open(adr_path, "a", encoding="utf-8", newline="") as handle:
@@ -504,14 +474,12 @@ def test_approve_preserves_exotic_unicode_separators_in_body(tmp_path):
     assert text_after.count("\n") == body_lines_before
 
 
-def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_path):
-    """Not a bug: confirmed live against the reference tool (approve on a
-    body containing raw invalid UTF-8 bytes) that it ALSO replaces them
-    with U+FFFD on rewrite, byte-for-byte identical to this port. Recorded
-    as a permanent test so this doesn't get re-investigated as a suspected
-    data-loss bug -- tolerating invalid bytes on read Was already
-    confirmed fidelity; this confirms the read-then-rewrite round trip is
-    too, not an extra liberty this port took on its own."""
+def test_approve_replaces_invalid_utf8_bytes_in_body_with_the_replacement_character(tmp_path):
+    """Not a bug: approve on a body containing raw invalid UTF-8 bytes
+    replaces them with U+FFFD on rewrite, with a warning. Recorded as a
+    permanent test so this doesn't get re-investigated as a suspected
+    data-loss bug: the read tolerates the bytes, and the rewrite replaces
+    them, on purpose."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     with open(adr_path, "ab") as handle:
         handle.write(b"\r\nInvalid UTF-8 marker: \xa4\xe9\xe8 end.\r\n")
@@ -521,9 +489,9 @@ def test_approve_replaces_invalid_utf8_bytes_in_body_same_as_the_real_tool(tmp_p
     body_bytes = adr_path.read_bytes()
     assert b"\xa4\xe9\xe8" not in body_bytes
     assert "Invalid UTF-8 marker: ��� end.".encode("utf-8") in body_bytes
-    # load_target's own encoding_repaired
-    # report (test_lifecycle.py) must actually reach a real command's
-    # result, not just the lifecycle module in isolation.
+    # The body's encoding_repaired report (stream_normalized_body_chunks,
+    # test_lifecycle.py) must actually reach a real command's result, not just
+    # the lifecycle module in isolation.
     assert any("invalid utf-8" in warning.lower() for warning in result["warnings"])
 
 
@@ -581,9 +549,10 @@ def test_reject_happy_path(tmp_path):
 
 
 def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
-    """See approve's own equivalent test -- reject shares the same gap."""
+    """A hand-edited colon in the title is refused as for approve
+    (invalid-header), before any rewrite."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(adr_path, config, number=1, title="Hostile:Title", version=1, status_create="Proposed")
 
     with pytest.raises(CommandError) as excinfo:
@@ -596,9 +565,9 @@ def test_reject_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
 
 
 def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """See approve's own
-    equivalent test -- this is reject's OWN family scan (its own family,
-    not the predecessor lookup covered above), which runs before any write."""
+    """End to end: an unreadable subdirectory stops reject through the
+    repository validation (scan-incomplete), with no write made -- as for
+    approve."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -618,7 +587,6 @@ def test_reject_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    # unchanged, no write made
     assert "|Created|Proposed (2026-01-01) <!-- Proposed -->|" in adr_path.read_text(encoding="utf-8")
 
 
@@ -633,8 +601,8 @@ def test_reject_rejects_already_resolved(tmp_path):
 
 
 def test_reject_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Same class as
-    approve's own test."""
+    """As for approve: failing before its write, reject does not claim a
+    rewrite."""
     _, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
     with open(adr_path, "ab") as handle:
@@ -659,8 +627,8 @@ def test_reject_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_reject_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Same class as approve's
-    own test."""
+    """retry_warning's message reaches reject's result, through
+    core.lifecycle's atomic_write_chunks as for approve."""
     from adrpy.core import lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
@@ -678,11 +646,12 @@ def test_reject_reports_a_retry_warning_when_the_write_needed_several_attempts(t
 
 
 def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp_path):
-    """Same class as the target's own fix above, for reject's SECOND write
-    (undoing the predecessor's Superseded status)."""
+    """The rewrite claim for reject's SECOND write (undoing the predecessor's
+    Superseded status) is made once that write actually happens, naming the
+    predecessor."""
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
 
     predecessor_path = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -721,7 +690,7 @@ def test_reject_claims_the_predecessor_rewrite_only_once_it_actually_happens(tmp
 def test_reject_undoes_predecessor_supersede_status(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
 
     predecessor_path = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -791,9 +760,10 @@ def test_undo_happy_path(tmp_path):
 
 
 def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
-    """See approve's own equivalent test -- undo shares the same gap."""
+    """A hand-edited colon in the title is refused as for approve
+    (invalid-header), before any rewrite."""
     tmp_path, adr_path = _setup_repo(tmp_path)
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     _write_raw(
         adr_path, config, number=1, title="Hostile:Title", version=1,
         status_create="Proposed", status_update="Accepted", date_update=date(2026, 1, 2),
@@ -809,8 +779,8 @@ def test_undo_rejects_a_hostile_title_found_only_on_rewrite(tmp_path):
 
 
 def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """See approve's own
-    equivalent test."""
+    """End to end: an unreadable subdirectory stops undo through the repository
+    validation (scan-incomplete), with no write made -- as for approve."""
     tmp_path, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
     adr_dir = tmp_path / "doc" / "adr"
@@ -831,12 +801,11 @@ def test_undo_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypat
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    assert "|Changed|Accepted" in adr_path.read_text(encoding="utf-8")  # unchanged, no write made
+    assert "|Changed|Accepted" in adr_path.read_text(encoding="utf-8")
 
 
 def test_undo_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """Same class as
-    approve's own test."""
+    """As for approve: failing before its write, undo does not claim a rewrite."""
     _, adr_path = _setup_repo(tmp_path)
     with open(adr_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
@@ -861,8 +830,8 @@ def test_undo_claims_the_rewrite_once_it_actually_happens(tmp_path):
 
 
 def test_undo_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """Same class as approve's
-    own test."""
+    """retry_warning's message reaches undo's result, through core.lifecycle's
+    atomic_write_chunks as for approve."""
     from adrpy.core import lifecycle
 
     _, adr_path = _setup_repo(tmp_path)
@@ -935,7 +904,7 @@ def test_undo_rejects_when_sibling_superseded(tmp_path):
 def test_undo_rejects_when_pending_sibling_exists(tmp_path):
     tmp_path, adr_path = _setup_repo(tmp_path)
     approve.run(["--file", str(adr_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     sibling_path = tmp_path / "doc" / "adr" / "ADR001V02-first-decision-v2.md"
     _write_raw(
         sibling_path,
@@ -991,8 +960,8 @@ def test_status_transitions_end_to_end_through_main(tmp_path):
 
 
 def test_approve_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """The reference tool's -f/-r; end-to-end through
-    main(), not just parse_flags in isolation."""
+    """-f/-r, end-to-end through main(), not just parse_flags in
+    isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 
@@ -1018,7 +987,7 @@ def test_a_decision_an_editor_saved_with_a_bom_is_still_read(tmp_path, boms):
 
 
 
-# ---- Round 40: only the family's latest member is alive ----
+# ---- only the family's latest member is alive ----
 
 
 def _family_with_v02(tmp_path, v02_status):
@@ -1048,7 +1017,7 @@ def test_a_version_is_locked_once_a_newer_version_is_alive(tmp_path, command):
     assert excinfo.value.code == "not-latest-version"
     assert excinfo.value.data["latest_file"] == str(v02)
     assert v01.read_text(encoding="utf-8") == before
-    assert sorted(p.name for p in adr.glob("*.md")) == [v01.name, v02.name]
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == [v01.name, v02.name]
 
 
 def test_a_single_rejected_newer_version_leaves_the_older_one_alive(tmp_path):
@@ -1060,8 +1029,8 @@ def test_a_single_rejected_newer_version_leaves_the_older_one_alive(tmp_path):
 
 
 def test_rejected_newer_versions_never_lock_the_older_one(tmp_path):
-    # Round 41 (H1a): rejected attempts never lock what came before them --
-    # with every newer version Rejected, the Accepted V01 is still alive.
+    # Rejected attempts never lock what came before them -- with every newer
+    # version Rejected, the Accepted V01 is still alive.
     adr, v01, v02 = _family_with_v02(tmp_path, "Rejected")
     v03 = Path(version.run(["--file", str(v01), "--refdate", "2026-01-05"])["created"])
     reject.run(["--file", str(v03), "--refdate", "2026-01-06"])
@@ -1083,7 +1052,7 @@ def test_a_newer_version_that_is_not_rejected_still_locks_the_older_one(tmp_path
 
 
 def test_family_refusals_name_the_file_to_act_on(tmp_path):
-    # Round 41 (H5a): the refusal says which member is in the way.
+    # The refusal says which member is in the way.
     adr, v01, v02 = _family_with_v02(tmp_path, "Proposed")
     with pytest.raises(CommandError) as pending:
         supersede.run(["--file", str(v01), "--refdate", "2026-01-05"])
@@ -1128,7 +1097,7 @@ def test_a_rejected_successor_is_final(tmp_path, command):
 
     assert excinfo.value.code == "rejected-successor-is-final"
     assert succ.read_text(encoding="utf-8") == before
-    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name])
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == sorted([pred.name, succ.name])
 
 
 @pytest.mark.parametrize("command", ["approve", "supersede"])
@@ -1138,7 +1107,7 @@ def test_a_hand_made_member_in_a_rejected_successors_family_refuses_the_reposito
     # predecessor would then leave it two live lines. The validator refuses
     # the whole repository first.
     adr, pred, succ = _rejected_successor(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     v02 = adr / "ADR002V02-first.md"
     _write_raw(v02, cfg, number=2, title="First", version=2, status_create="Proposed", date_create=date(2026, 1, 4))
     target = {"approve": v02, "supersede": pred}[command]
@@ -1155,7 +1124,7 @@ def test_a_hand_made_member_in_a_rejected_successors_family_refuses_the_reposito
     assert [(e["code"], e["file"]) for e in excinfo.value.data["errors"]] == [
         ("rejected-successor-family-not-final", str(v02.resolve()))
     ]
-    assert sorted(p.name for p in adr.glob("*.md")) == sorted([pred.name, succ.name, v02.name])
+    assert sorted(p.name for p in adr.glob("*.md") if p.name != "INDEX.md") == sorted([pred.name, succ.name, v02.name])
 
 
 def test_a_rejected_decision_that_is_not_a_successor_can_still_be_undone(tmp_path):
@@ -1229,7 +1198,7 @@ def test_the_whole_family_of_a_rejected_successor_is_final(tmp_path):
 
 def test_reject_treats_a_non_ascii_digit_back_reference_as_not_naming_it(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     pred = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -1257,7 +1226,7 @@ def _migrated_family(tmp_path, *names, pattern="N00:04T06V04:02", lenrevision=0)
     import json as _json
     from adrpy.cli import migrate as migrate_cmd
 
-    config = _json.loads(open("tests/fixtures/adr-config.adrplus", encoding="utf-8").read())
+    config = _json.loads(open("tests/fixtures/.adrpy.json", encoding="utf-8").read())
     config.update(migrationpattern=pattern, lenrevision=lenrevision)
     seed = tmp_path / "seed.json"
     seed.write_text(_json.dumps(config), encoding="utf-8")
@@ -1306,7 +1275,7 @@ def test_supersede_of_a_member_whose_newer_versions_are_all_rejected_works(tmp_p
 
 def test_reject_leaves_the_predecessor_alone_for_a_non_ascii_back_reference(tmp_path):
     tmp_path, _ = _setup_repo(tmp_path)
-    cfg = load_repo_config(tmp_path / "adr-config.adrplus")
+    cfg = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     pred = adr_dir / "ADR001V01-first-decision.md"
     _write_raw(
@@ -1365,3 +1334,20 @@ def test_undo_on_a_migrated_decision_reports_the_placeholder_it_returns_to(tmp_p
     assert result["status"] is None
     text = repo.paths[0].read_text(encoding="utf-8")
     assert "|Created||" in text and "|Changed||" in text
+
+
+
+def test_a_write_rewrites_the_fields_row_in_the_current_form(tmp_path):
+    """Every write rebuilds the header: a fields row with more than the
+    label in its first cell comes back as the label alone."""
+    from conftest import D, make_repo
+
+    repo = make_repo(tmp_path, files=[D(1)])
+    path = repo.paths[0]
+    lines = path.read_text(encoding="utf-8").split("\n")
+    lines[1] = "|Legacy Fields|Values|"
+    path.write_bytes("\n".join(lines).encode("utf-8"))
+
+    approve.run(["--file", str(path), "--refdate", "2026-01-02"])
+
+    assert path.read_text(encoding="utf-8").splitlines()[1] == "|Fields|Values|"

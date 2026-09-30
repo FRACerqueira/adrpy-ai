@@ -1,13 +1,12 @@
-"""Every status-mutating command returned the
-REPOSITORY'S OWN CONFIGURED LABEL (config.statusnew/statusacc/...) as
-"status" in its JSON result, while `explore` -- reporting on the exact
-same file -- always returns the canonical internal keyword
-(header.status_create, "Proposed"/"Accepted"/"Rejected"/"Superseded").
-The two coincide in every other test only because the default config
-happens to set each label equal to its own canonical keyword; a
-repository that customizes labels (which `config` allows with no
-validation against anything) makes the two commands describe the same
-decision with two different words, breaking an agent's ability to
+"""Every status-mutating command reports the canonical internal keyword
+("Proposed"/"Accepted"/"Rejected"/"Superseded") as "status" in its JSON
+result -- the same word `explore` reports for the same file
+(header.status_create) -- not the repository's own configured label
+(config.statusnew/statusacc/...). The two coincide under the default
+config, where each label equals its canonical keyword; a repository
+that customizes labels (which `config` allows with no validation
+against anything) would otherwise have the two commands describe the
+same decision with two different words, breaking an agent's ability to
 correlate a mutation's own result with a later `explore` call."""
 
 import json
@@ -15,7 +14,7 @@ from pathlib import Path
 
 from adrpy.cli import approve, explore, init, new, reject, revise, supersede, undo, version
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _custom_labels_config():
@@ -47,12 +46,8 @@ def test_new_returns_the_canonical_keyword_not_the_configured_label(tmp_path):
     result = new.run(["--path", str(tmp_path), "--title", "Some decision"])
 
     assert result["status"] == "Proposed"
-    # _canonical_status was defined
-    # but never called -- every test here compared only against a
-    # hardcoded literal, never cross-checking against explore's own
-    # independent read, which is the whole point this module's own
-    # docstring states (an agent correlating a mutation's result with a
-    # later explore call).
+    # Cross-checked against explore's own independent read, not only a
+    # literal: that correlation is what this module is about.
     status_create, _status_update, _status_change = _canonical_status(tmp_path, Path(result["created"]).name)
     assert result["status"] == status_create
 

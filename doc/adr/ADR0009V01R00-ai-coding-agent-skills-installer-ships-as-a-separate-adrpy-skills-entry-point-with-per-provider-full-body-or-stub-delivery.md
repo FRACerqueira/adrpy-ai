@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|AI-coding-agent skills installer ships as a separate adrpy-skills entry point with per-provider full-body or stub delivery|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|packaging|
 |Domain|tooling|
 |Created|Proposed (2026-09-22) <!-- Proposed -->|
@@ -92,4 +92,4 @@ Because `gate.md` and skill-body content are natural-language instructions for a
 ## Links
 
 * Depends on: `doc/decision-log-workflow.md` (reused verbatim as `decision-log`'s `glue.md`; already generic to any adrpy-managed repo).
-* Related: ADR005V01 (FailureCodes/Constants registry) and ADR008V01 (structured failure_codes field) -- the `adrpy-skills` entry point reuses `adrpy.core.args`/`adrpy.core.output` for the same JSON-envelope discipline, without adding to `adrpy`'s own `describe()` surface.
+* Related: ADR0005V01 (FailureCodes/Constants registry) and ADR0008V01 (structured failure_codes field) -- the `adrpy-skills` entry point reuses `adrpy.core.args`/`adrpy.core.output` for the same JSON-envelope discipline, without adding to `adrpy`'s own `describe()` surface.

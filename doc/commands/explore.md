@@ -17,7 +17,7 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 
 | Argument | Alias | Required | Type | Description |
 |---|---|---|---|---|
-| `--path` | `-p` | yes | string | Repository root directory (must contain adr-config.adrplus). |
+| `--path` | `-p` | yes | string | Repository root directory (must contain .adrpy.json). |
 | `--migrationpattern` | -- | no | string | A migrationpattern to preview (same syntax as `adrpy config --migrationpattern`), read instead of the repository's own for `migrationpattern_preview` only; nothing is written. An invalid one fails with config-migrationpattern-invalid, as does one that reads part of a name twice (its T starts inside its N/V/R/P range, or two of those ranges overlap; the detail names the overlap); an empty value is a usage error (there is nothing to preview). |
 
 ## Failure codes
@@ -25,16 +25,16 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `path-invalid` | A resolved path is not usable (e.g. contains a NUL byte). |
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |
@@ -46,9 +46,9 @@ Lists every .md file under the decisions folder, recognized or not, and never re
 | `config-field-empty` | A field that must be non-empty is an empty string. |
 | `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
 | `config-folderadr-too-long` | folderadr exceeds 50 characters. |
-| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderlog-too-long` | folderlog exceeds 50 characters. |
-| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |

@@ -54,12 +54,12 @@ def test_version_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkey
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    assert not (adr_dir / "ADR001V02-use-postgre-sql.md").exists()  # no write made
+    assert not (adr_dir / "ADR001V02-use-postgre-sql.md").exists()
 
 
 def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     record = DecisionRecord(
         number=1,
@@ -77,8 +77,7 @@ def test_version_rejects_when_lenversion_too_small_for_new_version(tmp_path):
         version.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
 
     assert excinfo.value.code == "lenversion-too-small-for-new-version"
-    # The real number was only ever in `detail`
-    # (stderr, free text).
+    # The new number is in `data`, not only in `detail` (stderr, free text).
     assert excinfo.value.data == {"new_version": 100, "lenversion": 2}
     # The way out is widening lenversion, by name.
     assert "`adrpy config --path <repository> --lenversion 3`" in excinfo.value.detail
@@ -93,7 +92,7 @@ def test_version_checks_the_targets_status_before_the_new_number_fits(tmp_path):
     # Proposed V99 is refused as still-proposed, not as a width problem
     # the owner could "fix" by widening lenversion.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(number=1, title="Existing", version=99, status_create="Proposed", date_create=date(2026, 1, 1))
     adr_path = tmp_path / "doc" / "adr" / "ADR001V99-existing.md"
     atomic_write_text(adr_path, build_header(config, record) + "# body")
@@ -145,7 +144,7 @@ def test_version_checks_the_family_rules_before_the_new_number_fits(tmp_path):
     # as not-latest-version, not as a width problem that widening
     # lenversion would only trade for this same refusal.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     folder = tmp_path / "doc" / "adr"
     for number in (98, 99):
         record = DecisionRecord(
@@ -168,7 +167,7 @@ def test_lenversion_one_below_the_maximum_offers_config_up_to_the_maximum(tmp_pa
 
     init.run(["--path", str(tmp_path)])
     config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX - 1)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     last = 10 ** (LENVERSION_MAX - 1) - 1
     record = DecisionRecord(
         number=1,
@@ -198,7 +197,7 @@ def test_lenversion_too_small_at_the_maximum_width_offers_no_config_way_out(tmp_
     from adrpy.core.config import LENVERSION_MAX
 
     init.run(["--path", str(tmp_path)])
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     from adrpy.cli import config as config_cmd
 
     config_cmd.run(["--path", str(tmp_path), "--lenversion", str(LENVERSION_MAX)])
@@ -248,10 +247,9 @@ def test_version_reports_the_colliding_filename_as_data_when_it_already_exists(t
 
 
 def test_version_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
-    """encoding_repaired_
-    warning unconditionally claimed "the file has been rewritten... bytes
-    are now lost" -- always false here, since version never rewrites its
-    own source (only its BODY is carried into a newly created file)."""
+    """The encoding_repaired warning must not claim "the file has been
+    rewritten... bytes are now lost": version never rewrites its own source
+    (only its BODY is carried into a newly created file)."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     with open(adr_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
@@ -261,7 +259,7 @@ def test_version_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
 
     assert not any("rewritten" in w.lower() for w in result["warnings"])
     assert any("utf-8" in w.lower() and str(adr_path) in w for w in result["warnings"])
-    assert adr_path.read_bytes() == source_bytes_before  # source genuinely untouched
+    assert adr_path.read_bytes() == source_bytes_before
 
 
 def test_version_happy_path(tmp_path):
@@ -279,16 +277,13 @@ def test_version_happy_path(tmp_path):
     assert "|Scope|Data|" in text
     assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in text
     assert "# body" not in text  # body carried forward from the source (template, not literal marker)
-    # No test pinned the exact
-    # empty-list value on a genuine happy path, only that the key exists.
     assert result["warnings"] == []
 
 
 def test_version_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage.
-    ADR006V01: version's own (non---empty) write goes through
-    atomic_write_chunks, not atomic_write_text."""
+    """retry_warning's "succeeded only after N attempts" message reaches
+    version's result. ADR0006V01: version's (non---empty) write goes through
+    atomic_write_chunks, not atomic_write_text, so that is the name patched."""
     from adrpy.cli import version as version_module
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
@@ -503,7 +498,7 @@ def test_version_rejects_path_traversal_via_header_title(tmp_path):
     independent line of defense against anything those checks might
     miss."""
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -533,7 +528,7 @@ def test_version_rejects_a_header_title_made_only_of_separator_characters(tmp_pa
     whitespace/'_'/'-' -- reachable here via a hand-edited or migrated
     source file's header cell, the same as the path-traversal case above."""
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -556,7 +551,7 @@ def test_version_rejects_a_header_title_made_only_of_separator_characters(tmp_pa
 
 
 def test_version_accepts_relative_file_path(tmp_path, monkeypatch):
-    """Regression: `latest_path != path` must resolve both sides -- a
+    """Regression: the latest-member comparison must resolve both paths -- a
     relative --file argument must still be recognized as the latest."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -576,10 +571,9 @@ def test_version_end_to_end_through_main(tmp_path):
 
 
 def test_version_describe_declares_empty_as_a_presence_only_switch():
-    """--empty is presence-only (confirmed live,
-    `--empty true` fails with "Unknown argument") -- must not be declared
-    "boolean", which implies accepting an explicit value like
-    `config --disableplugins true/false` does."""
+    """--empty is presence-only (`--empty true` fails with "Unknown argument")
+    -- it must not be declared "boolean", which implies accepting an
+    explicit value."""
     arguments = {argument["name"]: argument for argument in version.describe()["arguments"]}
 
     assert arguments["empty"]["type"] == "switch"
@@ -603,9 +597,8 @@ def test_version_refuses_a_number_held_by_a_file_whose_header_does_not_parse(tmp
 
 
 def test_version_takes_its_defaults_from_the_target_not_a_rejected_newer_member(tmp_path):
-    # Round 41 (K1a): branching off V01 while V02 was rejected, the new
-    # version's scope/domain default to V01's, and --refdate is bounded by
-    # V01's own dates, not V02's.
+    # Branching off V01 while V02 was rejected, the new version's scope/domain
+    # default to V01's, and --refdate is bounded by V01's own dates, not V02's.
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     v02 = version.run(["--file", str(adr_path), "--refdate", "2026-01-10", "--scope", "Other", "--domain", "Elsewhere"])["created"]
     reject.run(["--file", v02, "--refdate", "2026-01-12"])
@@ -634,7 +627,7 @@ def test_version_checks_the_new_version_width_after_refdate(tmp_path):
     # new/supersede do with lenseq), so a bad --refdate is reported
     # before a lenversion that widening would only trade for it.
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1,
         title="Existing",

@@ -3,7 +3,7 @@ import pytest
 from adrpy.core.casing import to_camel_case, to_case, to_kebab_case, to_pascal_case, to_snake_case, unique_title_key
 from adrpy.core.config import load_repo_config
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 @pytest.mark.parametrize(

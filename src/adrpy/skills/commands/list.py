@@ -1,5 +1,5 @@
 """`list` command: read-only report of what's installed where -- see
-ADR009V01."""
+ADR0009V01."""
 
 from adrpy.core.args import parse_flags
 from adrpy.skills import installer

@@ -10,7 +10,7 @@ from adrpy.core.header import DecisionRecord, build_header
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _config_with_revisions():
@@ -43,8 +43,9 @@ def _setup_accepted_repo_with_revisions(tmp_path):
 
 
 def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """See version's own
-    equivalent test."""
+    """End to end: an unreadable subdirectory stops revise through the
+    repository validation (scan-incomplete), with no write made -- as for
+    version."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     blocked = adr_dir / "restricted"
@@ -64,12 +65,12 @@ def test_revise_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeyp
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["scan-incomplete"]
-    assert not (adr_dir / "ADR001V01R02-use-postgre-sql.md").exists()  # no write made
+    assert not (adr_dir / "ADR001V01R02-use-postgre-sql.md").exists()
 
 
 def test_revise_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
-    """Same class as
-    version's own test: revise never rewrites its own source either."""
+    """revise never rewrites its own source, so the encoding-repair warning
+    must not claim the file was rewritten -- as for version."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     with open(adr_path, "ab") as handle:
         handle.write(b"Invalid byte here: \xa4 end.\n")
@@ -79,7 +80,7 @@ def test_revise_reports_source_unchanged_when_encoding_was_repaired(tmp_path):
 
     assert not any("rewritten" in w.lower() for w in result["warnings"])
     assert any("utf-8" in w.lower() and str(adr_path) in w for w in result["warnings"])
-    assert adr_path.read_bytes() == source_bytes_before  # source genuinely untouched
+    assert adr_path.read_bytes() == source_bytes_before
 
 
 def test_revise_happy_path(tmp_path):
@@ -90,17 +91,16 @@ def test_revise_happy_path(tmp_path):
     new_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
     assert result["created"] == str(new_path)
     text = new_path.read_text(encoding="utf-8")
-    assert "|Version|01|" in text  # version unchanged
+    assert "|Version|01|" in text
     assert "|Revision|02|" in text
     assert "|Domain|Backend|" in text  # target's own value
     assert "|Created|Proposed (2026-01-05) <!-- Proposed -->|" in text
 
 
 def test_revise_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage.
-    ADR006V01: revise's own write goes through atomic_write_chunks, not
-    atomic_write_text."""
+    """retry_warning's "succeeded only after N attempts" message reaches
+    revise's result. ADR0006V01: revise's write goes through
+    atomic_write_chunks, not atomic_write_text, so that is the name patched."""
     from adrpy.cli import revise as revise_module
 
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
@@ -196,8 +196,8 @@ def test_revise_rejects_when_sibling_pending(tmp_path):
 
 
 def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
-    """not-latest-version must name WHICH revision
-    actually is the latest -- see `version`'s own equivalent test."""
+    """not-latest-version must name WHICH revision actually is the latest, as
+    structured `data` -- as for version."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
@@ -210,15 +210,14 @@ def test_revise_rejects_when_not_latest_and_latest_not_rejected(tmp_path):
     assert excinfo.value.data["latest_file"] == str(r2_path)
     assert excinfo.value.data["latest_revision"] == 2
     assert excinfo.value.data["latest_status"] == "Accepted"
-    assert sorted(p.name for p in r2_path.parent.glob("*.md")) == [adr_path.name, r2_path.name]
+    assert sorted(p.name for p in r2_path.parent.glob("*.md") if p.name != "INDEX.md") == [adr_path.name, r2_path.name]
 
 
 def test_revise_branching_off_an_older_revision_takes_the_next_free_number(tmp_path):
-    """Round 40, decided by the project owner (a divergence from AdrPlus,
-    whose revise always computes TARGET.revision+1 and so collided here
-    with the rejected R02 still on disk): revise numbers from the highest
-    revision this version already holds, so branching off R01 while the
-    single newer R02 is Rejected creates R03."""
+    """Decided by the project owner: revise numbers from the highest revision
+    this version already holds (TARGET.revision+1 would collide with the
+    rejected R02 still on disk), so branching off R01 while the single newer
+    R02 is Rejected creates R03."""
     tmp_path, adr_path = _setup_accepted_repo_with_revisions(tmp_path)
     revise.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     r2_path = tmp_path / "doc" / "adr" / "ADR001V01R02-use-postgre-sql.md"
@@ -257,7 +256,7 @@ def test_revise_rejects_when_lenrevision_too_small_for_new_revision(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     record = DecisionRecord(
         number=1,
@@ -292,7 +291,7 @@ def test_revise_checks_the_targets_status_before_the_new_number_fits(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1, title="Existing", version=1, revision=9, status_create="Proposed", date_create=date(2026, 1, 1)
     )
@@ -325,17 +324,15 @@ def test_revise_rejects_refdate_in_future(tmp_path):
 
 
 def test_revise_rejects_path_traversal_via_header_title(tmp_path):
-    """Same class as version's own finding -- revise's
-    new record's title also comes straight from the target's already-
-    parsed header cell. Caught by reject_filesystem_unsafe_title/
-    reject_embedded_delimiter before build_filename is ever called;
-    resolve_within remains a second,
-    independent line of defense against anything those checks might
-    miss."""
+    """As for version, revise's new record's title comes straight from the
+    target's already-parsed header cell. Caught by
+    reject_filesystem_unsafe_title/reject_embedded_delimiter before
+    build_filename is ever called; resolve_within remains a second,
+    independent line of defense against anything those checks might miss."""
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -361,25 +358,22 @@ def test_revise_rejects_path_traversal_via_header_title(tmp_path):
 
 @pytest.mark.parametrize("field", ["scope", "domain"])
 def test_revise_rejects_a_control_character_in_scope_or_domain_read_from_the_target_header(tmp_path, field):
-    """Unlike `version`, which re-validates scope/domain even when they fall
-    back to the latest member's own current value, revise never validated
-    them at all -- they come straight from the target's already-parsed
-    header cell, carried forward into the new revision's own header with
-    zero checking. Confirmed live: a hand-edited '\\x0b' (VT) in the Scope
-    cell survived an unrelated `revise` call unchanged, propagating into
-    the new revision's own header and into `explore`'s own JSON output --
-    the exact data-hygiene defect reject_embedded_delimiter's own
-    blacklist exists to prevent, just never wired up for this command's
-    two fields. (Embedding a literal '|' instead does not forge the table
-    the same way: `_extract_cell`'s own read-side parsing already
-    truncates a cell's value at the first '|', so it can never actually
-    reach `header.scope`/`header.domain` as a raw character -- confirmed
-    directly, which is why this test uses a control character instead,
-    the vector that DOES survive the round-trip.)"""
+    """Like `version`, which re-validates scope/domain even when they fall back
+    to the latest member's own current value, revise validates the scope and
+    domain it carries forward from the target's already-parsed header cell:
+    a hand-edited '\\x0b' (VT) in the Scope cell would otherwise survive an
+    unrelated `revise` call, propagating into the new revision's header and
+    into `explore`'s JSON output -- the data-hygiene defect
+    reject_embedded_delimiter's blacklist exists to prevent. (A literal '|'
+    does not forge the table the same way: `_extract_cell`'s read-side
+    parsing truncates a cell's value at the first '|', so it never reaches
+    `header.scope`/`header.domain` as a raw character -- which is why this
+    test uses a control character, the vector that DOES survive the
+    round-trip.)"""
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -413,7 +407,7 @@ def test_revise_rejects_a_header_title_made_only_of_separator_characters(tmp_pat
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(_config_with_revisions()), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01R01-placeholder.md"
     record = DecisionRecord(
         number=1,
@@ -446,10 +440,9 @@ def test_revise_end_to_end_through_main(tmp_path):
 
 
 def test_revise_describe_documents_the_lenrevision_precondition():
-    """Revise fails with revision-not-configured on
-    any freshly-init'd repository (100% of the time, not an edge case) --
-    describe() never said so, so an agent only discovered this by trial
-    and error."""
+    """Revise fails with revision-not-configured on any freshly init'd
+    repository, so describe() says so: an agent must not discover it by
+    trial and error."""
     assert "lenrevision" in revise.describe()["description"]
 
 
@@ -642,7 +635,7 @@ def test_revise_checks_the_new_revision_width_after_refdate(tmp_path):
     config_file = tmp_path / "seed-config.json"
     config_file.write_text(json.dumps(data), encoding="utf-8")
     init.run(["--path", str(tmp_path), "--seed", str(config_file)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     record = DecisionRecord(
         number=1,
         title="Existing",

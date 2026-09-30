@@ -5,6 +5,7 @@ never a collision-disambiguator. `--open` is permanently not implemented
 (see `new.py`'s note).
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.config import LENSEQ_MAX
 from adrpy.core.consistency import note_shared_numbers
@@ -184,7 +185,7 @@ def run(args):
                 warnings=warnings,
             ) from error
 
-        # ADR006V01: combines the header's own flag (known since
+        # ADR0006V01: combines the header's own flag (known since
         # prepare) with the body's own (only known now, from the
         # streamed read); reported only once the predecessor is written.
         predecessor_warnings = []
@@ -233,6 +234,7 @@ def run(args):
             warnings, ctx.snapshot, config, [(successor_number, True), (filename_info.number, False)]
         )
 
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     # Canonical keyword, not the repo's configured status label.
     return {
         "predecessor": str(path),

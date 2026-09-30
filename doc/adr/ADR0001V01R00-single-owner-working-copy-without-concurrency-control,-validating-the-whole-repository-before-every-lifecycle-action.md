@@ -1,9 +1,9 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Single-owner working copy without concurrency control, validating the whole repository before every lifecycle action|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|core/consistency.py, core/fs.py|
 |Domain|concurrency|
 |Created|Proposed (2026-09-16) <!-- Proposed -->|
@@ -69,7 +69,6 @@ The decision has five parts:
 * Two commands run in parallel on one working copy can lose an update that ends in a valid state; only the visibility plan above covers it.
 * A multi-file write that stops halfway needs a manual repair; the tool gives the exact row but does not apply it.
 * Every lifecycle action pays for a full validation, about 0.8 s at 5000 ADRs.
-* A repository adopted from AdrPlus 1.0.0 in a state AdrPlus allows but adrpy's invariants refuse must be repaired once, by hand, before lifecycle actions run on it.
 
 ## Pros and Cons of the Options
 
@@ -96,4 +95,4 @@ The decision has five parts:
 
 * `doc/decision-log/2026-09-24--scope-note--architecture--architectural-review-single-owner-validate-before-acting.md` -- the review that made this decision, the entries it removed and what it left out.
 * README, "One owner per working copy"; `doc/architecture.md`, "Single-owner model"; `doc/lifecycle.md` -- the rule and the validator as users see them.
-* `doc/adr/ADR006V01-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md` -- the streaming writes that the atomic write per file carries.
+* `doc/adr/ADR0006V01R00-decision-body-reads-and-writes-stream-chunk-by-chunk-instead-of-loading-whole-file-content-into-memory.md` -- the streaming writes that the atomic write per file carries.

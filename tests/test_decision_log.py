@@ -23,9 +23,9 @@ import pytest
 
 
 def test_decision_log_dir_for_resolves_configs_own_folderlog(tmp_path):
-    """ADR007V01: resolved from config.folderlog (independently
-    configurable), via resolve_within -- no longer derived from
-    folderadr's own path at all."""
+    """ADR0007V01: resolved from config.folderlog (independently
+    configurable), via resolve_within -- not derived from folderadr's own
+    path."""
     from types import SimpleNamespace
 
     result = decision_log_dir_for(tmp_path, SimpleNamespace(folderlog="doc/decision-log"))
@@ -78,10 +78,9 @@ def test_validate_slug_rejects_everything_else(slug):
 
 def test_build_filename_matches_this_projects_own_date_first_convention():
     """This project's own established local deviation from the generic
-    decision-log skill's classification-first convention -- confirmed
-    against scripts/generate_decision_log_index.py's own parsing and
-    every real entry in doc/decision-log/ (caught as a factual error in
-    ADR003V01's first draft, fixed before implementation started)."""
+    decision-log skill's classification-first convention -- the order
+    scripts/generate_decision_log_index.py parses and every real entry in
+    doc/decision-log/ uses."""
     from datetime import date
 
     filename = build_filename(date(2026, 9, 18), "audit-finding", "lock", "some-bug")
@@ -126,7 +125,7 @@ def test_next_round_is_1_when_no_entry_carries_a_round(tmp_path):
 
 
 def test_next_round_is_the_max_existing_round_plus_one_across_scopes(tmp_path):
-    """Round is project-wide, never per-scope (ADR003V01/the decision-log
+    """Round is project-wide, never per-scope (ADR0003V01/the decision-log
     skill's own definition) -- two entries under DIFFERENT scopes still
     share the same increasing sequence."""
     log_dir = tmp_path / "decision-log"
@@ -166,11 +165,10 @@ def test_regenerate_index_content_matches_build_entry_contents_own_structured_li
 
 
 def test_regenerate_index_and_max_existing_round_are_recursive(tmp_path):
-    """ADR007V01: folderlog's own scan is now recursive (rglob, matching
+    """ADR0007V01: folderlog's own scan is recursive (rglob, matching
     folderadr's own convention) -- an entry placed in a subfolder (e.g. a
     human organizing past entries by year) must still be picked up, not
-    silently invisible to round allocation/INDEX.md the way it would
-    have been under the old, flat-only glob."""
+    silently invisible to round allocation/INDEX.md."""
     log_dir = tmp_path / "decision-log"
     (log_dir / "2026").mkdir(parents=True)
     (log_dir / "2026" / "2026-01-05--audit-finding--lock--archived.md").write_text(
@@ -307,9 +305,8 @@ def test_max_existing_round_fails_closed_when_the_round_segment_is_entirely_miss
 
 def test_max_existing_round_fails_closed_on_a_completely_empty_file(tmp_path):
     """The `if not lines:` guard (closes a raw IndexError on `lines[0]`
-    for a zero-byte decision-log file) needs its own direct test --
-    confirmed by mutating the guard to `if False and not lines:` and
-    observing the full suite still pass."""
+    for a zero-byte decision-log file) needs its own direct test: no other
+    test fails without it."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-01-01--audit-finding--lock--empty.md").write_text("", encoding="utf-8")
@@ -366,17 +363,15 @@ def test_parse_entry_raises_a_clean_error_for_an_unrecognized_filename(tmp_path)
 
 
 def test_parse_entry_does_not_read_the_whole_file(tmp_path):
-    """_parse_entry only ever uses
-    lines[0] (heading) and, for audit-finding/doc-drift entries,
-    lines[1:5] (the structured line) -- unlike every bounded read
-    elsewhere in this codebase (core/lifecycle.py's own header reads).
-    No field written via `log` has a length limit (confirmed: only
-    config-schema fields like folderadr/headerdisclaimer/status labels
-    have _MAX_LENGTH constants -- --body/--summary/--front/--reopenwhen
-    have none), so a single oversized --body persists an entry whose
-    cost is then re-paid by every future `log` call scanning the whole
-    directory, on every classification, not just the oversized one's
-    own."""
+    """_parse_entry only ever uses lines[0] (heading) and, for
+    audit-finding/doc-drift entries, lines[1:5] (the structured line), so
+    its read is bounded, like core/lifecycle.py's own header reads. No
+    field written via `log` has a length limit (--body/--summary/--front/
+    --reopenwhen have no _MAX_LENGTH constant, unlike config-schema
+    fields), so a single oversized --body persists an entry whose cost
+    would otherwise be re-paid by every future `log` call scanning the
+    whole directory, on every classification, not just the oversized
+    one's own."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     huge_body = "x" * (2 * 1024 * 1024)  # 2MB, well past any real 5-line prefix
@@ -396,12 +391,11 @@ def test_parse_entry_does_not_read_the_whole_file(tmp_path):
 
 
 def test_regenerate_index_writes_this_hosts_own_line_ending_on_a_normal_successful_run(tmp_path):
-    """regenerate_index now normalizes to THIS host's own os.linesep
+    """regenerate_index normalizes to THIS host's own os.linesep
     (matching every other CRLF-on-Windows doc in this project), not a
-    hardcoded LF regardless of host OS -- confirmed on a normal
-    SUCCESSFUL regeneration, not just the FAILURE path (original file
-    untouched), which every other test of the atomic-write behavior
-    already covers."""
+    hardcoded LF regardless of host OS -- checked on a normal SUCCESSFUL
+    regeneration; the FAILURE path (original file untouched) is covered by
+    the atomic-write tests."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-09-18--scope-note--lock--first.md").write_text(
@@ -441,9 +435,8 @@ def test_regenerate_index_sorts_multiple_entries_by_date_classification_scope(tm
 
 
 def test_regenerate_index_populates_the_reopen_when_column_with_real_content(tmp_path):
-    """The only existing check of this column asserted it was blank (an
-    audit-finding entry) -- never that a REAL deferred entry's
-    Reopen-when text actually survives into the generated index."""
+    """A REAL deferred entry's Reopen-when text survives into the generated
+    index -- not only the blank column of an audit-finding entry."""
     log_dir = tmp_path / "decision-log"
     log_dir.mkdir()
     (log_dir / "2026-09-18--deferred--lock--postponed.md").write_text(
@@ -558,11 +551,10 @@ def test_validate_round_not_regressing_rejects_lower_than_the_current_max():
 
 
 def test_validate_round_not_regressing_rejects_the_adjacent_lower_boundary():
-    """The boundary case, not just a gap: every prior 'rejects lower'
-    test used a gap of 2 (current_max=5, attempted=3) -- the adjacent
-    value (current_max=5, attempted=4, exactly one below) needs its own
-    coverage, or an off-by-one (`< current_max` vs `<= current_max - 1`,
-    or similar) could ship silently."""
+    """The adjacent value (current_max=5, attempted=4, exactly one below),
+    not just the gap of 2 the test above uses -- an off-by-one
+    (`< current_max` vs `<= current_max - 1`, or similar) could otherwise
+    ship silently."""
     with pytest.raises(CommandError) as excinfo:
         validate_round_not_regressing(4, current_max=5)
 

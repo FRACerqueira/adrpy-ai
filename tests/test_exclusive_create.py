@@ -13,7 +13,7 @@ import pytest
 from adrpy.cli import approve, init, log, new, reject, revise, supersede, version
 from adrpy.core.errors import CommandError
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 PLANTED = b"planted by someone else\n"
 
 
@@ -175,7 +175,7 @@ def test_log_refuses_an_entry_name_that_appears_before_its_commit(tmp_path, monk
 
 
 def test_init_refuses_a_config_that_appears_before_its_commit(tmp_path, monkeypatch, platform_branch):
-    target = tmp_path / "adr-config.adrplus"
+    target = tmp_path / ".adrpy.json"
     _plant_then_call(monkeypatch, init, "reject_aliased_repo_folders", target)
 
     with pytest.raises(CommandError) as excinfo:
@@ -267,7 +267,7 @@ def test_supersede_of_an_existing_name_too_long_to_rewrite_is_refused_before_wri
         supersede.run(["--file", str(path), "--title", "Next", "--refdate", "2026-01-03"])
 
     assert excinfo.value.code == "filename-too-long"
-    assert sorted(p.name for p in path.parent.iterdir()) == [path.name]
+    assert sorted(p.name for p in path.parent.iterdir() if p.name != "INDEX.md") == [path.name]
 
 
 def test_reject_of_a_successor_whose_predecessor_name_is_too_long_is_refused_before_writing(tmp_path):

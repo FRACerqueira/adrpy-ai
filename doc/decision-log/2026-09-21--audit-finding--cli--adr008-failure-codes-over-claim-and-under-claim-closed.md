@@ -1,8 +1,8 @@
-# Round 32: closed 2 over-claims and 1 under-claim in ADR008V01s new failure_codes field
+# Round 32: closed 2 over-claims and 1 under-claim in ADR0008V01s new failure_codes field
 
-**Front:** Test-Adequacy (independent verification of ADR008V01s own implementation) | **Severity:** Medium | **Resolution:** Direct | **Round:** 32
+**Front:** Test-Adequacy (independent verification of ADR0008V01s own implementation) | **Severity:** Medium | **Resolution:** Direct | **Round:** 32
 
-An independent, adversarial verification pass (requested by the repo owner before implementation even began, specifically because 137 hand-written code-to-condition mappings across 14 commands is exactly the kind of repetitive, error-prone transcription work prior rounds have found real bugs in) found 3 confirmed defects in ADR008V01s own failure_codes field, re-verified against the real source before fixing:
+An independent, adversarial verification pass (requested by the repo owner before implementation even began, specifically because 137 hand-written code-to-condition mappings across 14 commands is exactly the kind of repetitive, error-prone transcription work prior rounds have found real bugs in) found 3 confirmed defects in ADR0008V01s own failure_codes field, re-verified against the real source before fixing:
 
 1. Over-claim: field-is-blank was listed by approve/reject/undo/revise (via core/lifecycle.pys own SHARED_FAILURE_CODES, incorrectly treated as universal to all 6 per-file commands) even though none of them can structurally reach it -- each only calls reject_embedded_delimiter on header.title/scope/domain, which core/header.pys own _extract_cell always .strip()s before returning; reject_embedded_delimiters own blank check (value != "" and not value.strip()) can never be true on an already-stripped value. Only supersede/version genuinely reach it, via a raw --scope/--domain flag value used before any header fallback. Fixed by moving field-is-blank out of the shared dict and into supersede/version own inline dicts.
 

@@ -8,7 +8,7 @@ from adrpy.core import config as config_module
 from adrpy.core.config import load_repo_config, parse_repo_config
 from adrpy.core.errors import CommandError
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _valid_config_dict():
@@ -38,8 +38,6 @@ def _valid_config_dict():
         "headertablefields": "Fields",
         "headertablevalues": "Values",
         "headermigrated": "Migrated",
-        "activeplugins": [],
-        "disableplugins": False,
     }
 
 
@@ -49,8 +47,6 @@ def test_loads_real_repo_config_fixture():
     assert config.folderadr == "doc/adr"
     assert config.prefix == "ADR"
     assert config.lenseq == 3
-    assert config.activeplugins == ["AdrIndexer"]
-    assert config.disableplugins is False
 
 
 def test_malformed_json_is_rejected():
@@ -182,7 +178,7 @@ def test_absolute_folderadr_is_rejected(folderadr):
     assert excinfo.value.code == "config-folderadr-not-relative"
 
 
-@pytest.mark.parametrize("folderadr", ["doc/adr", "decisions", "../still-relative"])
+@pytest.mark.parametrize("folderadr", ["doc/adr", "decisions", "doc/../adr"])
 def test_relative_folderadr_is_accepted(folderadr):
     data = _valid_config_dict()
     data["folderadr"] = folderadr
@@ -193,11 +189,10 @@ def test_relative_folderadr_is_accepted(folderadr):
 
 
 def test_folderlog_defaults_to_folderadrs_own_sibling_when_omitted():
-    """ADR007V01: the concrete proof of the backward-compatibility
-    promise -- an adr-config.adrplus written before folderlog existed
-    (no key at all, exactly what _valid_config_dict/the shared test
-    fixture already look like) must keep parsing unchanged, with
-    folderlog defaulting to today's exact computed sibling location."""
+    """ADR0007V01's backward-compatibility promise: an .adrpy.json written
+    before folderlog existed (no key at all, like _valid_config_dict and
+    the shared test fixture) keeps parsing unchanged, with folderlog
+    defaulting to folderadr's computed sibling location."""
     data = _valid_config_dict()
     assert "folderlog" not in data
 
@@ -254,7 +249,7 @@ def test_absolute_folderlog_is_rejected(folderlog):
     ],
 )
 def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
-    """ADR007V01's containment guard -- both directories are
+    """ADR0007V01's containment guard -- both directories are
     independently configurable and each recursively scanned, so either
     one nesting inside (or equaling) the other would make each scan see
     the other's files."""
@@ -269,10 +264,9 @@ def test_overlapping_folderadr_and_folderlog_are_rejected(folderadr, folderlog):
 
 
 def test_folderadr_and_folderlog_near_miss_is_accepted():
-    """The required adversarial positive control for the containment
-    guard: 'doc/adr' and 'doc/adr2' share a string prefix but are NOT
-    nested -- compared by path component, not string prefix, so this
-    must NOT trip the guard."""
+    """Positive control for the containment guard: 'doc/adr' and
+    'doc/adr2' share a string prefix but are NOT nested -- compared by path
+    component, not string prefix, so this must NOT trip the guard."""
     data = _valid_config_dict()
     data["folderadr"] = "doc/adr"
     data["folderlog"] = "doc/adr2"
@@ -350,12 +344,11 @@ def test_template_at_exactly_the_limit_is_accepted():
     ],
 )
 def test_every_too_long_field_raises_its_own_matching_code(field, too_long_length):
-    """ADR005V01: these 15 codes used to be built as f"config-{name}-too-long"
-    at raise time; now looked up from core.config's _TOO_LONG_CODES mapping
-    instead. Covers all 15 (11 header-label fields + 4 status-label fields),
-    the concrete regression guard for the lookup-mapping migration itself
-    (a mismatch here wouldn't show up as an import error, only as a
-    silently-wrong code at runtime)."""
+    """ADR0005V01: each too-long code is looked up from core.config's
+    _TOO_LONG_CODES mapping, not built from the field name at raise time.
+    Covers all 15 (11 header-label fields + 4 status-label fields): a
+    mismatch would not show up as an import error, only as a silently-wrong
+    code at runtime."""
     data = _valid_config_dict()
     data[field] = "d" * too_long_length
 
@@ -366,16 +359,12 @@ def test_every_too_long_field_raises_its_own_matching_code(field, too_long_lengt
 
 
 def test_too_long_codes_mapping_has_exactly_one_entry_per_schema_field():
-    """The test above's own
-    parametrize list is a hand-maintained static list -- it only
-    protects fields that already have their own tuple in it. A future
-    field added to the schema (and to _TOO_LONG_CODES) with no matching
-    new parametrize entry would get zero test signal, surfacing only in
-    production as a raw KeyError instead of a clean CommandError. This
-    test derives its own expectations from the schema/registry
-    themselves (not a second hand-maintained list) so it stays correct
-    automatically as fields are added or removed, closing the class
-    instead of the one instance."""
+    """The test above's parametrize list is hand-maintained: a field added
+    to the schema (and to _TOO_LONG_CODES) without its own entry there
+    would get no test signal, surfacing only in production as a raw
+    KeyError instead of a clean CommandError. This test derives its
+    expectations from the schema/registry themselves, so it stays correct
+    as fields are added or removed."""
     from adrpy.core.config import _HEADER_LABEL_FIELDS_MAX_40, _STATUS_LABEL_FIELDS, _TOO_LONG_CODES
     from adrpy.core.errors import FailureCodes
 
@@ -409,12 +398,12 @@ def test_too_long_codes_mapping_has_exactly_one_entry_per_schema_field():
     ],
 )
 def test_header_cell_field_with_embedded_pipe_is_rejected(field):
-    """A header/status label reaching a header table
-    cell verbatim, with no delimiter check, let a hostile config forge an
-    extra header row -- e.g. `headertitlestatuschanged` containing its own
-    '|Changed|Accepted (...)|' fabricates an approval no one ever granted.
-    Confirmed live end-to-end (config -> new -> explore/supersede saw the
-    forged Accepted status; approve then refused it as already-approved)."""
+    """A header/status label reaches a header table cell verbatim: with no
+    delimiter check a hostile config could forge an extra header row --
+    e.g. `headertitlestatuschanged` containing its own
+    '|Changed|Accepted (...)|' fabricates an approval no one ever granted
+    (explore/supersede read the forged Accepted status; approve then
+    refuses it as already-approved)."""
     data = _valid_config_dict()
     data[field] = "A|B"  # short enough to fit every field's own length bound
 
@@ -433,17 +422,16 @@ def test_status_label_with_marker_forgery_characters_is_rejected(field, payload)
     """These four fields alone land inside _parse_status_cell's own
     parenthesized-date-then-marker grammar (core/header.py) -- a label
     containing '(', ')', '<!--', or '-->' can forge a date/marker the tool
-    never wrote (confirmed live: a statusnew of
-    '(20200101)<!--Rejected-->' made a decision created today read back
-    as Rejected/2020-01-01). ':' is also blacklisted: the Superseded row's own suffix parsing
+    never wrote (a statusnew of '(20200101)<!--Rejected-->' made a decision
+    created today read back as Rejected/2020-01-01). ':' is also
+    blacklisted: the Superseded row's own suffix parsing
     (`superseded_text.find(":")`, core/header.py) finds the FIRST colon
     anywhere in the cell, not necessarily the real one the tool itself
     writes after the marker -- a statussup of 'Status: Superseded'
     (19 chars, otherwise valid) made the label's own colon win instead,
-    corrupting `superseded_by_file` into the whole cell remainder
-    (confirmed live: `reject` on the resulting successor failed with
-    superseded-predecessor-not-found even though its own primary write
-    had already committed)."""
+    corrupting `superseded_by_file` into the whole cell remainder (`reject`
+    on the resulting successor failed with superseded-predecessor-not-found
+    even though its own primary write had already committed)."""
     data = _valid_config_dict()
     data[field] = payload  # short enough to fit every field's own length bound
 
@@ -469,18 +457,14 @@ def test_header_label_fields_are_not_scoped_by_the_status_marker_forgery_check()
 @pytest.mark.parametrize("field", ["headertablefields", "headertablevalues"])
 @pytest.mark.parametrize("payload", ["Values <!-- x -->", "has<!--x", "hasx-->"])
 def test_headertable_fields_with_marker_comment_characters_are_rejected(field, payload):
-    """Confirmed live: parse_header's own
-    is_migrated detection (core/header.py) is pure substring matching on
-    the raw table-fields row -- `lines[1].rstrip().endswith(' -->|') and
-    '<!-- ' in lines[1]` -- built directly from headertablefields/
-    headertablevalues. Neither field was ever run through the
-    marker-forgery check (only the 4 status-label fields were), so a
-    hostile config setting headertablevalues to e.g. 'Values <!-- x -->'
-    made is_migrated=True on the header of EVERY ordinary,
-    non-migrated file ever written under that config -- confirmed live
-    with an otherwise-normal `new` decision reading back as
-    is_migrated: true. That flag feeds several lifecycle eligibility
-    exceptions."""
+    """parse_header's own is_migrated detection (core/header.py) is pure
+    substring matching on the raw table-fields row --
+    `lines[1].rstrip().endswith(' -->|') and '<!-- ' in lines[1]` -- built
+    directly from headertablefields/headertablevalues. Without the
+    marker-forgery check on these two fields, a hostile config setting
+    headertablevalues to e.g. 'Values <!-- x -->' made is_migrated=True on
+    the header of EVERY ordinary, non-migrated file written under that
+    config. That flag feeds several lifecycle eligibility exceptions."""
     data = _valid_config_dict()
     data[field] = payload
 
@@ -539,9 +523,8 @@ def test_header_cell_field_with_whitespace_only_content_is_rejected(field):
     empty string (falsy) -- a whitespace-only value is truthy, so it must
     be caught separately, or it would land verbatim in a header-table
     cell, only cosmetically 'cannot be empty' as promised by this field's
-    own doc/commands/config.md description. Same breadth as the sibling
-    pipe-rejection test above, closing the 'only statusnew is tested for
-    the empty case' asymmetry."""
+    own doc/commands/config.md description. Covers the same fields as the
+    sibling pipe-rejection test above."""
     data = _valid_config_dict()
     data[field] = "   "
 
@@ -574,8 +557,7 @@ def test_field_names_are_case_insensitive():
     ],
 )
 def test_invalid_migrationpattern_is_rejected(pattern):
-    """Confirmed against the reference tool's own long-standing validation:
-    a malformed migrationpattern must be rejected outright, not accepted
+    """A malformed migrationpattern must be rejected outright, not accepted
     as any string would be."""
     data = _valid_config_dict()
     data["migrationpattern"] = pattern
@@ -613,10 +595,8 @@ def test_valid_migrationpattern_is_accepted(pattern):
     ],
 )
 def test_header_label_field_at_exact_max_length_is_accepted(field):
-    """No field confirmed the
-    exact max value is ACCEPTED, only that max+1 is rejected -- the
-    project already knows this pattern (test_valid_prefixes_are_accepted
-    tests exactly PREFIX_MAX_LENGTH), just hadn't applied it here."""
+    """The exact max value is ACCEPTED, not only max+1 rejected -- the same
+    boundary test_valid_prefixes_are_accepted pins at PREFIX_MAX_LENGTH."""
     data = _valid_config_dict()
     data[field] = "d" * 40
 
@@ -667,13 +647,10 @@ def test_numeric_field_at_exact_max_is_accepted(field, value):
 
 
 def test_int_field_given_a_bool_is_rejected_as_wrong_type():
-    """Config-wrong-type covers 4
-    distinct branches (string/int/bool/list-of-strings); only the plain
-    string-given-for-int case was tested. `bool` is a subtype of `int` in
-    Python (`isinstance(True, int)` is True) -- config.py's own type
-    check explicitly guards against this (`isinstance(value, bool) or
-    not isinstance(value, int)`), otherwise `lenseq: true` would
-    silently pass as `lenseq=1`."""
+    """`bool` is a subtype of `int` in Python (`isinstance(True, int)` is
+    True) -- config.py's own type check explicitly guards against this
+    (`isinstance(value, bool) or not isinstance(value, int)`), otherwise
+    `lenseq: true` would silently pass as `lenseq=1`."""
     data = _valid_config_dict()
     data["lenseq"] = True
 
@@ -693,44 +670,14 @@ def test_string_field_given_a_wrong_type_is_rejected():
     assert excinfo.value.code == "config-wrong-type"
 
 
-def test_bool_field_given_a_wrong_type_is_rejected():
-    data = _valid_config_dict()
-    data["disableplugins"] = "true"  # a JSON string, not a real boolean
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
-def test_list_field_given_a_non_list_is_rejected():
-    data = _valid_config_dict()
-    data["activeplugins"] = "not-a-list"
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
-def test_list_field_with_a_non_string_item_is_rejected():
-    data = _valid_config_dict()
-    data["activeplugins"] = [1, 2]
-
-    with pytest.raises(CommandError) as excinfo:
-        parse_repo_config(json.dumps(data))
-
-    assert excinfo.value.code == "config-wrong-type"
-
-
 def test_load_repo_config_rejects_invalid_utf8_bytes(tmp_path):
     """A config file with invalid UTF-8 bytes raised a raw
-    UnicodeDecodeError with EMPTY stdout in 6 different entry
-    points (explore/new/approve/migrate/config/init --file), breaking the
-    JSON contract. read_text(encoding="utf-8") has no default error
-    handling of its own -- must be caught and turned into a CommandError,
-    the same as a malformed-JSON config already is."""
-    config_path = tmp_path / "adr-config.adrplus"
+    UnicodeDecodeError with EMPTY stdout in every entry point that reads it
+    (explore/new/approve/migrate/config/init --seed), breaking the JSON
+    contract. read_text(encoding="utf-8") has no default error handling of
+    its own -- it must be caught and turned into a CommandError, the same
+    as a malformed-JSON config is."""
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
     with pytest.raises(CommandError) as excinfo:
@@ -746,7 +693,7 @@ def test_read_config_text_does_not_read_the_whole_file(tmp_path):
     read on every single command invocation."""
     from unittest.mock import patch
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     huge = json.dumps(_valid_config_dict())
     huge += " " * (200 * 1024 * 1024)  # 200MB of trailing whitespace, still invalid JSON either way
     config_path.write_text(huge, encoding="utf-8")
@@ -762,7 +709,7 @@ def test_read_config_text_does_not_read_the_whole_file(tmp_path):
 
 
 def test_read_config_text_accepts_a_normal_sized_config(tmp_path):
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
 
     config = load_repo_config(config_path)
@@ -774,7 +721,7 @@ def test_read_config_text_accepts_a_config_at_exactly_the_cap_boundary(tmp_path)
     """Positive control at the boundary itself -- a config file whose own
     JSON text is comfortably under the cap (padded with whitespace, still
     valid JSON) must parse correctly, not be treated as too-large."""
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     data = _valid_config_dict()
     data["template"] = "t" * config_module.TEMPLATE_MAX_LENGTH  # the field's own real max
     text = json.dumps(data)
@@ -787,17 +734,15 @@ def test_read_config_text_accepts_a_config_at_exactly_the_cap_boundary(tmp_path)
 
 
 def test_load_repo_config_retries_a_transient_permission_error(tmp_path, monkeypatch):
-    """read_config_text had
-    no PermissionError tolerance at all, unlike every other read in this
-    codebase (core/fs.py's read_with_permission_retry) -- this read
-    goes through the identical atomic_write_text -> os.replace mechanism
-    those retries exist to absorb, and it runs at the start of every
-    single command. Reproduced empirically by the audit pass: a stress
-    probe (1 writer thread, 2 reader threads, real atomic_write_text)
-    measured ~0.23% of reads hitting this window -- matching the ~0.2%
-    rate already measured and retried for the sibling case in
-    lifecycle.py."""
-    config_path = tmp_path / "adr-config.adrplus"
+    """read_config_text retries a transient PermissionError, like every
+    other read in this codebase (core/fs.py's read_with_permission_retry)
+    -- this read goes through the identical atomic_write_text -> os.replace
+    mechanism those retries exist to absorb, and it runs at the start of
+    every single command. A stress probe (1 writer thread, 2 reader
+    threads, real atomic_write_text) measured ~0.23% of reads hitting this
+    window -- matching the ~0.2% rate already retried for the sibling case
+    in lifecycle.py."""
+    config_path = tmp_path / ".adrpy.json"
     config_path.write_text(json.dumps(_valid_config_dict()), encoding="utf-8")
 
     real_open = config_module.Path.open
@@ -829,7 +774,6 @@ def test_an_integer_field_takes_only_plain_ascii_digits(tmp_path, value):
 
 
 def test_the_pt_br_language_pack_spells_arquivo():
-    # AdrPlus's own pt-BR resource has the same typo; adrpy is the reference.
     from adrpy.core.config import load_language_pack
 
     assert load_language_pack("pt-br")["headertitlefile"].endswith(" do arquivo md")
@@ -852,3 +796,27 @@ def test_config_invalid_json_says_to_repair_the_file_by_hand():
         parse_repo_config("{not json")
 
     assert "repair it by hand" in excinfo.value.detail
+
+
+@pytest.mark.parametrize("field", ["folderadr", "folderlog"])
+@pytest.mark.parametrize("value", ["..", "../outside", "doc/../../outside", "a\..\..\outside", "./../outside"])
+def test_a_folder_leading_outside_the_repository_is_rejected_on_read(field, value):
+    """The read accepted a relative folder that leads outside the
+    repository: `adrpy config` reported a hand-edited `../outside` as valid,
+    and only the command using the folder refused it (resolve_within).
+    Lexical here, on either separator; resolve_within still catches links."""
+    data = _valid_config_dict()
+    data[field] = value
+
+    with pytest.raises(CommandError) as excinfo:
+        parse_repo_config(json.dumps(data))
+
+    assert excinfo.value.code == f"config-{field}-not-relative"
+
+
+@pytest.mark.parametrize("value", ["doc/../log", "./log", "..hidden/log", "log..", "a/b/../c"])
+def test_a_folder_that_stays_inside_the_repository_is_accepted(value):
+    data = _valid_config_dict()
+    data["folderlog"] = value
+
+    assert parse_repo_config(json.dumps(data)).folderlog == value

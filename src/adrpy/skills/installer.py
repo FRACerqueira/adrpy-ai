@@ -1,7 +1,7 @@
 """install/remove/list logic for adrpy-skills: resolves each (provider,
 skill) pair to a real path, builds its content via that provider's wrap,
 and checks/writes it through the content-hash drift marker -- see
-ADR009V01."""
+ADR0009V01."""
 
 import re
 from contextlib import contextmanager
@@ -25,9 +25,7 @@ _FRONTMATTER_RE = re.compile(r"\A(---\n.*?\n---\n)", re.DOTALL)
 # (64KB) -- that cap bounds a schema-fixed JSON file, this one bounds
 # free-form AGENTS.md/SKILL.md content a project owner can legitimately
 # grow well past that. Still bounded, not unlimited: an unbounded read
-# of a planted 100MB file was measured peaking process memory near 200MB -- every other full-content reader in
-# the project already caps for the same reason (see
-# CONFIG_READ_MAX_BYTES); this was the one that didn't.
+# of a planted 100MB file was measured peaking process memory near 200MB.
 _READ_TEXT_MAX_BYTES = 10 * 1024 * 1024
 _READ_TEXT_CHUNK_SIZE = 65536
 
@@ -40,38 +38,22 @@ def _package_version():
 
 
 def _read_text(path):
-    """Reads `path` as UTF-8, retrying a transient PermissionError the
-    same way every other reader in this project already does (core/
-    config.py, core/lifecycle.py, all via core/fs.py)
-    -- installer.py used to be the only reader that didn't, so a single
-    transient contention blip (a Windows "pending delete" window under a
-    concurrent reader) failed the whole install/remove/list call outright
-    instead of being absorbed like everywhere else.
+    """Reads `path` as UTF-8, retrying a transient PermissionError (a
+    Windows "pending delete" window under a concurrent reader) like every
+    other reader in this project (via core/fs.py).
 
-    Returns None if `path` doesn't exist -- whether it never existed, or
-    vanished between an earlier `path.exists()` check and this read (a
-    classic check-then-use TOCTOU window). Every caller in this module
-    used to guard its own read with a separate `path.exists()` call
-    first; two of the nine call sites didn't, and could raise a raw,
-    uncaught `FileNotFoundError` if the file vanished in between --
-    reachable even from `list`, a read-only command, and from `remove`
-    AFTER it had already committed a real deletion for an earlier
-    (provider, skill) pair in the same call, silently discarding that
-    success from the caller's view. Folding the existence check into the
-    read itself (one syscall attempt, not two) removes the window
-    entirely instead of requiring every call site to close it on its
-    own -- every one of them already treats "file not found" as "nothing
-    installed here" via check_drift(None)/_agentsmd_block_state(None)/an
-    explicit `is None` check, so this is a strict simplification, not a
-    behavior change for the non-racing case.
+    Returns None if `path` doesn't exist -- including one that vanished
+    after an earlier `path.exists()` check, so no caller needs its own
+    existence check (a separate one is a TOCTOU window that would raise a raw
+    FileNotFoundError, even from the read-only `list`). Every caller
+    treats None as "nothing installed here".
 
     Bounded to _READ_TEXT_MAX_BYTES (see its own note): reads at most
     that many bytes plus one chunk's worth of overrun, used only to
     detect that the real file is larger, never decoded or returned.
     Raises a plain OSError when the cap is exceeded -- caught by
-    skills/__main__.py's existing `except OSError` -> io-error, the same
-    code a write failure already uses, rather than adding a second
-    failure-code registry to a module that doesn't otherwise have one.
+    skills/__main__.py's `except OSError` -> io-error, the same code a
+    write failure uses.
 
     Reading via `path.open("rb")` instead of `path.read_text()` drops
     Python's own default universal-newline translation, so the decode
@@ -121,10 +103,9 @@ def _validate_scope(provider_names, scope):
     disk just because a later provider in the list turns out to be the
     one that fails.
 
-    --provider/--skill both reject an unrecognized value via _expand_all();
-    --target never did -- a typo (e.g. "golbal") silently fell through
-    to the "project" branch in _resolve_path, writing into the current
-    directory instead of failing loudly."""
+    An unrecognized --target (a typo like "golbal") must fail loudly, never
+    fall through to the "project" branch in _resolve_path and write into
+    the current directory."""
     if scope not in ("project", "global"):
         raise UsageError(f"Unknown --target value: {scope!r}. Valid values: global, project.")
     if scope != "global":
@@ -176,12 +157,10 @@ def _build_shared_doc_content(skill_name, full_content):
 _AGENTSMD_BLOCK_TEMPLATE = "<!-- adrpy:skills:{name}:start -->\n{body}<!-- adrpy:skills:{name}:end -->\n"
 
 # Matches any single tag line for any skill, one at a time -- no `.*`/DOTALL
-# span-hunting across the file. A prior per-skill implementation (matching
-# "start ... end" as one DOTALL span with `.search()`/`.finditer()`) cost
-# O(n^2) against adversarial content with many `:start` tags and no `:end`
-# anywhere (measured: ~9.5s against a 771KB crafted AGENTS.md, hit even by
-# the read-only `list` command) -- this pattern can't backtrack that way
-# since it never spans more than one tag. A tag is a whole line, as
+# span-hunting across the file: matching "start ... end" as one DOTALL span
+# costs O(n^2) against adversarial content with many `:start` tags and no
+# `:end` anywhere (measured: ~9.5s against a 771KB crafted AGENTS.md, hit
+# even by the read-only `list` command). A tag is a whole line, as
 # _AGENTSMD_BLOCK_TEMPLATE writes it: the same text quoted inside a line of
 # the user's own prose is not a tag, and --force must never strip it.
 # Trailing spaces/tabs are tolerated, and so is any run of BOMs at the very
@@ -252,8 +231,8 @@ def _agentsmd_locate(file_text, skill_name):
     has no valid marker; "unpaired": its indented tags are repeated,
     unpaired, at different indentations, or split by another skill's tag)
     so install/remove can say so.
-    `inner` is the
-    block's content between its tags, de-indented -- what was hashed."""
+    `inner` is the block's content between its tags, de-indented -- what
+    was hashed."""
     text = file_text or ""
     tags = _agentsmd_tag_lines(text)
     canonical = [t for t in tags if _AGENTSMD_CANONICAL_INDENT_RE.match(t[4])]
@@ -359,10 +338,9 @@ def _agentsmd_force_strip_all(file_text, skill_name):
     by the linear tag scan -- never a guessed span of surrounding content.
     A truncated block's own orphaned body text (between a lone `:start`
     and wherever the file happens to continue) has no reliably knowable
-    end boundary; guessing one is exactly the defect this replaces (the
-    prior greedy-regex version deleted through to the next thing that
-    merely looked like a boundary, including another skill's own valid
-    block or the user's own hand-written content past it)."""
+    end boundary; a guessed one deletes through to the next thing that
+    merely looks like a boundary, including another skill's own valid
+    block or the user's own hand-written content past it."""
     tags = [t for t in _agentsmd_all_tags(file_text) if t[0] == skill_name]
     if not tags:
         return file_text
@@ -493,8 +471,8 @@ def _write_surface(target_dir, provider_names, skill_names, scope):
 def _reject_paths_leaving_the_target(paths, target_dir, scope, allow_external_links):
     """A junction or symlink planted inside --path (or under the home
     directory, for --target global) would otherwise redirect writes and
-    deletes outside it -- reproduced: remove deleted a tool-written file in
-    another directory, reported under the in-repo path, with no --force.
+    deletes outside it (remove would delete a tool-written file in another
+    directory, reported under the in-repo path, with no --force).
     Every path must resolve inside the target, before any side effect,
     the same real-path containment the core CLI applies to its own
     folders (core/security.py). Opting out is explicit: a dotfiles setup
@@ -516,7 +494,7 @@ def _reject_paths_leaving_the_target(paths, target_dir, scope, allow_external_li
 
 def _cleanup_orphaned_temp_files(target_dir, provider_names, skill_names, scope, warnings):
     """Sweeps the temp files an earlier interrupted write of this same
-    request could have left behind, like the 8 core `adrpy` mutating
+    request could have left behind, like the core `adrpy` mutating
     commands do for their own folder -- but only the exact
     `<name>.<16 or 32 hex>.tmp` next to each file this call writes, never a
     folder-wide scan: every folder written here (the repository root,
@@ -563,23 +541,15 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
             meta = resources.load_meta(skill_name)
             full_content = resources.load_full_content(skill_name)
             shared_doc_rel = SHARED_DOC_PATH.format(name=skill_name)
-            # Derivable from the request alone, no I/O needed -- computed (and
-            # the shared doc written, below) BEFORE any stub-mode provider's
-            # own file, so an interruption partway through the provider loop
-            # can never leave a stub already pointing at a shared doc that was
-            # never written. Previously this was only known as a side effect
-            # of the provider loop, and the shared doc was written only after
-            # it finished -- reproduced: interrupting between two stub
-            # providers left the first one's file referencing a nonexistent
-            # doc/ai-skills/<name>.md, with list_installed() reporting it as
-            # drifted: false regardless.
+            # Computed (and the shared doc written, below) BEFORE any
+            # stub-mode provider's own file, so an interruption partway
+            # through the provider loop can never leave a stub pointing at a
+            # shared doc that was never written.
             needs_shared_doc = any(PROVIDERS[name]["mode"] != "full" for name in provider_names)
 
             # Tracked explicitly (not re-derived from `skipped`) so the
             # provider loop below can refuse to write any stub-mode provider's
-            # own file when the shared doc it would reference wasn't written --
-            # a blocked shared-doc write used to be silently disconnected from
-            # whether the providers depending on it were allowed to proceed.
+            # own file when the shared doc it would reference wasn't written.
             shared_doc_blocked = False
             # A new shared doc only when some stub-mode provider in this call
             # will actually be written -- otherwise nothing would point at it,
@@ -603,16 +573,10 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
                     attempts = atomic_write_text(shared_path, shared_content)
                     warning = retry_warning(attempts)
                     if warning:
-                        # retry_warning's own message carries no file identity --
-                        # fine for every other caller in this project (one write
-                        # per command invocation), but install()/remove() can
-                        # write several files in one call, where an unqualified
-                        # "write succeeded only after N attempts" doesn't say
-                        # which one.
+                        # retry_warning's own message carries no file identity,
+                        # and this call can write several files.
                         warnings.append(f"shared-doc/{skill_name}: {warning}")
-                    # Symmetric with remove()'s own shared-doc reporting --
-                    # previously this write's own success never appeared
-                    # anywhere in the result, even in the plain happy path.
+                    # Symmetric with remove()'s own shared-doc reporting.
                     installed.append({"provider": "shared-doc", "skill": skill_name, "file": str(shared_path)})
 
             for provider_name in provider_names:
@@ -622,9 +586,7 @@ def install(target_dir, providers, skills, scope, force, allow_external_links=Fa
                 # A stub-mode provider's own file is meaningless without the
                 # shared doc it points readers at -- never write one pointing
                 # at a shared doc that was itself just refused (foreign/
-                # drifted, no --force). Previously nothing connected the two:
-                # a blocked shared-doc write didn't stop a stub provider from
-                # reporting a clean success while pointing at stale content.
+                # drifted, no --force).
                 if spec["mode"] != "full" and shared_doc_blocked:
                     skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": "shared-doc-blocked"})
                     continue
@@ -741,9 +703,9 @@ def remove(target_dir, providers, skills, scope, force, allow_external_links=Fal
                         skipped.append({"provider": provider_name, "skill": skill_name, "file": str(path), "reason": status})
                         continue
                     if status == "malformed":
-                        # _agentsmd_remove_block's single-match, non-greedy pattern
-                        # can't reliably remove a truncated or duplicated block --
-                        # only reachable here via --force, same as install()'s own
+                        # _agentsmd_remove_block removes only one well-formed
+                        # block, never a truncated or duplicated one -- only
+                        # reachable here via --force, same as install()'s own
                         # malformed-cleanup path.
                         new_file = _agentsmd_force_strip_all(file_text, skill_name)
                         warnings.append(
@@ -820,13 +782,10 @@ def list_installed(target_dir, providers, skills):
     _require_target_dir(target_dir, "project")
     rows = []
 
-    # Mirrors install()/remove()'s own `needs_shared_doc` -- the one
-    # shared doc/ai-skills/<name>.md file a stub-mode provider's stub
-    # points at is its own row here too, same as it's its own row in
-    # `installed`/`removed` (provider "shared-doc"), instead of being
-    # invisible to `list` even though a blocked/drifted shared doc is
-    # exactly what would later cause install's own "shared-doc-blocked"
-    # skip.
+    # Mirrors install()/remove()'s own `needs_shared_doc`: the shared doc
+    # is its own row (provider "shared-doc"), as in `installed`/`removed` --
+    # a blocked/drifted one is what later causes install's
+    # "shared-doc-blocked" skip.
     needs_shared_doc = any(PROVIDERS[name]["mode"] != "full" for name in provider_names)
 
     for skill_name in skill_names:

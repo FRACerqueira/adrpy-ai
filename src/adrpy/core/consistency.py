@@ -225,7 +225,7 @@ def _is_unheadered(lines, config):
     return (
         not _has_conflict_markers(lines)
         and not parse_header(lines, config).is_valid
-        and not has_header_shape(lines)
+        and not has_header_shape(lines, config)
     )
 
 
@@ -233,7 +233,7 @@ def decision_names(scan, config):
     """(names, unheadered_legacy) for the `.md` files of `scan`: every
     DecisionName, and the paths the phase rule leaves out. The rule: once
     any file whose name is a decision's (either scheme) has a valid header
-    migrate did not write -- created by the tool or AdrPlus, or copied by
+    migrate did not write -- created by the tool, or copied by
     hand, the point after which migrate no longer runs
     (already-tool-created-adrs-exist) -- a legacy-scheme name (recognized
     only through migrationpattern) with no header at all is not a
@@ -301,13 +301,13 @@ def _status_cells(header):
     return f"Created: {created}; Changed: {changed}; Superseded: {superseded}."
 
 
-# The no-header hint for an empty file with a legacy-scheme name: the
-# tool only ever creates current-scheme names, so it is never an
-# interrupted create's, and the user decides whether it goes.
 # The no-header hint for a file with content: its first sentence (an
 # empty file is an interrupted create's) does not apply.
 _NON_EMPTY_NO_HEADER_HINT = HINTS[FailureCodes.NO_HEADER].split(": remove it. ", 1)[1]
 
+# The no-header hint for an empty file with a legacy-scheme name: the
+# tool only ever creates current-scheme names, so it is never an
+# interrupted create's, and the user decides whether it goes.
 _EMPTY_LEGACY_NO_HEADER_HINT = (
     "The file is empty (0 bytes) and has a legacy-scheme name, which this tool never creates: it is "
     "the user's file, not a name reservation of this tool -- ask the user before removing it, never "
@@ -407,7 +407,7 @@ def _read_decisions(names, config, errors):
             header = parse_header(lines, config)
             state = None
             if not header.is_valid:
-                if has_header_shape(lines):
+                if has_header_shape(lines, config):
                     errors.append(_error(FailureCodes.INVALID_HEADER, path, detail=describe_header_error(header)))
                 else:
                     detail, hint = None, _NON_EMPTY_NO_HEADER_HINT
@@ -608,7 +608,7 @@ def _name_number(name, config):
 
 def _has_tool_created_decision(scan, config):
     """Whether a file of `scan` with an ADR name has a valid header migrate
-    did not write (AdrPlus or adrpy)."""
+    did not write."""
     for path in scan.markdown:
         if parse_any_filename(path.name, config) is None:
             continue

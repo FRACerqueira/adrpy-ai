@@ -1,14 +1,14 @@
 <!-- Do not remove this comment, lines and table (1-12) -->
-|Adr-Plus Fields|Values|
+|Fields|Values|
 |--|--|
 |File title md|Decision-log entries separate human-reviewed judgment from tool-executed mechanics via a future adrpy log command|
 |Version|01|
-|Revision||
+|Revision|00|
 |Scope|decision-log|
 |Domain|tooling|
 |Created|Proposed (2026-09-18) <!-- Proposed -->|
 |Changed|Accepted (2026-09-18) <!-- Accepted -->|
-|Superseded|Superseded (2026-09-21) <!-- Superseded --> : 007|
+|Superseded|Superseded (2026-09-21) <!-- Superseded --> : 0007|
 <!-- Do not remove this comment, lines and table (1-12) -->
 ---
 # Decision-log entries separate human-reviewed judgment from tool-executed mechanics via a future adrpy log command
@@ -30,7 +30,7 @@ Every decision-log entry today is written by hand, following a convention (filen
 * `pyproject.toml`'s own project description and ADR002's own Decision Drivers both state "no wizard, JSON-only output" as a foundational, project-wide premise, not a per-command choice -- ruling out an interactive `adrpy log` that prompts for classification/content.
 * The review gate that makes today's hand-authored process trustworthy ("propose the entry, wait for confirmation before writing," per the decision-log skill) is a property of the authoring workflow that happens *before* any file gets written -- it does not require living inside the CLI to keep working, and does not disappear just because the final write becomes a tool call instead of a hand-authored file.
 * Decision-log filenames are deliberately **not** sequentially numbered (unlike ADR numbering) -- uniqueness is guaranteed only by a human-chosen slug. The moment file creation becomes mechanical and repeatable, a same-day/same-scope/same-slug collision becomes a real, not just theoretical, case that needs an explicit answer.
-* Any new configurable vocabulary this needs (classification/scope extensions, the log directory's own location) cannot be added to the shared `adr-config.adrplus` schema -- the decision-log skill is explicit that this risks breaking byte-compatible round-tripping with the reference tool, and ADR002 already established the precedent of keeping tool-specific settings in adrpy-ai's own config layer instead.
+* Any new configurable vocabulary this needs (classification/scope extensions, the log directory's own location) cannot be added to the `.adrpy.json` schema -- the repo owner's choice.
 
 ## Considered Options
 
@@ -47,7 +47,7 @@ The decision has three parts:
 
 1. **Command scope.** `adrpy log` owns only mechanical execution: constructing the filename from `{ISO date}--{classification}--{scope}--{slug}` (this project's own established, date-first convention -- see `doc/decision-log/INDEX.md`'s own header and every existing entry), formatting the structured second line (`Front`/`Severity`/`Resolution`/`Round` for `audit-finding`/`doc-drift`, or `Reopen-when` for `deferred`) conditional on the classification passed in, writing the entry, and regenerating `INDEX.md` as part of the same operation. It never prompts, never supplies a default for a judgment field (classification, scope, slug, and the summary/body are all required arguments, forcing explicit intent instead of a wizard-style back-and-forth), and never decides *what* to log -- only how to write it down correctly once that's already been decided. Classification tokens and the structured-line field keys (`Front`/`Severity`/`Resolution`/`Round`/`Reopen-when`) stay in canonical English always, never following `--language` -- unlike ADR header labels (parsed positionally), these are matched by string across tools (the index generator, `pre-release-audit`'s calibration), the same category as JSON failure codes, which are never localized either.
 2. **Collision handling.** If the computed filename already exists, `adrpy log` refuses outright with a distinct, structured failure code -- the same fail-closed shape `supersede` already uses for `file-already-exists` -- instead of silently overwriting or silently appending a disambiguator. This matches the decision-log skill's own stance: a same-day, same-scope, same-slug collision is a signal that the second entry is a duplicate to merge or a `retraction` of the first, not an accident to paper over automatically.
-3. **Config surface.** Any new configurable vocabulary or path setting `adrpy log` needs lives in adrpy-ai's own tool-specific config layer, exactly as ADR002 already established for `installconfig` -- never merged into the shared `adr-config.adrplus` schema kept byte-compatible with the reference tool.
+3. **Config surface.** Any new configurable vocabulary or path setting `adrpy log` needs lives in the separate install-level config layer (ADR002), exactly as ADR002 already established for `installconfig` -- never merged into the `.adrpy.json` schema.
 
 Implementation is explicitly **deferred** -- this ADR records the accepted design and the constraints it must satisfy; it authorizes no code yet.
 
@@ -60,7 +60,7 @@ Implementation is explicitly **deferred** -- this ADR records the accepted desig
 
 ### Negative Consequences
 
-* Real, deferred scope of work once implementation is picked up: a new command, a new tool-specific config surface, and the same `describe()`/tests/`doc/commands/` rigor every other command already carries.
+* Real, deferred scope of work once implementation is picked up: a new command, a new install-level config surface, and the same `describe()`/tests/`doc/commands/` rigor every other command already carries.
 * Judgment (triage, classification, wording) remains entirely outside the tool's own guarantees -- a wrong classification is still possible, and still requires the same human/AI review this decision does not change or reduce.
 
 ## Pros and Cons of the Options

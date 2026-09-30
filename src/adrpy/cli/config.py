@@ -1,16 +1,10 @@
 """`config` command: updates fields of an existing repository's own
-`adr-config.adrplus` directly.
+`.adrpy.json` directly.
 
 adrpy-ai has no interactive wizard, so this command is how an existing
 repository's settings change: one flag per config field, merge/update
 semantics -- an omitted flag preserves the repo's current value, never
 resets it.
-
-`activeplugins` is deliberately not exposed here -- the plugin system is
-out of scope. `disableplugins` IS exposed
-(it's a meaningful kill-switch field even with no plugins implemented,
-harmless either way) but needs an explicit true/false value, not a
-presence-only switch, since either direction is a real edit.
 """
 
 from dataclasses import asdict
@@ -41,24 +35,19 @@ from adrpy.core.text import parse_ascii_int
 from adrpy.core.security import reject_aliased_repo_folders, resolve_within
 from adrpy.core.warnings import attach_warnings, orphan_cleanup_warning, retry_warning
 
-_BOOLEAN_FIELD_FLAGS = ("disableplugins",)
-_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOLEAN_FIELD_FLAGS
+_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS
 
 
 def _field_type(field):
     if field in _INT_FIELDS:
         return "integer"
-    if field in _BOOLEAN_FIELD_FLAGS:
-        return "boolean"
     return "string"
 
 
 def _field_description(field):
-    """Cites the same constants core/config.py's own
-    validator enforces (never a hand-copied number), so a field's real
-    domain is discoverable via `help config` instead of only by
-    deliberately triggering the matching config-*-invalid/-too-long
-    error -- and the two can never silently drift apart."""
+    """A field's domain for `help config`, citing the constants
+    core/config.py's validator enforces (never a hand-copied number), so
+    the two can never drift apart."""
     if field == "folderadr":
         return (
             f"Relative path to the decisions folder, max {config_schema.FOLDERADR_MAX_LENGTH} characters; "
@@ -66,7 +55,7 @@ def _field_description(field):
         )
     if field == "folderlog":
         return (
-            f"Relative path to the decision-log directory (ADR007V01), max "
+            f"Relative path to the decision-log directory (ADR0007V01), max "
             f"{config_schema.FOLDERLOG_MAX_LENGTH} characters; cannot be empty, absolute, escape the "
             "repository, or be the same as (or nested inside/around) folderadr "
             "(config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling "
@@ -117,17 +106,16 @@ def _field_description(field):
     if field == "casetransform":
         return f"One of {config_schema.VALID_CASE_TRANSFORMS}."
     # These 16 fields (4 status labels + 11 header labels +
-    # headerdisclaimer) all go through reject_embedded_delimiter
-    # (core/config.py's own validator) on top of their length bound -- an
-    # agent following only the stated domain (any string <= max length,
-    # non-empty) could otherwise still hit
-    # config-field-contains-forbidden-character with no prior warning.
+    # headerdisclaimer) also go through reject_embedded_delimiter
+    # (core/config.py) on top of their length bound, so each description
+    # states it -- else config-field-contains-forbidden-character comes
+    # with no prior warning.
     if field in config_schema._STATUS_LABEL_FIELDS:
         return (
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
             "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
             "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
-            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and "
             "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
             "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
             "corrupt which successor a Superseded row points to."
@@ -154,33 +142,28 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    if field == "disableplugins":
-        return "'true' or 'false'; anything else fails with field-not-a-boolean."
-    # Unreachable today -- every field in _EDITABLE_FIELDS hits a branch
-    # above. A silent, generic fallback here (a tautological "New value
-    # for '<field>'." an agent can't learn anything from) would return
-    # the moment a new field is ever added to _EDITABLE_FIELDS without a
-    # matching branch -- fail loudly instead.
+    # Unreachable while every field in _EDITABLE_FIELDS has a branch
+    # above: a new field without one fails loudly instead of getting a
+    # tautological generic description.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
 def describe():
     return {
         "name": "config",
-        "summary": "Reads or updates an existing repository's own adr-config.adrplus.",
+        "summary": "Reads or updates an existing repository's own .adrpy.json.",
         "description": (
-            "With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` "
+            "With no field flags, reads the repository's .adrpy.json back (the result has a `config` "
             "key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` "
             "key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or "
             "migrationpattern -- validates the repository first and is refused while it would orphan, "
-            "reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config "
+            "reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config "
             "and also returns `migrationpattern_preview` (file, number, version, title of each file it "
             "recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview "
             "without writing anything, so preview there first. While the repository is not adopted yet, check "
             "then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a "
             "decision migrate did not write exists, such a file is only warned about. To back out, "
-            "--migrationpattern \"\". "
-            "`activeplugins` is never read or written."
+            "--migrationpattern \"\"."
         ),
         "arguments": [
             {"name": "path", "type": "string", "required": True, "description": "Repository root directory."},
@@ -197,9 +180,8 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
-                FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.REPOSITORY_INCONSISTENT: "A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired.",
                 FailureCodes.FOLDERADR_CHANGE_BLOCKED_BY_EXISTING_DECISIONS: "--folderadr can only be changed while the OLD folder has no recognized decisions yet.",
                 FailureCodes.FOLDERADR_CHANGE_SCAN_INCOMPLETE: "A subdirectory under the NEW folderadr could not be scanned while checking a --folderadr change.",
@@ -225,15 +207,9 @@ def run(args):
     flags = parse_flags(args, required=("path",), optional=_EDITABLE_FIELDS, allow_empty=("migrationpattern",))
     target, config_path, config = resolve_target_and_config(flags["path"])
 
-    # Which fields (if any) this call would touch is knowable from the
-    # flags alone -- a pure read (no field flags) writes nothing,
-    # matching explore's own precedent.
+    # No field flags is a pure read: it returns the current config and
+    # must not rewrite (or reformat) the file.
     if not any(field in flags for field in _EDITABLE_FIELDS):
-        # There was no way to read the current config through the JSON
-        # contract at all, and calling this with no field flags -- the
-        # natural way an agent would try to "just look" -- still rewrote
-        # (and reformatted) the file as a side effect of what looks like a
-        # read-only call. `activeplugins` stays excluded, same as a write.
         current_fields = {field: getattr(config, field) for field in _EDITABLE_FIELDS}
         return {"file": str(config_path), "updated_fields": [], "config": current_fields, "warnings": []}
 
@@ -263,34 +239,20 @@ def run(args):
                     ) from error
                 updated_fields.append(field)
 
-        if "disableplugins" in flags:
-            text = flags["disableplugins"].strip().lower()
-            if text not in ("true", "false"):
-                raise CommandError(
-                    FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'."
-                )
-            merged["disableplugins"] = text == "true"
-            updated_fields.append("disableplugins")
-
         merged_text = serialize_repo_config(merged)
         new_config = parse_repo_config(merged_text)  # re-validates the merged result; raises on failure
         # Only the value being set: one already stored is left loadable.
         if "migrationpattern" in flags:
             reject_overlapping_migration_pattern(new_config.migrationpattern)
 
-        # _is_relative_path only rejects an anchored escape ("C:\..",
-        # "\\server\.."); "../../evil" is still relative and passes that check,
-        # but resolves outside the repository -- validate before writing, the
-        # same order `init` already uses, so a hostile --folderadr can never
-        # get persisted and brick the repository (every subsequent command
-        # would refuse with path-outside-repository until hand-fixed).
+        # The schema refuses a folder that leads out lexically ("../x"); one
+        # that resolves out through a junction or symlink is only seen here --
+        # checked before writing, the order `init` uses, so it is never
+        # persisted to brick the repository.
         resolve_within(target, new_config.folderadr)
 
-        # The new folderlog can't escape the repository either, and the
-        # schema-time guard in core/config.py's own parse_repo_config can
-        # never see a junction/symlink planted inside the repo tree --
-        # re-checked here, against the real, resolved directories, before
-        # anything is created.
+        # Same for the new folderlog, before anything is created; nor may
+        # the two folders alias one real directory through a link.
         resolve_within(target, new_config.folderlog)
         reject_aliased_repo_folders(target, new_config)
 
@@ -308,10 +270,8 @@ def run(args):
             # of the pre-edit folder feeds both checks.
             if guarded_fields_changed(current, new_config):
                 # Nothing requires this directory to exist before `config`
-                # runs -- ensure it does, now that the new values are valid,
-                # matching init's own precedent: the folderadr/status/
-                # separator/prefix guards below scan it, and scan_tree treats
-                # a missing folder as unreadable.
+                # runs, but the guards below scan it and scan_tree treats a
+                # missing folder as unreadable.
                 created.append((folder, make_dirs(folder)))
                 scan = scan_tree(folder)
                 # no-header is tolerated: before its one migrate a repository
@@ -319,15 +279,11 @@ def run(args):
                 validate_repository(folder, current, scan=scan, tolerate=(FailureCodes.NO_HEADER,))
                 validate_config_change(current, new_config, folder, target=target, scan=scan, warnings=warnings)
 
-            # Creating the new folder here, BEFORE the config commits,
-            # means a failure creating it aborts cleanly with nothing yet
-            # written -- committing folderadr to disk first instead would
-            # leave the repository pointing at a directory that didn't
-            # exist, with no `data` naming that already-committed change,
-            # and every subsequent command failing with a generic io-error
-            # until someone noticed and retried. The folders are left
-            # if the write below still somehow fails afterward -- an
-            # unused empty folder, not a real cost.
+            # Created BEFORE the config commits: a failure creating it
+            # aborts with nothing written, never a committed folderadr
+            # pointing at a missing directory (every later command failing
+            # with a generic io-error). The folders are left if the write
+            # below still fails -- an unused empty folder, not a real cost.
             new_folder = resolve_within(target, new_config.folderadr)
             created.append((new_folder, make_dirs(new_folder)))
             # Before the write, so nothing that can fail runs once the

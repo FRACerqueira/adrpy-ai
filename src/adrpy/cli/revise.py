@@ -6,6 +6,7 @@ not the latest member's. --open is permanently not implemented (see
 `new.py`'s note).
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.consistency import note_shared_numbers
 from adrpy.core.errors import CommandError, FailureCodes
@@ -71,8 +72,8 @@ def run(args):
     config, path, folder, header, warnings = ctx.config, ctx.path, ctx.folder, ctx.header, ctx.warnings
     with attach_warnings(warnings):
         # revise never rewrites its own source either -- see version.py's
-        # own comment: ADR006V01 defers this warning until after the
-        # write below, since the body is no longer read until then.
+        # own comment: ADR0006V01 defers this warning until after the
+        # write below, the only read of the body.
         record = DecisionRecord(
             number=ctx.filename_info.number,
             title=header.title,
@@ -91,7 +92,7 @@ def run(args):
         )
         new_path = resolve_within(folder, filename)
 
-        # ADR006V01: streams the source's own body straight from
+        # ADR0006V01: streams the source's own body straight from
         # `path` into the new file, without ever holding it in memory.
         header_text = build_header(config, record)
         body_report = {}
@@ -116,5 +117,6 @@ def run(args):
         if warning:
             warnings.append(warning)
 
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     # Canonical keyword, not the repo's configured status label.
     return {"created": str(new_path), "status": "Proposed", "warnings": warnings}

@@ -12,7 +12,7 @@ from adrpy.core.errors import CommandError
 
 import pytest
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _init_repo(tmp_path):
@@ -38,8 +38,8 @@ def test_new_creates_first_decision(tmp_path):
 
 
 def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage."""
+    """retry_warning's "succeeded only after N attempts" message reaches new's
+    result."""
     _init_repo(tmp_path)
     real_atomic_write_text = new.atomic_write_text
 
@@ -56,11 +56,10 @@ def test_new_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows junctions are Windows-specific")
 def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
-    """Closes the class through
-    one representative write command -- new calls scan_decisions
-    directly (for next_number/title-uniqueness), the same mechanism
-    scan_decisions/family_members/explore/migrate/init's own tests
-    already cover."""
+    """The junction-exclusion warning through one representative write command:
+    new scans the decisions folder itself (core/fs.scan_tree, for
+    next_number and title uniqueness), the same mechanism
+    explore/migrate/init's own tests cover."""
     _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     outside_dir = tmp_path / "outside"
@@ -82,7 +81,7 @@ def test_new_reports_a_candidate_excluded_via_a_windows_junction(tmp_path):
 def test_new_includes_revision_when_configured(tmp_path):
     data = json.loads(open(FIXTURE_PATH, encoding="utf-8").read())
     data["lenrevision"] = 2
-    (tmp_path / "adr-config.adrplus").write_text(json.dumps(data), encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(json.dumps(data), encoding="utf-8")
     (tmp_path / "doc" / "adr").mkdir(parents=True)
 
     result = new.run(["--path", str(tmp_path), "--title", "Some decision"])
@@ -108,8 +107,8 @@ def test_new_rejects_duplicate_title(tmp_path):
         new.run(["--path", str(tmp_path), "--title", "use postgre sql"])
 
     assert excinfo.value.code == "title-already-exists"
-    # The colliding filename was only ever in
-    # `detail` (stderr, free text), never in `data`.
+    # The colliding filename is in `data`, not only in `detail` (stderr, free
+    # text).
     assert excinfo.value.data == {"existing_file": "ADR001V01-use-postgre-sql.md"}
 
 
@@ -199,10 +198,9 @@ def test_new_rejects_a_whitespace_only_value(tmp_path, flag):
 
 
 def test_new_cleans_up_orphaned_temp_files_left_by_an_interrupted_write(tmp_path):
-    """cleanup_orphaned_temp_files existed and was tested in
-    isolation, but no command ever called it -- a
-    process killed between the temp write and os.replace left the orphan
-    behind forever, no cleanup, no warning."""
+    """A command sweeps orphaned temp files at its start: a process killed
+    between the temp write and os.replace must not leave the orphan behind
+    forever, with no cleanup and no warning."""
     _init_repo(tmp_path)
     adr_dir = tmp_path / "doc" / "adr"
     orphan = adr_dir / "leftover.md.0123456789abcdef0123456789abcdef.tmp"
@@ -243,16 +241,15 @@ def test_new_rejects_path_traversal_via_title(tmp_path):
 
 
 def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_path):
-    """Confirmed live: ':' is not an invalid Windows filename character,
-    it is the NTFS Alternate-Data-Stream separator -- without this
-    check, the temp file WRITE would succeed (it's
-    interpreted as a stream on a base file NTFS auto-creates), only the
-    final rename to the real name would fail, and the error-path cleanup
-    would only remove the named stream it just wrote, leaving that
-    auto-created base file behind as a permanent, 0-byte, un-cleanable
-    orphan (cleanup_orphaned_temp_files only globs '*.tmp', which this
-    leftover's name never matches, and it lacks '.md' too, so
-    scan_decisions/explore never see it either). Caught before any write
+    """':' is not an invalid Windows filename character, it is the NTFS
+    Alternate-Data-Stream separator -- without this check, the temp file
+    WRITE would succeed (it's interpreted as a stream on a base file NTFS
+    auto-creates), only the final rename to the real name would fail, and
+    the error-path cleanup would only remove the named stream it just wrote,
+    leaving that auto-created base file behind as a permanent, 0-byte,
+    un-cleanable orphan (cleanup_orphaned_temp_files only globs '*.tmp',
+    which this leftover's name never matches, and it lacks '.md' too, so the
+    decision scan and explore never see it either). Caught before any write
     is attempted."""
     _init_repo(tmp_path)
 
@@ -261,21 +258,21 @@ def test_new_rejects_a_colon_in_title_instead_of_leaving_an_ntfs_ads_orphan(tmp_
 
     assert excinfo.value.code == "field-contains-forbidden-character"
     adr_dir = tmp_path / "doc" / "adr"
-    assert list(adr_dir.iterdir()) == []  # no orphan left behind
+    assert [p for p in adr_dir.iterdir() if p.name != "INDEX.md"] == []  # no orphan left behind
 
 
 @pytest.mark.parametrize("value", ["-", "---", "___", "- _ -"])
 def test_new_rejects_a_title_made_only_of_separator_characters(tmp_path, value):
-    """Confirmed live: to_case (core/casing.py) falls back to echoing its RAW
-    input unchanged when word-splitting finds nothing to transform, which
-    happens exactly when the title is made entirely of
-    whitespace/'_'/'-'. That raw echo collided with the default '-'
-    separator: `new --title "-"` created 'ADR001V01--.md', a file
-    naming.parse_filename could never recognize again -- permanently
-    unreachable by approve/reject/undo/supersede/version/revise (all
-    fail filename-not-recognized), while its own sequence number was
-    silently reallocated to the very next decision created, duplicating
-    it across two different files with zero warning."""
+    """to_case (core/casing.py) falls back to echoing its RAW input unchanged
+    when word-splitting finds nothing to transform, which happens exactly
+    when the title is made entirely of whitespace/'_'/'-'. That raw echo
+    collides with the default '-' separator: `new --title "-"` would create
+    'ADR001V01--.md', a file naming.parse_filename could never recognize
+    again -- permanently unreachable by
+    approve/reject/undo/supersede/version/revise (all fail
+    filename-not-recognized), while its sequence number would be silently
+    reallocated to the very next decision created, duplicating it across two
+    different files with zero warning."""
     _init_repo(tmp_path)
 
     with pytest.raises(CommandError) as excinfo:
@@ -283,7 +280,7 @@ def test_new_rejects_a_title_made_only_of_separator_characters(tmp_path, value):
 
     assert excinfo.value.code == "field-contains-forbidden-character"
     adr_dir = tmp_path / "doc" / "adr"
-    assert list(adr_dir.iterdir()) == []  # no orphan left behind
+    assert [p for p in adr_dir.iterdir() if p.name != "INDEX.md"] == []  # no orphan left behind
 
 
 def test_new_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -341,8 +338,8 @@ def test_new_end_to_end_through_main(tmp_path):
 
 
 def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
-    """The reference tool's -p/-t/-d/-s/-r; end-to-end
-    through main(), not just parse_flags in isolation."""
+    """-p/-t/-d/-s/-r, end-to-end through main(), not just parse_flags in
+    isolation."""
     from adrpy.__main__ import main
     from adrpy.core.output import EXIT_SUCCESS
 
@@ -359,10 +356,10 @@ def test_new_accepts_short_flags_end_to_end_through_main(tmp_path):
 
 
 def test_a_dated_note_in_the_decisions_folder_neither_blocks_nor_takes_a_number(tmp_path):
-    # Before the prefix and the version were required, `2024-01-15-meeting.md`
-    # read as decision 2024 with no header: every command refused the
-    # repository (no-header), and once it had one, `new` numbered the next
-    # decision ADR2025V01. It is not an ADR name now.
+    # `2024-01-15-meeting.md` is not an ADR name (the prefix and the version
+    # are required). Read as decision 2024 with no header, it would make every
+    # command refuse the repository (no-header), and once it had one, `new`
+    # would number the next decision ADR2025V01.
     _init_repo(tmp_path)
     folder = tmp_path / "doc" / "adr"
     (folder / "2024-01-15-meeting.md").write_bytes(b"# Meeting notes\n")
@@ -400,8 +397,8 @@ def test_new_says_when_lenseq_cannot_be_widened_any_further(tmp_path):
 
 
 def test_a_long_title_whose_name_fits_is_written(tmp_path):
-    # 209 characters: the name (222 bytes) fits; with the old 37-byte temp
-    # suffix the temp file's name did not (Errno 22).
+    # 209 characters: the name (222 bytes) fits, and so must its temp file's
+    # name (with a 37-byte temp suffix it did not: Errno 22).
     init.run(["--path", str(tmp_path)])
     title = " ".join(f"word{i:02d}" for i in range(30))
 

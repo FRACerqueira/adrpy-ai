@@ -226,14 +226,13 @@ def test_log_rejects_a_non_kebab_case_scope(tmp_path):
 def test_log_never_writes_outside_the_decision_log_directory_even_if_scope_validation_is_bypassed(
     tmp_path, monkeypatch
 ):
-    """validate_scope alone is not the only thing
-    standing between a crafted --scope and a path escape -- confirmed by
-    weakening validate_scope to a no-op (simulating a future regression,
-    e.g. someone reusing reject_embedded_delimiter instead of the
-    kebab-case check) and showing file_path's own resolve_within call
-    (a second, independent layer, the same one new.py's own file_path
-    already goes through) still catches a 3-level '../' traversal that
-    would otherwise land outside doc/decision-log/ entirely."""
+    """validate_scope is not the only thing standing between a crafted --scope
+    and a path escape: with validate_scope weakened to a no-op (a future
+    regression, e.g. someone reusing reject_embedded_delimiter instead of
+    the kebab-case check), file_path's own resolve_within call -- a second,
+    independent layer, the same one new.py's file_path goes through -- still
+    catches a 3-level '../' traversal that would otherwise land outside
+    doc/decision-log/."""
     _init_repo(tmp_path)
     monkeypatch.setattr(log, "validate_scope", lambda value: None)
 
@@ -286,7 +285,7 @@ def test_log_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path):
         )
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    assert list(folderadr_dir.glob("*.md")) == []
+    assert [p for p in folderadr_dir.glob("*.md") if p.name != "INDEX.md"] == []
 
 
 def test_log_refdate_defaults_to_today(tmp_path):
@@ -305,11 +304,10 @@ def test_log_refdate_defaults_to_today(tmp_path):
 
 
 def test_log_reports_the_entry_already_written_when_index_regeneration_fails(tmp_path, monkeypatch):
-    """The second write (INDEX.md regeneration): if it
-    fails, the entry from the FIRST write is already committed to disk
-    for real -- `data.file` must name it explicitly, the same
-    partial-success shape reject/supersede already use for their own
-    second-write failures, not a dataless generic error."""
+    """If the second write (INDEX.md regeneration) fails, the entry from the
+    first write is already on disk: `data.file` must name it, the same
+    partial-success shape reject/supersede use for their own second-write
+    failures, not a dataless generic error."""
     _init_repo(tmp_path)
 
     def flaky_regenerate_index(_log_dir, **_kwargs):
@@ -346,9 +344,8 @@ def test_log_rejects_a_future_refdate(tmp_path):
 
 
 def test_log_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own "succeeded only after N attempts" message had
-    no end-to-end coverage for this command -- every sibling write
-    command has this test; log was the only one missing it."""
+    """retry_warning's "succeeded only after N attempts" message reaches this
+    command's result."""
     _init_repo(tmp_path)
     real_commit_write = log.commit_write
 
@@ -480,19 +477,16 @@ def test_log_rejects_round_on_a_classification_that_does_not_use_it(tmp_path):
 
 
 def test_log_names_every_offending_flag_when_more_than_one_is_wrong_at_once(tmp_path):
-    """Every other 'wrong flag for this classification' test passes
-    exactly one offending flag -- the message joins ALL of them
-    (`'/--'.join(offending)`), so this test exercises more than one at a
-    time: a regression collapsing the list to just the first entry must
-    not ship silently.
+    """The message joins every offending flag (`'/--'.join(offending)`), so
+    this test passes more than one: a regression collapsing the list to just
+    the first entry must not ship silently.
 
-    Asserts the literal joined substring, not a loose 'X in str(...)'
-    check: the message's own static tail already names every possible
-    flag (front/severity/resolution/round/reopenwhen) unconditionally, so
-    a loose check would pass regardless of what `offending` actually
-    contains -- only the literal joined substring, which the static
-    boilerplate can't produce on its own, actually proves the dynamic
-    join ran."""
+    Asserts the literal joined substring, not a loose 'X in str(...)' check:
+    the message's static tail names every possible flag
+    (front/severity/resolution/round/reopenwhen) unconditionally, so a loose
+    check would pass whatever `offending` contains -- only the literal
+    joined substring, which the static boilerplate can't produce on its own,
+    proves the dynamic join ran."""
     _init_repo(tmp_path)
 
     with pytest.raises(UsageError) as excinfo:

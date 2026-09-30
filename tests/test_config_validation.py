@@ -32,14 +32,14 @@ def test_config_refuses_a_guarded_field_change_on_an_inconsistent_repository(tmp
     decisions (migrationpattern) or no log entries (folderlog), so only
     the validation can refuse it."""
     repo = _duplicate_repo(tmp_path)
-    before = (repo.root / "adr-config.adrplus").read_bytes()
+    before = (repo.root / ".adrpy.json").read_bytes()
 
     with pytest.raises(CommandError) as excinfo:
         config.run(["--path", str(repo.root), f"--{flag}", value])
 
     assert excinfo.value.code == "repository-inconsistent"
     assert [error["code"] for error in excinfo.value.data["errors"]] == ["duplicate-number"]
-    assert (repo.root / "adr-config.adrplus").read_bytes() == before
+    assert (repo.root / ".adrpy.json").read_bytes() == before
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_config_does_not_validate_for_a_field_that_is_not_guarded(tmp_path):
     result = config.run(["--path", str(repo.root), "--lenseq", "4"])
 
     assert result["updated_fields"] == ["lenseq"]
-    assert load_repo_config(repo.root / "adr-config.adrplus").lenseq == 4
+    assert load_repo_config(repo.root / ".adrpy.json").lenseq == 4
 
 
 def test_config_read_does_not_validate(tmp_path):

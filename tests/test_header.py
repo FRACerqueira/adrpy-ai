@@ -11,7 +11,7 @@ from adrpy.core.header import (
     parse_header,
 )
 
-FIXTURE_PATH = "tests/fixtures/adr-config.adrplus"
+FIXTURE_PATH = "tests/fixtures/.adrpy.json"
 
 
 def _valid_header_lines(config):
@@ -26,25 +26,13 @@ def _valid_header_lines(config):
     return header_text.split(os.linesep)[:-1]  # drop the trailing empty split
 
 
-def test_build_header_matches_real_adrplus_output():
-    """Captured byte-for-byte from a real run of the reference tool's own
-    `new` command (version 1.0.0, Windows) against a disposable copy of
-    this same fixture, with matching --title/--domain/--refdate arguments.
-
-    Two deliberate divergences from that captured output:
-    * The reference tool's row 2 reads literally "Values Migrated " even
-      for this non-migrated file; adrpy-ai now omits the "Migrated" word
-      when `migrated=False` (decision-log: accepted-divergence--2026-09-
-      16--header--migrated-word-only-when-migrated.md) -- the word is
-      never parsed by either tool, so the real output was misleading,
-      not information adrpy-ai had to match.
-    * Every status cell now carries a trailing hidden canonical marker
-      (ADR004V01) the reference tool doesn't write yet -- in the same
-      trailing space after the date's closing `)` both parsers already
-      ignore, confirmed directly in the reference tool's own source
-      (`Helper.ParseStatusLine`); a file adrpy-ai writes today is still
-      readable by that tool unmodified, it just doesn't itself write the
-      marker until it adopts the same convention.
+def test_build_header_writes_the_twelve_line_header_byte_for_byte():
+    """The whole header, byte for byte: the fields row holds the label
+    alone, the Values label carries no "Migrated" word on a file that was
+    not migrated (decision-log:
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md),
+    and every status cell ends with its hidden canonical marker (ADR0004V01),
+    after the date's closing `)`, where the parser ignores trailing text.
     """
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
@@ -60,7 +48,7 @@ def test_build_header_matches_real_adrplus_output():
 
     expected_lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
-        "|Adr-Plus Fields|Values|",
+        "|Fields|Values|",
         "|--|--|",
         "|File title md|Fixture parity check|",
         "|Version|01|",
@@ -76,12 +64,10 @@ def test_build_header_matches_real_adrplus_output():
 
 
 def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
-    """Deliberate divergence from the reference tool's own literal "Values
-    Migrated" column label -- confirmed via `parse_header` below (and the
-    reference tool's own positional-only parsing) that the label text is never
-    read by either side, only the trailing `<!-- Migrated -->` HTML comment
-    is (see decision-log:
-    accepted-divergence--2026-09-16--header--migrated-word-only-when-migrated.md).
+    """The "Migrated" word appears in the Values label only on a migrated
+    file -- `parse_header` never reads that label, only the trailing
+    `<!-- Migrated -->` HTML comment (decision-log:
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md).
     A non-migrated file's label must not read as if it had been."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
@@ -94,7 +80,7 @@ def test_build_header_label_omits_migrated_word_for_a_non_migrated_file():
 
     header = build_header(config, record)
 
-    assert header.split(os.linesep)[1] == "|Adr-Plus Fields|Values|"
+    assert header.split(os.linesep)[1] == "|Fields|Values|"
 
 
 def test_build_then_parse_round_trips_the_record():
@@ -123,15 +109,15 @@ def test_build_then_parse_round_trips_the_record():
 
 
 def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
-    """ADR004V01's own core promise, exercised directly against
+    """ADR0004V01's own core promise, exercised directly against
     build_header/parse_header -- deliberately NOT going through the
-    `config` command (which the new existing-decisions guard would
-    correctly refuse once a decision exists, exactly the scenario this
-    test needs to have already happened): a decision written under one
-    config must still resolve its status correctly when parsed under a
-    LATER config whose statusnew/statusacc/statusrej/statussup all
-    differ, including for the same status appearing in more than one row
-    (created AND changed) in the same file."""
+    `config` command (which the existing-decisions guard would correctly
+    refuse once a decision exists, exactly the scenario this test needs to
+    have already happened): a decision written under one config must still
+    resolve its status correctly when parsed under a LATER config whose
+    statusnew/statusacc/statusrej/statussup all differ, including for the
+    same status appearing in more than one row (created AND changed) in
+    the same file."""
     written_config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -163,10 +149,9 @@ def test_status_still_resolves_after_every_label_changes_thanks_to_the_marker():
 
 
 def test_status_falls_back_to_label_text_when_no_marker_is_present():
-    """The pre-ADR004V01 file shape (any file written by an older version
-    of this tool, or by AdrPlus before it adopts the same marker) has
-    none -- must still resolve via the original label-text match, the
-    same as before this feature existed."""
+    """The pre-ADR0004V01 file shape (any file written by an older version
+    of this tool, or by hand) has no marker -- its status must still
+    resolve via the label-text match."""
     config = load_repo_config(FIXTURE_PATH)
     lines = _valid_header_lines(config)
     created_index = 8
@@ -183,7 +168,7 @@ def test_status_falls_back_to_label_text_when_no_marker_is_present():
 def test_marker_wins_over_a_hand_edited_disagreeing_label_and_reports_the_mismatch():
     """A marker-carrying file whose VISIBLE word was hand-edited afterward
     (label now resolves to a different, but still valid, status than the
-    marker) -- the marker remains authoritative (ADR004V01's whole point:
+    marker) -- the marker remains authoritative (ADR0004V01's whole point:
     recognition never depends on the label once a marker exists), but
     this disagreement is real and reported, unlike the routine stale-
     label case above."""
@@ -205,12 +190,11 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_and_reports_the_mismat
 
 def test_status_change_row_also_resolves_after_a_label_change_thanks_to_the_marker():
     """Companion to test_status_still_resolves_after_every_label_changes_
-    thanks_to_the_marker above, which never set status_change at all --
-    without this, the Superseded row's own marker resolution was never
-    independently proven; every existing test that DOES build a
-    Superseded row always reads it back under the SAME config it was
-    written with, so the label fallback would silently carry it to
-    green even if marker resolution broke specifically for this row."""
+    thanks_to_the_marker above, which never sets status_change: every
+    other test that builds a Superseded row reads it back under the SAME
+    config it was written with, so the label fallback would silently carry
+    it to green even if marker resolution broke specifically for this
+    row."""
     written_config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -306,15 +290,12 @@ def test_marker_wins_over_a_hand_edited_disagreeing_label_on_the_superseded_row(
 
 
 def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
-    """Every existing mismatch test elsewhere in this file
-    hand-edits exactly ONE row at a time -- never two or three in the
-    same file. Mutation-confirmed real gap: changing `mismatches.append(
-    "status_create")` to `mismatches = ["status_create"]` (overwrite
-    instead of accumulate -- exactly the shape of bug that would drop an
-    earlier row's mismatch once a later row also mismatches) left the
-    full suite green. Hand-edits both the Created and Changed rows'
-    labels, leaving their markers untouched, and asserts BOTH survive in
-    `marker_label_mismatches`, in row order."""
+    """Mismatches on two rows of the same file are both reported: an
+    overwrite instead of an accumulate (`mismatches = ["status_create"]`
+    for `mismatches.append("status_create")`) would drop an earlier row's
+    mismatch once a later row also mismatches. Hand-edits both the Created
+    and Changed rows' labels, leaving their markers untouched, and asserts
+    BOTH survive in `marker_label_mismatches`, in row order."""
     config = load_repo_config(FIXTURE_PATH)
     record = DecisionRecord(
         number=1,
@@ -342,16 +323,14 @@ def test_marker_label_mismatches_on_two_rows_simultaneously_are_both_reported():
 
 
 def test_marker_matches_case_insensitively():
-    """ADR004V02: a hand-edited marker with different case (e.g. someone
+    """ADR0004V02: a hand-edited marker with different case (e.g. someone
     retyped it) must still resolve via the marker, not silently fall
-    back to label-text matching with zero signal -- confirmed as a real
-    gap during the ADR004V01 audit. The label is deliberately corrupted
-    to something no configured status matches, so `status_create` can
-    ONLY come from a successful case-insensitive marker match --
-    without this, the label's own unrelated match against the current
-    config could resolve to the right answer by coincidence, masking a
-    broken case-insensitive match entirely (confirmed: this is exactly
-    what happened on the first version of this test)."""
+    back to label-text matching with zero signal. The label is deliberately
+    corrupted to something no configured status matches, so
+    `status_create` can ONLY come from a successful case-insensitive marker
+    match -- without this, the label's own unrelated match against the
+    current config could resolve to the right answer by coincidence,
+    masking a broken case-insensitive match entirely."""
     config = load_repo_config(FIXTURE_PATH)
     lines = _valid_header_lines(config)
     created_index = 8
@@ -369,13 +348,12 @@ def test_marker_matches_case_insensitively():
 def test_a_damaged_migrated_header_is_marked_migrated_but_not_valid():
     """`is_migrated` is set from row 2 alone, before the rest of the header
     is parsed, and survives an early return caused by a later row failing
-    to parse. Such a header no longer counts as a family member (Round 39:
-    status is read only from headers that parse); the reference tool
-    counted it."""
+    to parse. Such a header no longer counts as a family member (status is
+    read only from headers that parse)."""
     config = load_repo_config(FIXTURE_PATH)
     lines = [
         "<!-- Do not remove this comment, lines and table (1-12) -->",
-        "|Adr-Plus Fields|Values Migrated <!-- Migrated -->|",
+        "|Fields|Values Migrated <!-- Migrated -->|",
         "|--|--|",
         "|File title md|Legacy decision|",
         "not a valid version row",
@@ -403,12 +381,9 @@ def _replaced(lines, index, value):
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     [
-        # parse_header discriminates
-        # ~15 distinct error codes, only checked via `not parsed.is_valid`
-        # (or not at all) anywhere in this file -- an off-by-one that swaps
-        # two adjacent branches, or collapses two into a generic code, would
-        # ship undetected. One case per positional check, asserting the
-        # exact code.
+        # One case per positional check of parse_header, asserting the exact
+        # code: `not parsed.is_valid` alone would let an off-by-one that swaps
+        # two adjacent branches, or collapses two into a generic code, through.
         (lambda lines: [], "adr-file-empty"),
         (lambda lines: lines[:11], "adr-file-too-short"),
         (lambda lines: _replaced(lines, 0, "not a comment"), "adr-header-comment-not-found"),
@@ -545,3 +520,43 @@ def test_a_header_row_without_an_extra_cell_still_parses():
     result = parse_header(lines, config)
 
     assert result.is_valid and result.scope == "core"
+
+
+
+def test_the_fields_row_is_the_configured_label():
+    config = load_repo_config(FIXTURE_PATH)
+    assert _valid_header_lines(config)[1] == f"|{config.headertablefields}|{config.headertablevalues}|"
+
+
+@pytest.mark.parametrize("row", ["|Fields|Values|", "|Legacy Fields|Values|", "|Fields |Values|"])
+def test_a_fields_row_is_valid_when_its_first_cell_holds_the_label(row):
+    """A header written before the row held the label alone is still
+    read: the first cell only has to contain it."""
+    config = load_repo_config(FIXTURE_PATH)
+    assert parse_header(_replaced(_valid_header_lines(config), 1, row), config).is_valid
+
+
+@pytest.mark.parametrize("row", ["|Name|Value|", "Fields|Values|", "|Values|Fields|", "|Fields"])
+def test_a_fields_row_without_the_label_in_its_first_cell_is_invalid(row):
+    config = load_repo_config(FIXTURE_PATH)
+    parsed = parse_header(_replaced(_valid_header_lines(config), 1, row), config)
+    assert parsed.error == "adr-header-invalid-format"
+
+
+def test_the_fields_row_follows_the_repository_label():
+    config = dataclasses.replace(load_repo_config(FIXTURE_PATH), headertablefields="Campos", headertablevalues="Valores")
+    lines = _valid_header_lines(config)
+    assert lines[1] == "|Campos|Valores|"
+    assert parse_header(_replaced(lines, 1, "|Antigo Campos|Valores|"), config).is_valid
+    assert not parse_header(_replaced(lines, 1, "|Fields|Values|"), config).is_valid
+
+
+def test_a_damaged_header_is_told_apart_by_its_fields_row_alone():
+    """has_header_shape tells a damaged header from none: the fields row
+    alone is enough, and an ordinary markdown table is not a header."""
+    from adrpy.core.header import has_header_shape
+
+    config = load_repo_config(FIXTURE_PATH)
+    lines = _replaced(_valid_header_lines(config), 2, "|-|-|")
+    assert has_header_shape(lines, config)
+    assert not has_header_shape(["# Notes", "| Name | Value |", "|---|---|", "text"] + [""] * 8, config)

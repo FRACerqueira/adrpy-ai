@@ -154,8 +154,7 @@ def test_supersede_happy_path(tmp_path):
 
     successor_text = successor_path.read_text(encoding="utf-8")
     # Title comes from the predecessor's FILENAME segment (already
-    # case-transformed), not its header's prose title -- confirmed
-    # against the reference tool's own live `supersede` run.
+    # case-transformed), not its header's prose title.
     assert "|File title md|use-postgre-sql|" in successor_text
     assert "|Domain|Backend|" in successor_text  # scope/domain inherited
     assert "|Scope|Data|" in successor_text
@@ -163,11 +162,11 @@ def test_supersede_happy_path(tmp_path):
 
 
 def test_supersede_with_no_title_flag_still_uses_the_predecessors_filename_segment(tmp_path):
-    """Regression guard for the new --title flag: omitting it must produce
-    byte-identical output to before the flag existed -- same assertions as
-    test_supersede_happy_path, kept as its own test so this specific
-    no-flag guarantee has a name and can't be silently lost inside a
-    broader happy-path test that might get trimmed later."""
+    """Omitting --title keeps the default: the successor's title comes from the
+    predecessor's filename segment. The same assertions as
+    test_supersede_happy_path, kept as its own test so this no-flag
+    guarantee has a name and can't be silently lost inside a broader
+    happy-path test that might get trimmed later."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     result = supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
@@ -179,13 +178,13 @@ def test_supersede_with_no_title_flag_still_uses_the_predecessors_filename_segme
 
 
 def test_supersede_title_flag_overrides_the_predecessors_filename_segment(tmp_path):
-    """--title's header cell holds the raw typed value, same as `new
-    --title`'s own convention (confirmed against test_new.py) -- only the
-    FILENAME gets case-transformed. This differs from the no-flag default
-    path, where the header cell shows the case-transformed segment too,
-    purely because filename_info.title is itself already a parsed,
-    case-transformed value (see test_supersede_happy_path) -- not a
-    convention --title is meant to replicate."""
+    """--title's header cell holds the raw typed value, same as `new --title`'s
+    own convention (test_new.py) -- only the FILENAME gets case-transformed.
+    This differs from the no-flag default path, where the header cell shows
+    the case-transformed segment too, purely because filename_info.title is
+    itself already a parsed, case-transformed value (see
+    test_supersede_happy_path) -- not a convention --title is meant to
+    replicate."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     result = supersede.run(
@@ -208,18 +207,16 @@ def test_supersede_rejects_embedded_delimiter_in_title_flag(tmp_path):
 
 
 def test_supersede_rejects_a_predecessor_title_with_a_filesystem_unsafe_character(tmp_path, monkeypatch):
-    """The successor's title comes from the
-    predecessor's own FILENAME segment (filename_info.title), never
-    delimiter-checked on read, feeding build_filename below the exact same
-    way a hostile --title on `new` would. On this platform, none of the
-    forbidden characters can actually appear in a real predecessor
-    filename in the first place (each either fails outright or, for ':',
-    collapses into an NTFS Alternate-Data-Stream instead of a literal
-    filename -- confirmed live), so this drives the exact scenario a
-    corrupted predecessor filename (from a different OS, or a future code
-    path) would, via a monkeypatched target lookup, the same technique
-    already used for migrate's own equivalent gap. Must be a per-call
-    failure, not a silent forgery."""
+    """The successor's title comes from the predecessor's own FILENAME segment
+    (filename_info.title), never delimiter-checked on read, feeding
+    build_filename the exact same way a hostile --title on `new` would. On
+    this platform, none of the forbidden characters can actually appear in a
+    real predecessor filename in the first place (each either fails outright
+    or, for ':', collapses into an NTFS Alternate-Data-Stream instead of a
+    literal filename), so this drives the exact scenario a corrupted
+    predecessor filename (from a different OS, or a future code path) would,
+    via a monkeypatched target lookup, the same technique as migrate's
+    equivalent test. Must be a per-call failure, not a silent forgery."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
 
     from adrpy.core import lifecycle as lifecycle_module
@@ -279,13 +276,12 @@ def test_supersede_can_override_scope_and_domain(tmp_path):
 
 
 def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tmp_path):
-    """Supersede had no family-
-    wide guard at all -- unlike version/revise, which both check
-    has_superseded_sibling/has_pending_sibling before writing. Two
+    """Supersede has a family-wide guard, like version/revise
+    (raise_if_superseded_sibling/raise_if_pending_sibling): otherwise two
     different members of the SAME family could each be independently
     superseded, producing two live successors and two Superseded
-    predecessors -- two different members, so no per-file check
-    catches it; only the family-wide guard does."""
+    predecessors -- two different members, so no per-file check catches it;
+    only the family-wide guard does."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     # A second Accepted family member is a normal shape (version bumps
     # never retroactively touch the earlier member's own status text).
@@ -293,26 +289,22 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_already_superseded(tm
     v02_path = tmp_path / "doc" / "adr" / "ADR001V02-use-postgre-sql.md"
     approve.run(["--file", str(v02_path), "--refdate", "2026-01-04"])
 
-    # Round 40: only the latest member (V02) can be superseded; once it is,
-    # the family is frozen and superseding V01 is refused.
+    # Only the latest member (V02) can be superseded; once it is, the family is
+    # frozen and superseding V01 is refused.
     supersede.run(["--file", str(v02_path), "--refdate", "2026-01-05"])
 
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-06"])
 
     assert excinfo.value.code == "family-member-superseded"
-    # No second successor was ever created.
     assert not (tmp_path / "doc" / "adr" / "ADR003V01-use-postgre-sql.md").exists()
 
 
 def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_path):
-    """Added
-    TWO co-equal guards to supersede in the same commit --
-    has_superseded_sibling (covered by the test above) and
-    has_pending_sibling -- but only the first ever got a test. Deleting
-    the has_pending_sibling block entirely left the full suite green,
-    meaning a future refactor or merge conflict could silently drop this
-    guard with nothing to catch it."""
+    """The pending-sibling guard (raise_if_pending_sibling) is supersede's
+    second family-wide guard, next to the superseded-sibling one (the test
+    above): deleting it must fail a test, or a future refactor or merge
+    conflict could silently drop it."""
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     # V02 stays Proposed (never approved) -- an unresolved sibling.
     version.run(["--file", str(adr_path), "--refdate", "2026-01-03"])
@@ -321,7 +313,6 @@ def test_supersede_refuses_when_a_sibling_in_the_family_is_still_pending(tmp_pat
         supersede.run(["--file", str(adr_path), "--refdate", "2026-01-04"])
 
     assert excinfo.value.code == "family-member-pending"
-    # No write was made at all.
     assert not (tmp_path / "doc" / "adr" / "ADR002V01-use-postgre-sql--001.md").exists()
 
 
@@ -428,10 +419,10 @@ def test_supersede_rejects_a_whitespace_only_value(tmp_path, flag):
 
 
 def test_supersede_does_not_claim_a_rewrite_when_it_fails_before_writing(tmp_path):
-    """encoding_repaired_
-    warning claims "the file has been rewritten... bytes are now lost" --
-    false whenever the command fails before ever reaching its own write
-    (prepare_mark_superseded, here blocked by the target still being Proposed)."""
+    """The encoding_repaired warning's claim "the file has been rewritten...
+    bytes are now lost" is false whenever the command fails before reaching
+    its own write (prepare_mark_superseded, here blocked by the target still
+    being Proposed)."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "Use PostgreSQL"])
     adr_path = tmp_path / "doc" / "adr" / "ADR001V01-use-postgre-sql.md"
@@ -459,9 +450,8 @@ def test_supersede_claims_the_rewrite_once_it_actually_happens(tmp_path):
 def test_supersede_reports_a_retry_warning_when_the_successor_write_needed_several_attempts(
     tmp_path, monkeypatch
 ):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage.
-    The successor's commit is the exclusive one."""
+    """retry_warning's "succeeded only after N attempts" message reaches
+    supersede's result. The successor's commit is the exclusive one."""
     from adrpy.core import lifecycle
 
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
@@ -533,7 +523,7 @@ def test_following_a_partial_supersedes_repair_literally_leaves_a_consistent_rep
         "\n".join(repair["row"] if line.startswith(f"|{label}|") else line for line in lines), encoding="utf-8"
     )
 
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     assert check_repository(adr_path.parent, config)[1] == []
 
 
@@ -554,7 +544,7 @@ def test_a_retry_after_a_partial_supersede_refuses_instead_of_guessing(tmp_path,
     # The hint is a repair by hand: reject itself refuses this repository.
     assert "by hand" in excinfo.value.data["errors"][0]["hint"].lower()
     assert adr_path.read_text(encoding="utf-8") == before
-    assert len(list((tmp_path / "doc" / "adr").glob("*.md"))) == 2
+    assert len([p for p in (tmp_path / "doc" / "adr").glob("*.md") if p.name != "INDEX.md"]) == 2
 
 
 def test_an_undone_rejected_successor_is_not_silently_resumed_onto(tmp_path):
@@ -563,8 +553,8 @@ def test_an_undone_rejected_successor_is_not_silently_resumed_onto(tmp_path):
     # supersede with a different --title must not quietly reuse it.
     from adrpy.cli import reject, undo
 
-    # Round 40: a rejected successor is the end of its line, so the undo
-    # that used to recreate this shape is refused outright.
+    # A rejected successor is the end of its line, so the undo that would
+    # recreate this shape is refused outright.
     tmp_path, adr_path = _setup_accepted_repo(tmp_path)
     supersede.run(["--file", str(adr_path), "--refdate", "2026-01-05"])
     successor_path = tmp_path / "doc" / "adr" / SUCCESSOR_NAME
@@ -601,9 +591,9 @@ def test_an_unreadable_file_pointing_back_is_named_in_the_error(tmp_path):
 
 def _hand_written_repo(tmp_path, *names):
     """Accepted decisions written straight to disk under the given names.
-    Round 41: migrate refuses files carrying a supersede suffix, so a file
-    pointing back from the same or a lower number can only come from an
-    edit outside the tool -- written directly here."""
+    migrate refuses files carrying a supersede suffix, so a file pointing
+    back from the same or a lower number can only come from an edit outside
+    the tool -- written directly here."""
     from datetime import date
 
     from adrpy.core.config import load_repo_config
@@ -611,7 +601,7 @@ def _hand_written_repo(tmp_path, *names):
     from adrpy.core.naming import parse_any_filename
 
     init.run(["--path", str(tmp_path)])
-    config = load_repo_config(tmp_path / "adr-config.adrplus")
+    config = load_repo_config(tmp_path / ".adrpy.json")
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
@@ -633,8 +623,8 @@ def test_a_same_family_member_is_never_a_successor(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         supersede.run(["--file", str(v01), "--refdate", "2026-01-05"])
 
-    # Round 40: V02 (same family, newer) locks V01, which is refused before
-    # any successor lookup -- either way V01 is never marked.
+    # V02 (same family, newer) locks V01, which is refused before any successor
+    # lookup -- either way V01 is never marked.
     assert excinfo.value.code == "not-latest-version"
     assert v01.read_bytes() == before
 
@@ -719,7 +709,7 @@ def _hand_written_proposed(adr_dir, name):
     from adrpy.core.header import DecisionRecord, build_header
     from adrpy.core.naming import parse_any_filename
 
-    config = load_repo_config(adr_dir.parent.parent / "adr-config.adrplus")
+    config = load_repo_config(adr_dir.parent.parent / ".adrpy.json")
     parsed = parse_any_filename(name, config)[1]
     record = DecisionRecord(number=parsed.number, title=parsed.title, version=parsed.version,
                             status_create="Proposed", date_create=date(2026, 1, 1))

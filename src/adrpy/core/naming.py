@@ -51,8 +51,7 @@ class ParsedFileName:
 
 
 def parse_filename(filename, config):
-    """Current scheme only. Recognizes ONLY the current scheme -- pair
-    with `parse_legacy_filename` (or use
+    """Current scheme only -- pair with `parse_legacy_filename` (or use
     `parse_any_filename`) wherever a legacy file must also be considered.
 
     The supersede suffix (a doubled separator followed by the superseded
@@ -161,10 +160,9 @@ def migration_pattern_overlap(pattern_text):
 
 
 def parse_legacy_filename(filename, config):
-    """Legacy scheme only. Recognizes ONLY the legacy scheme, and only
-    when `config.migrationpattern` itself parses --
-    pair with `parse_filename` (or use `parse_any_filename`) wherever a
-    current-scheme file must also be considered."""
+    """Legacy scheme only, and only when `config.migrationpattern` itself
+    parses -- pair with `parse_filename` (or use `parse_any_filename`)
+    wherever a current-scheme file must also be considered."""
     if not filename.lower().endswith(".md"):
         return None
     pattern = parse_migration_pattern(config.migrationpattern)
@@ -244,21 +242,15 @@ def build_filename(config, record, too_long_remedy="pass a shorter --title"):
     )
     filename = f"{base}{version_part}{revision_part}{config.separator}{title_part}{supersede_part}.md"
 
-    # `title`, once case-transformed, can collide with this filename's own
-    # separator-delimited grammar in ways no single character blacklist
-    # fully enumerates (a title made entirely of separator-like
-    # characters; an empty title, reachable only through migrate; and a
-    # title containing the CONFIGURED separator itself, e.g. a leading
-    # '.' when separator is '.'). Rather than a narrow guard for each
-    # shape as it surfaces, this re-parses its own output and refuses to
-    # return a filename that doesn't round-trip back to exactly the
-    # identity just encoded -- closes the whole class, not just one
-    # instance of it. Checks number/version/revision/superseded_from specifically
-    # (not the title text itself, which parse_filename never needs to
-    # match exactly -- a title with a separator character safely in its
-    # MIDDLE, e.g. "v1.2.3" with separator=".", still round-trips fine;
-    # only a collision at the number/title BOUNDARY actually breaks
-    # anything).
+    # A case-transformed title can collide with the filename's
+    # separator-delimited grammar in ways no character blacklist fully
+    # enumerates (a title of only separator-like characters; an empty
+    # title, reachable only through migrate; a leading '.' when the
+    # separator is '.'), so the output is re-parsed and refused unless it
+    # round-trips to the same number/version/revision/superseded_from.
+    # The title text is not compared: a separator in its MIDDLE (e.g.
+    # "v1.2.3" with separator=".") round-trips fine; only a collision at
+    # the number/title BOUNDARY breaks anything.
     reparsed = parse_filename(filename, config)
     if (
         reparsed is None

@@ -93,12 +93,9 @@ def test_encoding_repaired_warning_names_the_path():
 
 
 def test_excluded_candidate_warning_is_none_when_nothing_excluded():
-    """This helper (used by
-    scan_decisions/family_members/explore/init/migrate) had zero direct
-    unit tests before this -- only ever exercised indirectly, and every
-    one of those indirect call sites happened to use exactly one excluded
-    path, so the count/pluralization/join logic was never actually
-    checked against 2+."""
+    """Tested directly, with 2+ paths below: a single excluded path, all any
+    command's own test produces, never exercises this helper's
+    count/pluralization/join logic."""
     assert excluded_candidate_warning([]) is None
 
 
@@ -110,9 +107,8 @@ def test_excluded_candidate_warning_names_a_single_excluded_path():
 
 
 def test_excluded_candidate_warning_counts_and_joins_multiple_excluded_paths():
-    """The specific gap every indirect (single-path) test left unchecked:
-    the exact count matches len(paths), and multiple names are actually
-    comma-joined, not overwritten/dropped."""
+    """Against 2+ paths: the exact count matches len(paths), and multiple names
+    are actually comma-joined, not overwritten/dropped."""
     warning = excluded_candidate_warning([Path("a.md"), Path("b.md"), Path("c.md")])
 
     assert "3 candidate file(s)" in warning

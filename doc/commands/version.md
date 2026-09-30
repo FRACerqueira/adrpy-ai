@@ -39,7 +39,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 | `lenversion-too-small-for-new-version` | The next version number does not fit in the configured lenversion width. |
 | `filename-too-long` | The new version's own title makes a file name longer than the filesystem allows once the temp file's suffix is added (data.filename) -- nothing was written; this command cannot change the title: supersede the decision with a shorter --title. |
 | `title-produces-unrecognizable-filename` | The new version's own title, once case-transformed, would produce a filename this tool could never recognize again. |
-| `cannot-determine-root-path` | No adr-config.adrplus was found by walking up from --file. |
+| `cannot-determine-root-path` | No .adrpy.json was found by walking up from --file. |
 | `file-not-found` | --file does not point to an existing file (a bare name with no extension gets '.md' appended first). |
 | `filename-not-recognized` | --file's own name matches neither naming scheme, or only migrationpattern matches it and it has no header while the repository already has a decision with a header migrate did not write (then it is not a decision; data.file). |
 | `target-outside-folderadr` | --file is not inside the repository's decisions folder (folderadr); only a decision there is acted on -- move it into folderadr (then run migrate if it has no header). |
@@ -52,12 +52,12 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 | `rejected-successor-is-final` | This decision belongs to the family of a successor that was rejected -- the end of its line; supersede its predecessor again instead (data.successor_file, data.predecessor_number). |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |
@@ -69,9 +69,9 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 | `config-field-empty` | A field that must be non-empty is an empty string. |
 | `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
 | `config-folderadr-too-long` | folderadr exceeds 50 characters. |
-| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderlog-too-long` | folderlog exceeds 50 characters. |
-| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |
@@ -98,7 +98,7 @@ Creates a new major version of an Accepted or Rejected decision (or a migrated p
 ## Example
 
 ```bash
-adrpy version --file doc/adr/ADR001V01-use-postgre-sql-for-the-primary-datastore.md --empty
+adrpy version --file doc/adr/ADR0001V01-use-postgre-sql-for-the-primary-datastore.md --empty
 ```
 
 ---

@@ -33,14 +33,12 @@ def test_every_path_based_command_documents_target_directory_not_found():
 
 
 def test_every_failure_code_is_documented_somewhere():
-    """ADR008V01: the actual payoff ADR005V01 named as its own Positive
-    Consequence -- a single, grep-able registry makes 'every code is
-    documented' a property this test can check mechanically, instead of
-    a claim that has to be re-audited by hand every few months. Checks
-    the structured `failure_codes` field (not free-form prose
-    substring-matching, which the field replaces as this completeness
-    check's own source of truth) -- every command's own list, unioned
-    across all 14, must cover every FailureCodes attribute."""
+    """ADR0008V01 (the payoff ADR0005V01 names as its own Positive
+    Consequence): a single, grep-able registry makes 'every code is
+    documented' a property this test checks mechanically. Checks the
+    structured `failure_codes` field, not free-form prose -- every
+    command's own list, unioned across all 14, must cover every
+    FailureCodes attribute."""
     codes = {name: getattr(FailureCodes, name) for name in dir(FailureCodes) if name.isupper()}
     documented = {
         entry["code"] for module in COMMANDS.values() for entry in module.describe().get("failure_codes", [])
@@ -84,17 +82,15 @@ def test_every_failure_codes_entry_has_a_non_empty_condition():
 
 
 def test_field_is_blank_is_only_claimed_by_commands_that_can_actually_reach_it():
-    """ADR008V01 verification round: field-is-blank was over-claimed by
-    approve/reject/undo/revise/migrate -- each of them only ever calls
-    reject_embedded_delimiter on a value already `.strip()`-ed upstream
+    """ADR0008V01: field-is-blank is reachable only from supersede and
+    version, which call reject_embedded_delimiter on a RAW, unstripped
+    --scope/--domain flag value (falling back to the pre-stripped header
+    value only when the flag is omitted). approve/reject/undo/revise/
+    migrate only ever pass it a value already `.strip()`-ed upstream
     (header.title/scope/domain via core/header.py's own _extract_cell;
     migrate's own candidate title via an explicit `.strip()` before the
-    call), so `value != "" and not value.strip()` can never be true --
-    the code is structurally unreachable there. Only supersede/version
-    call reject_embedded_delimiter on a RAW, unstripped --scope/--domain
-    flag value (falling back to the pre-stripped header value only when
-    the flag is omitted), so they're the only two that can genuinely
-    raise it."""
+    call), so `value != "" and not value.strip()` can never be true there
+    and they must not claim the code."""
     for name in ("approve", "reject", "undo", "revise", "migrate"):
         codes = {entry["code"] for entry in COMMANDS[name].describe()["failure_codes"]}
         assert "field-is-blank" not in codes, f"{name} claims field-is-blank but can never reach it"
@@ -104,14 +100,13 @@ def test_field_is_blank_is_only_claimed_by_commands_that_can_actually_reach_it()
 
 
 def test_installconfig_documents_io_error():
-    """ADR008V01 verification round: installconfig.py's own 3
-    atomic_write_text call sites are never wrapped in attach_warnings (or
-    any other OSError-catching mechanism, unlike every other write
-    command) -- a raw OSError (e.g. a PermissionError exhausting
-    atomic_write_bytes' own retry budget) propagates uncaught to
-    __main__'s generic handler, which reports it as io-error, the exact
-    same way every other writer's own io-error claim is already
-    justified."""
+    """ADR0008V01: installconfig.py's atomic_write_text call sites are
+    never wrapped in attach_warnings (or any other OSError-catching
+    mechanism, unlike every other write command) -- a raw OSError (e.g. a
+    PermissionError exhausting atomic_write_bytes' own retry budget)
+    propagates uncaught to __main__'s generic handler, which reports it as
+    io-error, the exact same way every other writer's own io-error claim
+    is justified."""
     codes = {entry["code"] for entry in COMMANDS["installconfig"].describe()["failure_codes"]}
     assert "io-error" in codes
 
@@ -151,12 +146,10 @@ def test_init_documents_the_three_length_too_small_codes():
     assert "lenrevision-too-small-for-existing-decisions" in codes
 
 
-def test_config_documents_field_not_an_integer_and_field_not_a_boolean():
-    """field-not-an-integer (lenseq/lenversion/lenrevision) and
-    field-not-a-boolean (disableplugins)."""
+def test_config_documents_field_not_an_integer():
+    """field-not-an-integer (lenseq/lenversion/lenrevision)."""
     codes = _codes("config")
     assert "field-not-an-integer" in codes
-    assert "field-not-a-boolean" in codes
 
 
 def test_new_supersede_and_version_document_the_forbidden_character_constraint():
@@ -204,13 +197,12 @@ def test_every_file_command_documents_the_repository_validation():
 
 
 def test_short_flag_aliases_are_documented_in_describe():
-    """Every command's real
-    parse_flags(aliases=...) accepts a short form (-p, -f, -t, ...), but
-    describe() never exposed it anywhere -- an agent relying solely on
-    describe()/help (the documented self-description channel for a non-
-    interactive caller) had no way to discover these forms exist. The
-    schema already tolerates non-standard argument metadata (help.py's
-    own "positional" key) -- "alias" follows the same convention."""
+    """Every command's real parse_flags(aliases=...) accepts a short form
+    (-p, -f, -t, ...), and describe()/help is the documented
+    self-description channel for a non-interactive caller, so it exposes
+    each one. The schema already tolerates non-standard argument metadata
+    (help.py's own "positional" key) -- "alias" follows the same
+    convention."""
     expected = {
         "new": {"path": "-p", "title": "-t", "domain": "-d", "scope": "-s", "refdate": "-r"},
         "approve": {"file": "-f", "refdate": "-r"},
@@ -237,10 +229,9 @@ def test_migrate_documents_its_scan_failed_error_code():
 
 
 def test_every_per_file_command_documents_the_md_auto_suffix():
-    """Every
-    per-file command's `--file` silently gets '.md' appended when the
-    given path has no extension (load_target's own doing) --
-    none of their describe()'s ever mentioned it."""
+    """Every per-file command's `--file` silently gets '.md' appended when
+    the given path has no extension (load_target's own doing), so each
+    describe() says so."""
     for name in _PER_FILE_COMMANDS:
         info = COMMANDS[name].describe()
         file_arg = next(arg for arg in info["arguments"] if arg["name"] == "file")
@@ -300,7 +291,7 @@ def test_bare_help_defaults_reflects_the_built_in_default_with_no_install_level_
 def test_bare_help_defaults_reflects_an_install_level_config_when_one_exists(capsys, monkeypatch):
     from adrpy.core import install_config
 
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(install_config, "read_install_config_text", lambda *args, **kwargs: install_text)
 
     exit_code = main(["help"])
@@ -447,7 +438,7 @@ def test_command_error_includes_an_explicitly_empty_warnings_list(capsys, monkey
     """Distinct from the "no warnings" case below -- warnings=[]
     means a command's own attach_warnings region genuinely started
     accumulating and just had nothing to report yet, not "nothing to
-    report at all". See core/output.py's own emit_failure fix."""
+    report at all". See core/output.py's emit_failure."""
     from adrpy.cli import help as help_command
     from adrpy.core.errors import CommandError
 
@@ -555,11 +546,10 @@ def test_unhandled_generic_exception_still_emits_json_on_stdout(capsys, monkeypa
 
 
 def test_keyboard_interrupt_still_emits_json_on_stdout(capsys, monkeypatch):
-    """Round 36 core resilience front: KeyboardInterrupt is a
-    BaseException, not an Exception -- the generic except Exception clause
-    above never sees it, so before this fix it propagated raw, with empty
-    stdout, the exact failure mode this project's own JSON-contract
-    guarantee exists to prevent."""
+    """KeyboardInterrupt is a BaseException, not an Exception -- the
+    generic except Exception clause above never sees it, so uncaught it
+    would propagate raw, with empty stdout, the exact failure mode this
+    project's own JSON-contract guarantee exists to prevent."""
     from adrpy.cli import help as help_command
 
     def boom(_args):
@@ -576,7 +566,7 @@ def test_keyboard_interrupt_still_emits_json_on_stdout(capsys, monkeypatch):
 
 
 def test_an_adrpy_failure_carries_its_detail_on_stdout_and_the_same_text_on_stderr(tmp_path, capsys):
-    # ADR010V01, on adrpy's own entry point.
+    # ADR0010V01, on adrpy's own entry point.
     from adrpy.__main__ import main as adrpy_main
 
     adrpy_main(["frobnicate"])

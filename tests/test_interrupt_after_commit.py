@@ -156,7 +156,7 @@ def test_log_interrupted_before_the_entry_lands_does_not_name_it(tmp_path, monke
 
 
 def _repo_with_pattern(tmp_path, pattern):
-    seed = json.loads((Path(__file__).parent / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8"))
+    seed = json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
     seed["migrationpattern"] = pattern
     seed_file = tmp_path / "seed.json"
     seed_file.write_text(json.dumps(seed), encoding="utf-8")
@@ -182,10 +182,10 @@ def test_migrate_interrupted_right_after_persisting_the_fallback_pattern_says_so
     from adrpy.cli import migrate
 
     _repo_with_pattern(tmp_path, "")
-    fallback = json.loads((Path(__file__).parent / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8"))
+    fallback = json.loads((Path(__file__).parent / "fixtures" / ".adrpy.json").read_text(encoding="utf-8"))
     fallback["migrationpattern"] = "N00:04T04"
     monkeypatch.setattr(migrate, "read_install_config_text", lambda: json.dumps(fallback))
-    _interrupt_after_moving_onto(monkeypatch, lambda dst: dst.name == "adr-config.adrplus")
+    _interrupt_after_moving_onto(monkeypatch, lambda dst: dst.name == ".adrpy.json")
 
     response = _run(capsys, "migrate", "--path", str(tmp_path))
 

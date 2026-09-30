@@ -1,32 +1,64 @@
+from pathlib import Path
+
 import pytest
 
 from adrpy.cli import init, migrate
 from adrpy.core import install_config
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_defaults: runs with the shipped default config sizes")
+
+
+@pytest.fixture(autouse=True)
+def _default_sizes_the_tests_were_written_for(request, monkeypatch):
+    """Tests that use init only to set a repository up expect names built
+    with lenseq 3 and no revision (ADR001V01-...): the default they were
+    written against. They keep it; a test marked `real_defaults` runs with
+    the shipped default instead."""
+    if request.node.get_closest_marker("real_defaults"):
+        return
+    import json
+
+    from adrpy.cli import init as init_command, installconfig
+    from adrpy.core import config as config_module, install_config as install_config_module
+
+    shipped = config_module.default_repo_config_text
+
+    def written_for():
+        data = json.loads(shipped())
+        data.update({"lenseq": 3, "lenrevision": 0})
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    for module in (config_module, init_command, installconfig, install_config_module):
+        monkeypatch.setattr(module, "default_repo_config_text", written_for)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_home(tmp_path_factory, monkeypatch):
+    """A global-scope skill install or listing reads Path.home(): without
+    this, a skill installed on the machine running the suite showed up in
+    its results."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+
 @pytest.fixture(autouse=True)
 def _no_install_level_config_by_default(monkeypatch):
-    """`init`/`migrate` both consult the per-user install-level config
-    (ADR002V01) by default. Every test in this suite must be
-    deterministic regardless of whatever the real machine running them
-    happens to have at its own per-user install-config path -- patched
-    here, once, for every test, at the name each command module actually
-    calls (not core/install_config.py's own name -- `from ... import
-    read_install_config_text` binds a separate reference in each of
-    those modules' own namespaces, which patching the source module
-    would not reach). A test that needs to exercise the install-level
-    config path explicitly overrides this with its own monkeypatch.
+    """`init`/`migrate` consult the per-user install-level config
+    (ADR0002V01): patched out here for every test, so no result depends on
+    the machine running the suite. Patched at the name each command module
+    calls, not core/install_config.py's own: `from ... import
+    read_install_config_text` binds a separate reference in each module. A
+    test that exercises the install-level config overrides this with its
+    own monkeypatch.
 
-    Scope, explicitly: this
-    covers `init`/`migrate` only -- `installconfig` itself never calls
-    `read_install_config_text`, only `resolve_install_config_path`
-    directly, which this fixture does NOT patch. `tests/
-    test_installconfig.py` isolates that on its own, locally, via its
-    own autouse fixture. If a future test anywhere else in this suite
-    calls `installconfig.run(...)` directly, it is NOT covered by
-    either isolation mechanism and would read/write the real machine's
-    own per-user install-config file -- extend one of these two
-    fixtures rather than assuming this one already covers it."""
+    `installconfig` never calls `read_install_config_text`, only
+    `resolve_install_config_path`, which this fixture does not patch:
+    tests/test_installconfig.py isolates it with its own autouse fixture. A
+    test elsewhere that calls `installconfig.run(...)` is covered by neither
+    and would read/write the real per-user install-config file -- extend
+    one of the two fixtures."""
     monkeypatch.setattr(init, "read_install_config_text", lambda *args, **kwargs: None)
     monkeypatch.setattr(migrate, "read_install_config_text", lambda *args, **kwargs: None)
     # `help`'s defaults preview reaches it through install_config's own
@@ -48,7 +80,7 @@ from adrpy.core.config import parse_repo_config
 from adrpy.core.header import DecisionRecord, build_header
 from adrpy.core.naming import build_filename
 
-FIXTURE_CONFIG = Path(__file__).parent / "fixtures" / "adr-config.adrplus"
+FIXTURE_CONFIG = Path(__file__).parent / "fixtures" / ".adrpy.json"
 _UNSET = object()
 _DAY = date(2026, 1, 1)
 
@@ -125,13 +157,13 @@ def decision_record(config, spec):
 
 
 def make_repo(tmp_path, config=None, files=()):
-    """Writes adr-config.adrplus (the test fixture with `config`'s
+    """Writes .adrpy.json (the test fixture with `config`'s
     fields replacing its own) and each D in `files` under folderadr."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     data = json.loads(FIXTURE_CONFIG.read_text(encoding="utf-8"))
     data.update(config or {})
     text = json.dumps(data)
-    (tmp_path / "adr-config.adrplus").write_text(text, encoding="utf-8")
+    (tmp_path / ".adrpy.json").write_text(text, encoding="utf-8")
     parsed = parse_repo_config(text)
     folder = tmp_path / parsed.folderadr
     folder.mkdir(parents=True, exist_ok=True)

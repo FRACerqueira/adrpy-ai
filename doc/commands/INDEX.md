@@ -15,7 +15,7 @@ changing a command's contract, run the script instead of editing the page.
 | Command | Purpose |
 |---|---|
 | [`help`](help.md) | Lists every command, or describes one of them in full. |
-| [`init`](init.md) | Initializes an ADR repository: writes `adr-config.adrplus` and creates the decisions folder. |
+| [`init`](init.md) | Initializes an ADR repository: writes `.adrpy.json` and creates the decisions folder. |
 | [`new`](new.md) | Creates a new decision, status `Proposed`. |
 | [`approve`](approve.md) | Marks a `Proposed` decision `Accepted`. |
 | [`reject`](reject.md) | Marks a `Proposed` decision `Rejected`. |
@@ -26,12 +26,12 @@ changing a command's contract, run the script instead of editing the page.
 | [`migrate`](migrate.md) | Adds an adrpy-compliant header to existing, hand-written decision files. |
 | [`explore`](explore.md) | Lists every decision file in the repository, on a best-effort basis. |
 | [`check`](check.md) | Validates every decision in the repository and lists every inconsistency found. |
-| [`config`](config.md) | Reads or updates an existing repository's own `adr-config.adrplus`. |
+| [`config`](config.md) | Reads or updates an existing repository's own `.adrpy.json`. |
 | [`installconfig`](installconfig.md) | Reads or updates the per-user, install-level default config (seeds new repositories, supplies a `migrate` fallback). |
 | [`log`](log.md) | Writes a decision-log entry -- the lighter-weight sibling of a formal ADR. |
 
 Every failure code a command can return is listed on that command's own
-page, in its `## Failure codes` table (ADR008V01) -- the structured
+page, in its `## Failure codes` table (ADR0008V01) -- the structured
 `failure_codes` field of `describe()`, not prose. There is no separate
 global error-code index: codes with the same meaning everywhere they are
 reachable (config-schema validation, header parsing, the repository

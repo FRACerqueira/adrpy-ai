@@ -52,7 +52,7 @@ takes flags and prints one JSON object; none of them prompts.
   approve it is not asking for a review, and a question about the open
   sections alone is not either.
 - **The `<sep><sep>NNN` suffix is part of the name.** A file name ending
-  in a doubled separator and a number (`ADR002V01-use-x--001.md` with the
+  in a doubled separator and a number (`ADR0002V01-use-x--001.md` with the
   default `-`) marks the successor of decision `NNN`. Never remove or
   change it, except in a file `migrate` refuses because it carries one
   before adoption (`migration-successor-files-exist`): then rename it only
@@ -101,7 +101,7 @@ takes flags and prints one JSON object; none of them prompts.
 ## Commands
 
 - `adrpy help` -- lists every command; `adrpy help <command>` describes one.
-- `adrpy init --path .` -- creates `adr-config.adrplus` and the decisions folder.
+- `adrpy init --path .` -- creates `.adrpy.json` and the decisions folder.
 - `adrpy explore --path .` -- lists every `.md` file in the decisions folder, decision or not; `--migrationpattern <pattern>` previews what a pattern reads, writing nothing.
 - `adrpy check --path .` -- validates the repository; each error has a `hint`.
 - `adrpy new --path . --title "..."` -- creates a decision, status Proposed.

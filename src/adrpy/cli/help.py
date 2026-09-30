@@ -34,12 +34,9 @@ def describe():
                 "name": "command",
                 "type": "string",
                 "required": False,
-                # Every other command's arguments are `--flag value`,
-                # parsed by parse_flags -- this one alone is positional
-                # (`help <command>`, no `--`), the same shape as AdrPlus's
-                # equivalent command. Without this
-                # note an agent generalizing from the other commands would
-                # reasonably (and wrongly) try `help --command X`.
+                # The only positional argument of any adrpy command: said in the
+                # description too, or an agent generalizing from the other
+                # commands would try `help --command X`.
                 "positional": True,
                 "description": "Name of the command to describe. Positional, unlike every other command's flags: `adrpy help new`, never `adrpy help --command new` (which fails).",
             },
@@ -88,10 +85,8 @@ def run(args):
         return {"commands": [command.describe()], "warnings": []}
 
     if full:
-        # Same reasoning as explore's own "warnings" key -- present
-        # unconditionally across every other command's result, even when
-        # empty, so a generic wrapper doesn't need a special case for the
-        # two read-only commands.
+        # "warnings" is present even when empty, as in every command's
+        # result (see explore's own "warnings" key).
         return {"commands": [command.describe() for command in COMMANDS.values()], "warnings": []}
 
     return {

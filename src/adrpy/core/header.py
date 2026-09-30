@@ -1,7 +1,8 @@
-"""Decision-file header: the 12-line format adrpy shares with AdrPlus
-1.0.0. The header is always exactly 12 lines, addressed
-positionally -- the row *label* text is never inspected on read, only its
-position and the surrounding pipe characters.
+"""Decision-file header: always exactly 12 lines, addressed positionally.
+A row's label text is never inspected on read, only its position and the
+surrounding pipe characters -- except the fields row (line 2), whose first
+cell must hold the configured `headertablefields`: it is what tells this
+header apart from any other table.
 """
 
 import re
@@ -20,7 +21,7 @@ from adrpy.core.text import is_ascii_digits, strip_leading_boms
 
 HEADER_LINE_COUNT = 12
 
-# ADR008V01: every code parse_header can produce via its own result.error
+# ADR0008V01: every code parse_header can produce via its own result.error
 # (never raised here directly: the repository validator, core/consistency,
 # reports it as the start of an invalid-header entry's `detail`), one
 # static one-line condition each. Reachable by the commands that validate
@@ -54,25 +55,20 @@ _STATUS_CONFIG_FIELD = {
     "Superseded": "statussup",
 }
 
-# ADR004V01: a fixed, non-translatable marker written after the status
-# cell's date -- in the trailing space both this parser and AdrPlus
-# 1.0.0's ParseStatusLine ignore for date purposes (as they already do
-# for the Superseded row's own ": <number>" suffix below).
-# Recognizing it takes recognition of a decision written under this
-# scheme off the repository's CURRENT statusnew/statusacc/statusrej/
-# statussup text entirely, so a later label or language change can never
-# again break it. Absent (any file written before this existed) falls
-# back to the same label-text match as before.
+# ADR0004V01: a fixed, non-translatable marker written after the status
+# cell's date, in the trailing space the parser ignores for date purposes
+# (as it does for the Superseded row's ": <number>" suffix). It identifies
+# the status without the repository's CURRENT statusnew/statusacc/
+# statusrej/statussup text, so a later label or language change cannot
+# break recognition. A file without a marker falls back to label-text
+# matching.
 #
-# ADR004V02: matched case-insensitively -- a hand edit that changes only
-# the marker's case (e.g. "<!-- accepted -->") used to fail this match
-# outright and silently fall back to label-text matching with zero
-# signal, reopening exactly the fragility this marker exists to close.
-# `_CANONICAL_STATUS_BY_LOWERCASE` maps the match back to its canonical,
-# correctly-cased form -- every other consumer of `status` (this
-# module's own `_STATUS_CONFIG_FIELD` lookups, `is_migrated`
-# comparisons elsewhere) requires the exact canonical case, never the
-# case actually found in the file.
+# ADR0004V02: matched case-insensitively, so a hand edit that changes only
+# the marker's case (e.g. "<!-- accepted -->") does not silently fall back
+# to label-text matching. `_CANONICAL_STATUS_BY_LOWERCASE` maps the match
+# back to its canonical case, which every other consumer of `status`
+# (`_STATUS_CONFIG_FIELD` lookups, `is_migrated` comparisons elsewhere)
+# requires.
 _CANONICAL_MARKER_PATTERN = re.compile(
     r"<!--\s*(" + "|".join(_STATUS_CONFIG_FIELD.keys()) + r")\s*-->", re.IGNORECASE
 )
@@ -103,8 +99,8 @@ class DecisionRecord:
 def build_header(config, record, migrated=False):
     """The "Migrated" word in the Values column's own label comes from
     `config.headermigrated`, and appears only when `migrated` (decision-log:
-    accepted-divergence--2026-09-16--header--migrated-word-only-when-
-    migrated.md) -- the word is never parsed (parse_header below only
+    2026-09-16--scope-note--header--migrated-word-only-when-migrated.md) --
+    the word is never parsed (parse_header below only
     looks for the trailing HTML comment), so on a non-migrated file it
     would carry no information, only a misleading one.
     """
@@ -114,7 +110,7 @@ def build_header(config, record, migrated=False):
 
     lines = [
         disclaimer,
-        f"|Adr-Plus {config.headertablefields}|{values_label}{migrated_marker}|",
+        f"|{config.headertablefields}|{values_label}{migrated_marker}|",
         "|--|--|",
         f"|{config.headertitlefile}|{record.title}|",
         (
@@ -178,12 +174,10 @@ class HeaderParseResult:
     status_change: str | None = None
     date_change: date_cls | None = None
     superseded_by_file: str | None = None
-    # ADR004V01: names which of status_create/status_update/status_change
-    # carried BOTH a canonical marker and a label-text match, where the two
-    # disagreed (the marker still wins for the field's own resolved value
-    # above) -- a hand edit of the visible word after the marker was
-    # written, not the routine, expected case of a label/language change
-    # simply no longer matching an existing marker-less file's old text.
+    # ADR0004V01: which of status_create/status_update/status_change had
+    # both a canonical marker and a label-text match that disagree (the
+    # marker wins) -- a hand edit of the visible word after the marker was
+    # written, not the routine case of a changed label matching nothing.
     marker_label_mismatches: tuple = ()
 
 
@@ -202,7 +196,7 @@ def parse_header(lines, config):
         return result
     result.disclaimer = lines[0].replace("<!-- ", "").replace(" -->", "").strip()
 
-    if not lines[1].startswith("|Adr-Plus "):
+    if not _is_fields_row(lines[1], config):
         result.error = FailureCodes.ADR_HEADER_INVALID_FORMAT
         return result
     if lines[1].rstrip().endswith(" -->|") and "<!-- " in lines[1]:
@@ -350,19 +344,16 @@ def _extract_cell(line, free_text=False):
 def _parse_status_cell(text, config):
     """Returns (status, date, marker_label_mismatch, error).
 
-    ADR004V01: a canonical marker after the date's closing `)`, when
-    present, decides `status` on its own -- the repository's CURRENT
-    statusnew/statusacc/statusrej/statussup no longer has any say, so a
-    later label or language change can never again break recognition of
-    a file written under this scheme. Falls back to the pre-existing
-    label-text match when no marker is present (any file written before
-    this existed).
+    ADR0004V01: a canonical marker after the date's closing `)`, when
+    present, decides `status` on its own, whatever the repository's
+    CURRENT statusnew/statusacc/statusrej/statussup, so a later label or
+    language change cannot break recognition. Without a marker, the
+    label text decides.
 
-    The label match is still attempted even when a marker is present,
-    purely to detect `marker_label_mismatch`: the label legitimately no
-    longer matching anything current (the routine case after a label/
-    language change) is NOT a mismatch -- only a label that still
-    resolves, but to a DIFFERENT status than the marker, is."""
+    The label match is still attempted when a marker is present, only to
+    detect `marker_label_mismatch`: a label matching nothing current (the
+    routine case after a label/language change) is NOT a mismatch; only a
+    label resolving to a DIFFERENT status than the marker is."""
     open_paren = text.find("(")
     close_paren = text.find(")")
     if open_paren < 0 or close_paren < 0 or close_paren < open_paren:
@@ -408,62 +399,53 @@ def describe_header_error(header):
     return header.error
 
 
-def has_header_shape(lines):
+def _is_fields_row(line, config):
+    """Whether `line` is the header's fields row: a table row whose first
+    cell holds the configured label (a header written with more around it
+    in that cell is still read; every write puts the label alone)."""
+    cells = line.split("|")
+    return line.startswith("|") and len(cells) > 2 and config.headertablefields in cells[1]
+
+
+def has_header_shape(lines, config):
     """True when any of the first HEADER_LINE_COUNT lines carries a row
-    only this tool's header writes (`|Adr-Plus ` field row, or exactly
-    the `|--|--|` separator). Tells a damaged header apart from no header at all --
+    only this tool's header writes (the fields row exactly as written,
+    `|{headertablefields}|` -- a hand-written table has spaces around its
+    cells -- or exactly the `|--|--|` separator). Tells a damaged header
+    apart from no header at all --
     looking past the first two lines, so a line inserted or deleted at
-    the top doesn't hide it. Both markers are plain ASCII, so a lossy
-    decode never removes them. A NUL byte also counts: it means the file
+    the top doesn't hide it. A NUL byte also counts: it means the file
     was re-encoded as UTF-16/UTF-32 (PowerShell 5.1's Out-File, '>'),
     which splits the markers apart -- a damaged header, not a missing one
     (decided by the project owner)."""
     return any(
-        "|Adr-Plus " in line or line.rstrip() == "|--|--|" or "\x00" in line for line in lines[:HEADER_LINE_COUNT]
+        line.startswith(f"|{config.headertablefields}|") or line.rstrip() == "|--|--|" or "\x00" in line
+        for line in lines[:HEADER_LINE_COUNT]
     )
 
 
 _HEADER_READ_CHUNK_SIZE = 4096
-# Without this cap, the read loop would continue to EOF whenever a
-# pathological/corrupted file never accumulates `count` real newlines --
-# a single-chunk-per-iteration bound would still let such a file be read
-# in full, just one chunk at a time. 4 chunks (16KB) is generous relative
-# to a genuine header (a few KB at most, per the config schema's own
-# field-length limits) -- a file that still doesn't have `count` real
-# newlines within this cap is treated as too-short/malformed by
-# parse_header's own existing check, never read further.
+# Without this cap, a corrupted file that never reaches `count` real
+# newlines would be read to EOF, one chunk at a time. 16KB is generous for
+# a genuine header (a few KB at most under the config schema's
+# field-length limits); a file without `count` newlines within it fails
+# parse_header's too-short check.
 _HEADER_READ_MAX_BYTES = _HEADER_READ_CHUNK_SIZE * 4
 _REAL_NEWLINE_BYTES = re.compile(rb"\r\n|\r|\n")
 
 
 def _read_header_bytes(path, count):
-    """Shared by read_header_lines/read_header_lines_with_report: reads
-    only enough of `path` to recover the first `count` real lines (see
-    split_real_lines) -- never the whole file, and never past
+    """Reads only enough of `path` to recover the first `count` real lines
+    (see split_real_lines), in bounded chunks, never past
     `_HEADER_READ_MAX_BYTES` even if `count` real newlines never appear.
-    Reads in bounded chunks, growing only if the header genuinely
-    doesn't fit in one (the config schema's own field-length limits keep
-    a real header well under a single chunk in practice).
 
-    Re-scans the whole accumulated buffer (never just the newest chunk in
-    isolation) on every iteration: counting newlines within each
-    freshly-read chunk ALONE double-counts a `\r\n` pair that straddles
-    exactly on a chunk boundary (the `\r` as one chunk's own last byte,
-    matched as a lone CR by that chunk's own isolated scan; the `\n` as
-    the next chunk's own first byte, matched again as a lone LF by ITS
-    isolated scan), which can make the loop believe it already found
-    `count` real newlines one chunk-read too early, silently truncating
-    the returned buffer before the file's true `count`-th line is ever
-    read. Re-scanning the whole buffer each time lets the regex see both
-    halves of a straddling CRLF together, correctly counted as one
-    match. The buffer is still hard-capped at `_HEADER_READ_MAX_BYTES`
-    (16KB), so a rescan is at most ~4 passes over at most 16KB each --
-    O(1) relative to the file's own total size, never an unbounded-file
-    quadratic blowup.
+    Re-scans the whole accumulated buffer on every iteration, never just
+    the newest chunk: a `\r\n` straddling a chunk boundary would otherwise
+    count twice (a lone CR, then a lone LF), ending the loop one read too
+    early and truncating the `count`-th line. With the 16KB cap that is at
+    most ~4 passes over 16KB, whatever the file's size.
 
-    This read tolerates a transient PermissionError, the same contention
-    window the write side (core/fs.py) already retries. Shares
-    core/fs.py's loop rather than being an independent copy."""
+    Retries a transient PermissionError through core/fs.py's read retry."""
 
     def _open_and_read():
         with open(path, "rb") as handle:
@@ -484,27 +466,20 @@ def _read_header_bytes(path, count):
 
 def read_header_lines(path, count=HEADER_LINE_COUNT):
     """Reads only enough of `path` to recover the first `count` real
-    lines -- never the whole file. Used wherever only the header is
-    needed (family membership checks): reading a candidate's entire
-    body, however large, just to look at its first 12 lines would be
-    wasteful. Tolerates invalid bytes the same way read_lines does."""
+    lines -- never the whole file -- for callers that need only the
+    header (family membership checks). Invalid UTF-8 bytes decode as
+    U+FFFD."""
     text = _read_header_bytes(path, count).decode("utf-8", errors="replace")
     return split_real_lines(strip_leading_boms(text))[:count]
 
 
 def read_header_lines_with_report(path, count=HEADER_LINE_COUNT):
     """Same bounded read as read_header_lines, but also reports whether
-    whatever was actually read needed a lossy decode. A scan deciding
-    only header-based eligibility -- migrate's own scan phase -- only
-    needs to know about corruption within the header itself, since
-    parse_header never looks past line `count`; a corrupted byte in the
-    body is irrelevant to
-    eligibility and passes through untouched in migrate's own write
-    phase either way, which copies raw bytes verbatim). For a small
-    file, the bounded read's own chunk boundary may still include some
-    body content in what it decodes -- that's a harmless side effect of
-    the chunk size, not a claim that corruption is ever checked
-    per-line; only content genuinely beyond the read is never seen."""
+    what was read needed a lossy decode -- for migrate's header-only
+    eligibility scan: parse_header never looks past line `count`, and a
+    corrupted byte in the body passes through untouched when migrate
+    copies raw bytes. The chunked read may also decode some body content
+    of a small file; content beyond the read is never checked."""
     buffer = _read_header_bytes(path, count)
     try:
         text = buffer.decode("utf-8")

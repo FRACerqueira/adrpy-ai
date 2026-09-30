@@ -1,5 +1,5 @@
 """`installconfig` command: reads or updates the per-user install-level
-config (ADR002V01; see the ADR for why it is a per-user file, not one
+config (ADR0002V01; see the ADR for why it is a per-user file, not one
 relative to the install directory).
 
 Unlike every other command, this one takes no `--path` -- it always
@@ -11,23 +11,16 @@ as this command's own `file` key, so a caller never needs to know the
 convention to locate it). One flag per schema field (mirroring
 `config`'s own pattern),
 plus `--seed <file>` for bulk setup or import -- and since this file's
-schema is byte-compatible with a repository's own adr-config.adrplus
-(ADR002V01), `--seed` pointed directly at AdrPlus's own template file
-already covers importing from it; no separate cross-tool flag, and no
-knowledge of AdrPlus's install-directory layout, is added for that.
+schema is a repository's own .adrpy.json schema (ADR0002V01), `--seed`
+pointed at any repository's config imports it.
 
 `--language` is a second, narrower wholesale-replace source, mirroring
 `init --language`'s own built-in language packs -- unlike `init`, never
 blocked by an existing install-level config, since writing that config
 is this command's own purpose.
 
-`activeplugins` is deliberately not exposed here either, same as
-`config` -- the plugin system is out of scope (see the `init` command's
-own note); it is still carried through from whatever base this command
-merges onto (the existing file, or the bundled default), never dropped.
-
 No concurrency control: this file is per-user, per-machine state
-(ADR002V01). A lost update between two concurrent `installconfig` calls is an
+(ADR0002V01). A lost update between two concurrent `installconfig` calls is an
 accepted, undefended race -- this command is expected to run rarely, by
 a single human/agent doing one-time setup. Confirmed the worst
 case really is a lost update, never corruption (a merge-write always
@@ -51,7 +44,6 @@ from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core import config as config_schema
 from adrpy.core.config import (
     INT_FIELD_BOUNDS,
-    _BOOL_FIELDS,
     _INT_FIELDS,
     _STRING_FIELDS,
     SUPPORTED_LANGUAGES,
@@ -67,14 +59,12 @@ from adrpy.core.text import parse_ascii_int
 from adrpy.core.fs import cleanup_orphaned_temp_files_for
 from adrpy.core.warnings import orphan_cleanup_warning, retry_warning
 
-_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS + _BOOL_FIELDS
+_EDITABLE_FIELDS = _STRING_FIELDS + _INT_FIELDS
 
 
 def _field_type(field):
     if field in _INT_FIELDS:
         return "integer"
-    if field in _BOOL_FIELDS:
-        return "boolean"
     return "string"
 
 
@@ -96,7 +86,7 @@ def _field_description(field):
         )
     if field == "folderlog":
         return (
-            "Relative path to the decision-log directory (ADR007V01) that a newly init'd repository "
+            "Relative path to the decision-log directory (ADR0007V01) that a newly init'd repository "
             f"using this as its seed will get by default, max {config_schema.FOLDERLOG_MAX_LENGTH} "
             "characters; cannot be empty or absolute, or the same as (or nested inside/around) "
             "--folderadr (config-folderadr-folderlog-overlap, checked even here). Omitting this flag keeps "
@@ -136,7 +126,7 @@ def _field_description(field):
             f"Status label shown in the header table, max {config_schema.STATUS_LABEL_MAX_LENGTH} "
             "characters; cannot be empty, contain '|', or contain a line-break-like character. Also cannot "
             "contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status "
-            "cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and "
+            "cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and "
             "the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), "
             "so one of these characters could otherwise forge a date/marker the tool never wrote, or "
             "corrupt which successor a Superseded row points to."
@@ -163,12 +153,7 @@ def _field_description(field):
             f"Integer between {low} and {high} (inclusive); a non-integer value fails with "
             "field-not-an-integer."
         )
-    if field == "disableplugins":
-        return "'true' or 'false'; anything else fails with field-not-a-boolean."
-    # Same fail-loud guard as config.py's own _field_description, and for
-    # the same reason: a newly added schema field with no matching branch
-    # here must be caught immediately, not silently fall through to a
-    # tautological message.
+    # Same fail-loud guard as config.py's own _field_description.
     raise AssertionError(f"No description defined for editable field '{field}'.")
 
 
@@ -180,11 +165,11 @@ def describe():
             "supplies a migrate fallback)."
         ),
         "description": (
-            "Reads or updates the per-user install-level config (ADR002V01), which seeds `init` and supplies "
+            "Reads or updates the per-user install-level config (ADR0002V01), which seeds `init` and supplies "
             "migrate's migrationpattern fallback; it targets no repository and takes no --path. With no field"
             " flags and no --seed/--language it reads the file back (`configured` is false, with no `config` "
             "key, when it does not exist yet); otherwise it updates only the fields passed, or replaces the "
-            "file with --seed or --language. `activeplugins` is never read or written, but a write keeps it."
+            "file with --seed or --language."
         ),
         "arguments": [
             {
@@ -196,9 +181,8 @@ def describe():
                     "merging individual field flags -- same semantics as `init --seed`. Fails with "
                     "config-file-not-found if this path itself does not point to an existing file. "
                     "The install-level "
-                    "config's schema is byte-compatible with a repository's own adr-config.adrplus, so "
-                    "this also covers importing AdrPlus's own "
-                    "template file directly, with no separate flag needed. Any field flag passed ALONGSIDE --seed raises "
+                    "config's schema is a repository's own .adrpy.json schema, so any repository's "
+                    "config can be imported this way. Any field flag passed ALONGSIDE --seed raises "
                     "usage-error -- pass one or the other -- same as `init`'s own incompatible flag "
                     "combination (--seed with --language). Over an existing file, a warning names the "
                     "fields whose earlier values the replace dropped."
@@ -235,7 +219,6 @@ def describe():
                 FailureCodes.CONFIG_FILE_NOT_FOUND: "--seed does not point to an existing file.",
                 FailureCodes.LANGUAGE_NOT_SUPPORTED: "--language is not one of SUPPORTED_LANGUAGES.",
                 FailureCodes.FIELD_NOT_AN_INTEGER: "An integer field's own value is not a valid integer.",
-                FailureCodes.FIELD_NOT_A_BOOLEAN: "--disableplugins is not 'true' or 'false'.",
                 FailureCodes.IO_ERROR: "The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.).",
             },
             config_schema.SHARED_FAILURE_CODES,
@@ -280,12 +263,11 @@ def run(args):
         return f"The existing install-level config was replaced as a whole; these fields changed value: {', '.join(changed)}."
 
     if seed_arg is not None:
-        # Decision-log: 2026-09-18--audit-finding--install-config--seed-
-        # plus-field-flag-misreports-updated-fields.md -- a co-passed
-        # field flag must be rejected outright, matching init's own
-        # precedent for its incompatible flag combination (--seed +
-        # --language): silently ignoring it while still reporting it in
-        # updated_fields would misrepresent what was actually applied.
+        # A co-passed field flag is rejected outright, as init rejects
+        # --seed + --language: ignoring it while reporting it in
+        # updated_fields would misrepresent what was applied
+        # (decision-log: 2026-09-18--audit-finding--install-config--seed-
+        # plus-field-flag-misreports-updated-fields.md).
         conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
         if conflicting:
             raise UsageError(
@@ -305,10 +287,7 @@ def run(args):
         }
 
     if language_arg is not None:
-        # Same rule as --seed above -- a co-passed field flag is rejected
-        # outright, not silently ignored or silently overridden, since a
-        # full replace reporting every field in updated_fields would
-        # misrepresent what was actually applied otherwise.
+        # Same rule as --seed above: a co-passed field flag is rejected.
         conflicting = [field for field in _EDITABLE_FIELDS if field in flags]
         if conflicting:
             raise UsageError(
@@ -356,13 +335,6 @@ def run(args):
                     FailureCodes.FIELD_NOT_AN_INTEGER, f"--{field} must be an integer, got: {flags[field]}"
                 ) from error
             updated_fields.append(field)
-
-    if "disableplugins" in flags:
-        text = flags["disableplugins"].strip().lower()
-        if text not in ("true", "false"):
-            raise CommandError(FailureCodes.FIELD_NOT_A_BOOLEAN, "--disableplugins must be 'true' or 'false'.")
-        merged["disableplugins"] = text == "true"
-        updated_fields.append("disableplugins")
 
     merged_text = json.dumps(merged, indent=2, ensure_ascii=False)
     parse_repo_config(merged_text)  # re-validates the merged result; raises on failure

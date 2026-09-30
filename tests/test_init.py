@@ -27,10 +27,11 @@ def _as_written(config_text):
     return serialize_repo_config(asdict(parse_repo_config(config_text)))
 
 
+@pytest.mark.real_defaults
 def test_init_fresh_repo_writes_default_config_and_creates_folder(tmp_path):
     result = init.run(["--path", str(tmp_path)])
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     assert config_path.read_text(encoding="utf-8") == _as_written(_default_config_text())
     assert (tmp_path / "doc" / "adr").is_dir()
     assert result["created"] == [str(config_path), str(tmp_path / "doc" / "adr")]
@@ -58,7 +59,7 @@ def test_init_does_not_recommend_installconfig_when_language_is_given(tmp_path):
 
 
 def test_init_does_not_recommend_installconfig_when_install_level_config_exists(tmp_path, monkeypatch):
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     result = init.run(["--path", str(tmp_path)])
@@ -67,13 +68,11 @@ def test_init_does_not_recommend_installconfig_when_install_level_config_exists(
 
 
 def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_folder_first(tmp_path, monkeypatch):
-    """Verified live: this escapes as a clean `io-error`, not a generic
-    `internal-error`, since FileExistsError is an OSError subclass
-    __main__.py already catches. Distinct from the config's own race
-    (closed by creating it exclusively -- tests/test_exclusive_create.py):
-    that one has genuinely conflicting content between two calls; this
-    one doesn't -- both processes want the exact same end state (the
-    folder exists), so there's nothing to lose by closing it outright."""
+    """Both processes want the exact same end state (the folder exists),
+    so there's nothing to lose by accepting the one created first.
+    Distinct from the config's own race (closed by creating it exclusively
+    -- tests/test_exclusive_create.py): that one has genuinely conflicting
+    content between two calls; this one doesn't."""
     real_mkdir = init.Path.mkdir
     triggered = {"done": False}
 
@@ -97,12 +96,12 @@ def test_init_does_not_fail_when_a_concurrent_process_creates_the_decisions_fold
     # before the race is even injected) legitimately observed it as
     # missing at that point -- a harmless reporting quirk, not a bug.
     assert (tmp_path / "doc" / "adr").is_dir()
-    assert result["created"] == [str(tmp_path / "adr-config.adrplus"), str(tmp_path / "doc" / "adr")]
+    assert result["created"] == [str(tmp_path / ".adrpy.json"), str(tmp_path / "doc" / "adr")]
 
 
 def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp_path, monkeypatch):
-    """retry_warning's own
-    "succeeded only after N attempts" message had no end-to-end coverage."""
+    """retry_warning's own "succeeded only after N attempts" message, end
+    to end."""
     real_atomic_write_text = init.atomic_write_text
 
     def flaky_atomic_write_text(*args, **kwargs):
@@ -117,7 +116,7 @@ def test_init_reports_a_retry_warning_when_the_write_needed_several_attempts(tmp
 
 
 def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_path):
-    """ADR007V01: the folderlog counterpart to
+    """ADR0007V01: the folderlog counterpart to
     test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist
     -- --seed changing folderlog on an already-existing repository can
     orphan existing decision-log entries the same way."""
@@ -138,7 +137,7 @@ def test_init_seed_rejects_a_folderlog_change_when_entries_already_exist(tmp_pat
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderlog-change-blocked-by-existing-entries"
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderlog"] == "doc/decision-log"
 
 
@@ -162,14 +161,13 @@ def test_init_seed_rejects_a_folderadr_change_when_decisions_already_exist(tmp_p
     assert excinfo.value.code == "folderadr-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"folderadr": "doc/adr", "existing_decisions": 1}
     # Nothing was written -- the original config survives untouched.
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"
 
 
 def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
-    """Folderadr-change-scan-
-    incomplete was only ever tested at the core/lifecycle level, never
-    through this real CLI command (init's own --seed path shares the
+    """folderadr-change-scan-incomplete through this real CLI command, not
+    only at the core/lifecycle level (init's own --seed path shares the
     same guard as config's own --folderadr)."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
@@ -195,7 +193,7 @@ def test_init_seed_folderadr_change_fails_closed_when_a_subdirectory_is_unreadab
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderadr-change-scan-incomplete"
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
@@ -220,12 +218,12 @@ def test_init_seed_rejects_a_folderadr_change_that_would_adopt_an_unrelated_file
     assert excinfo.value.code == "folderadr-change-would-adopt-unrelated-files"
     assert len(excinfo.value.data["adopted_files"]) == 1
     assert "ADR001V01-unrelated.md" in excinfo.value.data["adopted_files"][0]
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # nothing was written
 
 
 def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_already_exist(tmp_path):
-    """ADR004V01: --seed replacing an already-existing repository's config
+    """ADR0004V01: --seed replacing an already-existing repository's config
     is exactly as capable of breaking status-label/separator recognition
     of existing decisions as `config` is -- same shared guard."""
     init.run(["--path", str(tmp_path)])
@@ -241,12 +239,12 @@ def test_init_seed_rejects_a_status_label_or_separator_change_when_decisions_alr
 
     assert excinfo.value.code == "status-or-separator-change-blocked-by-existing-decisions"
     assert excinfo.value.data == {"changed_fields": ["statusacc"], "existing_decisions": 1}
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["statusacc"] == "Accepted"  # nothing was written
 
 
 def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_already_exists(tmp_path):
-    """ADR004V02: the guard's own call site wiring, not just the shared
+    """ADR0004V02: the guard's own call site wiring, not just the shared
     function's internals -- --seed changing migrationpattern is exactly
     as capable of breaking legacy-scheme recognition as `config` is. The
     legacy decision is a migrated one (a hand-written file with no header
@@ -261,7 +259,7 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
     adr_dir = tmp_path / "doc" / "adr"
     adr_dir.mkdir(parents=True, exist_ok=True)
     record = DecisionRecord(number=1, title="T01", version=0)
-    header = build_header(load_repo_config(tmp_path / "adr-config.adrplus"), record, migrated=True)
+    header = build_header(load_repo_config(tmp_path / ".adrpy.json"), record, migrated=True)
     (adr_dir / "0001T01.md").write_bytes((header + "Legacy content\n").encode("utf-8"))
 
     seed["migrationpattern"] = "N00:05T05"
@@ -275,8 +273,7 @@ def test_init_seed_rejects_a_migrationpattern_change_when_a_legacy_decision_alre
 
 
 def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unrecognized_file(tmp_path):
-    """Call-site wiring proof for the deferred finding closed alongside
-    ADR004V0x -- --seed changing separator can silently adopt an
+    """Call-site wiring: --seed changing separator can silently adopt an
     unrelated file exactly the same way `config` can."""
     init.run(["--path", str(tmp_path)])
     adr_dir = tmp_path / "doc" / "adr"
@@ -296,15 +293,13 @@ def test_init_seed_rejects_a_separator_change_that_would_adopt_an_unrelated_unre
 
 
 def test_init_seed_status_or_separator_guard_wins_over_numbers_scan_incomplete(tmp_path, monkeypatch):
-    """ADR004V02: reject_status_or_separator_change_if_decisions_exist
+    """ADR0004V02: reject_status_or_separator_change_if_decisions_exist
     runs BEFORE _max_existing_numbers inside _validate_and_write -- when
     a seed both changes a guarded field AND has an unreadable
     subdirectory, status-or-separator-change-scan-incomplete wins, never
     init-existing-numbers-scan-incomplete. Pins this order so a future
     reordering of the two checks can't silently swap which code callers
-    see with no test failure; also the first test of this guard's own
-    scan-incomplete path through `init --seed` at all (previously
-    exercised only through `config`)."""
+    see with no test failure."""
     init.run(["--path", str(tmp_path)])
     new.run(["--path", str(tmp_path), "--title", "First decision"])
     adr_dir = tmp_path / "doc" / "adr"
@@ -354,7 +349,7 @@ def test_init_seed_refuses_when_folderlog_is_a_junction_onto_folderadr(tmp_path)
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
     assert excinfo.value.code == "folderadr-folderlog-alias-same-directory"
-    assert load_repo_config(tmp_path / "adr-config.adrplus").prefix != "SEED"  # never committed
+    assert load_repo_config(tmp_path / ".adrpy.json").prefix != "SEED"  # never committed
 
 
 def test_init_seed_fails_closed_when_a_subdirectory_is_unreadable(tmp_path, monkeypatch):
@@ -414,7 +409,7 @@ def test_init_seed_does_not_commit_folderadr_if_the_new_folder_cannot_be_created
     with pytest.raises(CommandError):
         init.run(["--path", str(tmp_path), "--seed", str(seed_path)])
 
-    on_disk = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    on_disk = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert on_disk["folderadr"] == "doc/adr"  # unchanged -- nothing committed
     assert not (tmp_path / "newfolder").exists()
 
@@ -429,13 +424,11 @@ def test_init_refuses_when_config_already_exists_without_file(tmp_path):
 
 
 def test_init_with_seed_overwrites_using_custom_config(tmp_path):
-    """Usability backlog item B2: init's own --file was renamed --seed --
-    everywhere else in the CLI, --file means "the decision file to
-    mutate"; here it meant "a config JSON to seed the repo with", a
-    naming collision an agent generalizing across commands could
-    reasonably get wrong. Confirmed with the user as a deliberate
-    divergence from the reference tool's own `-f/--file` naming (decision-log:
-    accepted-divergence--2026-09-15--init--file-flag-renamed-to-seed.md)."""
+    """The flag is --seed, not --file: everywhere else in the CLI, --file
+    means "the decision file to mutate"; here it would mean "a config JSON
+    to seed the repo with", a naming collision an agent generalizing
+    across commands could reasonably get wrong (decision-log:
+    2026-09-15--scope-note--init--file-flag-renamed-to-seed.md)."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "decisions"
     file_path = tmp_path / "custom-config.json"
@@ -443,7 +436,7 @@ def test_init_with_seed_overwrites_using_custom_config(tmp_path):
 
     result = init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
-    assert (tmp_path / "adr-config.adrplus").read_text(encoding="utf-8") == _as_written(json.dumps(custom))
+    assert (tmp_path / ".adrpy.json").read_text(encoding="utf-8") == _as_written(json.dumps(custom))
     assert (tmp_path / "decisions").is_dir()
     assert str(tmp_path / "decisions") in result["created"]
 
@@ -512,9 +505,9 @@ def test_init_rejects_digit_overflow_against_existing_decisions(tmp_path):
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "lenseq-too-small-for-existing-decisions"
-    # The real number was only ever in `detail`
-    # (stderr, free text) -- an agent automating "bump lenseq until it
-    # fits" would have had to parse that text instead of reading `data`.
+    # The real number is in `data`, not only in `detail` (stderr, free
+    # text) -- an agent automating "bump lenseq until it fits" must not
+    # have to parse that text.
     assert excinfo.value.data == {"max_number": 1234, "lenseq": 3}
 
 
@@ -553,14 +546,13 @@ def test_init_end_to_end_through_main(tmp_path):
     exit_code = main(["init", "--path", str(tmp_path)])
 
     assert exit_code == EXIT_SUCCESS
-    assert (tmp_path / "adr-config.adrplus").exists()
+    assert (tmp_path / ".adrpy.json").exists()
 
 
 def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
-    """`folderadr: "../.."` passes config.py's schema check (it isn't
-    absolute), but must still be caught at the point of use -- a hostile
-    config (e.g. from a cloned repo) must never be able to make init create
-    a directory outside the target repository."""
+    """A hostile config (e.g. from a cloned repo) must never be able to
+    make init create a directory outside the target repository: the
+    schema refuses a folderadr leading out of it."""
     custom = json.loads(_default_config_text())
     custom["folderadr"] = "../../escape"
     file_path = tmp_path / "custom-config.json"
@@ -569,12 +561,12 @@ def test_init_rejects_folderadr_traversal_outside_repository(tmp_path):
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path), "--seed", str(file_path)])
 
-    assert excinfo.value.code == "path-outside-repository"
+    assert excinfo.value.code == "config-folderadr-not-relative"
 
 
 def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
-    """A second call site of the same class: init's own --seed read used
-    a bare read_text(encoding="utf-8") too."""
+    """init's own --seed read turns invalid UTF-8 bytes into a
+    CommandError too, not a bare read_text(encoding="utf-8") error."""
     file_path = tmp_path / "custom-config.json"
     file_path.write_bytes(b'{"folderadr": "doc\xffadr"}')
 
@@ -585,15 +577,12 @@ def test_init_rejects_seed_file_with_invalid_utf8_bytes(tmp_path):
 
 
 def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
-    """The reference tool's own `language` app setting doesn't just affect
-    interactive UI text -- it also picks the DEFAULT header/status labels
-    and template content baked into a newly init'd repo (read from a
-    per-culture resource file; the default template file is swapped for
-    a per-culture variant). Extracted verbatim from the reference tool's
-    own resources, never hand-translated."""
+    """`--language` picks the DEFAULT header/status labels and template
+    content baked into a newly init'd repo, from the bundled language
+    pack (the default template is swapped for its per-language variant)."""
     result = init.run(["--path", str(tmp_path), "--language", "pt-br"])
 
-    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert config["statusnew"] == "Proposto"
     assert config["statusacc"] == "Aceito"
     assert config["headerversion"] == "Versão"
@@ -602,7 +591,7 @@ def test_init_with_language_seeds_localized_labels_and_template(tmp_path):
     # Everything NOT covered by the language pack keeps the built-in default.
     assert config["folderadr"] == "doc/adr"
     assert config["separator"] == "-"
-    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
+    assert result["created"][0] == str(tmp_path / ".adrpy.json")
 
 
 def test_init_rejects_unsupported_language(tmp_path):
@@ -616,22 +605,22 @@ def test_init_rejects_unsupported_language(tmp_path):
 
 
 def test_init_uses_install_level_config_as_seed_when_present(tmp_path, monkeypatch):
-    # tests/fixtures/adr-config.adrplus differs from the built-in default
-    # in activeplugins (["AdrIndexer"] vs []) -- a distinguishing field
-    # that proves this content was actually used, not a coincidence.
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    # tests/fixtures/.adrpy.json differs from the built-in default in
+    # its template (CRLF line endings) -- a distinguishing field that
+    # proves this content was actually used, not a coincidence.
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     result = init.run(["--path", str(tmp_path)])
 
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     assert config_path.read_text(encoding="utf-8") == _as_written(install_text)
-    assert load_repo_config(config_path).activeplugins == ["AdrIndexer"]
+    assert "\r\n" in load_repo_config(config_path).template
     assert result["created"][0] == str(config_path)
 
 
 def test_init_rejects_language_when_install_level_config_exists(tmp_path, monkeypatch):
-    install_text = (Path("tests") / "fixtures" / "adr-config.adrplus").read_text(encoding="utf-8")
+    install_text = (Path("tests") / "fixtures" / ".adrpy.json").read_text(encoding="utf-8")
     monkeypatch.setattr(init, "read_install_config_text", lambda: install_text)
 
     with pytest.raises(UsageError):
@@ -647,9 +636,9 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
     own root. The existing-decisions guard never engages either, since a
     fresh repo has zero decisions.
 
-    ADR007V01: '.' has zero path components, a prefix of any folderlog
+    ADR0007V01: '.' has zero path components, a prefix of any folderlog
     value (explicit or computed-default) by construction -- the schema-
-    level folderadr/folderlog containment guard now catches this even
+    level folderadr/folderlog containment guard catches this even
     earlier than resolve_within's own path-outside-repository check."""
     from importlib import resources
 
@@ -662,7 +651,7 @@ def test_init_rejects_an_install_level_folderadr_that_collapses_onto_the_reposit
         init.run(["--path", str(tmp_path)])
 
     assert excinfo.value.code == "config-folderadr-folderlog-overlap"
-    assert not (tmp_path / "adr-config.adrplus").exists()
+    assert not (tmp_path / ".adrpy.json").exists()
 
 
 def test_missing_target_directory_error_is_not_masked_by_a_corrupt_install_level_config(tmp_path, monkeypatch):
@@ -712,8 +701,8 @@ def test_init_accepts_every_supported_language(tmp_path, language):
     (label length limits, ASCII-only prefix, ...) -- not just pt-br."""
     result = init.run(["--path", str(tmp_path), "--language", language])
 
-    assert result["created"][0] == str(tmp_path / "adr-config.adrplus")
-    config = json.loads((tmp_path / "adr-config.adrplus").read_text(encoding="utf-8"))
+    assert result["created"][0] == str(tmp_path / ".adrpy.json")
+    config = json.loads((tmp_path / ".adrpy.json").read_text(encoding="utf-8"))
     assert config["prefix"] == "ADR"  # every language pack's prefix is ASCII "ADR"
 
 
@@ -722,14 +711,14 @@ def test_bare_init_and_explicit_language_en_us_produce_byte_identical_template(t
     line endings while every one of the 11 language packs (including
     en-us.json, "Defaults to en-us" per init's own describe()) used bare
     LF -- so a bare `init` and an explicit `init --language en-us`
-    produced the same prose but byte-different adr-config.adrplus files."""
+    produced the same prose but byte-different .adrpy.json files."""
     bare_dir = tmp_path_factory.mktemp("bare")
     lang_dir = tmp_path_factory.mktemp("lang")
     init.run(["--path", str(bare_dir)])
     init.run(["--path", str(lang_dir), "--language", "en-us"])
 
-    bare_template = json.loads((bare_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
-    lang_template = json.loads((lang_dir / "adr-config.adrplus").read_text(encoding="utf-8"))["template"]
+    bare_template = json.loads((bare_dir / ".adrpy.json").read_text(encoding="utf-8"))["template"]
+    lang_template = json.loads((lang_dir / ".adrpy.json").read_text(encoding="utf-8"))["template"]
     assert bare_template == lang_template
 
 
@@ -767,7 +756,7 @@ def test_init_rejects_language_combined_with_seed(tmp_path):
 def test_init_over_an_empty_config_says_it_is_empty(tmp_path):
     # An interrupted init (no hard links) can leave a 0-byte config: init
     # names that, instead of "already exists".
-    (tmp_path / "adr-config.adrplus").write_bytes(b"")
+    (tmp_path / ".adrpy.json").write_bytes(b"")
 
     with pytest.raises(CommandError) as excinfo:
         init.run(["--path", str(tmp_path)])
@@ -791,11 +780,57 @@ def test_the_first_config_change_after_init_rewrites_only_the_changed_line(tmp_p
         seed_file.write_text(_default_config_text(), encoding="utf-8")
         args += ["--seed", str(seed_file)]
     init.run(args)
-    config_path = tmp_path / "adr-config.adrplus"
+    config_path = tmp_path / ".adrpy.json"
     before = config_path.read_text(encoding="utf-8").splitlines()
 
-    config.run(["--path", str(tmp_path), "--lenseq", "4"])
+    config.run(["--path", str(tmp_path), "--lenseq", "5"])
 
     after = config_path.read_text(encoding="utf-8").splitlines()
     assert len(before) == len(after)
-    assert [(old, new) for old, new in zip(before, after) if old != new] == [('  "lenseq": 3,', '  "lenseq": 4,')]
+    changed = [(old, new) for old, new in zip(before, after) if old != new]
+    assert len(changed) == 1 and changed[0][0].startswith('  "lenseq": ') and changed[0][1] == '  "lenseq": 5,'
+
+
+
+def test_init_writes_the_repository_config_as_adrpy_json(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    assert (tmp_path / ".adrpy.json").is_file()
+
+
+def test_a_config_under_another_name_is_not_a_repository_config(tmp_path):
+    """Only `.adrpy.json` at the root makes a repository: a config JSON
+    under any other name is not read."""
+    from adrpy.cli import explore
+
+    (tmp_path / "adrpy-config.json").write_text(_default_config_text(), encoding="utf-8")
+
+    with pytest.raises(CommandError) as excinfo:
+        explore.run(["--path", str(tmp_path)])
+
+    assert excinfo.value.code == "config-not-found"
+
+
+
+def test_a_new_repository_config_has_no_plugin_fields(tmp_path):
+    init.run(["--path", str(tmp_path)])
+    text = (tmp_path / ".adrpy.json").read_text(encoding="utf-8")
+    assert "activeplugins" not in text and "disableplugins" not in text
+
+
+@pytest.mark.real_defaults
+def test_the_shipped_defaults_are_four_two_two():
+    from adrpy.core.config import default_repo_config_text
+
+    data = json.loads(default_repo_config_text())
+    assert (data["lenseq"], data["lenversion"], data["lenrevision"]) == (4, 2, 2)
+
+
+@pytest.mark.real_defaults
+def test_a_decision_in_a_new_repository_is_named_with_the_shipped_defaults(tmp_path):
+    from adrpy.cli import new
+
+    init.run(["--path", str(tmp_path)])
+    new.run(["--path", str(tmp_path), "--title", "First decision"])
+
+    names = [path.name for path in (tmp_path / "doc" / "adr").glob("*.md") if path.name != "INDEX.md"]
+    assert len(names) == 1 and names[0].startswith("ADR0001V01R01-")

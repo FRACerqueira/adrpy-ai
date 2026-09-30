@@ -2,12 +2,12 @@
 
 This page is the step-by-step workflow for adding an entry to the
 decision log -- the folder `folderlog` names in the repository's
-`adr-config.adrplus` (`doc/decision-log/` by default; `adrpy config --path .`
+`.adrpy.json` (`doc/decision-log/` by default; `adrpy config --path .`
 shows the repository's own value): the lighter-weight sibling of the
 decisions folder (`folderadr`, `doc/adr/` by default), for events
 that are worth recording but are not an architectural decision -- an audit
 finding, a retracted verdict, a documentation-drift correction, a confirmed
-divergence from the reference tool, a deferred item, an accepted trade-off,
+divergence from a reference, a deferred item, an accepted trade-off,
 a checked-and-refuted suspicion, or a one-off process exception. If you are
 looking for the *full* classification vocabulary and the extra columns
 some entries carry (`Front`/`Severity`/`Resolution`/`Round`), that lives in

@@ -4,14 +4,14 @@
 
 # `adrpy config`
 
-Reads or updates an existing repository's own `adr-config.adrplus`.
+Reads or updates an existing repository's own `.adrpy.json`.
 
 <!-- generated:start -->
 <!-- Generated from describe() by scripts/generate_command_docs.py; edit the command, not this block. -->
 
 ## Description
 
-With no field flags, reads the repository's adr-config.adrplus back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR004V02, ADR007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "". `activeplugins` is never read or written.
+With no field flags, reads the repository's .adrpy.json back (the result has a `config` key); otherwise updates only the fields passed (the result has `updated_fields` and no `config` key). Changing a guarded field -- folderadr, folderlog, a status label, separator, prefix or migrationpattern -- validates the repository first and is refused while it would orphan, reclassify or adopt existing files (ADR0004V02, ADR0007V01). Setting migrationpattern writes the config and also returns `migrationpattern_preview` (file, number, version, title of each file it recognizes); `adrpy explore --path . --migrationpattern <pattern>` returns the same preview without writing anything, so preview there first. While the repository is not adopted yet, check then fails with no-header on each file the pattern matches until `adrpy migrate` runs; once a decision migrate did not write exists, such a file is only warned about. To back out, --migrationpattern "".
 
 ## Arguments
 
@@ -19,16 +19,16 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 |---|---|---|---|---|
 | `--path` | -- | yes | string | Repository root directory. |
 | `--folderadr` | -- | no | string | Relative path to the decisions folder, max 50 characters; cannot be empty, absolute, escape the repository, or resolve to the repository root itself. |
-| `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
+| `--folderlog` | -- | no | string | Relative path to the decision-log directory (ADR0007V01), max 50 characters; cannot be empty, absolute, escape the repository, or be the same as (or nested inside/around) folderadr (config-folderadr-folderlog-overlap). Defaults to folderadr's own parent sibling 'decision-log' when omitted from a hand-edited config written before this field existed. |
 | `--migrationpattern` | -- | no | string | Positional pattern for the legacy naming scheme (N##:##T##[V##:##][R##:##][P##:##]): N is the number's start:length in the name without '.md', T where the title starts (after the separator), V/R/P the version's, revision's and prefix's start:length, positions from 00 -- e.g. 'N00:04T05' for `0001-title.md`, 'N00:04T04' for `0001Title.md`. Setting it writes the config: preview a pattern first with `adrpy explore --path . --migrationpattern <pattern>`, which writes nothing. The result lists what it recognizes (migrationpattern_preview) and warns about a likely misreading. A pattern that reads part of a name twice -- its T starts inside its N/V/R/P range, or two of those ranges overlap, as 'N00:04T02' for `0001-title.md` (title '01-title') -- is refused with config-migrationpattern-invalid, the detail naming the overlap; a config that already holds one still loads, and this flag can clear or correct it while no decision was migrated with it (after that the guard keeps it, and migrate finishes with it and warns). While the repository is not adopted yet (no file has a valid header migrate did not write, so migrate can still run), `adrpy check` (and every command that validates the repository) then fails with no-header on each file it matches until `adrpy migrate` runs; once a decision has a valid header migrate did not write, a file it matches without one is not a decision. To back out, an empty value (--migrationpattern "") clears it. Like any change to it, clearing is refused (status-or-separator-change-blocked-by-existing-decisions) while a LEGACY-scheme decision that already has a header (migrated) would lose recognition; hand-written files it only matches by name do not block it. |
 | `--template` | -- | no | string | Default template content for a new decision's body, max 10000 characters; a too-long value fails with config-template-too-long. The stored value may be empty, but this flag can't set it to an empty string here (an empty value for this flag is refused as a usage error) -- use `init --seed` for that. |
 | `--prefix` | -- | no | string | ASCII letters only, max 5 characters; every decision name starts with it (compared case-insensitively), so it is guarded like --separator. The stored value may be empty, but this flag can't set it to an empty string here (an empty value for this flag is refused as a usage error) -- use `init --seed` for that. |
 | `--separator` | -- | no | string | One of ('-', '_', '.'). |
 | `--casetransform` | -- | no | string | One of ('CamelCase', 'PascalCase', 'SnakeCase', 'KebabCase'). |
-| `--statusnew` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
-| `--statusacc` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
-| `--statusrej` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
-| `--statussup` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statusnew` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statusacc` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statusrej` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
+| `--statussup` | -- | no | string | Status label shown in the header table, max 25 characters; cannot be empty, contain '\|', or contain a line-break-like character. Also cannot contain '(', ')', '<!--', '-->', or ':' -- these four fields alone land inside the status cell's own parenthesized-date-then-marker grammar (ADR0004V01's hidden canonical marker) and the Superseded row's own successor-reference suffix (which finds the FIRST ':' in the cell), so one of these characters could otherwise forge a date/marker the tool never wrote, or corrupt which successor a Superseded row points to. |
 | `--headerdisclaimer` | -- | no | string | Header disclaimer text, max 100 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
 | `--headertitlefile` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
 | `--headerversion` | -- | no | string | Header row label, max 40 characters; cannot be empty, contain '\|', or contain a line-break-like character. |
@@ -44,16 +44,14 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `--lenseq` | -- | no | integer | Integer between 3 and 6 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenversion` | -- | no | integer | Integer between 2 and 4 (inclusive); a non-integer value fails with field-not-an-integer. |
 | `--lenrevision` | -- | no | integer | Integer between 0 and 3 (inclusive); a non-integer value fails with field-not-an-integer. |
-| `--disableplugins` | -- | no | boolean | 'true' or 'false'; anything else fails with field-not-a-boolean. |
 
 ## Failure codes
 
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `field-not-an-integer` | An integer field's own value is not a valid integer. |
-| `field-not-a-boolean` | --disableplugins is not 'true' or 'false'. |
 | `repository-inconsistent` | A guarded field is being changed and the decisions folder breaks at least one consistency rule (the same ones `adrpy check` reports); data.errors lists every one, with its file and a repair hint. Nothing is written until the repository is repaired. |
 | `folderadr-change-blocked-by-existing-decisions` | --folderadr can only be changed while the OLD folder has no recognized decisions yet. |
 | `folderadr-change-scan-incomplete` | A subdirectory under the NEW folderadr could not be scanned while checking a --folderadr change. |
@@ -70,12 +68,12 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | The write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |
@@ -87,9 +85,9 @@ With no field flags, reads the repository's adr-config.adrplus back (the result 
 | `config-field-empty` | A field that must be non-empty is an empty string. |
 | `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
 | `config-folderadr-too-long` | folderadr exceeds 50 characters. |
-| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderlog-too-long` | folderlog exceeds 50 characters. |
-| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |

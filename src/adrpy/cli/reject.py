@@ -14,6 +14,7 @@ failure up to and including that write leaves nothing committed at all,
 safely retryable from scratch.
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.consistency import SUPERSEDED
 from adrpy.core.errors import CommandError, FailureCodes
@@ -83,13 +84,7 @@ def run(args):
     config, path, filename_info, header = ctx.config, ctx.path, ctx.filename_info, ctx.header
     refdate, warnings = ctx.refdate, ctx.warnings
     with attach_warnings(warnings):
-        # Reverting the predecessor FIRST (not this decision's own write
-        # first, then the predecessor's) means every failure up to and
-        # including that write leaves nothing committed at all -- always
-        # safely retryable from scratch, instead of risking a predecessor stuck
-        # Superseded forever with no command able to touch it again
-        # (status_change is a terminal state everywhere else in this
-        # codebase; there is no "unsupersede" verb).
+        # The predecessor is reverted FIRST (see the module docstring).
         undone_predecessor = None
         predecessor = None
         if is_successor(filename_info):
@@ -121,7 +116,7 @@ def run(args):
                 path, config, header, filename_info, field="update", status="Rejected", refdate=refdate
             )
             # Accurate only because the write above already succeeded --
-            # the warning claims the file was rewritten. ADR006V01:
+            # the warning claims the file was rewritten. ADR0006V01:
             # combines the header's own flag (known since prepare)
             # with the body's own (only known now, from the streamed
             # write).
@@ -131,6 +126,7 @@ def run(args):
             if warning:
                 warnings.append(warning)
 
+    adr_index.regenerate(ctx.root, ctx.config, warnings)
     # Canonical keyword, not the repo's configured status label.
     return {"file": str(path), "status": "Rejected", "undone_predecessor": undone_predecessor, "warnings": warnings}
 
@@ -153,13 +149,11 @@ def _revert_then_reject(ctx, predecessor):
     reject_too_long_filename(pred_path.name, REWRITE_TOO_LONG_REMEDY, warnings=warnings)
     prepared = []
     try:
-        # pred_header already comes from the validated snapshot's own
-        # read (core/consistency, via read_header_lines_with_report) -- no
-        # separate read needed for the header portion. It parsed, so
-        # whatever that read replaced did not affect the status read
-        # from it -- only the BODY's own encoding status (ADR006V01,
-        # known only once the streamed read has run) can still need the
-        # warning.
+        # pred_header comes from the validated snapshot's own read
+        # (core/consistency) and parsed, so whatever that read replaced
+        # did not affect its status -- only the BODY's own encoding
+        # status (ADR0006V01, known once the streamed read has run) can
+        # still need the warning.
         _record, pred_body_encoding_repaired, pred_prepared = prepare_status_field_rewrite(
             pred_path, config, pred_header, pred_parsed, field="change", status=None, refdate=None
         )

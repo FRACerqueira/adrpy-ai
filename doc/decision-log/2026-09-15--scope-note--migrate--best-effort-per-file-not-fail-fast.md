@@ -1,4 +1,4 @@
-# migrate is best-effort per file; AdrPlus 1.0.0 stops at the first failure
+# migrate is best-effort per file, not fail-fast
 
 `cli/migrate.py`'s per-file loop now attempts every eligible candidate
 regardless of an earlier failure, returning one `{"file", "status":
@@ -8,13 +8,12 @@ the whole command still reports `success:false` with code
 outcome deterministically — no inference required about which files were
 never attempted.
 
-**Why this diverges, and why it's safe to:** `MigrateCommandHandler.cs`'s
-own per-file loop (`MigrateRepositoryAsync`) has no try/catch around its
-per-file write either — a real I/O failure partway through propagates and
-loses even the partial `result` list already built in that same run.
-That is not a deliberate fail-fast design in the original, it's simply
-the absence of any handling at all; there is no fidelity requirement
-being broken by choosing differently. adrpy-ai's first attempt at
+**Why best-effort, and why it's safe to:** the per-file loop had no
+try/catch around its per-file write at first — a real I/O failure
+partway through propagated and lost even the partial `result` list
+already built in that same run. That was not a deliberate fail-fast
+design, it was simply the absence of any handling at all.
+adrpy-ai's first attempt at
 covering this gap (commit `4617990`) kept the loop fail-fast and added a
 `migrated`/`failed_file` pair to `CommandError.data`, but that still
 required the caller to infer, from a set difference against a candidate
@@ -30,4 +29,4 @@ or reports a structured failure) rather than becoming the one command
 that reports `success:true` with failures buried in a nested array.
 Escalated and confirmed with the user (commit `550186f`).
 
-Architectural review (Round 43): the behavior stays, with the reason restated now that adrpy is the reference and AdrPlus will mirror it, so it no longer rests on AdrPlus 1.0.0 lacking any handling. migrate runs once, before any decision is created, and is exempt from validate-before-acting. It prepares and commits each candidate on its own, an atomic write per file: a failure leaves the other candidates migrated and the failed one untouched, data.results names every outcome, and a re-run migrates only the files still without a header. A fallback migrationpattern is still persisted into adr-config.adrplus first, before any candidate, so a re-run finds it; that timing no longer has anything to do with the lock (ADR001).
+Architectural review (Round 43): the behavior stays, with the reason restated. migrate runs once, before any decision is created, and is exempt from validate-before-acting. It prepares and commits each candidate on its own, an atomic write per file: a failure leaves the other candidates migrated and the failed one untouched, data.results names every outcome, and a re-run migrates only the files still without a header. A fallback migrationpattern is still persisted into .adrpy.json first, before any candidate, so a re-run finds it; that timing no longer has anything to do with the lock (ADR001).

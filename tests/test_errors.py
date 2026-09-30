@@ -2,10 +2,9 @@ from adrpy.core.errors import CommandError, UsageError
 
 
 def test_command_error_defaults_detail_data_and_warnings_to_none():
-    """CommandError.__init__ had
-    no direct unit test of its own -- every use in the suite is
-    incidental to testing something else (a specific command's own
-    behavior), never the constructor's own defaulting/fallback logic."""
+    """CommandError's own defaulting/fallback logic, directly: every other
+    use in the suite is incidental to testing a specific command's own
+    behavior."""
     error = CommandError("some-code")
 
     assert error.code == "some-code"

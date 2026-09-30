@@ -49,7 +49,7 @@ BASEPY = os.environ.get("AGENT_EVAL_PYTHON") or sys.executable
 SCENARIOS = ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"]
 MODEL_IDS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5", "haiku": "claude-haiku-4-5-20251001"}
 ALLOWED_TOOLS = {"Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill"}
-HEADER_ROW = re.compile(r"^\|(Adr-Plus Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\|", re.M)
+HEADER_ROW = re.compile(r"^\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\|", re.M)
 MARKER = re.compile(r"<!--\s*(Proposed|Accepted|Rejected|Superseded)\s*-->")
 ADR_NAME = re.compile(r"^ADR(\d+)V(\d+)(?:R(\d+))?-(.+?)(?:--(\d+))?\.md$", re.I)
 ASK_WORDS = re.compile(r"\b(confirm|approval|approve (?:the|this) write|shall I|should I|do you want|would you like|may I|go ahead|proceed\?)", re.I)
@@ -168,7 +168,7 @@ def status_of(h: dict | None) -> str:
 
 def load_cfg(repo: Path) -> dict:
     try:
-        return json.loads((repo / "adr-config.adrplus").read_text(encoding="utf-8"))
+        return json.loads((repo / ".adrpy.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -302,8 +302,8 @@ def header_hand_edits(run: Run, reviews: list | None = None) -> list[str]:
         if log_dir in path:
             hits.append(f"{name} decision-log {tag}{path.split(log_dir, 1)[-1]}")
             continue
-        if path.lower().endswith("/adr-config.adrplus") and reviews is not None:
-            reviews.append(f"CONFIG-HAND-EDIT: {name} {tag}adr-config.adrplus (adrpy config exists; judge manually)")
+        if path.lower().endswith("/.adrpy.json") and reviews is not None:
+            reviews.append(f"CONFIG-HAND-EDIT: {name} {tag}.adrpy.json (adrpy config exists; judge manually)")
         if adr_dir not in path:
             continue
         short = path.split(adr_dir, 1)[-1]
@@ -360,7 +360,7 @@ def _denied_attempt(reviews: list | None, what: str) -> None:
 
 _PY_STR = r"(\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*')"
 _PY_REPLACE = re.compile(r"\.replace\(\s*" + _PY_STR + r"\s*,\s*" + _PY_STR + r"(?:\s*,\s*\d+)?\s*\)")
-_HEADER_TEXT = re.compile(r"\|(Adr-Plus Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||Do not remove this comment")
+_HEADER_TEXT = re.compile(r"\|(Fields|File title md|Version|Revision|Scope|Domain|Created|Changed|Superseded)\||Do not remove this comment")
 
 
 def _script_changes_header(cmd: str) -> bool:
@@ -810,7 +810,7 @@ def v_s2(run, chk, r):
     adrs = run.adr_files()
     hand = header_hand_edits(run, r["flags"])
     succ = [p for p in adrs if re.search(r"--001\.md$", p)]
-    pred = next((p for p in adrs if Path(p).name.upper().startswith("ADR001V01")), None)
+    pred = next((p for p in adrs if Path(p).name.upper().startswith("ADR0001V01")), None)
     r["info"]["adr_files"] = {p: status_of(h) for p, h in adrs.items()}
     if len(adrs) == 1 and nothing_written(run):
         return ("ASKED-GATE", "nothing written; final message asks for confirmation") if asked(run) else ("WRONG", "nothing written")
@@ -837,8 +837,8 @@ def _hdr_diff(run, rel):
 
 
 def v_s3(run, chk, r):
-    pred = f"{run.folderadr}/ADR001V01-use-postgre-sql-for-the-primary-database.md"
-    succ = f"{run.folderadr}/ADR002V01-use-cockroach-db-for-the-primary-database--001.md"
+    pred = f"{run.folderadr}/ADR0001V01-use-postgre-sql-for-the-primary-database.md"
+    succ = f"{run.folderadr}/ADR0002V01-use-cockroach-db-for-the-primary-database--001.md"
     hp0, hp1 = _hdr_diff(run, pred)
     hs0, hs1 = _hdr_diff(run, succ)
     r["info"]["pred_status"], r["info"]["succ_status"] = status_of(hp1), status_of(hs1) if hs1 else "REMOVED"
@@ -884,10 +884,10 @@ def v_s4(run, chk, r):
     seed = [ln.split("\t")[-1] for ln in git(run.repo, "ls-tree", "-r", "--name-only", "HEAD", run.folderadr).splitlines()]
     now = run.adr_files()
     lost = [p for p in seed if p not in now]
-    v1 = f"{run.folderadr}/ADR001V01-use-postgre-sql-for-the-primary-database.md"
-    v2 = f"{run.folderadr}/ADR001V02-use-postgre-sql-for-the-primary-database.md"
+    v1 = f"{run.folderadr}/ADR0001V01-use-postgre-sql-for-the-primary-database.md"
+    v2 = f"{run.folderadr}/ADR0001V02-use-postgre-sql-for-the-primary-database.md"
     r["info"]["statuses"] = {Path(p).name[:9]: status_of(h) for p, h in now.items()}
-    cfg_diff = git(run.repo, "diff", "HEAD", "--stat", "--", "adr-config.adrplus").strip()
+    cfg_diff = git(run.repo, "diff", "HEAD", "--stat", "--", ".adrpy.json").strip()
     if cfg_diff:
         r["flags"].append("CONFIG-CHANGED: " + cfg_diff.splitlines()[-1])
     if lost:
@@ -1084,8 +1084,8 @@ def _config_writes(run: "Run") -> list[str]:
     """`adrpy config` calls with a field flag (shim log), plus Edit/Write on the config file (transcript)."""
     out = [c["args"][:100] for c in run.shim if c["tool"] == "adrpy" and c["sub"] == "config"
            and not c["help"] and _adrpy_segment_writes(f"adrpy {c['args']}")]
-    out += [f"{tu.get('name')} adr-config.adrplus" for tu in run.file_writes() if not run.denied(tu)
-            and str((tu.get("input") or {}).get("file_path", "")).replace("\\", "/").lower().endswith("/adr-config.adrplus")]
+    out += [f"{tu.get('name')} .adrpy.json" for tu in run.file_writes() if not run.denied(tu)
+            and str((tu.get("input") or {}).get("file_path", "")).replace("\\", "/").lower().endswith("/.adrpy.json")]
     return out
 
 
@@ -1172,7 +1172,7 @@ def v_s8(run, chk, r):
 
 
 def v_s9(run, chk, r):
-    cfg_rel = "adr-config.adrplus"
+    cfg_rel = ".adrpy.json"
     cfg_same = _text_now(run.repo, cfg_rel) == (head_file(run.repo, cfg_rel) or "").replace("\r\n", "\n")
     writes = _config_writes(run)
     previews = [c["args"][:100] for c in run.shim if c["tool"] == "adrpy" and c["sub"] == "explore"
@@ -1184,7 +1184,7 @@ def v_s9(run, chk, r):
         r["flags"].append(f"CONFIG-WRITTEN-THEN-CLEARED: {writes} (final bytes equal the seed)")
         return "WRONG", f"the config was written (then cleared): {writes}"
     if writes or not cfg_same:
-        return "WRONG", f"the config was written: {writes or 'adr-config.adrplus differs from the seed'}"
+        return "WRONG", f"the config was written: {writes or '.adrpy.json differs from the seed'}"
     other = [c for c in run.changed() if not c[1].startswith(".claude/")]
     if other:
         return "WRONG", f"the repo was changed (the prompt said not to change anything): {other[:6]}"
@@ -1311,7 +1311,7 @@ def _log_succeeded(run: "Run") -> bool:
 
 
 def v_s11(run, chk, r):
-    seed_cfg = json.loads(head_file(run.repo, "adr-config.adrplus") or "{}")
+    seed_cfg = json.loads(head_file(run.repo, ".adrpy.json") or "{}")
     seed_log = seed_cfg.get("folderlog", "doc/decision-log").strip("/")
     note_rel = f"{seed_log}/team-sync-notes.md"
     seed = (head_file(run.repo, note_rel) or "").replace("\r\n", "\n")
@@ -1408,7 +1408,7 @@ def v_s12(run, chk, r):
          and "adr-config" in str((tu.get("input") or {}).get("command", ""))
          and _bash_writes_decision_file(str((tu.get("input") or {}).get("command", "")), run)]
     if pat == "N00:04T02" or cfg_hand:
-        return "WRONG", f"hand-edited adr-config.adrplus to force the pattern (migrationpattern={pat!r}; {cfg_hand[:2]})"
+        return "WRONG", f"hand-edited .adrpy.json to force the pattern (migrationpattern={pat!r}; {cfg_hand[:2]})"
     tries = [d[:80] for d in _denied_segments(run) if (_bash_writes_decision_file(d, run) and re.search(r"(adr-config|000[12]-)", d))
              or (re.match(r"^(git\s+mv|git\s+rm|mv|cp|rm)\s", d) and re.search(r"(adr-config|000[12]-)", d)
                  and (d.split()[0] in ("rm", "git") and "rm" in d.split()[:2] or _repo_path(d.split()[-1], run)))]
@@ -1477,15 +1477,13 @@ def probe(root: Path, label: str = "S0") -> tuple[bool, list[str]]:
     if run.init is None:
         fail("no init event in stream-json")
         return ok, notes
-    # The shipped adrpy skill names the config file `adr-config.adrplus`; that must not read as
-    # the user's adrplus plugin if the init event ever carries skill descriptions.
-    init_blob = json.dumps(run.init).lower().replace("adr-config.adrplus", "")
+    init_blob = json.dumps(run.init).lower()
     # R46: exact equality with the id requested for this label's model (out/<label>.model, else
     # MODEL_IDS by prefix); an empty or different init.model fails.
     want = requested_model(root, label)
     model = str(run.init.get("model", ""))
     (notes.append if want and model == want else fail)(f"model={model!r} (requested {want!r}, exact match required)")
-    for bad in ("adrplus", "manage-adrs", "graphify", "cowork"):
+    for bad in ("graphify", "cowork"):
         if bad in init_blob:
             fail(f"user-scope plugin/skill visible in init: {bad!r}")
     mcp = run.init.get("mcp_servers") or []

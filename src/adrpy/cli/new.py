@@ -1,10 +1,10 @@
 """`new` command: creates a new decision with status Proposed. There is
 no `--open` (launching an external editor), by design, not as a gap to
 fill later: adrpy-ai is args-in/JSON-out for a non-interactive caller,
-with no session to hand an opened editor back to (decision-log:
-accepted-divergence--2026-09-15--cli--open-flag-not-implemented.md).
+with no session to hand an opened editor back to.
 """
 
+from adrpy.core import adr_index
 from adrpy.core.args import parse_flags
 from adrpy.core.atomic_write import atomic_write_text
 from adrpy.core.fs import cleanup_orphaned_temp_files, scan_tree
@@ -92,7 +92,7 @@ def describe():
         "failure_codes": build_failure_codes(
             {
                 FailureCodes.TARGET_DIRECTORY_NOT_FOUND: "--path does not point to an existing directory.",
-                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no adr-config.adrplus.",
+                FailureCodes.CONFIG_NOT_FOUND: "--path's own directory has no .adrpy.json.",
                 FailureCodes.FIELD_CONTAINS_FORBIDDEN_CHARACTER: "title/domain/scope contains '|', a line-break-like character, or (title only) a filesystem-unsafe character; or title consists entirely of whitespace/'_'/'-'.",
                 FailureCodes.FIELD_IS_BLANK: "domain or scope is non-empty but blank after stripping whitespace.",
                 FailureCodes.REFDATE_INVALID_FORMAT: "--refdate is not an ISO 8601 date (give it as YYYY-MM-DD).",
@@ -199,6 +199,7 @@ def run(args):
         if warning:
             warnings.append(warning)
 
+    adr_index.regenerate(target, config, warnings)
     # The canonical keyword, not the repo's configured label -- `explore`
     # reports status_create the same way for the same file, and the two
     # must agree even when statusnew is customized.

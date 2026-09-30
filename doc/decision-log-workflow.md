@@ -6,7 +6,7 @@
 
 This page is the step-by-step workflow for adding an entry to the
 [decision log](decision-log/INDEX.md) -- the folder `folderlog` names in
-the repository's `adr-config.adrplus` (`doc/decision-log/` by default;
+the repository's `.adrpy.json` (`doc/decision-log/` by default;
 `adrpy config --path .` shows the repository's own value): the
 lighter-weight sibling of the decisions folder (`folderadr`,
 [`doc/adr/`](adr/) by default), for events that are worth recording but are not an
@@ -73,7 +73,7 @@ ADR-worthy decision.
 
 Once steps 1-2 are settled -- this genuinely belongs in the log, and you
 know its classification -- run [`adrpy log`](commands/log.md)
-([ADR003V01](adr/ADR003V01-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
+([ADR0003V01](adr/ADR0003V01R00-decision-log-entries-separate-human-reviewed-judgment-from-tool-executed-mechanics-via-a-future-adrpy-log-command.md)).
 It owns everything mechanical in one call: constructing the filename,
 formatting the classification-specific structured line, writing the
 entry, and regenerating `INDEX.md` -- and refuses outright

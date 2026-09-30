@@ -26,4 +26,4 @@ paste the full response here
 - OS:
 
 **Can you reproduce it with a minimal repository?**
-If yes, please attach or describe the minimal `adr-config.adrplus` / decision files needed to reproduce it.
+If yes, please attach or describe the minimal `.adrpy.json` / decision files needed to reproduce it.

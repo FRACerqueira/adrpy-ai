@@ -6,20 +6,16 @@ invocation of the command itself (unknown flag, missing value)."""
 
 class CommandError(Exception):
     def __init__(self, code, detail=None, data=None, warnings=None):
-        """`data`: a structured payload for a failure that isn't fully
-        explained by `code` alone -- e.g. not-latest-version needs to
-        name WHICH version actually is the latest, which a fixed code
-        string can't carry and `detail` (free text for humans -- in the stdout JSON and copied to stderr, never a contract; ADR010V01) isn't
-        part of the JSON contract.
+        """`data`: a structured payload for a failure `code` alone doesn't
+        explain -- e.g. not-latest-version names WHICH version is the
+        latest. `detail` is free text for humans (in the stdout JSON and
+        copied to stderr), never part of the contract (ADR0010V01).
 
-        `warnings`: a real side effect (an encoding repair, an
-        orphan-temp-file cleanup, a retried write)
-        can already have happened before this
-        same command run goes on to fail for an unrelated reason -- e.g.
-        `reject` can finish rewriting the target file's own status
-        before discovering its predecessor is missing. Without this, that
-        warning was silently dropped the moment the run ended in failure
-        instead of success, even though the side effect was real."""
+        `warnings`: a real side effect (an encoding repair, an orphan
+        temp-file cleanup, a retried write) may already have happened
+        before the run fails for an unrelated reason -- e.g. `reject` can
+        rewrite the target's status before finding its predecessor
+        missing. Its warning is reported with the failure."""
         super().__init__(detail or code)
         self.code = code
         self.detail = detail
@@ -43,18 +39,14 @@ class UsageError(Exception):
 
 class FailureCodes:
     """Every failure code this project can raise via CommandError, as a class
-    attribute -- one canonical place to check completeness (every code appears in
-    at least one command's own describe() text) against, instead of re-auditing the
-    scattered literals by hand (ADR005V01). Grouped by the module that owns/raises
-    each code, in that module's own raise order -- not alphabetized, so each group
-    stays reviewable against the file it replaces. A code shared verbatim across 2+
-    CLI commands (the exact drift risk this class exists to close) gets its own
-    "Shared" group instead of being silently attributed to whichever command
-    happens to be listed first. The attribute NAME is free to be anything; the
-    STRING VALUE is the real, load-bearing wire code and must never change once
-    assigned here -- every existing CLI/test assertion checks this exact string."""
+    attribute -- the one place to check completeness against (every code appears
+    in at least one command's describe() text; ADR0005V01). Grouped by the module
+    that raises each code, in that module's raise order; a code shared verbatim
+    across 2+ CLI commands goes in the "Shared" group. The attribute NAME is free;
+    the STRING VALUE is the wire code and must never change once assigned -- CLI
+    and test assertions check this exact string."""
 
-    # Shared verbatim across 2+ CLI commands -- the confirmed drift risk this class exists to close.
+    # Shared verbatim across 2+ CLI commands.
     ALREADY_SUPERSEDED = "already-superseded"
     FAMILY_MEMBER_SUPERSEDED = "family-member-superseded"
     FAMILY_MEMBER_PENDING = "family-member-pending"
@@ -64,7 +56,6 @@ class FailureCodes:
     ALREADY_ACCEPTED = "already-accepted"
     CONFIG_FILE_NOT_FOUND = "config-file-not-found"
     FAMILY_NOT_FOUND = "family-not-found"
-    FIELD_NOT_A_BOOLEAN = "field-not-a-boolean"
     FIELD_NOT_AN_INTEGER = "field-not-an-integer"
     NOT_LATEST_VERSION = "not-latest-version"
 
@@ -104,8 +95,6 @@ class FailureCodes:
     CONFIG_PREFIX_INVALID = "config-prefix-invalid"
     CONFIG_FOLDERADR_TOO_LONG = "config-folderadr-too-long"
     CONFIG_FOLDERADR_NOT_RELATIVE = "config-folderadr-not-relative"
-    # ADR007V01: folderlog, the first optional-with-computed-default field
-    # in this schema.
     CONFIG_FOLDERLOG_TOO_LONG = "config-folderlog-too-long"
     CONFIG_FOLDERLOG_NOT_RELATIVE = "config-folderlog-not-relative"
     CONFIG_FOLDERADR_FOLDERLOG_OVERLAP = "config-folderadr-folderlog-overlap"
@@ -176,9 +165,8 @@ class FailureCodes:
     LOG_ROUND_INVALID = "log-round-invalid"
     LOG_ROUND_TOO_LOW = "log-round-too-low"
     LOG_DIRECTORY_CONTAINS_UNRECOGNIZED_FILE = "log-directory-contains-unrecognized-file"
-    # ADR007V01: folderlog is now recursively scanned, gaining the same
-    # fail-closed-on-unreadable-subdirectory handling folderadr's own scan
-    # already had.
+    # ADR0007V01: folderlog is scanned recursively and fails closed on an
+    # unreadable subdirectory, as folderadr's scan does.
     LOG_SCAN_INCOMPLETE = "log-scan-incomplete"
     FOLDERLOG_CHANGE_BLOCKED_BY_EXISTING_ENTRIES = "folderlog-change-blocked-by-existing-entries"
     FOLDERLOG_CHANGE_WOULD_ADOPT_UNRELATED_FILES = "folderlog-change-would-adopt-unrelated-files"
@@ -255,12 +243,12 @@ class FailureCodes:
 
 
 def build_failure_codes(*sources):
-    """ADR008V01: merges any number of {code: condition} mappings -- a
+    """ADR0008V01: merges any number of {code: condition} mappings -- a
     command's own inline entries plus whichever shared dicts it reaches
     (core/config.py's, core/header.py's, core/lifecycle.py's) -- into the
-    list-of-objects shape every describe() response uses for its own
-    failure_codes field, matching the existing `arguments` list's own
-    shape rather than a bare dict. Preserves each source's own order;
+    list-of-objects shape of every describe() response's failure_codes
+    field (the same shape as its `arguments` list). Preserves each
+    source's order;
     a code appearing in more than one source keeps its first mapping."""
     entries = []
     seen = set()

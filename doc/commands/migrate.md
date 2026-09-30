@@ -11,7 +11,7 @@ Adds an adrpy-compliant header to existing, hand-written decision files.
 
 ## Description
 
-Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback, and must not read part of a name twice (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid, refused before anything is written, a fallback before it is persisted; once a decision was migrated with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the titles begin with part of the number). It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into adr-config.adrplus (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
+Adds an adrpy header with blank status cells (a migrated placeholder) to every hand-written decision file matching the repository's migrationpattern, which must be set in this repository's config or come from the install-level config's fallback, and must not read part of a name twice (its T inside its N/V/R/P range, or two of those ranges overlapping: config-migrationpattern-invalid, refused before anything is written, a fallback before it is persisted; once a decision was migrated with the repository's own, the guard keeps it and migrate finishes with it, with a warning that the titles begin with part of the number). It is a one-time step, refused as a whole when a file already has a valid header migrate did not write (checked first, before anything is written); a fallback value is then persisted into .adrpy.json (reported as migrationpattern_persisted) and survives a later refusal, in which case no decision file is touched. It is also refused as a whole when a scanned file has a damaged header, carries a supersede suffix, shares a number with another or cannot be read. Files are then migrated one by one; if any fails, data.results names every file's outcome, and a re-run migrates the files still without a header. `adrpy explore --path . --migrationpattern <pattern>` previews what a pattern reads from each name (number, version, title) without writing anything; `warnings` flags a title that starts with a separator or a number far above the others (a likely wrong pattern).
 
 ## Arguments
 
@@ -24,15 +24,15 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | Code | Condition |
 |---|---|
 | `target-directory-not-found` | --path does not point to an existing directory. |
-| `config-not-found` | --path's own directory has no adr-config.adrplus. |
+| `config-not-found` | --path's own directory has no .adrpy.json. |
 | `migration-pattern-not-configured` | Both the repository's own migrationpattern and the install-level config's own fallback are empty. |
 | `field-contains-forbidden-character` | A candidate's own title (sourced from its raw legacy filename) contains '\|', a line-break-like character, a filesystem-unsafe character, or consists entirely of whitespace/'_'/'-' -- a per-file failure, not a whole-batch abort. |
 | `migration-scan-failed` | A candidate's own header could not even be read (permission denied or similar) -- refuses the whole run. |
 | `migration-scan-incomplete` | A subdirectory under the decisions folder could not be scanned -- refuses the whole run. |
 | `migration-successor-files-exist` | A scanned file already carries a supersede suffix (--NNN; data.files) -- a supersede chain is created by this tool only; refuses the whole run. |
 | `migration-duplicate-numbers-exist` | Two or more scanned files share a number, version and revision (a missing revision counts as 0; data.files) -- refuses the whole run; rename them so each has its own. |
-| `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (a `\|Adr-Plus ` row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
-| `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (AdrPlus or adrpy; data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
+| `migration-invalid-headers-exist` | A scanned file looks like it carries this tool's header (its fields row, an exact `\|--\|--\|` line or a NUL byte in its first 12 lines) but it does not parse (data.files) -- refuses the whole run; repair or remove it by hand. |
+| `already-tool-created-adrs-exist` | At least one scanned file already has a valid header migrate did not write (data.files) -- refuses the whole run, checked before migrationpattern is needed or persisted from the fallback; the files still without a header get one by hand. |
 | `no-decisions-found` | No .md files matching a recognized naming scheme were found. |
 | `no-eligible-files-to-migrate` | Every recognized file already has a header (migrated or tool-created), or is empty (0 bytes, skipped with a warning) -- nothing needs migration. |
 | `migration-write-failed` | At least one candidate failed to write -- data.results names every candidate's own outcome. A name longer than the 234 bytes this tool can rewrite, or a candidate that is a symbolic link, fails that way too, with nothing written to it (its error says what to do). |
@@ -40,12 +40,12 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `path-outside-repository` | A resolved path escapes the repository boundary. |
 | `io-error` | A write failed for a reason not covered by a more specific code (permission denied, full disk, etc.). |
 | `config-file-too-large` | The config file exceeds the 64KB size limit. |
-| `config-file-empty` | The repository's adr-config.adrplus is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
+| `config-file-empty` | The repository's .adrpy.json is empty (0 bytes), most likely left by an interrupted init: remove it and run init again. |
 | `config-invalid-encoding` | The config file's bytes are not valid UTF-8. |
 | `config-invalid-json` | The config file is not valid JSON, or its root is not a JSON object. |
 | `config-missing-field` | The config is missing one or more required fields. |
 | `config-unexpected-field` | The config has one or more fields this schema does not recognize. |
-| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer/boolean/array of strings). |
+| `config-wrong-type` | A field's value is not the type this schema requires for it (string/integer). |
 | `config-lenseq-too-small` | lenseq is below its configured minimum (3). |
 | `config-lenseq-too-large` | lenseq is above its configured maximum (6). |
 | `config-lenversion-too-small` | lenversion is below its configured minimum (2). |
@@ -57,9 +57,9 @@ Adds an adrpy header with blank status cells (a migrated placeholder) to every h
 | `config-field-empty` | A field that must be non-empty is an empty string. |
 | `config-prefix-invalid` | prefix is not ASCII letters only, max 5 characters. |
 | `config-folderadr-too-long` | folderadr exceeds 50 characters. |
-| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderadr-not-relative` | folderadr is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderlog-too-long` | folderlog exceeds 50 characters. |
-| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, or a UNC path -- it must be relative to the repository. |
+| `config-folderlog-not-relative` | folderlog is absolute, drive-relative, a UNC path, or leads outside the repository (..) -- it must be a relative path inside it. |
 | `config-folderadr-folderlog-overlap` | folderadr and folderlog are the same directory, or one is nested inside the other. |
 | `config-template-too-long` | template exceeds 10000 characters. |
 | `config-headerdisclaimer-too-long` | headerdisclaimer exceeds 100 characters. |

@@ -1,6 +1,6 @@
 """Per-provider delivery: how each AI-coding-agent provider receives a
 bundled skill (full body vs. stub + one shared doc), and where its files
-live. Split by each provider's own activation model -- see ADR009V01."""
+live. Split by each provider's own activation model -- see ADR0009V01."""
 
 SHARED_DOC_PATH = "doc/ai-skills/{name}.md"
 
