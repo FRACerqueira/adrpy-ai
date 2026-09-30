@@ -117,16 +117,23 @@ def is_zero_bytes(path):
 
 
 def written_by_someone_else(path, mark):
-    """True when `path` is a file whose start does not hold `mark`, the line
-    every file adrpy generates at that name carries: the user's file, never
-    to be overwritten. False when there is no such file or it cannot be
-    read, which the write that follows then reports."""
+    """True when `path` is a file none of whose first lines starts with
+    `mark`, the line every file adrpy generates at that name carries: the
+    user's file, never to be overwritten. One that exists but cannot be
+    read is the user's too, since replacing it needs no right to read it.
+    False when there is no such file (a folder in its way makes the write
+    that follows fail, and that is reported)."""
+    if not os.path.isfile(path):
+        return False
     try:
         with open(path, "rb") as handle:
             head = handle.read(4096)
     except OSError:
-        return False
-    return mark.encode("utf-8") not in head
+        return True
+    # Split on the line ends adrpy writes only, never a form feed or a Unicode
+    # separator inside a line; the page puts the mark on line 3.
+    lines = [line.rstrip("\r") for line in head.decode("utf-8", errors="replace").lstrip("﻿").split("\n")[:4]]
+    return not any(line.startswith(mark) for line in lines)
 
 
 def unlink_with_retry(path):

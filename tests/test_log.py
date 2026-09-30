@@ -882,3 +882,39 @@ def test_log_interrupted_after_the_entry_names_the_entry_written(tmp_path, monke
     assert excinfo.value.code == "interrupted"
     assert excinfo.value.data == {"file": str(created)}
     assert created.is_file()
+
+
+def test_log_leaves_a_users_index_that_cannot_be_read_as_it_is(tmp_path, monkeypatch):
+    from adrpy.core import fs
+
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "INDEX.md").write_text("Our own list.\n", encoding="utf-8")
+    real_open = open
+
+    def guarded(path, *args, **kwargs):
+        if __import__("pathlib").Path(path).name == "INDEX.md":
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(fs, "open", guarded, raising=False)
+    result = log.run(_plain_entry_args(tmp_path))
+
+    assert (folder / "INDEX.md").read_text(encoding="utf-8") == "Our own list.\n"
+    assert any("was not written by adrpy" in warning for warning in result["warnings"])
+
+
+def test_log_regenerates_an_index_in_the_format_earlier_versions_wrote(tmp_path):
+    """Positive control: the log's generated line, as every version wrote
+    it, keeps the file adrpy's."""
+    _init_repo(tmp_path)
+    folder = tmp_path / "doc" / "decision-log"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "INDEX.md").write_text(
+        "# Decision log index\n\nGenerated -- do not edit by hand (see [the decision-log workflow](x)).\n",
+        encoding="utf-8")
+
+    log.run(_plain_entry_args(tmp_path))
+
+    assert "2026-09-18--scope-note--lock--a-note.md" in (folder / "INDEX.md").read_text(encoding="utf-8")

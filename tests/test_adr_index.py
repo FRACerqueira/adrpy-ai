@@ -298,3 +298,84 @@ def test_migrate_keeps_the_index_in_step(tmp_path):
     migrate.run(["--path", str(other)])
 
     assert _row(other / "doc" / "adr" / "INDEX.md", "0001UseQueues.md") is not None
+
+
+def _unreadable(monkeypatch, name="INDEX.md"):
+    """Makes adrpy's read of any file called `name` fail, as a file the user
+    may replace but not read does (NTFS deny-read, POSIX mode 000)."""
+    from adrpy.core import fs
+
+    real_open = open
+
+    def guarded(path, *args, **kwargs):
+        if __import__("pathlib").Path(path).name.lower() == name.lower():
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(fs, "open", guarded, raising=False)
+
+
+def test_a_users_index_that_cannot_be_read_is_left_as_it_is(tmp_path, monkeypatch):
+    """Replacing a file needs no right to read it: one adrpy cannot read is
+    the user's, never overwritten, and the warning says so."""
+    root, index = _repo(tmp_path)
+    index.write_text("# Our own list\n", encoding="utf-8")
+    _unreadable(monkeypatch)
+
+    created = new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert index.read_text(encoding="utf-8") == "# Our own list\n"
+    assert any("was not written by adrpy" in warning for warning in created["warnings"])
+
+
+def test_config_never_calls_an_unreadable_user_file_the_previous_index(tmp_path, monkeypatch):
+    from adrpy.cli import config
+
+    root, index = _repo(tmp_path)
+    index.write_text("# Our own list\n", encoding="utf-8")
+    _unreadable(monkeypatch)
+
+    result = config.run(["--path", str(root), "--folderadr", "decisions"])
+
+    assert index.read_text(encoding="utf-8") == "# Our own list\n"
+    assert not any("previous decisions folder" in warning for warning in result["warnings"])
+
+
+def test_a_user_file_quoting_the_generated_line_is_still_the_users(tmp_path):
+    """The mark counts as the start of one of the first lines, as adrpy
+    writes it, never as a phrase quoted anywhere in the text."""
+    from adrpy.core.adr_index import GENERATED_MARK
+
+    root, index = _repo(tmp_path)
+    notes = f"# Our notes\n\nWe keep our own list here; adrpy's page would say \"{GENERATED_MARK}\"\n"
+    index.write_text(notes, encoding="utf-8")
+
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert index.read_text(encoding="utf-8") == notes
+
+
+def test_a_generated_index_with_a_bom_is_still_adrpy_s(tmp_path):
+    """Positive control: an editor that added a BOM does not turn adrpy's
+    own page into a file of the user's."""
+    root, index = _repo(tmp_path)
+    index.write_bytes(b"\xef\xbb\xbf" + index.read_bytes())
+
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert "First" in index.read_text(encoding="utf-8-sig")
+
+
+@pytest.mark.parametrize("breaker", ["\x0c", " ", "\x85", "\r"])
+def test_the_mark_after_a_character_that_is_not_a_line_end_is_still_the_users(tmp_path, breaker):
+    """Only the line endings adrpy writes start a line: the mark after a
+    form feed or a Unicode separator inside line 1 is quoted text."""
+    from adrpy.core.adr_index import GENERATED_MARK
+
+    root, index = _repo(tmp_path)
+    notes = f"# Notes about adrpy{breaker}{GENERATED_MARK} is what its page says\n"
+    index.write_bytes(notes.encode("utf-8"))
+
+    new.run(["--path", str(root), "--title", "First", "--refdate", "2026-09-20"])
+
+    assert index.read_bytes() == notes.encode("utf-8")
