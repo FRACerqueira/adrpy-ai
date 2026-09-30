@@ -17,7 +17,12 @@ from adrpy.core.config import (
     reject_overlapping_migration_pattern,
     serialize_repo_config,
 )
-from adrpy.core.consistency import check_repository, unheadered_legacy_warning, unrecognized_decision_like_warning
+from adrpy.core.consistency import (
+    check_repository,
+    headered_unrecognized_warning,
+    unheadered_legacy_warning,
+    unrecognized_decision_like_warning,
+)
 from adrpy.core.decision_log import unrecognized_log_files_warning
 from adrpy.core.errors import FailureCodes, build_failure_codes
 from adrpy.core.header import has_header_shape, parse_header, read_header_lines_with_report
@@ -165,6 +170,7 @@ def run(args):
         warnings.append(warning)
     for warning in (
         unrecognized_decision_like_warning(scan, config),
+        headered_unrecognized_warning(scan, config),
         unheadered_legacy_warning(snapshot, config),
         unrecognized_log_files_warning(target, config),
     ):

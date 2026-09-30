@@ -333,3 +333,51 @@ def test_a_note_with_a_compact_table_under_its_title_never_blocks_the_repository
 
     assert check.run(["--path", str(tmp_path)])["decisions"] == 1
     assert new.run(["--path", str(tmp_path), "--title", "Second", "--refdate", "2026-09-20"])["status"] == "Proposed"
+
+
+@pytest.mark.parametrize("renamed", ["DEC0001V01R01-a.md", "ADR0001V01R01_a.md"])
+def test_a_file_with_an_adrpy_header_and_a_name_this_config_does_not_read_is_named(tmp_path, renamed):
+    """Another prefix or separator: no rule sees the file, and new would
+    reuse its number, so check and explore say so."""
+    from pathlib import Path
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    created = Path(new.run(["--path", str(tmp_path), "--title", "A", "--refdate", "2026-09-20"])["created"])
+    created.rename(created.with_name(renamed))
+    (created.parent / "README.md").write_text("# About these decisions\n", encoding="utf-8")
+
+    for answer in (check.run(["--path", str(tmp_path)]), explore.run(["--path", str(tmp_path)])):
+        [warning] = [w for w in answer["warnings"] if "carry an adrpy header" in w]
+        assert renamed in warning and "README.md" not in warning
+
+
+def test_the_headered_warning_never_opens_a_file_whose_name_is_no_decision_s(tmp_path, monkeypatch):
+    """Only a name shaped like a decision's (digits, V, digits) can be one
+    with another prefix or separator: a plain note is never opened."""
+    from adrpy.cli import check, init
+    from adrpy.core import consistency
+
+    init.run(["--path", str(tmp_path)])
+    (tmp_path / "doc" / "adr" / "meeting-notes.md").write_text("# Notes\n", encoding="utf-8")
+    opened = []
+    real = consistency.read_header_lines_with_report
+    monkeypatch.setattr(consistency, "read_header_lines_with_report", lambda path, *a, **k: (opened.append(path.name), real(path, *a, **k))[1])
+
+    check.run(["--path", str(tmp_path)])
+
+    assert "meeting-notes.md" not in opened
+
+
+def test_the_headered_warning_says_to_rename_to_a_free_number_not_to_change_the_config(tmp_path):
+    from pathlib import Path
+
+    from adrpy.cli import check, init, new
+
+    init.run(["--path", str(tmp_path)])
+    created = Path(new.run(["--path", str(tmp_path), "--title", "A", "--refdate", "2026-09-20"])["created"])
+    created.rename(created.with_name("DEC0001V01R01-a.md"))
+
+    [warning] = [w for w in check.run(["--path", str(tmp_path)])["warnings"] if "carry an adrpy header" in w]
+    assert "free number" in warning and "adrpy config" not in warning

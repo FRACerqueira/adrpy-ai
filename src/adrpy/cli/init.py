@@ -396,7 +396,8 @@ def _other_widths_warning(names, config):
     """Names of the current scheme padded to other widths than `config`'s
     are still decisions, but the next ones would sit next to them in
     another width: said now, while `adrpy config` can still match them."""
-    shape = re.compile(rf"^{re.escape(config.prefix or '')}(\d+)V(\d+)(?:R(\d+))?")
+    # Case-blind, as core/naming reads a current-scheme name.
+    shape = re.compile(rf"^{re.escape(config.prefix or '')}(\d+)V(\d+)(?:R(\d+))?", re.I)
     other = []
     for name in names:
         match = shape.match(Path(name.path).name) if name.scheme == "current" else None

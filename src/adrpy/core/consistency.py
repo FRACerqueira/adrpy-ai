@@ -39,6 +39,7 @@ per error, with the literal header rows to write):
 newer members that are all Rejected not counting.
 """
 
+import re
 from dataclasses import dataclass
 
 from adrpy.core.errors import CommandError, FailureCodes
@@ -521,6 +522,44 @@ def _check_supersede(decisions, by_number, config, errors):
                         hint=_successor_without_predecessor_hint(config, successor, family),
                     )
                 )
+
+
+# A name shaped like a decision's: digits, V, digits (another prefix or separator
+# around them). Only such a file is opened, so a folder of notes costs nothing.
+_DECISION_SHAPED = re.compile(r"^\D*\d+[Vv]\d+")
+
+
+def headered_unrecognized_warning(scan, config):
+    """The warning for `.md` files of `scan` whose name is shaped like a
+    decision's but that this config does not read, while they carry a valid
+    adrpy header (another prefix or separator, say): no rule sees them, and
+    `new` may give one of their numbers to a decision. A name starting with
+    an ASCII digit is left to unrecognized_decision_like_warning. None when
+    there are none."""
+    if scan is None:
+        return None
+    names = []
+    for path in scan.markdown:
+        name = path.name
+        if (name[:1].isascii() and name[:1].isdigit()) or not _DECISION_SHAPED.match(name):
+            continue
+        if parse_any_filename(name, config) is not None:
+            continue
+        try:
+            lines, _encoding_repaired = read_header_lines_with_report(path)
+        except OSError:
+            continue
+        if parse_header(lines, config).is_valid:
+            names.append(name)
+    if not names:
+        return None
+    return (
+        f"{len(names)} .md file(s) in {config.folderadr} carry an adrpy header but a name this config does not "
+        f"read (another prefix, separator or migrationpattern?): {', '.join(sorted(names))}. No rule sees them, "
+        "so a new decision may take one of their numbers. If they are decisions, rename each by hand to this "
+        "repository's naming with a free number (`adrpy explore` lists the numbers in use); a prefix or separator "
+        "change is refused while decisions exist or would adopt them."
+    )
 
 
 def unrecognized_decision_like_warning(scan, config):

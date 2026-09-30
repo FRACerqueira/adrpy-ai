@@ -861,3 +861,15 @@ def test_init_over_decisions_named_with_the_same_widths_says_nothing_of_it(tmp_p
     result = init.run(["--path", str(tmp_path)])
 
     assert not any("widths" in w for w in result["warnings"])
+
+
+@pytest.mark.real_defaults
+def test_init_over_lowercase_names_of_other_widths_says_so(tmp_path):
+    """adrpy reads adr001v01-a.md as a current-scheme name: its widths count too."""
+    folder = tmp_path / "doc" / "adr"
+    folder.mkdir(parents=True)
+    (folder / "adr001v01-first.md").write_text("# First\n", encoding="utf-8")
+
+    result = init.run(["--path", str(tmp_path)])
+
+    assert any("widths" in w and "adr001v01-first.md" in w for w in result["warnings"])

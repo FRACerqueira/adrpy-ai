@@ -6,6 +6,7 @@ from adrpy.core.consistency import (
     check_repository,
     inconsistent_repository,
     unheadered_legacy_warning,
+    headered_unrecognized_warning,
     unrecognized_decision_like_warning,
 )
 from adrpy.core.decision_log import unrecognized_log_files_warning
@@ -103,6 +104,7 @@ def run(args):
         warning
         for warning in (
             unrecognized_decision_like_warning(scan, config),
+            headered_unrecognized_warning(scan, config),
             unheadered_legacy_warning(snapshot, config),
             unrecognized_log_files_warning(target, config),
             names_too_long_to_rewrite_warning(decision.path for decision in snapshot.decisions),
