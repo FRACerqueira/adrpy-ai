@@ -64,6 +64,8 @@ adrpy help
 
 It installs two commands and nothing else (no runtime dependencies): `adrpy`, and `adrpy-skills` (see [Installing the judgment layer](#installing-the-judgment-layer-adrpy-skills)). As a command-line tool in its own environment, with [pipx](https://pipx.pypa.io/): `pipx install adrpy-ai`. Straight from GitHub, a branch or a commit, without cloning: `pip install git+https://github.com/FRACerqueira/adrpy-ai.git`.
 
+Whether `adrpy` then runs from any folder depends on where it was installed. Into a Python whose `Scripts` folder (Windows) or `bin` folder (macOS, Linux) is on your PATH, it does. With `pip install --user`, that folder is often not on PATH, and pip says so ("... which is not on PATH"): add the folder it names to PATH. Into a virtual environment, only while that environment is activated. pipx puts its commands on PATH; if it warns that its folder is not, run `pipx ensurepath` once and open a new terminal. To check, run `where adrpy` on Windows (`where.exe adrpy` in PowerShell) or `command -v adrpy` on macOS and Linux. Running from any folder does not pick the repository for you: each command names it with `--path` (`--path .` for the current folder), or names a decision's file with `--file`.
+
 The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project. Don't install both in the same environment: on Windows and macOS their import folders (`adrpy` and `ADRpy`) are the same folder, and their files mix.
 
 To install from a clone instead:
