@@ -3,11 +3,13 @@
 # adrpy-ai
 
 [![CI](https://github.com/FRACerqueira/adrpy-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/FRACerqueira/adrpy-ai/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/adrpy-ai)](https://pypi.org/project/adrpy-ai/)
+[![Downloads](https://static.pepy.tech/badge/adrpy-ai)](https://pepy.tech/projects/adrpy-ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/FRACerqueira/adrpy-ai/blob/main/LICENSE)
 
 **ADR lifecycle CLI for humans and AI agents alike — JSON-only, no wizard, zero dependencies.**
 
-adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, check that a repository is consistent, and migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool.
+adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) from the command line: create, approve, reject, undo, supersede, version, and revise decisions, check that a repository is consistent, and migrate legacy hand-written files into the tool's own format. Every command takes flags in and returns JSON out — no interactive prompts, ever — so it works identically whether you're typing it yourself or an AI coding agent is driving it through a shell tool. For people who prefer screens, the sibling project [adrpy-tui](https://github.com/FRACerqueira/adrpy-tui) puts a terminal interface on top of it.
 
 ## Table of Contents
 
@@ -15,6 +17,7 @@ adrpy-ai manages [Architecture Decision Records](https://adr.github.io/) (ADRs) 
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [A terminal interface for people (`adrpy-tui`)](#a-terminal-interface-for-people-adrpy-tui)
 - [Commands](#commands)
 - [Checking a repository (`adrpy check`)](#checking-a-repository-adrpy-check)
 - [One owner per working copy](#one-owner-per-working-copy)
@@ -52,16 +55,18 @@ Architecture decisions are worth keeping only while they stay true and findable.
 
 ## Installation
 
+Requires Python 3.11 or later, on Windows, macOS or Linux.
+
 ```bash
 pip install adrpy-ai
 adrpy help
 ```
 
-Requires Python 3.11+. The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project. Don't install both in the same environment: on Windows and macOS their import folders (`adrpy` and `ADRpy`) are the same folder, and their files mix.
+It installs two commands and nothing else (no runtime dependencies): `adrpy`, and `adrpy-skills` (see [Installing the judgment layer](#installing-the-judgment-layer-adrpy-skills)). As a command-line tool in its own environment, with [pipx](https://pipx.pypa.io/): `pipx install adrpy-ai`. Straight from GitHub, a branch or a commit, without cloning: `pip install git+https://github.com/FRACerqueira/adrpy-ai.git`.
 
-As a command-line tool in its own environment, with [pipx](https://pipx.pypa.io/): `pipx install adrpy-ai`. Straight from GitHub, a branch or a commit, without cloning: `pip install git+https://github.com/FRACerqueira/adrpy-ai.git`.
+The package is `adrpy-ai`; `ADRpy` on PyPI is an unrelated project. Don't install both in the same environment: on Windows and macOS their import folders (`adrpy` and `ADRpy`) are the same folder, and their files mix.
 
-To install from a clone instead — for development:
+To install from a clone instead:
 
 ```bash
 git clone https://github.com/FRACerqueira/adrpy-ai.git
@@ -72,7 +77,9 @@ adrpy help
 
 The source install needs a git clone: the version is read from git, so a folder from GitHub's "Download ZIP" does not install. On Windows, some file names under `doc/` are long; if `git clone` reports "Filename too long", clone with `git clone -c core.longpaths=true https://github.com/FRACerqueira/adrpy-ai.git`.
 
-For development (running the test suite), see [Contributing](#contributing).
+To work on adrpy-ai itself (running the test suite), see [Contributing](#contributing).
+
+Prefer screens to flags and JSON? See [A terminal interface for people (`adrpy-tui`)](#a-terminal-interface-for-people-adrpy-tui).
 
 ## Quick Start
 
@@ -123,6 +130,17 @@ Every call above returns JSON on stdout. For example, `explore` after the steps 
 (Trimmed for readability — the real response includes a few more fields per decision.)
 
 Only files with an **ADR name** are decisions: the configured `prefix` (`ADR` by default, any case), the number, a mandatory `V` version, an optional `R` revision, then the separator and the title — `ADR0001V01R01-use-postgre-sql.md` — plus a `--NNN` suffix on a successor. Any other `.md` in the decisions folder (a README, `0001-use-postgres.md`, `2024-01-15-meeting.md`) is ignored, unless `migrationpattern` describes it as a legacy name; `check` and `explore` warn about one whose name starts with a digit. A legacy name is a decision only while the repository is not adopted yet or when it has a header: once any file has a valid header `migrate` did not write (created by the tool, or copied by hand — from then on `migrate` no longer runs), a legacy name without a header is not a decision — every command ignores it, and `check`, `explore` and every lifecycle command name it in `warnings`. Headers `migrate` wrote do not end the adoption: after a partial run, the files left keep blocking until `migrate` finishes them. The exact rule is under "ADR names" in [`doc/lifecycle.md`](https://github.com/FRACerqueira/adrpy-ai/blob/main/doc/lifecycle.md).
+
+## A terminal interface for people (`adrpy-tui`)
+
+[adrpy-tui](https://github.com/FRACerqueira/adrpy-tui) is a sibling project: menus, forms, lists and previews on top of adrpy-ai, for people who would rather not type flags and read JSON. Every change still goes through `adrpy` -- the interface shows the exact command before it runs, and adrpy's rules are the only ones that apply. It installs adrpy-ai with it:
+
+```bash
+pip install adrpy-tui
+adrpy-tui
+```
+
+A repository is the same for both: switch between them, or use both, at any time. Each adrpy-tui release is validated against one adrpy-ai series; its README says which.
 
 ## Commands
 
